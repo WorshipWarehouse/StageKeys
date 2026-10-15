@@ -79,6 +79,7 @@ final class PerformanceStore: ObservableObject {
         let index: Int
         let pluginState: Data?
         var draft: Layer
+        var isolatedLibrary = false
     }
     private var audition: Audition?
     func playbackLayer(_ index: Int) -> Layer {
@@ -98,7 +99,7 @@ final class PerformanceStore: ObservableObject {
     func previewLayer(_ index: Int, _ proposed: Layer, token: UUID) {
         guard let session = audition, session.token == token, session.patchID == patch.id, session.index == index,
               patch.layers.indices.contains(index), patch.layers[index].id == session.layerID else { return }
-        var layer = proposed; layer.gain = patch.layers[index].gain; layer.muted = patch.layers[index].muted
+        var layer = proposed; layer.gain = session.isolatedLibrary ? 0.6:patch.layers[index].gain; layer.muted = session.isolatedLibrary ? false:patch.layers[index].muted
         var validation = Setlist(); validation.patches = [Patch(name:"Audition",layers:[layer],snapshots:[])]
         guard (try? validation.validate()) != nil else { return }
         let previous = session.draft
@@ -122,7 +123,15 @@ final class PerformanceStore: ObservableObject {
         let original=patch.layers[session.index]
         configureMIDI(session.index,original); audio.configure(session.index,original)
         audio.gain(session.index,original.loaded && !original.muted ? original.gain : 0)
+        if session.isolatedLibrary {for (i,layer) in patch.layers.enumerated() where i != session.index {audio.gain(i,layer.loaded && !layer.muted ? layer.gain:0)};audio.gain(15,tonicGain)}
         updateToneFilters(); applySustain()
+    }
+    @discardableResult func auditionLibrarySound(_ index:Int,_ layer:Layer)->UUID? {
+        guard let token=beginAudition(index) else{return nil}
+        panic();audition?.isolatedLibrary=true
+        for i in patch.layers.indices where i != index {audio.gain(i,0)}
+        audio.gain(15,0);previewLayer(index,layer,token:token)
+        return token
     }
     func cancelAudition() { endAudition(audition?.token) }
     func confirmAudition(_ token: UUID?, index: Int, layer: Layer) {
@@ -185,6 +194,7 @@ final class PerformanceStore: ObservableObject {
         do { midiOutput = try ExternalMIDIOutput() } catch { message = error.localizedDescription }
         midiFX.onNoteWithSource = { [weak self] channel, key, pitch, velocity, sourceID in
             guard let self, self.patch.layers.indices.contains(channel) else { return }
+            if let audition=self.audition,audition.isolatedLibrary,audition.index != channel{return}
             let l = self.playbackLayer(channel)
             let pitch = pitch + self.patch.transpose
             if let destination = l.midiDestinationID, (0...127).contains(pitch) {
@@ -325,7 +335,7 @@ final class PerformanceStore: ObservableObject {
             setlist.patches[selected].layers[i].name=SoundLibrary.cleanImportedName(patch.layers[i].name)
             if var sound=patch.layers[i].external {sound.name=SoundLibrary.cleanImportedName(sound.name);setlist.patches[selected].layers[i].external=sound}
             let old=patch.layers[i].importedRack
-            if old == nil || (old?.translationVersion != 3 && old == entry.previousImportedRack) {
+            if old == nil || (old?.translationVersion != 4 && old == entry.previousImportedRack) {
                 setlist.patches[selected].layers[i].importedRack=entry.layer?.importedRack
                 if patch.layers[i].midiProgram == nil && !patch.layers[i].octaveEffect {setlist.patches[selected].layers[i].midiProgram=entry.layer?.midiProgram}
                 for snapshot in patch.snapshots.indices {

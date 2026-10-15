@@ -16,6 +16,14 @@ import Foundation
         let free=try behavior(device("CrossDelay",parameter("SyncModeLeft","false")+parameter("MsDelayLeft","275")+parameter("Linked","true")))
         assert(free.rack.effects[0].importedDelay!.left==0.275 && free.rack.effects[0].importedDelay!.right==0.275)
         let nested="<GroupDevicePreset><Device><AudioEffectGroupDevice/></Device><BranchPresets><AudioEffectBranchPreset><DevicePresets>"+device("CrossDelay","")+device("Reverb","")+"</DevicePresets></AudioEffectBranchPreset></BranchPresets></GroupDevicePreset>"
+        let gainMacro="<Gain><Manual Value=\"1\"/><KeyMidi><Channel Value=\"16\"/><NoteOrController Value=\"0\"/></KeyMidi><MidiControllerRange><Min Value=\"0.001\"/><Max Value=\"1\"/></MidiControllerRange></Gain>"
+        let audioBranch="<AudioEffectBranchPreset><Name Value=\"Dry\"/><DevicePresets>"+device("StereoGain",gainMacro)+"</DevicePresets></AudioEffectBranchPreset>"
+        let split="<GroupDevicePreset><Device><AudioEffectGroupDevice><MacroDisplayNames.0 Value=\"Blend\"/><MacroControls.0><Manual Value=\"127\"/></MacroControls.0></AudioEffectGroupDevice></Device><BranchPresets>"+audioBranch+audioBranch+"</BranchPresets></GroupDevicePreset>"
+        let parallel=try behavior(device("StereoGain",parameter("Gain","1"))+split+device("StereoGain",parameter("Gain","0.5")))
+        assert(parallel.rack.effects.count==2 && parallel.rack.audioRacks?.first?.beforeEffect==1)
+        assert(parallel.rack.audioRacks?.first?.branches.count==2 && parallel.rack.validate())
+        assert(parallel.rack.macros.count==1 && parallel.rack.macros[0].bindings.map{$0.audioPath!}==[[0,0],[0,1]])
+        var changed=parallel.rack;changed.setMacro(changed.macros[0].index,value:0);assert(abs(changed.audioRacks![0].branches[0].rack.effects[0].values[0]+60)<0.001)
         let serial=try behavior(device("FilterEQ3","")+nested+device("Compressor2",""))
         assert(serial.rack.effects.map(\.kind)==[7,3,13,6],"Nested serial device order changed")
         let arp=try behavior(device("MidiArpeggiator",parameter("Mode","0")+parameter("SyncedRate","8")+parameter("Gate","118")+parameter("Hold","true")))

@@ -77,6 +77,14 @@ enum SnapshotMorph {
             }
             rack.branches=children
         }
+        if var stages=rack.audioRacks,let initial=from.audioRacks,stages.count==initial.count {
+            for i in stages.indices where stages[i].beforeEffect==initial[i].beforeEffect && stages[i].branches.count==initial[i].branches.count {
+                for j in stages[i].branches.indices {
+                    stages[i].branches[j].rack=interpolateRack(from:initial[i].branches[j].rack,to:stages[i].branches[j].rack,fraction:fraction)
+                    stages[i].branches[j].pan=interpolateFloat(from:initial[i].branches[j].pan,to:stages[i].branches[j].pan,fraction:fraction,range:-1...1)
+                }
+            };rack.audioRacks=stages
+        }
         return rack
     }
     static func interpolateSound(from: SnapshotSoundState, to: SnapshotSoundState, fraction: Float) -> SnapshotSoundState {

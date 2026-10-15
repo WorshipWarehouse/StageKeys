@@ -1,6 +1,10 @@
 import Foundation
 @main struct LibraryBrowserTests {
     static func main() throws {
+        assert(SoundTags.inferred(name:"Touchstone Piano - Sunday Sounds").type == "Acoustic Piano")
+        assert(SoundTags.inferred(name:"Airy EP- Sunday Sounds").type == "Electric Piano")
+        assert(SoundTags.inferred(name:"DX E Piano 1 | Ballad").type == "Electric Piano")
+
         let warm=BrowserSound.library(LibrarySound(id:"warm",name:"Warm Pad",collection:"Sunday Free Native · Volume 2",sound:ExternalSound(kind:.sample,name:"Warm Pad",fileName:"warm.wav")))
         let piano=BrowserSound.library(LibrarySound(id:"piano",name:"Felt Piano",collection:"My Sounds",sound:ExternalSound(kind:.sample,name:"Felt Piano",fileName:"felt.wav")))
         let host=BrowserSound.library(LibrarySound(id:"host",name:"Warm Pad",collection:"Sunday Free · Volume 2",hostPath:"/test.patch"))

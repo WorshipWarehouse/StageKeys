@@ -8,6 +8,14 @@ import AVFoundation
         try store.audio.prepareOffline()
         store.start()
         assert(store.started)
+        let auditionEncoder=JSONEncoder();auditionEncoder.outputFormatting = .sortedKeys
+        let savedBeforeAudition=try auditionEncoder.encode(store.setlist)
+        let token=store.auditionLibrarySound(0,Layer(name:"Audition Bells",instrument:2,gain:0.6))!
+        assert(store.playbackLayer(0).name == "Audition Bells")
+        assert((try! auditionEncoder.encode(store.setlist)) == savedBeforeAudition)
+        store.endAudition(token)
+        assert(store.playbackLayer(0).name == store.patch.layers[0].name)
+        assert((try! auditionEncoder.encode(store.setlist)) == savedBeforeAudition)
         store.noteOn(60)
         assert(store.held.contains(60))
         var peak: Float = 0

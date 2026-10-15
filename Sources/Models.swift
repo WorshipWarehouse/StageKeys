@@ -40,6 +40,8 @@ struct AudioEffect: Codable, Equatable {
 /// Rack controls retained independently of the three performance effect slots.
 struct ImportedMacroBinding: Codable, Equatable {
     var branchPath:[Int]?
+    /// Pairs of audio-rack index and branch index, after the instrument branch path.
+    var audioPath:[Int]?
     var effect: Int
     var parameter: Int
     var minimum: Float
@@ -66,15 +68,45 @@ struct ImportedBranch: Codable, Equatable {
     var pan: Float = 0
     var gain:Float?
     var enabled:Bool?
-    var topology: String { sampleLayers.map(String.init).joined(separator:",")+"|"+rack.effects.map{"\($0.kind):\($0.importedDelay != nil)"}.joined(separator:",")+"["+(rack.branches ?? []).map(\.topology).joined(separator:";")+"]" }
+    var topology: String { sampleLayers.map(String.init).joined(separator:",")+"|"+rack.audioTopology+"["+(rack.branches ?? []).map(\.topology).joined(separator:";")+"]" }
+}
+struct ImportedAudioBranch: Codable, Equatable {
+    var name:String
+    var rack:ImportedRack
+    var pan:Float = 0
+    var enabled:Bool = true
+}
+struct ImportedAudioRack: Codable, Equatable {
+    /// Insert before this serial effect index, preserving device order.
+    var beforeEffect:Int
+    var name:String
+    var branches:[ImportedAudioBranch]
 }
 struct ImportedRack: Codable, Equatable {
+    var audioRacks:[ImportedAudioRack]?
+    var audioTopology:String {
+        effects.map{"\($0.kind):\($0.importedDelay != nil)"}.joined(separator:",") + (audioRacks ?? []).map{"@\($0.beforeEffect)["+$0.branches.map{$0.rack.audioTopology}.joined(separator:";")+"]"}.joined()
+    }
     var branches: [ImportedBranch]?
     var translationVersion: Int?
     var effects: [AudioEffect] = []
     var macros: [ImportedMacro] = []
+    private func processingSize(depth:Int=0)->Int {
+        guard depth<12 else{return 257}
+        var size=effects.count+1
+        for branch in branches ?? [] {size += branch.rack.processingSize(depth:depth+1);if size>256{return size}}
+        for stage in audioRacks ?? [] {for branch in stage.branches {size += branch.rack.processingSize(depth:depth+1);if size>256{return size}}}
+        return size
+    }
     func validate(depth:Int = 0) -> Bool {
-        guard depth<12 else{return false}
+        guard depth<12,(depth>0 || processingSize()<=256) else{return false}
+        if let audioRacks {
+            guard audioRacks.count<=12 else{return false}
+            for stage in audioRacks {
+                guard (0...effects.count).contains(stage.beforeEffect),stage.name.count<=200,!stage.branches.isEmpty,stage.branches.count<=16 else{return false}
+                for branch in stage.branches {guard branch.name.count<=200,branch.pan.isFinite,(-1...1).contains(branch.pan),branch.rack.branches == nil,branch.rack.validate(depth:depth+1) else{return false}}
+            }
+        }
         if let branches {
             guard !branches.isEmpty,branches.count<=64 else{return false}
             let indices=branches.flatMap(\.sampleLayers)
@@ -87,7 +119,7 @@ struct ImportedRack: Codable, Equatable {
               Set(macros.map(\.index)).count == macros.count else { return false }
         return macros.allSatisfy { m in
             (0..<128).contains(m.index) && m.name.count <= 200 && m.value.isFinite && (0...127).contains(m.value) && m.bindings.count <= 128 && m.bindings.allSatisfy { b in
-                guard let rack=targetRack(b.branchPath ?? []),rack.effects.indices.contains(b.effect), b.minimum.isFinite, b.maximum.isFinite,
+                guard let rack=targetRack(b.branchPath ?? [],audioPath:b.audioPath ?? []),rack.effects.indices.contains(b.effect), b.minimum.isFinite, b.maximum.isFinite,
                       let p = AudioEffectCatalog.descriptors(for:rack.effects[b.effect].kind).first(where:{$0.index == b.parameter}) else { return false }
                 return (p.minimum...p.maximum).contains(b.minimum) && (p.minimum...p.maximum).contains(b.maximum) && (!b.logarithmic || (b.minimum > 0 && b.maximum > 0))
             }
@@ -97,15 +129,21 @@ struct ImportedRack: Codable, Equatable {
         guard let i = macros.firstIndex(where:{$0.index == index}), value.isFinite else { return }
         macros[i].value = max(0,min(127,value))
         let t = macros[i].value / 127
-        for binding in macros[i].bindings {apply(binding,path:binding.branchPath ?? [],fraction:t)}
+        for binding in macros[i].bindings {apply(binding,path:binding.branchPath ?? [],audioPath:binding.audioPath ?? [],fraction:t)}
     }
-    private func targetRack(_ path:[Int])->ImportedRack? {
+    private func targetRack(_ path:[Int],audioPath:[Int])->ImportedRack? {
         var rack=self
         for index in path {guard let children=rack.branches,children.indices.contains(index) else{return nil};rack=children[index].rack}
+        guard audioPath.count % 2 == 0 else{return nil}
+        for offset in stride(from:0,to:audioPath.count,by:2) {let stage=audioPath[offset],branch=audioPath[offset+1];guard let stages=rack.audioRacks,stages.indices.contains(stage),stages[stage].branches.indices.contains(branch) else{return nil};rack=stages[stage].branches[branch].rack}
         return rack
     }
-    private mutating func apply(_ binding:ImportedMacroBinding,path:[Int],fraction:Float){
-        if let index=path.first {guard branches?.indices.contains(index)==true else{return};branches![index].rack.apply(binding,path:Array(path.dropFirst()),fraction:fraction);return}
+    private mutating func apply(_ binding:ImportedMacroBinding,path:[Int],audioPath:[Int],fraction:Float){
+        if let index=path.first {guard branches?.indices.contains(index)==true else{return};branches![index].rack.apply(binding,path:Array(path.dropFirst()),audioPath:audioPath,fraction:fraction);return}
+        if !audioPath.isEmpty {
+            guard audioPath.count>=2,let stages=audioRacks,stages.indices.contains(audioPath[0]),stages[audioPath[0]].branches.indices.contains(audioPath[1]) else{return}
+            audioRacks![audioPath[0]].branches[audioPath[1]].rack.apply(binding,path:[],audioPath:Array(audioPath.dropFirst(2)),fraction:fraction);return
+        }
         guard effects.indices.contains(binding.effect) else{return}
         var values=effects[binding.effect].values;guard values.indices.contains(binding.parameter) else{return}
         values[binding.parameter]=binding.logarithmic ? exp(log(binding.minimum)+(log(binding.maximum)-log(binding.minimum))*fraction):binding.minimum+(binding.maximum-binding.minimum)*fraction

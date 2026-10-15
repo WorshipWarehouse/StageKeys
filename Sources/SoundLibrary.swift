@@ -32,6 +32,7 @@ struct SoundLibrary {
             entries[i].collection = entries[i].collection.replacingOccurrences(of: "Sunday Free Ableton ·", with: "Sunday Free ·")
             if entries[i].collection == "Ableton Imports" { entries[i].collection = "Imported Sounds" }
         }
+        for i in entries.indices {if let tags=entries[i].tags,tags.inferred {entries[i].tags = .inferred(name:entries[i].name,source:tags.sourceModel)}}
         try Self.validate(entries); return entries
     }
     static func cleanImportedName(_ name: String) -> String {

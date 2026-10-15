@@ -9,7 +9,7 @@ import Foundation
         var entries=try library.read(),rows:[[String:Any]]=[]
         for file in try SoundLibrary.samplerPresets(in:extracted ?? input) where ["adg","adv"].contains(file.pathExtension.lowercased()) {
             let id="ableton-samples-"+(try AbletonArchive.sha256(file))
-            guard let index=entries.firstIndex(where:{$0.id==id}),entries[index].layer?.importedRack?.translationVersion != 3,let sound=entries[index].sound else{continue}
+            guard let index=entries.firstIndex(where:{$0.id==id}),entries[index].layer?.importedRack?.translationVersion != 4,let sound=entries[index].sound else{continue}
             let existing=entries[index].layer
             if existing != nil && existing?.importedRack != baseline.first(where:{$0.id==id})?.layer?.importedRack {
                 rows.append(["id":id,"name":entries[index].name,"status":"preserved customized rack"]);continue

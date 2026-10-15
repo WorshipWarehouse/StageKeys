@@ -10,6 +10,7 @@ struct SoundBrowser: View {
     @State private var selectedID:String?
     @State private var importHub=false
     @State private var showingImportNotes=false
+    @State private var auditionToken:UUID?
     @State private var instruments=ExternalInstrumentRack.instruments()
     @State private var destinations=ExternalMIDIOutput.destinations()
     private var collections:[String] {
@@ -59,8 +60,8 @@ struct SoundBrowser: View {
             }
             footer
         }.sheet(isPresented:$importHub){SoundImportView().environmentObject(store)}
-        .onDisappear {store.previewLibraryRange(index,nil)}
-        .onChange(of:selectedID){_ in previewRange()}
+        .onDisappear {store.endAudition(auditionToken);store.previewLibraryRange(index,nil)}
+        .onChange(of:selectedID){_ in previewRange();if auditionToken != nil {auditionSelection()}}
         .onChange(of:collection){_ in selectedID=nil;query.filters=[:]}
         .onChange(of:query.search){_ in clearHiddenSelection()}
         .onChange(of:query.filters){_ in clearHiddenSelection()}
@@ -127,9 +128,19 @@ struct SoundBrowser: View {
             }.font(StageTheme.font(12)).frame(maxWidth:.infinity,alignment:.leading)
             if selection?.entry?.conversionNotes?.isEmpty == false {Button("Import Notes"){showingImportNotes=true}.buttonStyle(StageButtonStyle()).popover(isPresented:$showingImportNotes){ScrollView{VStack(alignment:.leading,spacing:12){ForEach(selection?.entry?.conversionNotes ?? [],id:\.self){Text($0)}}.padding(20)}.frame(width:420,height:300)}}
             if collection == "External MIDI" {Button("Refresh"){destinations=ExternalMIDIOutput.destinations()}.buttonStyle(StageButtonStyle())}
+            Button(auditionToken == nil ? "Audition":"Stop Audition") {
+                if let token=auditionToken {store.endAudition(token);auditionToken=nil} else {auditionSelection()}
+            }.buttonStyle(StageButtonStyle(selected:auditionToken != nil)).disabled(selection?.playable != true && auditionToken == nil).help("Play your keyboard to hear only the selected sound; Cancel restores the original mix")
             Button("Cancel"){dismiss()}.buttonStyle(LibraryActionStyle())
             Button("Add Sound"){addSelection()}.buttonStyle(LibraryActionStyle(primary:true)).disabled(selection?.playable != true)
         }.padding(16).frame(height:78)
+    }
+    private func auditionSelection() {
+        store.endAudition(auditionToken);auditionToken=nil
+        guard let selection,selection.playable,selection.destination == nil else{return}
+        var layer=selection.entry?.layer ?? Layer(name:selection.name,instrument:selection.builtin ?? -1,gain:0.6)
+        layer.external=layer.external ?? selection.entry?.sound ?? selection.external
+        auditionToken=store.auditionLibrarySound(index,layer)
     }
     private func previewRange() {
         guard let selection,selection.playable else{store.previewLibraryRange(index,nil);return}

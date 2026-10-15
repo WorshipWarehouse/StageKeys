@@ -129,7 +129,7 @@ final class AudioController {
     }
     private func configureImported(_ index:Int,_ rack:ImportedRack?) {
         if let rack { importedRacks[index]=rack } else {importedRacks[index]=nil}
-        do {try externalRack?.configureParallel(channel:index,branches:rack?.branches,tempo:tempo);try externalRack?.configureImported(channel:index,effects:rack?.effects ?? [],tempo:tempo)}
+        do {try externalRack?.configureParallel(channel:index,branches:rack?.branches,tempo:tempo);try externalRack?.configureImported(channel:index,rack:rack,tempo:tempo)}
         catch {onError?(error.localizedDescription)}
     }
     func audition(_ index: Int, _ layer: Layer) {

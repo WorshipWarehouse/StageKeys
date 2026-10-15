@@ -190,6 +190,7 @@ enum AbletonImport {
         }
         guard !layers.isEmpty else{throw AbletonImportError.invalid("No active sample layers at the saved rack selection.")}
         let translated=try behavior(root,layerMapping:nativeLayers)
+        guard translated.rack.validate() else{throw AbletonImportError.invalid("Translated processing graph exceeds limits or has invalid settings.")}
         warnings.formUnion(translated.warnings)
         let name=source.deletingPathExtension().lastPathComponent
         instrument["Layers"]=layers;instrument["name"]=name;instrument["voice count"]=64
@@ -251,13 +252,12 @@ enum AbletonImport {
 
 extension AbletonImport {
     struct Behavior {
-        var rack = ImportedRack(translationVersion:3)
+        var rack = ImportedRack(translationVersion:4)
         var midi: MIDIProgram?
         var macroSources:[Int:ObjectIdentifier]=[:]
         var warnings: [String] = []
     }
-    /// Only the single outer serial chain is safe to apply after the combined sampler.
-    /// Nested branch processors need independent sample voices and remain explicitly unsupported.
+    /// Preserve serial order and split instrument voices separately from shared-input audio racks.
     static func behavior(_ root:Node,layerMapping:[ObjectIdentifier:Int]?=nil,entry:Node?=nil,depth:Int=0)throws->Behavior {
         guard depth<12 else{throw AbletonImportError.invalid("Parallel rack depth exceeds limit.")}
         var result=Behavior()
@@ -265,12 +265,16 @@ extension AbletonImport {
         var owners:[Node]=[]
         var handled=Set<ObjectIdentifier>()
         var promoted:[(owner:Node,macro:ImportedMacro,path:[Int])]=[]
+        var audioPromoted:[(owner:Node,macro:ImportedMacro,path:[Int])]=[]
+        var audioPlans:[ObjectIdentifier:(owner:Node?,name:String,branches:[ImportedAudioBranch],ownedMacros:[[Int]])]=[:]
         func expand(_ preset:Node,_ inherited:Node?,_ depth:Int)throws->[ScopedDevice] {
             guard depth<16 else{throw AbletonImportError.invalid("Nested rack depth exceeds limit.")}
             if preset.name.hasSuffix("BranchPreset") {
                 let owner=preset.parent?.parent?.at("Device")?.children.first
                 if let owner {owners.append(owner)}
-                return try (preset.at("DevicePresets")?.children ?? []).flatMap{try expand($0,owner,depth+1)}
+                var devices=try (preset.at("DevicePresets")?.children ?? []).flatMap{try expand($0,owner,depth+1)}
+                if preset.name == "AudioEffectBranchPreset",let mixer=preset.at("MixerPreset/AbletonDevicePreset/Device/AudioBranchMixerDevice") {devices.append((mixer,owner))}
+                return devices
             }
             guard preset.name == "GroupDevicePreset" else {
                 return preset.at("Device")?.children.map{($0,inherited)} ?? []
@@ -280,6 +284,26 @@ extension AbletonImport {
             if let owner {owners.append(owner)}
             let branches=preset.at("BranchPresets")?.children.filter{["InstrumentBranchPreset","AudioEffectBranchPreset","MidiEffectBranchPreset"].contains($0.name)} ?? []
             guard branches.count==1 else {
+                if owner?.name == "AudioEffectGroupDevice",!branches.isEmpty,branches.count<=16 {
+                    var plans:[ImportedAudioBranch]=[],ownedMacros:[[Int]]=[]
+                    for (index,branch) in branches.enumerated() {
+                        let translated=try behavior(root,layerMapping:layerMapping,entry:branch,depth:depth+1)
+                        guard translated.midi == nil,translated.rack.branches == nil else{throw AbletonImportError.invalid("Audio rack contains instrument or MIDI processing.")}
+                        ownedMacros.append(translated.rack.macros.filter{translated.macroSources[$0.index] == owner.map(ObjectIdentifier.init)}.map(\.index))
+                        let mixer=branch.at("MixerPreset/AbletonDevicePreset/Device/AudioBranchMixerDevice")
+                        let soloed=branches.contains{$0.flag("IsSoloed")}
+                        let selector=try owner?.number("ChainSelector/Manual",0) ?? 0
+                        let minimum=try branch.number("BranchSelectorRange/Min",0),maximum=try branch.number("BranchSelectorRange/Max",127)
+                        let active=(mixer?.flag("Speaker/Manual",true) ?? true) && (!soloed || branch.flag("IsSoloed")) && selector>=minimum && selector<=maximum
+                        let pan=Float(max(-1,min(1,try mixer?.number("Pan/Manual",0) ?? 0)))
+                        plans.append(ImportedAudioBranch(name:branch.string("Name","Audio Branch \(index+1)"),rack:translated.rack,pan:pan,enabled:active))
+                        result.warnings += translated.warnings.map{"Audio Branch \(index+1): \($0)"}
+                    }
+                    let marker=Node("StageKeysAudioRack",nil)
+                    audioPlans[ObjectIdentifier(marker)]=(owner,preset.string("Name","Parallel Audio Rack"),plans,ownedMacros)
+                    for device in preset.all("Device").flatMap(\.children) {handled.insert(ObjectIdentifier(device))}
+                    return [(marker,owner)]
+                }
                 guard owner?.name == "InstrumentGroupDevice",let layerMapping,result.rack.branches == nil else {
                     result.warnings.append("This parallel rack cannot be routed as an instrument split; its branch-specific processing remains unsupported.")
                     return []
@@ -323,6 +347,19 @@ extension AbletonImport {
         var bindings:[Int:[ImportedMacroBinding]]=[:]
         func value(_ node:Node,_ path:String,_ fallback:Double=0)throws->Float {Float(try node.number(path+"/Manual",fallback))}
         for (device,owner) in scoped {
+            if let stage=audioPlans[ObjectIdentifier(device)] {
+                let stageIndex=result.rack.audioRacks?.count ?? 0
+                var plans=stage.branches
+                if let owner=stage.owner {
+                    for i in plans.indices {
+                        let localMacros=plans[i].rack.macros.filter{stage.ownedMacros[i].contains($0.index)}
+                        for macro in localMacros {audioPromoted.append((owner,macro,[stageIndex,i]))}
+                        plans[i].rack.macros.removeAll{m in localMacros.contains(where:{$0.index==m.index})}
+                    }
+                }
+                result.rack.audioRacks=(result.rack.audioRacks ?? [])+[ImportedAudioRack(beforeEffect:result.rack.effects.count,name:stage.name,branches:plans)]
+                continue
+            }
             let kind:Int
             switch device.name {case "FilterEQ3":kind=7;case "Compressor2":kind=6;case "Reverb":kind=13;case "CrossDelay","PingPongDelay":kind=3;case "AudioBranchMixerDevice","StereoGain":kind=9;default:continue}
             guard result.rack.effects.count<12 else{result.warnings.append("Rack effect limit reached; remaining processors are not translated.");break}
@@ -401,6 +438,11 @@ extension AbletonImport {
             let local=item.macro.index%8,id=scope*8+local
             macroOwners[id]=(item.owner,local,scope)
             for var binding in item.macro.bindings {binding.branchPath=item.path+(binding.branchPath ?? []);bindings[id,default:[]].append(binding)}
+        }
+        for item in audioPromoted {
+            guard let scope=owners.firstIndex(where:{$0 === item.owner}),scope<16 else{continue}
+            let local=item.macro.index%8,id=scope*8+local;macroOwners[id]=(item.owner,local,scope)
+            for var binding in item.macro.bindings {binding.audioPath=item.path+(binding.audioPath ?? []);bindings[id,default:[]].append(binding)}
         }
         for index in bindings.keys.sorted() {
             guard let macro=macroOwners[index] else{continue}

@@ -29,7 +29,7 @@ private final class ImportedBranchVoice {
     let sum=AVAudioMixerNode()
     var sampler:AVAudioUnitSampler?
     var children:[ImportedBranchVoice]=[]
-    var banks:[AVAudioUnitEffect]=[]
+    var audioGraph:ImportedAudioGraph?
     let midi=MIDIFXProcessor()
     var plan:ImportedBranch
     var pitches:[Int:UInt8]=[:]
@@ -39,10 +39,8 @@ private final class ImportedBranchVoice {
         var program=plan.midi ?? MIDIProgram();if plan.midiEnabled == false {program.kind = .bypass}
         midi.configure(channel:0,program:program,tempo:Double(tempo))
         for (index,child) in children.enumerated(){child.configure(plan.rack.branches![index],tempo:tempo)}
-        for (index,bank) in banks.enumerated() {for slot in 0..<3 {
-            let i=index*3+slot,fx=i<plan.rack.effects.count ? plan.rack.effects[i]:AudioEffect()
-            (bank.auAudioUnit as? BuiltinEffectUnit)?.configure(slot:slot,kind:fx.kind,enabled:fx.enabled,values:fx.values,tempo:tempo,delay:fx.importedDelay)
-        }}
+        audioGraph?.configure(plan.rack,tempo:tempo)
+
     }
     func noteOn(_ key:Int,_ pitch:Int,_ velocity:Float,_ source:Int32?) {
         let v=Int((velocity*127).rounded())
@@ -60,7 +58,7 @@ private final class ImportedBranchVoice {
     func control(_ controller:UInt8,_ value:UInt8){sampler?.sendController(controller,withValue:value,onChannel:0);children.forEach{$0.control(controller,value)}}
     func releaseSource(_ source:Int32){midi.releaseSource(source);children.forEach{$0.releaseSource(source)}}
     func advance(_ time:Double){midi.advance(to:time);children.forEach{$0.advance(time)}}
-    func panic(){midi.panic();children.forEach{$0.panic()};sampler?.sendController(64,withValue:0,onChannel:0);sampler?.sendController(120,withValue:0,onChannel:0);pitches.removeAll();banks.forEach{$0.auAudioUnit.reset()}}
+    func panic(){midi.panic();children.forEach{$0.panic()};sampler?.sendController(64,withValue:0,onChannel:0);sampler?.sendController(120,withValue:0,onChannel:0);pitches.removeAll();audioGraph?.reset()}
 }
 
 /// All methods run on the main thread, never in a render callback. Owns no engine.
@@ -77,6 +75,7 @@ final class ExternalInstrumentRack {
         var compressor: AVAudioUnitEffect
         var builtin: AVAudioUnitEffect
         var imported: [AVAudioUnitEffect] = []
+        var audioGraph:ImportedAudioGraph?
         var importedDelayLayout:[Bool] = []
         var parallel:[ImportedBranchVoice]=[]
         var parallelNodes:[AVAudioNode]=[]
@@ -112,7 +111,8 @@ final class ExternalInstrumentRack {
     private func connectEffects(_ voice:Voice) {
         let format=voice.compressor.outputFormat(forBus:0)
         var previous: AVAudioNode = voice.compressor
-        for unit in voice.imported { engine.connect(previous,to:unit,format:format); previous=unit }
+        if let graph=voice.audioGraph {engine.connect(previous,to:graph.input,format:format);previous=graph.output}
+        else {for unit in voice.imported { engine.connect(previous,to:unit,format:format); previous=unit }}
         engine.connect(previous,to:voice.builtin,format:format)
         engine.connect(voice.builtin,to:voice.mixer,format:format)
     }
@@ -142,9 +142,9 @@ final class ExternalInstrumentRack {
             try PropertyListSerialization.data(fromPropertyList:Self.branchState(state,indices:plan.sampleLayers),format:.xml,options:0).write(to:temporary)
             try sampler.loadInstrument(at:temporary);engine.connect(sampler,to:voice.sum,format:nil)
         }
-        var previous:AVAudioNode=voice.sum
-        for _ in 0..<((plan.rack.effects.count+2)/3) {let bank=BuiltinEffectUnit.make();engine.attach(bank);nodes.append(bank);voice.banks.append(bank);engine.connect(previous,to:bank,format:format);previous=bank}
-        engine.connect(previous,to:voice.output,format:format)
+        let graph=ImportedAudioGraph(engine:engine,rack:plan.rack,format:format,tempo:tempo)
+        voice.audioGraph=graph;nodes += graph.nodes
+        engine.connect(voice.sum,to:graph.input,format:format);engine.connect(graph.output,to:voice.output,format:format)
         voice.midi.onNoteWithSource={ [weak voice] _,key,pitch,velocity,source in voice?.sendNote(key,pitch,velocity,source)}
         voice.midi.onOff={ [weak voice] _,key,force in voice?.sendOff(key,force)}
         voice.configure(plan,tempo:tempo)
@@ -181,29 +181,23 @@ final class ExternalInstrumentRack {
     func advanceBranches(to time:Double){for voice in voices.values {voice.parallel.forEach{$0.advance(time)}}}
     func parallelBranchCount(_ channel:Int)->Int {voices[channel]?.parallel.count ?? 0}
     #endif
-    func configureImported(channel:Int,effects:[AudioEffect],tempo:Float) throws {
+    func configureImported(channel:Int,effects:[AudioEffect],tempo:Float)throws {
+        try configureImported(channel:channel,rack:ImportedRack(effects:effects),tempo:tempo)
+    }
+    func configureImported(channel:Int,rack:ImportedRack?,tempo:Float)throws {
         guard var voice=voices[channel] else{return}
-        let count=(min(12,effects.count)+2)/3
-        let layout=effects.prefix(12).map{$0.importedDelay != nil}
-        func configureBanks() {
-            for (bank,unit) in voice.imported.enumerated() {
-                guard let builtin=unit.auAudioUnit as? BuiltinEffectUnit else{continue}
-                for slot in 0..<3 {
-                    let i=bank*3+slot,fx=i<effects.count ? effects[i]:AudioEffect()
-                    builtin.configure(slot:slot,kind:fx.kind,enabled:fx.enabled,values:fx.values,tempo:tempo,delay:fx.importedDelay)
-                }
-            }
-        }
-        if voice.imported.count != count || voice.importedDelayLayout != layout {
+        let plan=rack ?? ImportedRack()
+        if voice.audioGraph?.topology != plan.audioTopology {
             try editGraph {
+                let graph=ImportedAudioGraph(engine:engine,rack:plan,format:voice.compressor.outputFormat(forBus:0),tempo:tempo)
                 engine.disconnectNodeOutput(voice.compressor)
-                for unit in voice.imported {engine.disconnectNodeOutput(unit);engine.detach(unit)}
-                voice.imported=(0..<count).map{_ in let unit=BuiltinEffectUnit.make();engine.attach(unit);return unit}
-                voice.importedDelayLayout=layout;configureBanks()
+                if let old=voice.audioGraph {for node in old.nodes.reversed(){engine.disconnectNodeOutput(node);engine.detach(node)}}
+                for node in voice.imported {engine.disconnectNodeOutput(node);engine.detach(node)}
+                voice.imported=[];voice.audioGraph=graph
                 connectEffects(voice);voices[channel]=voice
             }
         }
-        configureBanks()
+        voice.audioGraph?.configure(plan,tempo:tempo)
     }
 
     func configureEffect(channel:Int,slot:Int,kind:Int,enabled:Bool,parameters:[String:Float]) throws {
@@ -516,7 +510,7 @@ final class ExternalInstrumentRack {
     }
     private func detach(_ channel: Int) {
         guard let old = voices.removeValue(forKey: channel) else { return }
-        for node in [old.unit as AVAudioNode, old.filter, old.eq, old.compressor, old.mixer,old.builtin] + old.imported.map({$0 as AVAudioNode}) + old.parallelNodes {
+        for node in [old.unit as AVAudioNode, old.filter, old.eq, old.compressor, old.mixer,old.builtin] + old.imported.map({$0 as AVAudioNode}) + old.parallelNodes + (old.audioGraph?.nodes ?? []) {
             engine.disconnectNodeOutput(node); engine.detach(node)
         }
     }
@@ -619,6 +613,7 @@ final class ExternalInstrumentRack {
             voices[index]?.pitches.removeAll()
             voices[index]?.builtin.auAudioUnit.reset()
             voices[index]?.imported.forEach{$0.auAudioUnit.reset()}
+            voices[index]?.audioGraph?.reset()
         }
     }
     func unit(channel: Int) -> AVAudioUnit? { voices[channel]?.unit }

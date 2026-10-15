@@ -12,6 +12,15 @@ import Foundation
     program.swingAmount=0;assert(MIDIFXProcessor.groovedBeat(0.5,program:program)==0.5)
     program.swingGridBeats=0.25;program.swingAmount=1;assert(abs(MIDIFXProcessor.groovedBeat(0.25,program:program)-1.0/3)<0.00001)
     let decoded=try JSONDecoder().decode(MIDIProgram.self,from:JSONEncoder().encode(program));assert(decoded==program)
+    program.subdivision=0.5;program.swingGridBeats=0.5;program.swingAmount=1
+    for beat in stride(from:0.0,to:8.0,by:0.017) {assert(abs(MIDIFXProcessor.ungroovedBeat(MIDIFXProcessor.groovedBeat(beat,program:program),program:program)-beat)<1e-9)}
+    let stalled=MIDIFXProcessor(automaticallySchedule:false);var stalledNotes:[Int]=[]
+    stalled.onNote={_,_,pitch,_ in stalledNotes.append(pitch)};stalled.configure(channel:0,program:program,tempo:120);stalled.noteOn(channel:0,key:60,pitch:60,velocity:1);stalled.noteOn(channel:0,key:64,pitch:64,velocity:1)
+    stalled.advance(to:0.8);assert(stalledNotes==[60,60],"Stall emitted a future swung step");stalled.advance(to:0.83334);assert(stalledNotes==[60,60,64])
+    program.kind = .sequencer
+    let sequence=MIDIFXProcessor(automaticallySchedule:false);var sequenceCount=0
+    sequence.onNote={_,_,_,_ in sequenceCount+=1};sequence.configure(channel:0,program:program,tempo:120);sequence.noteOn(channel:0,key:60,pitch:60,velocity:1)
+    sequence.advance(to:0.25);assert(sequenceCount==1);sequence.advance(to:0.33334);assert(sequenceCount==2);sequence.advance(to:0.5);assert(sequenceCount==3)
     print("PASS: swing timing, pair boundaries, tempo phase preservation, straight mode and groove persistence")
  }
 }

@@ -1,3 +1,7 @@
+## Version 0.18
+
+Shared-input parallel audio-effect racks, nested audio macros and editors, groove timing after scheduler stalls, and isolated library Audition. See [behavior and verification](Docs/PARALLEL-AUDIO.md).
+
 ## Version 0.17
 
 Parallel instrument branches, shared macros, anchored swing timing, editable branch processing and a macOS app icon. See [parallel routing notes](Docs/PARALLEL-ROUTING.md) for verification and remaining differences.

@@ -84,7 +84,15 @@ struct ImportedRackControls: View {
                         ImportedBranchControls(branch:Binding(get:{layer.importedRack?.branches?[index] ?? branch},set:{layer.importedRack?.branches?[index]=$0}))
                     }
                 }
-                if rack.effects.isEmpty && rack.branches == nil {Text("No translated rack effects").foregroundStyle(.secondary)}
+                ForEach(Array((rack.audioRacks ?? []).enumerated()),id:\.offset) {stageIndex,stage in
+                    DisclosureGroup("\(stage.name) · Parallel Audio") {
+                        Text("Before effect \(stage.beforeEffect+1) · Shared audio input").font(.caption).foregroundStyle(.secondary)
+                        ForEach(Array(stage.branches.enumerated()),id:\.offset) {branchIndex,branch in
+                            ImportedAudioBranchControls(branch:Binding(get:{layer.importedRack?.audioRacks?[stageIndex].branches[branchIndex] ?? branch},set:{layer.importedRack?.audioRacks?[stageIndex].branches[branchIndex]=$0}))
+                        }
+                    }
+                }
+                if rack.effects.isEmpty && rack.branches == nil && rack.audioRacks == nil {Text("No translated rack effects").foregroundStyle(.secondary)}
             }
         }.padding(16).background(StageTheme.panel,in:RoundedRectangle(cornerRadius:8))
     }
@@ -114,5 +122,17 @@ struct ImportedBranchControls:View {
             }
             ImportedRackControls(layer:rackLayer)
         }.padding(12).background(StageTheme.base.opacity(0.35),in:RoundedRectangle(cornerRadius:8))
+    }
+}
+
+struct ImportedAudioBranchControls:View {
+    @Binding var branch:ImportedAudioBranch
+    private var rackLayer:Binding<Layer>{Binding(get:{var layer=Layer(name:branch.name,instrument:0,gain:0.5);layer.importedRack=branch.rack;return layer},set:{if let rack=$0.importedRack{branch.rack=rack}})}
+    var body:some View {
+        DisclosureGroup(branch.name) {
+            Toggle("Branch On",isOn:$branch.enabled)
+            EffectKnob(descriptor:.init(index:0,name:"Pan",minimum:-1,maximum:1,defaultValue:0,unit:""),value:$branch.pan)
+            ImportedRackControls(layer:rackLayer)
+        }.padding(10).background(StageTheme.base.opacity(0.35),in:RoundedRectangle(cornerRadius:8))
     }
 }

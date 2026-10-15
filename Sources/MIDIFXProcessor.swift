@@ -99,7 +99,7 @@ final class MIDIFXProcessor {
             if let mappings = c.program.sequenceMappings, !mappings.contains(where: { $0.input == pitch }) {
                 c.direct[key] = [key]
                 notify(channel,key,pitch,min(1,velocity),sourceID)
-            } else if c.next == nil { c.next = time; c.index = 0 }
+            } else if c.next == nil { c.next = time; c.index = 0;c.began=time;c.nominalBeat=0 }
         case .arpeggiator:
             if c.next == nil { c.next=time;c.index=0;c.began=time;c.nominalBeat=0;c.velocityBegan=time;c.nextRetrigger=c.program.retriggerBeats.map{time+60/tempo*$0} }
         }
@@ -143,11 +143,18 @@ final class MIDIFXProcessor {
             }
             guard !c.held.isEmpty, let next = c.next, next <= now else { channels[channel] = c; continue }
             let period = c.program.freeRateSeconds ?? (60 / tempo * c.program.subdivision)
-            if now - next > period {let skipped=Int(min(1_000_000,(now-next)/period));c.index += skipped;c.nominalBeat += Double(skipped)*c.program.subdivision}
+            // Skip to the latest due musical step using the inverse swing mapping.
+            // A straight-period estimate can land on a future swung step after a stall.
+            let skipped:Int
+            if c.program.freeRateSeconds == nil,let began=c.began {
+                let beat=Self.ungroovedBeat(max(0,(now-began)*tempo/60),program:c.program)
+                skipped=Int(min(1_000_000,max(0,floor((beat-c.nominalBeat)/c.program.subdivision+1e-8))))
+            } else {skipped=Int(min(1_000_000,max(0,floor((now-next)/period))))}
+            if skipped>0 {c.index += skipped;c.nominalBeat += Double(skipped)*c.program.subdivision}
             let baseCount=c.program.style == .chord ? 1:max(1,c.held.count*c.program.octaves)
             let cycle=(c.program.style == .upDown || c.program.style == .downUp) && baseCount>2 ? baseCount*2-2:baseCount
             let transposeCycle=max(1,(c.program.transposeSteps ?? 0)+1)
-            if let repeats=c.program.repeatCount,c.index >= cycle*transposeCycle*repeats {channels[channel]=c;continue}
+            if let repeats=c.program.repeatCount,c.index >= cycle*transposeCycle*repeats {c.next=nil;channels[channel]=c;continue}
             var generated: [(Int, Float, Int)] = []
             if c.program.kind == .sequencer {
                 if let mappings = c.program.sequenceMappings {
@@ -191,8 +198,8 @@ final class MIDIFXProcessor {
                 }
             }
             c.index += 1;c.nominalBeat += c.program.subdivision
-            if c.program.freeRateSeconds == nil,c.program.kind == .arpeggiator,let began=c.began {c.next=began+Self.groovedBeat(c.nominalBeat,program:c.program)*60/tempo}
-            else{c.next=now+period}
+            if c.program.freeRateSeconds == nil,let began=c.began {c.next=began+Self.groovedBeat(c.nominalBeat,program:c.program)*60/tempo}
+            else{c.next=next+Double(skipped+1)*period}
             channels[channel] = c
         }
     }
@@ -200,6 +207,11 @@ final class MIDIFXProcessor {
         guard let grid=program.swingGridBeats,grid>0,let amount=program.swingAmount,amount>0 else{return beat}
         let pair=grid*2,start=floor(beat/pair)*pair,phase=beat-start,shift=min(1,max(0,amount))/3
         return start+(phase<=grid ? phase*(1+shift):grid*(1+shift)+(phase-grid)*(1-shift))
+    }
+    static func ungroovedBeat(_ beat:Double,program:MIDIProgram)->Double {
+        guard let grid=program.swingGridBeats,grid>0,let amount=program.swingAmount,amount>0 else{return beat}
+        let pair=grid*2,start=floor(beat/pair)*pair,phase=beat-start,shift=min(1,max(0,amount))/3,mid=grid*(1+shift)
+        return start+(phase<=mid ? phase/(1+shift):grid+(phase-mid)/(1-shift))
     }
     static func arpeggio(held: [(Int, Float)], program: MIDIProgram, index: Int) -> (Int, Float)? {
         guard !held.isEmpty else { return nil }
