@@ -1,0 +1,869 @@
+import SwiftUI
+import UniformTypeIdentifiers
+import AVFoundation
+import CryptoKit
+#if os(macOS)
+import AppKit
+#endif
+
+final class PerformanceStore: ObservableObject {
+    @Published var setlist = Setlist()
+    @Published var selected = 0
+    @Published var started = false
+    @Published var audioOutputs: [AudioOutputDevice] = []
+    @Published var audioStatus: AudioDeviceStatus?
+    @Published var message: String?
+    @Published var deviceCount = 0
+    @Published var midiSources: [MIDIInputSource] = []
+    @Published var midiDevices: [MIDIKnownDevice] = []
+    @Published var midiStatus = "Looking for MIDI keyboards…"
+    private struct HardwareNote: Hashable { var source: Int32; var channel: Int; var note: Int }
+    private struct PedalSource: Hashable { var source: Int32; var channel: Int }
+    private var hardwareNotes: [HardwareNote: Int] = [:]
+    private var nextHardwareKey = 1024
+    private var pedalSources: Set<PedalSource> = []
+    private struct CCKey: Hashable { var source:Int32; var channel:Int; var cc:Int }
+    private var mappedPedals: Set<CCKey> = []
+    private var pressedCCs: [CCKey:Bool] = [:]
+    private var screenSustain = false
+    @Published var held: Set<Int> = []
+    @Published var sustain = false
+    @Published var tonic: Int?
+    @Published var tonicGain: Float = 0.32 { didSet { audio.gain(15, tonicGain) } }
+    @Published var master: Float = 0.7 { didSet { audio.master(master) } }
+    @Published var reverb: Float = 22 { didSet { audio.space(reverb) } }
+    @Published var transition: Float = 1.5
+    @Published var activeSnapshot: UUID?
+    @Published var learning: Int?
+    @Published var learningTarget: MIDIControlTarget?
+    @Published var midiActivity = false
+    @Published var notesMode = false
+    @Published var patchLock = false
+    @Published var editRanges = false
+    @Published var showRanges = true
+    @Published var keyboardBase = 48
+    @Published var metronome = false { didSet { audio.clock(patch.tempo, metronome) } }
+    @Published var midiChannel = -1 { didSet { if oldValue != midiChannel { panic() } } }
+    @Published var primarySourceID: Int32 = -1 { didSet { if oldValue != primarySourceID { panic() } } }
+    @Published var secondarySourceID: Int32 = -2 { didSet { if oldValue != secondarySourceID { panic() } } }
+    @Published var secondaryChannel = -1 { didSet { if oldValue != secondaryChannel { panic() } } }
+    @Published var velocityMinimum = 0
+    @Published var velocityMaximum = 127
+    @Published var midiSourceNames: [Int32:String] = [:]
+    @Published var midiLog: [String] = []
+    @Published var disableSilent = false
+    @Published var tonicBrightness: Float = 0.7 { didSet { audio.effect(15, 0, 1, tonicBrightness) } }
+    @Published var tonicShimmer: Float = 0 { didSet { updateShimmer() } }
+    @Published var modWheel: Float = 1 { didSet { updateToneFilters() } }
+    private func updateToneFilters() {
+        for i in patch.layers.indices {
+            let l = playbackLayer(i); guard l.loaded else { continue }
+            audio.filter(i, l, mod: modWheel)
+            audio.modulation(i, value: modWheel)
+            if let destination = l.midiDestinationID { sendMIDI(destination, 0xb0 | UInt8(l.midiOutputChannel), 1, UInt8((max(0, min(1, modWheel)) * 127).rounded())) }
+            for (slot, fx) in l.effects.enumerated() where fx.kind == 1 && fx.enabled && fx.parameters == nil { audio.effect(i, slot, 1, fx.amount * (0.2 + 0.8 * modWheel)) }
+        }
+    }
+    private func updateShimmer() {
+        audio.noteOff(999)
+        if let tonic, tonicShimmer > 0 { audio.noteOn(key: 999, pitch: 60 + tonic, instrument: 1, layer: 15, velocity: tonicShimmer * 0.3) }
+    }
+    let midiFX = MIDIFXProcessor()
+    private var midiOutput: ExternalMIDIOutput?
+    private var outputNotes: [Int: [Int: Int]] = [:]
+    private var lastTaps: [Date] = []
+    private struct Audition {
+        let token: UUID
+        let patchID: UUID
+        let layerID: UUID
+        let index: Int
+        let pluginState: Data?
+        var draft: Layer
+    }
+    private var audition: Audition?
+    func playbackLayer(_ index: Int) -> Layer {
+        if let audition, audition.patchID == patch.id, audition.index == index, patch.layers[index].id == audition.layerID { return audition.draft }
+        return patch.layers[index]
+    }
+    @discardableResult
+    func beginAudition(_ index: Int) -> UUID? {
+        cancelAudition()
+        guard patch.layers.indices.contains(index) else { return nil }
+        cancelTransition()
+        let layer = patch.layers[index], token = UUID()
+        let state = layer.external?.kind == .audioUnit ? (try? audio.externalRack?.stateData(channel:index)) : nil
+        audition = Audition(token:token,patchID:patch.id,layerID:layer.id,index:index,pluginState:state ?? nil,draft:layer)
+        return token
+    }
+    func previewLayer(_ index: Int, _ proposed: Layer, token: UUID) {
+        guard let session = audition, session.token == token, session.patchID == patch.id, session.index == index,
+              patch.layers.indices.contains(index), patch.layers[index].id == session.layerID else { return }
+        var layer = proposed; layer.gain = patch.layers[index].gain; layer.muted = patch.layers[index].muted
+        var validation = Setlist(); validation.patches = [Patch(name:"Audition",layers:[layer],snapshots:[])]
+        guard (try? validation.validate()) != nil else { return }
+        let previous = session.draft
+        if previous.effectiveTranspose != layer.effectiveTranspose || previous.low != layer.low || previous.high != layer.high || previous.midiOutputChannel != layer.midiOutputChannel {
+            midiFX.panic(channel:index); audio.panic(channel:index)
+        }
+        audition?.draft = layer
+        configureMIDI(index,layer); audio.audition(index,layer)
+        audio.gain(index,layer.loaded && !layer.muted ? layer.gain : 0)
+        updateToneFilters(); applySustain()
+    }
+    func endAudition(_ token: UUID?) {
+        guard let session = audition, token == session.token else { return }
+        guard session.patchID == patch.id, patch.layers.indices.contains(session.index), patch.layers[session.index].id == session.layerID else { audition=nil; return }
+        midiFX.panic(channel:session.index); audio.panic(channel:session.index)
+        audition=nil
+        if let state=session.pluginState {
+            do { try audio.restoreAuditionState(session.index,state); setlist.patches[selected].layers[session.index].pluginState=state }
+            catch { message=error.localizedDescription }
+        }
+        let original=patch.layers[session.index]
+        configureMIDI(session.index,original); audio.configure(session.index,original)
+        audio.gain(session.index,original.loaded && !original.muted ? original.gain : 0)
+        updateToneFilters(); applySustain()
+    }
+    func cancelAudition() { endAudition(audition?.token) }
+    func confirmAudition(_ token: UUID?, index: Int, layer: Layer) {
+        guard let session=audition, session.token == token, session.patchID == patch.id, session.index == index, patch.layers.indices.contains(index), patch.layers[index].id == session.layerID else { return }
+        var final=layer; final.gain=patch.layers[index].gain; final.muted=patch.layers[index].muted
+        if layer.external?.kind == .audioUnit { do { final.pluginState=try audio.externalRack?.stateData(channel:index) } catch { message=error.localizedDescription; return } }
+        endAudition(token); commitLayer(index,final)
+    }
+    private var snapshotTimer: Timer?
+    private var notifications: [NSObjectProtocol] = []
+    let audio = AudioController()
+    let midi = MIDIInput()
+    @Published var librarySounds: [LibrarySound] = []
+    @Published var libraryRangePreview: Layer?
+    private var libraryRangePreviewIndex: Int?
+    var displayedLayers:[Layer] {
+        var layers=patch.layers
+        if let index=libraryRangePreviewIndex,layers.indices.contains(index),var preview=libraryRangePreview {preview.id=layers[index].id;layers[index]=preview}
+        return layers
+    }
+    func previewLibraryRange(_ index:Int,_ layer:Layer?) {libraryRangePreviewIndex=layer == nil ? nil:index;libraryRangePreview=layer}
+    @Published var libraryImportBusy=false
+    @Published var libraryImportProgress:String?
+    @Published var savedSetlists: [SetlistLibraryDescriptor] = []
+    @Published var setlistLibraryIssues: [SetlistLibraryIssue] = []
+    @Published var archivedSetlists: [SetlistTrashEntry] = []
+    @Published var currentSetlistID: UUID?
+    private let saveURL: URL
+    private var preferredAudioOutputUID: String?
+    private var restoredAudioOutput = false
+    private var legacyVersion = 1
+    private var legacyData: Data?
+    var patch: Patch { setlist.patches[selected] }
+    init() {
+        let base = ProcessInfo.processInfo.environment["STAGEKEYS_DATA_DIR"].map { URL(fileURLWithPath: $0) } ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("StageKeys")
+        saveURL = base.appendingPathComponent("setlist.json")
+        do { librarySounds = try SoundLibrary(url: base.appendingPathComponent("sound-library.json")).read() }
+        catch { message = "Could not read sound library: \(error.localizedDescription)" }
+        if FileManager.default.fileExists(atPath: saveURL.path) {
+            do { let data = try Data(contentsOf: saveURL); let loaded = try JSONDecoder().decode(Setlist.self, from: data); setlist = try loaded.upgraded(); if loaded.version < 4 { legacyData = data; legacyVersion = loaded.version } }
+            catch { message = "Could not load the saved setlist: \(error.localizedDescription). The original file is preserved until you save." }
+        }
+        let settingsURL = base.appendingPathComponent("settings.json")
+        if let data = try? Data(contentsOf: settingsURL), let settings = try? JSONDecoder().decode(SessionSettings.self, from: data), settings.validate() {
+            if let id=settings.selectedPatchID,let i=setlist.patches.firstIndex(where:{$0.id==id}) { selected=i }
+            activeSnapshot=patch.snapshots.contains(where:{$0.id==settings.activeSnapshotID}) ? settings.activeSnapshotID : nil
+            notesMode=settings.notesMode ?? false;modWheel=settings.modWheel ?? 1
+            preferredAudioOutputUID = settings.audioOutputUID
+            currentSetlistID = settings.activeSetlistID
+            master = settings.master; reverb = settings.reverb; transition = settings.transition
+            midiChannel = settings.midiChannel
+            primarySourceID = settings.primarySourceID ?? -1; secondarySourceID = settings.secondarySourceID ?? -2
+            secondaryChannel = settings.secondaryChannel ?? -1
+            velocityMinimum = settings.velocityMinimum ?? 0; velocityMaximum = settings.velocityMaximum ?? 127
+            midiSourceNames = settings.sourceNames ?? [:]
+            disableSilent = settings.disableSilent; showRanges = settings.showRanges
+            tonicGain = settings.tonicGain; tonicBrightness = settings.tonicBrightness; tonicShimmer = settings.tonicShimmer
+        }
+        audio.onError = { [weak self] in self?.message = $0 }
+        do { midiOutput = try ExternalMIDIOutput() } catch { message = error.localizedDescription }
+        midiFX.onNoteWithSource = { [weak self] channel, key, pitch, velocity, sourceID in
+            guard let self, self.patch.layers.indices.contains(channel) else { return }
+            let l = self.playbackLayer(channel)
+            let pitch = pitch + self.patch.transpose
+            if let destination = l.midiDestinationID, (0...127).contains(pitch) {
+                self.outputNotes[channel, default: [:]][key] = pitch
+                self.sendMIDI(destination, 0x90 | UInt8(l.midiOutputChannel), UInt8(pitch), UInt8(max(1,min(127,Int(velocity * 127)))))
+            } else { self.audio.noteOn(key: key, pitch: pitch, instrument: l.instrument, layer: channel, velocity: velocity,sourceID:sourceID) }
+        }
+        midiFX.onOff = { [weak self] channel, key, force in
+            guard let self, self.patch.layers.indices.contains(channel) else { return }
+            let l = self.playbackLayer(channel)
+            if let destination = l.midiDestinationID, let pitch = self.outputNotes[channel]?.removeValue(forKey: key) {
+                if force { self.sendMIDI(destination, 0xb0 | UInt8(l.midiOutputChannel), 64, 0) }
+                self.sendMIDI(destination, 0x80 | UInt8(l.midiOutputChannel), UInt8(pitch), 0)
+            } else { self.audio.noteOff(key: key, channel: channel, force: force) }
+        }
+        midi.onSourceEvent = { [weak self] source, status, a, b in self?.handleMIDI(status, a, b, source: source) }
+        midi.onInventory = { [weak self] sources, devices in
+            guard let self else { return }
+            self.midiSources = sources; self.midiDevices = devices
+            for source in sources { self.midiSourceNames[source.id] = source.name }
+            let connected = sources.filter(\.connected)
+            self.midiStatus = connected.isEmpty ? "Plug in a USB MIDI keyboard to connect automatically" : connected.map(\.name).joined(separator: " · ")
+        }
+        midi.onDisconnect = { [weak self] in self?.disconnectMIDI($0) }
+        midi.onDevices = { [weak self] count, error in
+            self?.deviceCount = count
+            if let error { self?.midiStatus = error }
+        }
+        midi.start()
+        #if os(macOS)
+        for event in [NSApplication.willTerminateNotification] {
+            notifications.append(NotificationCenter.default.addObserver(forName: event, object: nil, queue: .main) { [weak self] _ in self?.cancelAudition(); self?.panic(); self?.save() })
+        }
+        notifications.append(NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in self?.refreshMIDI() })
+        notifications.append(NotificationCenter.default.addObserver(forName: NSApplication.willResignActiveNotification, object: nil, queue: .main) { [weak self] _ in self?.releaseScreenNotes(); self?.save() })
+        #endif
+        #if os(iOS)
+        notifications.append(NotificationCenter.default.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] _ in
+            self?.audio.stop(); self?.started = false; self?.panic()
+        })
+        #endif
+        notifications.append(NotificationCenter.default.addObserver(forName: .AVAudioEngineConfigurationChange, object: nil, queue: .main) { [weak self] _ in
+            guard let self else { return }
+            if self.started && !self.audio.running {
+                self.panic(); self.started = false
+                self.start()
+            }
+        })
+    }
+    func start() {
+        guard !started else { return }
+        do {
+            if !restoredAudioOutput, !audio.offline {
+                restoredAudioOutput = true
+                if let uid = preferredAudioOutputUID { try? audio.deviceController.select(uid: uid) }
+            }
+            try audio.start(); audio.master(master);audio.space(reverb); started = true; applyPatch(); audio.clock(patch.tempo,metronome); refreshAudioDevices() }
+        catch { started = false; message = "Audio could not start: \(error.localizedDescription)" }
+    }
+    func refreshAudioDevices() {
+        guard !audio.offline else { return }
+        do { audioOutputs=try AudioDeviceController.availableOutputs(); audioStatus=try audio.deviceController.status() }
+        catch { message=error.localizedDescription }
+    }
+    func selectAudioOutput(_ id: UInt32) {
+        panic()
+        do { try audio.deviceController.select(deviceID:id); preferredAudioOutputUID = try audio.deviceController.outputUID(); restoredAudioOutput = true; refreshAudioDevices(); save() }
+        catch { message=error.localizedDescription; refreshAudioDevices() }
+    }
+    func setAudioBuffer(_ frames: UInt32) {
+        panic()
+        do { try audio.deviceController.buffer(frameCount:frames); refreshAudioDevices() }
+        catch { message=error.localizedDescription; refreshAudioDevices() }
+    }
+    func noteOn(_ note: Int, velocity: Float = 0.8, hardware: Bool = false) {
+        guard started else { return }
+        let key = note + (hardware ? 128 : 0)
+        guard !held.contains(key) else { return }
+        held.insert(key)
+        for index in patch.layers.indices {
+            let layer=playbackLayer(index)
+            guard layer.loaded && (layer.low...layer.high).contains(note) && (!disableSilent || (!layer.muted && layer.gain > 0)) else { continue }
+            let pitch = note + layer.effectiveTranspose
+            midiFX.noteOn(channel: index, key: key, pitch: pitch, velocity: velocity)
+        }
+    }
+    func noteOff(_ note: Int, hardware: Bool = false) { let key = note + (hardware ? 128 : 0); held.remove(key); for i in patch.layers.indices { midiFX.noteOff(channel: i, key: key) } }
+    func isNoteHeld(_ note: Int) -> Bool { held.contains(note) || hardwareNotes.keys.contains { $0.note == note } }
+    func refreshMIDI() { midi.start(); if !started { start() } }
+    func automaticMIDI() { primarySourceID = -1; midiChannel = -1; secondarySourceID = -2; velocityMinimum = 0; velocityMaximum = 127; refreshMIDI(); save() }
+    #if os(macOS)
+    func openAudioMIDISetup() { NSWorkspace.shared.open(URL(fileURLWithPath:"/System/Applications/Utilities/Audio MIDI Setup.app")) }
+    #endif
+    func releaseScreenNotes() { for key in held.filter({ (0...127).contains($0) }) { noteOff(key) }; screenSustain = false; applySustain() }
+    private func hardwareOn(source: Int32, channel: Int, note: Int, velocity: Float) {
+        if !started { start(); if !started { return } }
+        let input = HardwareNote(source: source, channel: channel, note: note)
+        if let old = hardwareNotes.removeValue(forKey: input) { releaseKey(old) }
+        if nextHardwareKey >= Int(Int32.max)-1 { panic(); nextHardwareKey = 1024 }
+        let key = nextHardwareKey; nextHardwareKey += 1; hardwareNotes[input] = key; held.insert(key)
+        for i in patch.layers.indices {
+            let l=playbackLayer(i)
+            guard l.loaded && (l.low...l.high).contains(note) && (!disableSilent || (!l.muted && l.gain > 0)) else { continue }
+            midiFX.noteOn(channel: i, key: key, pitch: note + l.effectiveTranspose, velocity: velocity,sourceID:source)
+        }
+    }
+    private func hardwareOff(source: Int32, channel: Int, note: Int) {
+        if let key = hardwareNotes.removeValue(forKey: HardwareNote(source: source, channel: channel, note: note)) { releaseKey(key) }
+    }
+    private func releaseKey(_ key: Int) { held.remove(key); for i in patch.layers.indices { midiFX.noteOff(channel: i, key: key) } }
+    private func disconnectMIDI(_ source: Int32) {
+        midiFX.releaseSource(source);audio.releaseSource(source)
+        for input in Array(hardwareNotes.keys) where input.source == source {
+            if let key = hardwareNotes.removeValue(forKey: input) {
+                held.remove(key)
+                for i in patch.layers.indices { midiFX.noteOff(channel: i, key: key,force:true); audio.noteOff(key: key, channel: i, force: true) }
+            }
+        }
+        pedalSources = pedalSources.filter { $0.source != source }; mappedPedals = mappedPedals.filter { $0.source != source }; pressedCCs = pressedCCs.filter { $0.key.source != source }; applySustain()
+    }
+    func setSustain(_ value: Bool) { screenSustain = value; applySustain() }
+    private func applySustain() { let value = screenSustain || !pedalSources.isEmpty || !mappedPedals.isEmpty; sustain = value; audio.sustain(value, layers: patch.layers.indices.map(playbackLayer))
+        for l in patch.layers.indices.map(playbackLayer) { if let d = l.midiDestinationID { sendMIDI(d, 0xb0 | UInt8(l.midiOutputChannel), 64, value && !l.blockSustain ? 127 : 0) } } }
+    func panic() { hardwareNotes.removeAll(); pedalSources.removeAll(); mappedPedals.removeAll(); screenSustain = false; midiFX.panic();
+        for l in patch.layers { if let d = l.midiDestinationID { for cc: UInt8 in [64,123,120] { sendMIDI(d, 0xb0 | UInt8(l.midiOutputChannel), cc, 0) } } }
+        outputNotes.removeAll(); held.removeAll(); sustain = false; tonic = nil; metronome = false; audio.panic() }
+    func choose(_ index: Int) {
+        guard !patchLock, setlist.patches.indices.contains(index) else { return }
+        cancelAudition(); cancelTransition(); panic(); capturePluginStates(); selected = index; activeSnapshot = nil
+        if patch.silencePrevious { panic() }
+        if patch.visualMode != 0 { notesMode = patch.visualMode == 2 }
+        applyPatch(); audio.clock(patch.tempo, metronome)
+    }
+    private func applyPatch() {
+        for i in patch.layers.indices {
+            guard let file=patch.layers[i].external?.fileName,
+                  let entry=librarySounds.first(where:{$0.id.hasPrefix("ableton-samples-") && $0.sound?.fileName == file}) else {continue}
+            setlist.patches[selected].layers[i].name=SoundLibrary.cleanImportedName(patch.layers[i].name)
+            if var sound=patch.layers[i].external {sound.name=SoundLibrary.cleanImportedName(sound.name);setlist.patches[selected].layers[i].external=sound}
+            let old=patch.layers[i].importedRack
+            if old == nil || (old?.translationVersion != 3 && old == entry.previousImportedRack) {
+                setlist.patches[selected].layers[i].importedRack=entry.layer?.importedRack
+                if patch.layers[i].midiProgram == nil && !patch.layers[i].octaveEffect {setlist.patches[selected].layers[i].midiProgram=entry.layer?.midiProgram}
+                for snapshot in patch.snapshots.indices {
+                    if var states=patch.snapshots[snapshot].sounds,states.indices.contains(i),states[i].importedRack == nil || states[i].importedRack == entry.previousImportedRack {
+                        states[i].importedRack=entry.layer?.importedRack
+                        if states[i].midiProgram == nil && !patch.layers[i].octaveEffect {states[i].midiProgram=entry.layer?.midiProgram}
+                        setlist.patches[selected].snapshots[snapshot].sounds=states
+                    }
+                }
+            }
+        }
+        cancelAudition()
+        audio.setPatchVolume(patch.volumeDB)
+        for (i, l) in patch.layers.enumerated() { configureMIDI(i, l); audio.configure(i, l); audio.gain(i, l.loaded && !l.muted ? l.gain : 0) }
+        audio.gain(15, tonicGain); audio.effect(15, 0, 1, tonicBrightness); updateToneFilters()
+    }
+    func setRange(_ index: Int, low: Int, high: Int) {
+        if !held.isEmpty { panic() }
+        setlist.patches[selected].layers[index].low = low
+        setlist.patches[selected].layers[index].high = high
+    }
+    func moveLayer(_ index: Int, _ destination: Int) {
+        guard (0..<15).contains(index), (0..<15).contains(destination), index != destination else { return }
+        panic(); cancelTransition()
+        setlist.patches[selected].layers.swapAt(index, destination)
+        for s in patch.snapshots.indices { setlist.patches[selected].snapshots[s].gains.swapAt(index, destination); if setlist.patches[selected].snapshots[s].sounds != nil { setlist.patches[selected].snapshots[s].sounds!.swapAt(index,destination) } }
+        for cc in Array(setlist.assignments.keys) {
+            if setlist.assignments[cc] == index { setlist.assignments[cc] = destination }
+            else if setlist.assignments[cc] == destination { setlist.assignments[cc] = index }
+        }
+        if let controls=setlist.controlAssignments {
+            for (cc,target) in controls { if case .soundLevel(let old)=target { if old == index { setlist.controlAssignments?[cc] = .soundLevel(destination) } else if old == destination { setlist.controlAssignments?[cc] = .soundLevel(index) } } }
+        }
+        applyPatch(); save()
+    }
+    func reorderLayer(_ source: Int, _ destination: Int) {
+        guard patch.layers.indices.contains(source), patch.layers.indices.contains(destination), source != destination else { return }
+        panic(); cancelTransition()
+        var order = Array(patch.layers.indices); let moving = order.remove(at:source); order.insert(moving,at:destination)
+        let old = patch
+        setlist.patches[selected].layers = order.map { old.layers[$0] }
+        for s in old.snapshots.indices {
+            setlist.patches[selected].snapshots[s].gains = order.map { old.snapshots[s].gains[$0] }
+            if let sounds = old.snapshots[s].sounds { setlist.patches[selected].snapshots[s].sounds = order.map { sounds[$0] } }
+        }
+        for cc in Array(setlist.assignments.keys) { if let previous=setlist.assignments[cc] { setlist.assignments[cc]=order.firstIndex(of:previous) } }
+        if let controls=setlist.controlAssignments {
+            for (cc,target) in controls { if case .soundLevel(let previous)=target, let position=order.firstIndex(of:previous) { setlist.controlAssignments?[cc] = .soundLevel(position) } }
+        }
+        applyPatch(); save()
+    }
+    func setGain(_ index: Int, _ value: Float) {
+        cancelTransition(); activeSnapshot = nil
+        setlist.patches[selected].layers[index].gain = value
+        let layer = patch.layers[index]; audio.gain(index, layer.muted ? 0 : value)
+        if let d = layer.midiDestinationID { sendMIDI(d, 0xb0 | UInt8(layer.midiOutputChannel), 7, UInt8(max(0,min(127,Int((layer.muted ? 0 : value)*127))))) }
+    }
+    func mute(_ index: Int) {
+        cancelTransition()
+        setlist.patches[selected].layers[index].muted.toggle()
+        let l = patch.layers[index]; audio.gain(index, l.muted ? 0 : l.gain); if let d = l.midiDestinationID { sendMIDI(d, 0xb0 | UInt8(l.midiOutputChannel), 7, UInt8(l.muted ? 0 : Int(l.gain * 127))) }
+    }
+    func renamePatch(_ name:String) {let value=name.trimmingCharacters(in:.whitespacesAndNewlines);guard !patchLock,!value.isEmpty,value.count<=200 else{return};setlist.patches[selected].name=value;save()}
+    func addPatch(_ name:String = "New Patch") {
+        let name=name.trimmingCharacters(in:.whitespacesAndNewlines)
+        guard !patchLock,setlist.patches.count<128,!name.isEmpty,name.count<=200 else { return }
+        cancelTransition()
+        var new=Patch(name:name,layers:(0..<15).map{_ in Layer.empty()},snapshots:[])
+        new.programChangeEnabled=false
+        setlist.patches.append(new);choose(setlist.patches.count-1);save()
+    }
+    func availableLibraryPatches()->[(String,Patch)] {
+        var choices=setlist.patches.map{(setlist.name,$0)}
+        do { let library=try localSetlistLibrary();for item in savedSetlists where item.id != currentSetlistID { let saved=try library.load(id:item.id);choices += saved.patches.map{(saved.name,$0)} } }
+        catch { message=error.localizedDescription }
+        return choices
+    }
+    func addLibraryPatch(_ source:Patch) {
+        guard !patchLock,setlist.patches.count<128 else{return}
+        var copy=source.duplicate();copy.name=source.name;copy.programChangeEnabled=false;copy.programChangeNumber=nil
+        setlist.patches.append(copy);choose(setlist.patches.count-1);save()
+    }
+    func setPatchVolume(_ db:Float) { guard db.isFinite else {return};setlist.patches[selected].volumeDB=max(-24,min(12,db));audio.setPatchVolume(patch.volumeDB);save() }
+
+    func duplicate() { guard setlist.patches.count < 128 else { return }; let p = patch.duplicate(); setlist.patches.insert(p, at: selected + 1); choose(selected + 1); save() }
+    func removePatch() { guard setlist.patches.count > 1 else { return }; panic(); cancelTransition(); setlist.patches.remove(at: selected); selected = min(selected, setlist.patches.count - 1); activeSnapshot = nil; applyPatch(); save() }
+    func saveSnapshot() { captureSnapshot(patch.snapshots.count) }
+    func recall(_ snapshot: Snapshot) {
+        cancelAudition()
+        cancelTransition(); activeSnapshot = snapshot.id
+        let initialSounds = patch.layers.map(SnapshotSoundState.init)
+        let initialWheel = modWheel, initialTonicGain = tonicGain, initialBrightness = tonicBrightness
+        if let states = snapshot.sounds {
+            for (i,state) in states.enumerated() {
+                setlist.patches[selected].layers[i].effects=SnapshotMorph.interpolateEffects(from: initialSounds[i].effects, to: state.effects, fraction: 0)
+                setlist.patches[selected].layers[i].midiProgram=state.midiProgram
+                setlist.patches[selected].layers[i].midiEffectEnabled=state.midiEffectEnabled
+                setlist.patches[selected].layers[i].pan=initialSounds[i].pan
+                configureMIDI(i,patch.layers[i]); audio.configure(i,patch.layers[i])
+            }
+        }
+        if let shimmer=snapshot.tonicShimmer { tonicShimmer=shimmer }
+        if let enabled=snapshot.tonicEnabled {
+            if enabled, let root=snapshot.tonicRoot { if tonic != root { toggleTonic(root) } }
+            else if let tonic { toggleTonic(tonic) }
+        }
+        let initial = patch.layers.map { $0.muted ? 0 : $0.gain }
+        for i in self.patch.layers.indices { setlist.patches[selected].layers[i].muted = false; audio.gain(i, snapshot.gains[i], seconds: snapshotDuration(snapshot)) }
+        let began = Date(), duration = Double(snapshotDuration(snapshot))
+        snapshotTimer = Timer.scheduledTimer(withTimeInterval: 1.0/30, repeats: true) { [weak self] timer in
+            guard let self else { timer.invalidate(); return }
+            let fraction = min(1, Date().timeIntervalSince(began) / max(0.01, duration))
+            for i in self.patch.layers.indices { self.setlist.patches[self.selected].layers[i].gain = initial[i] + Float(fraction) * (snapshot.gains[i] - initial[i]); if self.patch.layers[i].external != nil { self.audio.gain(i, self.patch.layers[i].gain) }; if let d = self.patch.layers[i].midiDestinationID { self.sendMIDI(d, 0xb0 | UInt8(self.patch.layers[i].midiOutputChannel), 7, UInt8(max(0,min(127,Int(self.patch.layers[i].gain*127))))) } }
+            if let target = snapshot.modulation { self.modWheel = SnapshotMorph.interpolateFloat(from: initialWheel, to: target, fraction: Float(fraction)) }
+            if let target = snapshot.tonicLevel { self.tonicGain = SnapshotMorph.interpolateFloat(from: initialTonicGain, to: target, fraction: Float(fraction)) }
+            if let target = snapshot.tonicBrightness { self.tonicBrightness = SnapshotMorph.interpolateFloat(from: initialBrightness, to: target, fraction: Float(fraction)) }
+            if let states = snapshot.sounds {
+                for (i, target) in states.enumerated() {
+                    let previous = self.patch.layers[i]
+                    let state = SnapshotMorph.interpolateSound(from: initialSounds[i], to: target, fraction: Float(fraction))
+                    self.setlist.patches[self.selected].layers[i].effects = state.effects
+                    self.setlist.patches[self.selected].layers[i].importedRack = state.importedRack
+                    self.setlist.patches[self.selected].layers[i].pan = state.pan
+                    if previous.effects != state.effects || previous.pan != state.pan || previous.importedRack != state.importedRack { self.audio.configureSnapshot(i, effects: state.effects, pan: state.pan, importedRack:state.importedRack) }
+                }
+            }
+            if fraction >= 1 { timer.invalidate(); self.snapshotTimer = nil }
+        }
+    }
+    func snapshotDuration(_ snapshot: Snapshot) -> Float {
+        if let beats = snapshot.beats { return min(30, beats * 60 / Float(patch.tempo)) }
+        return snapshot.seconds ?? transition
+    }
+    func commitLayer(_ index: Int, _ layer: Layer) {
+        cancelAudition()
+        let previous=patch.layers[index]
+        if previous.instrument != layer.instrument || previous.external != layer.external || previous.midiDestinationID != layer.midiDestinationID {
+            for s in patch.snapshots.indices {
+                if setlist.patches[selected].snapshots[s].sounds != nil { setlist.patches[selected].snapshots[s].sounds![index] = SnapshotSoundState(layer) }
+                if !layer.loaded { setlist.patches[selected].snapshots[s].gains[index] = 0 }
+            }
+        }
+        midiFX.panic(channel:index); audio.panic(channel:index); cancelTransition(); setlist.patches[selected].layers[index] = layer
+        configureMIDI(index, layer)
+        audio.configure(index, layer); audio.gain(index, layer.loaded && !layer.muted ? layer.gain : 0); updateToneFilters(); save()
+    }
+    func addSound(_ index: Int, _ instrument: Int) {
+        let name = ["Soft Keys", "Warm Pad", "Glass Bells"][instrument]
+        var l = Layer(name: name, instrument: instrument, gain: 0.65)
+        l.id = patch.layers[index].id; commitLayer(index, l)
+    }
+    func removeSound(_ index: Int) {
+        var l = Layer.empty(); l.id = patch.layers[index].id; commitLayer(index, l)
+    }
+    func toggleMIDIEffect(_ index: Int) { var l = patch.layers[index]; l.midiEffectEnabled.toggle(); commitLayer(index,l) }
+    func setEffect(_ index: Int, _ slot: Int, _ effect: AudioEffect) {
+        let changedKind = patch.layers[index].effects[slot].kind != effect.kind
+        if changedKind {
+            for i in patch.snapshots.indices {
+                if setlist.patches[selected].snapshots[i].sounds == nil { setlist.patches[selected].snapshots[i].sounds = patch.layers.map(SnapshotSoundState.init) }
+                setlist.patches[selected].snapshots[i].sounds![index].effects[slot] = effect
+            }
+        }
+        setlist.patches[selected].layers[index].effects[slot] = effect
+        audio.configure(index, patch.layers[index]); updateToneFilters(); save()
+    }
+    func captureSnapshot(_ index: Int) {
+        cancelTransition()
+        let gains = patch.layers.map { $0.loaded && !$0.muted ? $0.gain : 0 }
+        if patch.snapshots.indices.contains(index) { setlist.patches[selected].snapshots[index].gains = gains; activeSnapshot = patch.snapshots[index].id }
+        else if patch.snapshots.count < 16 { setlist.patches[selected].snapshots.append(Snapshot(name: "Scene \(patch.snapshots.count + 1)", gains: gains)); activeSnapshot = patch.snapshots.last?.id }
+        if let snapshotIndex = patch.snapshots.firstIndex(where: { $0.id == activeSnapshot }) {
+            setlist.patches[selected].snapshots[snapshotIndex].sounds = patch.layers.map(SnapshotSoundState.init)
+            setlist.patches[selected].snapshots[snapshotIndex].modulation = modWheel
+            setlist.patches[selected].snapshots[snapshotIndex].tonicEnabled = tonic != nil
+            setlist.patches[selected].snapshots[snapshotIndex].tonicRoot = tonic
+            setlist.patches[selected].snapshots[snapshotIndex].tonicLevel = tonicGain
+            setlist.patches[selected].snapshots[snapshotIndex].tonicBrightness = tonicBrightness
+            setlist.patches[selected].snapshots[snapshotIndex].tonicShimmer = tonicShimmer
+        }
+        save()
+    }
+    func updateTempo(_ value: Double) { setlist.patches[selected].tempo = value; audio.clock(value, metronome); midiFX.updateTempo(value) }
+    func setTranspose(_ value: Int) { setlist.patches[selected].transpose = value; setlist.patches[selected].hearIn = (patch.playIn + value + 120) % 12 }
+    func transpose(play: Int, hear: Int) { setlist.patches[selected].playIn = play; setlist.patches[selected].hearIn = hear; setlist.patches[selected].transpose = hear - play; save() }
+    private func cancelTransition() {
+        guard snapshotTimer != nil else { return }
+        snapshotTimer?.invalidate(); snapshotTimer = nil
+        for (i, l) in patch.layers.enumerated() { audio.gain(i, l.muted ? 0 : l.gain) }
+    }
+    func toggleTonic(_ root: Int) {
+        if let old = tonic { for interval in [0, 7, 12] { audio.noteOff(256 + old + interval) } }
+        if tonic == root { tonic = nil; updateShimmer(); return }
+        guard started else { return }; tonic = root
+        updateShimmer()
+        for interval in [0, 7, 12] { audio.noteOn(key: 256 + root + interval, pitch: 36 + root + interval, instrument: 1, layer: 15, velocity: 0.65) }
+    }
+    func tapTempo() {
+        let now = Date()
+        if let last = lastTaps.last, now.timeIntervalSince(last) > 3 { lastTaps.removeAll() }
+        lastTaps.append(now); lastTaps = Array(lastTaps.suffix(5))
+        if lastTaps.count >= 2 { let interval = now.timeIntervalSince(lastTaps[0]) / Double(lastTaps.count - 1); updateTempo(min(300, max(20, (60 / interval).rounded()))) }
+    }
+    private func handleMIDI(_ status: UInt8, _ a: UInt8, _ b: UInt8, source: Int32) {
+        midiActivity.toggle()
+        midiLog.insert((midiSources.first(where: { $0.id == source })?.name ?? "MIDI") + String(format: " · Ch %02d · %02X · %d · %d", Int(status & 15) + 1, status & 0xf0, a, b), at: 0)
+        midiLog = Array(midiLog.prefix(15))
+        let channel=Int(status & 15)
+        func accepts(_ id: Int32, _ inputChannel: Int) -> Bool { (id == -1 || id == source) && (inputChannel == -1 || inputChannel == channel) }
+        guard accepts(primarySourceID,midiChannel) || accepts(secondarySourceID,secondaryChannel) else { return }
+        switch status & 0xf0 {
+        case 0x90: if b == 0 { hardwareOff(source: source, channel: Int(status & 15), note: Int(a)) } else { hardwareOn(source: source, channel: Int(status & 15), note: Int(a), velocity: Float(velocityMinimum) / 127 + Float(b)/127 * Float(velocityMaximum-velocityMinimum)/127) }
+        case 0x80: hardwareOff(source: source, channel: Int(status & 15), note: Int(a))
+        case 0xb0:
+            if a == 1 { modWheel = Float(b)/127 }
+            else if a == 64 { let pedal = PedalSource(source: source, channel: Int(status & 15)); if b >= 64 { pedalSources.insert(pedal) } else { pedalSources.remove(pedal) }; applySustain() }
+            else if a == 120 || a == 123 { panic() }
+            else {
+                let cc=Int(a), key=CCKey(source:source,channel:channel,cc:Int(a)), down=b>=64
+                let rising=down && !(pressedCCs[key] ?? false); pressedCCs[key]=down
+                if let target = learningTarget ?? learning.map({ MIDIControlTarget.soundLevel($0) }) {
+                    guard target.valid else { learningTarget=nil; learning=nil; return }
+                    clearMIDILearn(target,saveChanges:false)
+                    mappedPedals=mappedPedals.filter{$0.cc != cc}; applySustain()
+                    setlist.assignments.removeValue(forKey:cc)
+                    setlist.controlAssignments?.removeValue(forKey:cc)
+                    if case .soundLevel(let index) = target { setlist.assignments[cc]=index }
+                    else { if setlist.controlAssignments == nil { setlist.controlAssignments=[:] }; setlist.controlAssignments![cc]=target }
+                    learningTarget=nil; learning=nil
+                    if !target.isRisingEdge { applyMIDIControl(target,value:b,key:key,rising:rising) }
+                    save()
+                } else if let target=setlist.controlAssignments?[cc] { applyMIDIControl(target,value:b,key:key,rising:rising) }
+                else if let index=setlist.assignments[cc] { setGain(index,Float(b)/127) }
+            }
+        case 0xc0:
+            if let index=setlist.patches.indices.first(where:{setlist.patches[$0].programChangeEnabled == true && setlist.patches[$0].programChangeNumber == Int(a)}) { choose(index) }
+            else if setlist.patches.indices.contains(Int(a)),setlist.patches[Int(a)].programChangeEnabled == nil { choose(Int(a)) }
+        default: break
+        }
+    }
+    func beginMIDILearn(_ target:MIDIControlTarget) {
+        guard target.valid else { return }; learning=nil; learningTarget = learningTarget == target ? nil : target
+    }
+    func assignedCC(_ target:MIDIControlTarget) -> Int? {
+        if case .soundLevel(let index)=target, let cc=setlist.assignments.first(where:{$0.value == index})?.key { return cc }
+        return setlist.controlAssignments?.first(where:{$0.value == target})?.key
+    }
+    func clearMIDILearn(_ target:MIDIControlTarget, saveChanges:Bool=true) {
+        var removed = Set(setlist.controlAssignments?.filter{$0.value == target}.keys.map{$0} ?? [])
+        if case .soundLevel(let index)=target {
+            removed.formUnion(setlist.assignments.filter{$0.value == index}.keys)
+            setlist.assignments=setlist.assignments.filter{$0.value != index}
+        }
+        setlist.controlAssignments=setlist.controlAssignments?.filter{$0.value != target}
+        mappedPedals=mappedPedals.filter{!removed.contains($0.cc)}; applySustain()
+        if learningTarget == target { learningTarget=nil }
+        if saveChanges { save() }
+    }
+    private func applyMIDIControl(_ target:MIDIControlTarget,value:UInt8,key:CCKey,rising:Bool) {
+        guard target.valid, !target.isRisingEdge || rising else { return }
+        switch target {
+        case .soundLevel(let index): setGain(index,Float(value)/127)
+        case .master: master=Float(value)/127
+        case .modulation: modWheel=Float(value)/127
+        case .sustain: if value>=64 { mappedPedals.insert(key) } else { mappedPedals.remove(key) }; applySustain()
+        case .nextPatch: if selected+1<setlist.patches.count { choose(selected+1) }
+        case .previousPatch: if selected>0 { choose(selected-1) }
+        case .panic: panic()
+        case .snapshot(let index): if patch.snapshots.indices.contains(index) { recall(patch.snapshots[index]) }
+        }
+    }
+    private var configuredPrograms: [Int:MIDIProgram] = [:]
+    private func configureMIDI(_ index: Int, _ layer: Layer) {
+        var program = layer.midiProgram ?? MIDIProgram()
+        if layer.midiProgram == nil && layer.octaveEffect { program.kind = .easyChord; program.chordIntervals = [0,12] }
+        if !layer.midiEffectEnabled { program.kind = .bypass }
+        if configuredPrograms[index] != program.validated {
+            audio.panic(channel:index)
+            if let d=layer.midiDestinationID { sendMIDI(d,0xb0|UInt8(layer.midiOutputChannel),64,0);sendMIDI(d,0xb0|UInt8(layer.midiOutputChannel),123,0) }
+            configuredPrograms[index]=program.validated
+        }
+        midiFX.configure(channel: index, program: program, tempo: patch.tempo)
+        if let d = layer.midiDestinationID {
+            sendMIDI(d, 0xb0 | UInt8(layer.midiOutputChannel), 7, UInt8(layer.muted ? 0 : Int(layer.gain*127)))
+            sendMIDI(d, 0xb0 | UInt8(layer.midiOutputChannel), 10, UInt8(max(0,min(127,Int((layer.pan+1)*63.5)))))
+        }
+    }
+    private func sendMIDI(_ destination: Int32, _ status: UInt8, _ a: UInt8, _ b: UInt8) {
+        do { try midiOutput?.send(destinationID: destination, status: status, data1: a, data2: b) }
+        catch { message = error.localizedDescription }
+    }
+    func capturePluginStates() {
+        for (i,l) in patch.layers.enumerated() where l.external?.kind == .audioUnit {
+            if audition?.patchID == patch.id && audition?.index == i { continue }
+            do { setlist.patches[selected].layers[i].pluginState = try audio.externalRack?.stateData(channel: i) }
+            catch { message = "Could not capture plug-in state: \(error.localizedDescription)" }
+        }
+    }
+    private func prepareLibrarySound(_ url:URL,sampleRoot:URL?)throws->(ExternalSound,[String]?,Layer?) {
+        guard let rack=audio.externalRack else{throw ExternalInstrumentError.missingFile}
+        if ["adg","adv"].contains(url.pathExtension.lowercased()) {
+            guard let root=sampleRoot else{throw AbletonImportError.invalid("Choose the sample folder.")}
+            let access=root.startAccessingSecurityScopedResource();defer{if access{root.stopAccessingSecurityScopedResource()}}
+            let temp=FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString+".aupreset")
+            defer{try? FileManager.default.removeItem(at:temp)}
+            let conversion=try AbletonImport.convert(url,sampleRoot:root,to:temp)
+            _ = try AbletonImport.validatePlayback(temp)
+            var sound=try rack.importPreset(temp,sampleRoot:root);sound.name=conversion.name
+            var layer=Layer(name:sound.name,instrument:-1,gain:0.5);layer.external=sound;layer.importedRack=conversion.rack;layer.midiProgram=conversion.midi
+            return (sound,conversion.warnings,layer)
+        }
+        if let root=sampleRoot {return (try url.pathExtension.lowercased()=="exs" ? rack.importEXS(url,sampleRoot:root) : rack.importPreset(url,sampleRoot:root),nil,nil)}
+        return (try rack.importSound(url),nil,nil)
+    }
+    private func installLibrarySound(_ url:URL,sampleRoot:URL?,id:String?=nil)throws->ExternalSound {
+        let (sound,notes,layer)=try prepareLibrarySound(url,sampleRoot:sampleRoot)
+        let library=SoundLibrary(url:saveURL.deletingLastPathComponent().appendingPathComponent("sound-library.json"))
+        var entries=try library.read()
+        entries.append(LibrarySound(id:id ?? UUID().uuidString,name:sound.name,collection:"My Sounds",sound:sound,layer:layer,conversionNotes:notes))
+        try library.write(entries);librarySounds=entries
+        return sound
+    }
+    @discardableResult
+    func importLibrarySound(_ url:URL,sampleRoot:URL?=nil)->ExternalSound? {
+        guard !libraryImportBusy else{message="A sound library import is already running.";return nil}
+        do {
+            if ["adg","adv"].contains(url.pathExtension.lowercased()) {
+                let access=url.startAccessingSecurityScopedResource();defer{if access{url.stopAccessingSecurityScopedResource()}}
+                let id="ableton-samples-"+(try AbletonArchive.sha256(url))
+                if let existing=librarySounds.first(where:{$0.id==id})?.sound{return existing}
+                return try installLibrarySound(url,sampleRoot:sampleRoot,id:id)
+            }
+            return try installLibrarySound(url,sampleRoot:sampleRoot)
+        }catch{message=error.localizedDescription;return nil}
+    }
+    func importAbletonPack(_ url:URL) {
+        guard !libraryImportBusy else{return}
+        libraryImportBusy=true;libraryImportProgress="Extracting Ableton samples…"
+        Task { @MainActor in
+            defer{libraryImportBusy=false}
+            do {
+                let folder=try await Task.detached(priority:.userInitiated){try AbletonArchive.extract(url)}.value
+                defer{try? FileManager.default.removeItem(at:folder)}
+                let files=try SoundLibrary.samplerPresets(in:folder).filter{["adg","adv"].contains($0.pathExtension.lowercased())}
+                var imported=0,skipped=0,failures:[String]=[]
+                for (position,file) in files.enumerated() {
+                    libraryImportProgress="Importing \(position+1) of \(files.count): \(file.deletingPathExtension().lastPathComponent)"
+                    await Task.yield()
+                    do {
+                        let id="ableton-samples-"+(try AbletonArchive.sha256(file))
+                        if librarySounds.contains(where:{$0.id==id}){skipped+=1;continue}
+                        _ = try installLibrarySound(file,sampleRoot:folder,id:id);imported+=1
+                    } catch{failures.append(file.lastPathComponent+": "+error.localizedDescription)}
+                }
+                libraryImportProgress="Imported \(imported) sample maps; \(skipped) already present; \(failures.count) need attention. Live effects and macros are not translated."
+                let report=saveURL.deletingLastPathComponent().appendingPathComponent("ableton-import-report.json")
+                let result:[String:Any]=["imported":imported,"skipped":skipped,"failures":failures,"source":url.lastPathComponent,"sampleMapOnly":true]
+                try JSONSerialization.data(withJSONObject:result,options:[.prettyPrinted,.sortedKeys]).write(to:report,options:.atomic)
+            } catch{libraryImportProgress=error.localizedDescription}
+        }
+    }
+    @discardableResult
+    func importSound(_ url:URL,index:Int,sampleRoot:URL?=nil)->Bool {guard let sound=importLibrarySound(url,sampleRoot:sampleRoot) else{return false};addExternal(sound,index:index);return true}
+    func importSamplerLibrary(_ folder: URL) {
+        let access = folder.startAccessingSecurityScopedResource()
+        defer { if access { folder.stopAccessingSecurityScopedResource() } }
+        do {
+            guard !libraryImportBusy else{message="A sound library import is already running.";return}
+            let library = SoundLibrary(url: saveURL.deletingLastPathComponent().appendingPathComponent("sound-library.json"))
+            var entries = try library.read()
+            let presets = try SoundLibrary.samplerPresets(in: folder)
+            var imported = 0, skipped = 0; var failures: [String] = []
+            for url in presets {
+                do {
+                    let bytes = try Data(contentsOf: url)
+                    guard bytes.count <= 16_000_000 else { throw ExternalInstrumentError.unsupportedFormat }
+                    let id = (["adg","adv"].contains(url.pathExtension.lowercased()) ? "ableton-samples-" : "sampler-") + SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
+                    if entries.contains(where: { $0.id == id }) { skipped += 1; continue }
+                    let (sound,notes,layer)=try prepareLibrarySound(url,sampleRoot:folder)
+                    entries.append(LibrarySound(id: id, name: sound.name, collection: "My Sounds", sound: sound,layer:layer,conversionNotes:notes))
+                    try library.write(entries); imported += 1
+                } catch { failures.append("\(url.lastPathComponent): \(error.localizedDescription)") }
+            }
+            librarySounds = entries
+            message = "Imported \(imported) sampler instruments; \(skipped) already in library; \(failures.count) failed." + (failures.isEmpty ? "" : "\n" + failures.prefix(3).joined(separator: "\n"))
+        } catch { message = error.localizedDescription }
+    }
+    #if os(macOS)
+    func exportLibrarySound(_ entry: LibrarySound) {
+        guard let sound = entry.sound, sound.kind == .samplerPreset else { return }
+        let panel = NSOpenPanel(); panel.title = "Choose a folder for the exported sampler instrument"
+        panel.canChooseDirectories = true; panel.canChooseFiles = false; panel.canCreateDirectories = true
+        panel.begin { [weak self] response in
+            guard let self, response == .OK, let folder = panel.url else { return }
+            let access = folder.startAccessingSecurityScopedResource()
+            defer { if access { folder.stopAccessingSecurityScopedResource() } }
+            do {
+                guard let rack = self.audio.externalRack else { throw ExternalInstrumentError.missingFile }
+                let name = entry.name.replacingOccurrences(of: "/", with: "-")
+                let preset = try SamplerInterchange.exportPreset(sound, libraryURL: rack.libraryURL, to: folder.appendingPathComponent(name + "-" + UUID().uuidString.prefix(8)))
+                self.message = "Exported \(preset.path). Load Instrument.aupreset into Apple's AUSampler in MainStage. Keep the Samples folder with it; re-import after moving to relink paths."
+            } catch { self.message = error.localizedDescription }
+        }
+    }
+    #endif
+    func saveSoundToLibrary(_ source: Layer, index: Int) -> Bool {
+        do {
+            var layer = source
+            if layer.external?.kind == .audioUnit { layer.pluginState = try audio.externalRack?.stateData(channel: index) }
+            var validation = Setlist(); validation.patches = [Patch(name: "Library Validation", layers: [layer], snapshots: [])]
+            try validation.validate()
+            let library = SoundLibrary(url: saveURL.deletingLastPathComponent().appendingPathComponent("sound-library.json"))
+            var entries = try library.read()
+            entries.append(LibrarySound(id: UUID().uuidString, name: layer.name, collection: "My Sounds", sound: layer.external, layer: layer))
+            try library.write(entries); librarySounds = entries; return true
+        } catch { message = error.localizedDescription; return false }
+    }
+    func addLibrarySound(_ entry: LibrarySound, index: Int) {
+        if var layer = entry.layer { layer.id = patch.layers[index].id; commitLayer(index, layer); return }
+        if let sound = entry.sound { addExternal(sound, index: index); return }
+        #if os(macOS)
+        if let path = entry.hostPath, NSWorkspace.shared.open(URL(fileURLWithPath: path)) {
+            addMIDIDestination(ExternalMIDIDestination(id: ExternalMIDIOutput.broadcastID, name: entry.name, endpoint: 0), index: index)
+            message = "Select StageKeys to External App in MainStage and use MIDI channel \(patch.layers[index].midiOutputChannel + 1). Audio plays through MainStage."
+        } else { message = "This preset requires MainStage and its installed instruments." }
+        #else
+        message = "This MainStage preset requires a Mac. Import a sampled version to play on this device."
+        #endif
+    }
+    func addExternal(_ sound: ExternalSound, index: Int) {
+        var l = Layer(name: sound.name, instrument: -1, gain: 0.65)
+        l.id = patch.layers[index].id; l.external = sound; commitLayer(index, l)
+    }
+    #if os(macOS)
+    func openHostPatch(index: Int) {
+        let panel = NSOpenPanel()
+        panel.title = "Open a MainStage or Ableton patch in its host"
+        panel.allowedContentTypes = [UTType(filenameExtension: "patch") ?? .package, UTType(filenameExtension: "adg") ?? .data, UTType(filenameExtension: "alp") ?? .data]
+        panel.canChooseDirectories = false; panel.allowsMultipleSelection = false
+        panel.begin { [weak self] response in
+            guard let self, response == .OK, let url = panel.url else { return }
+            if NSWorkspace.shared.open(url) {
+                let d = ExternalMIDIDestination(id: ExternalMIDIOutput.broadcastID, name: url.deletingPathExtension().lastPathComponent, endpoint: 0)
+                self.addMIDIDestination(d, index: index)
+                self.message = "In the host app, select ‘StageKeys to External App’ as the MIDI input and choose MIDI channel \(self.patch.layers[index].midiOutputChannel + 1). Configure audio in that host."
+            } else { self.message = "Install MainStage for .patch files or Ableton Live for .adg/.alp files. StageKeys cannot render their native instrument chains directly." }
+        }
+    }
+    #endif
+    func addMIDIDestination(_ destination: ExternalMIDIDestination, index: Int) {
+        var l = Layer(name: destination.name, instrument: -1, gain: 1)
+        l.id = patch.layers[index].id; l.midiDestinationID = destination.id; commitLayer(index, l)
+    }
+    func save() {
+        capturePluginStates()
+        do { try setlist.validate(); try FileManager.default.createDirectory(at: saveURL.deletingLastPathComponent(), withIntermediateDirectories: true); if let legacyData {
+                let backup = saveURL.deletingLastPathComponent().appendingPathComponent("setlist-v\(legacyVersion)-backup.json")
+                if !FileManager.default.fileExists(atPath: backup.path) { try legacyData.write(to: backup, options: .atomic) }
+                self.legacyData = nil
+            }
+            let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            let data = try encoder.encode(setlist)
+            guard data.count <= 64_000_000 else { throw SetlistError.invalid }
+            try data.write(to: saveURL, options: .atomic)
+            currentSetlistID = try localSetlistLibrary().save(setlist,id:currentSetlistID).id
+            refreshSetlists()
+            let settings = SessionSettings(selectedPatchID:patch.id,activeSnapshotID:activeSnapshot,notesMode:notesMode,modWheel:modWheel,master: master, reverb: reverb, transition: transition, midiChannel: midiChannel, primarySourceID: primarySourceID, secondarySourceID: secondarySourceID, secondaryChannel: secondaryChannel, velocityMinimum: velocityMinimum, velocityMaximum: velocityMaximum, sourceNames: midiSourceNames, disableSilent: disableSilent, showRanges: showRanges, tonicGain: tonicGain, tonicBrightness: tonicBrightness, tonicShimmer: tonicShimmer, audioOutputUID: preferredAudioOutputUID, activeSetlistID: currentSetlistID)
+            guard settings.validate() else { throw SetlistError.invalid }
+            try encoder.encode(settings).write(to: saveURL.deletingLastPathComponent().appendingPathComponent("settings.json"), options: .atomic) }
+        catch { message = "Could not save: \(error.localizedDescription)" }
+    }
+    private func localSetlistLibrary() throws -> SetlistLibrary { try SetlistLibrary(root: saveURL.deletingLastPathComponent().appendingPathComponent("Setlists")) }
+    func refreshSetlists() {
+        do {
+            let library = try localSetlistLibrary(), inventory = try library.list()
+            savedSetlists = inventory.entries; setlistLibraryIssues = inventory.issues
+            archivedSetlists = try library.listTrash().entries.filter { archived in !savedSetlists.contains(where: { $0.id == archived.originalID }) }
+        } catch { message = error.localizedDescription }
+    }
+    private func preserveCurrentSetlist() throws {
+        cancelAudition(); capturePluginStates(); try setlist.validate()
+        currentSetlistID = try localSetlistLibrary().save(setlist,id:currentSetlistID).id
+    }
+    func openLocalSetlist(_ id: UUID) {
+        guard !patchLock else { message = "Unlock patches before changing setlists."; return }
+        guard id != currentSetlistID else { return }
+        do {
+            let loaded = try localSetlistLibrary().load(id:id)
+            try preserveCurrentSetlist()
+            panic(); cancelTransition(); setlist = loaded; currentSetlistID = id; selected = 0; activeSnapshot = nil
+            applyPatch(); audio.clock(patch.tempo,metronome); save()
+        } catch { message = error.localizedDescription }
+    }
+    func createLocalSetlist() {
+        guard !patchLock else { message = "Unlock patches before changing setlists."; return }
+        do {
+            try preserveCurrentSetlist()
+            var fresh = Setlist(); fresh.name = "New Setlist"; fresh.patches = [Patch(name:"New Patch",layers:(0..<15).map { _ in Layer.empty() },snapshots:[])]
+            let id = try localSetlistLibrary().save(fresh).id
+            panic(); cancelTransition(); setlist = fresh; currentSetlistID = id; selected = 0; activeSnapshot = nil
+            applyPatch(); audio.clock(patch.tempo,metronome); save()
+        } catch { message = error.localizedDescription }
+    }
+    func renameLocalSetlist(_ id: UUID, name: String) {
+        do {
+            if id == currentSetlistID {
+                guard !name.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty, name.count <= 200 else { throw SetlistLibraryError.name }
+                setlist.name = name; save()
+            } else { try localSetlistLibrary().rename(id:id,name:name); refreshSetlists() }
+        } catch { message = error.localizedDescription }
+    }
+    func duplicateLocalSetlist(_ id: UUID) {
+        do { if id == currentSetlistID { try preserveCurrentSetlist() }; _ = try localSetlistLibrary().duplicate(id:id); refreshSetlists() }
+        catch { message = error.localizedDescription }
+    }
+    func archiveLocalSetlist(_ id: UUID) {
+        guard id != currentSetlistID else { message = "Open another setlist before moving this one to Trash."; return }
+        do { _ = try localSetlistLibrary().delete(id:id); refreshSetlists() } catch { message = error.localizedDescription }
+    }
+    func restoreLocalSetlist(_ token: UUID) {
+        do { _ = try localSetlistLibrary().restore(token:token); refreshSetlists() } catch { message = error.localizedDescription }
+    }
+    func load(_ url: URL) {
+        let access = url.startAccessingSecurityScopedResource(); defer { if access { url.stopAccessingSecurityScopedResource() } }
+        do {
+            let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+            guard (attributes[.size] as? NSNumber)?.intValue ?? 0 <= 64_000_000 else { throw SetlistError.invalid }
+            let loaded = try JSONDecoder().decode(Setlist.self, from: Data(contentsOf: url)); let upgraded = try loaded.upgraded()
+            try preserveCurrentSetlist()
+            panic(); cancelTransition(); setlist = upgraded; currentSetlistID = nil; selected = 0; activeSnapshot = nil; applyPatch(); save()
+        } catch { message = "Could not import: \(error.localizedDescription)" }
+    }
+    deinit { snapshotTimer?.invalidate(); notifications.forEach(NotificationCenter.default.removeObserver) }
+}
+struct SetlistFile: FileDocument {
+    static var readableContentTypes: [UTType] { [.json] }
+    var setlist: Setlist
+    init(_ setlist: Setlist) { self.setlist = setlist }
+    init(configuration: ReadConfiguration) throws { setlist = try JSONDecoder().decode(Setlist.self, from: configuration.file.regularFileContents ?? Data()).upgraded() }
+    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper { try setlist.validate(); let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys]; let data = try encoder.encode(setlist); guard data.count <= 64_000_000 else { throw SetlistError.invalid }; return FileWrapper(regularFileWithContents: data) }
+}

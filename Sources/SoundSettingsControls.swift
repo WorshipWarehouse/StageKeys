@@ -1,0 +1,118 @@
+import SwiftUI
+
+struct SoundSettingsControls: View {
+    @Binding var layer: Layer
+    private var samplerDB: Binding<Float> { Binding(get: { layer.channelSettings.samplerGain > 0 ? max(-60,20*log10(layer.channelSettings.samplerGain)) : -60 }, set: { layer.channelSettings.samplerGain = $0 <= -60 ? 0 : pow(10,$0/20) }) }
+    private func card<Content: View>(_ title: String, detail: String, @ViewBuilder content: () -> Content) -> some View {
+        HStack(spacing: 16) {
+            VStack(alignment: .leading, spacing: 3) { Text(title).font(StageTheme.font(14, weight: .semibold)); Text(detail).font(StageTheme.font(11)).foregroundStyle(.secondary) }
+            Spacer(minLength: 8); content()
+        }.padding(16).frame(minHeight:76).background(StageTheme.panel, in: RoundedRectangle(cornerRadius:8))
+    }
+    var body: some View {
+        HStack(alignment: .top, spacing:8) {
+            VStack(spacing:8) {
+                card("Block Sustain", detail:"Make the Sound ignore the Sustain Pedal") { Toggle("Block Sustain",isOn:$layer.blockSustain).labelsHidden().toggleStyle(.switch) }
+                card("MIDI Input Transpose",detail:"Shift MIDI notes before they reach the MIDI effects") {
+                    Stepper(value:Binding(get:{layer.effectiveTranspose},set:{layer.transpose=$0}),in: -48...48) { Text("\(layer.effectiveTranspose)").monospacedDigit().frame(minWidth:24) }.frame(width:150).accessibilityLabel("MIDI Input Transpose")
+                }
+                card("Voice Count",detail:"Simultaneous notes the Sound can play") {
+                    if layer.external == nil && layer.midiDestinationID == nil { Stepper(value:$layer.channelSettings.voiceCount,in:1...64) { Text("\(layer.channelSettings.voiceCount)").monospacedDigit() }.frame(width:150).accessibilityLabel("Voice Count") }
+                    else { Text("Instrument managed").font(.caption).foregroundStyle(.secondary) }
+                }
+                VStack(alignment:.leading,spacing:8) {
+                    Text("Volume Fader Range").font(StageTheme.font(14,weight:.semibold))
+                    HStack { Text("Min").font(.caption); Slider(value:$layer.channelSettings.faderMin,in: -60...layer.channelSettings.faderMax).accessibilityLabel("Minimum fader level"); Text("\(layer.channelSettings.faderMin,specifier:"%.0f") dB").font(.caption).frame(width:56) }
+                    HStack { Text("Max").font(.caption); Slider(value:$layer.channelSettings.faderMax,in: layer.channelSettings.faderMin...0).accessibilityLabel("Maximum fader level"); Text("\(layer.channelSettings.faderMax,specifier:"%.0f") dB").font(.caption).frame(width:56) }
+                }.padding(16).background(StageTheme.panel,in:RoundedRectangle(cornerRadius:8))
+            }
+            if layer.midiDestinationID == nil {
+                VStack(spacing:8) {
+                    EffectKnob(descriptor:.init(index:0,name:"Sampler Vol",minimum:-60,maximum:12.0412,defaultValue:0,unit:"dB"),value:samplerDB).background(StageTheme.panel,in:RoundedRectangle(cornerRadius:8))
+                    EffectKnob(descriptor:.init(index:1,name:"Audio Output · Pan",minimum:-1,maximum:1,defaultValue:0,unit:""),value:$layer.pan).background(StageTheme.panel,in:RoundedRectangle(cornerRadius:8))
+                }.frame(width:165)
+            }
+        }
+    }
+}
+
+
+struct ImportedRackControls: View {
+    @Binding var layer:Layer
+    private func delayBinding(_ index:Int,_ path:WritableKeyPath<ImportedDelay,Double>)->Binding<Float> {
+        Binding(get:{Float(layer.importedRack?.effects[index].importedDelay?[keyPath:path] ?? 0.25)},set:{value in layer.importedRack?.effects[index].importedDelay?[keyPath:path]=Double(value)})
+    }
+    @ViewBuilder private func delayControls(_ index:Int)->some View {
+        if let delay=layer.importedRack?.effects[index].importedDelay {
+            VStack {
+                Toggle("Left Tempo Sync",isOn:Binding(get:{layer.importedRack?.effects[index].importedDelay?.leftSynced ?? true},set:{layer.importedRack?.effects[index].importedDelay?.leftSynced=$0}))
+                EffectKnob(descriptor:.init(index:24,name:"Left Time",minimum:0.001,maximum:5.334,defaultValue:0.25,unit:delay.leftSynced ? "beats":"sec"),value:delayBinding(index,\.left))
+            }
+            VStack {
+                Toggle("Right Tempo Sync",isOn:Binding(get:{layer.importedRack?.effects[index].importedDelay?.rightSynced ?? true},set:{layer.importedRack?.effects[index].importedDelay?.rightSynced=$0}))
+                EffectKnob(descriptor:.init(index:25,name:"Right Time",minimum:0.001,maximum:5.334,defaultValue:0.25,unit:delay.rightSynced ? "beats":"sec"),value:delayBinding(index,\.right))
+            }
+            Toggle("Ping Pong",isOn:Binding(get:{layer.importedRack?.effects[index].importedDelay?.pingPong ?? false},set:{layer.importedRack?.effects[index].importedDelay?.pingPong=$0}))
+            EffectKnob(descriptor:.init(index:26,name:"Low Cut",minimum:20,maximum:delay.highCut,defaultValue:20,unit:"Hz"),value:Binding(get:{layer.importedRack?.effects[index].importedDelay?.lowCut ?? 20},set:{layer.importedRack?.effects[index].importedDelay?.lowCut=$0}))
+            EffectKnob(descriptor:.init(index:27,name:"High Cut",minimum:delay.lowCut,maximum:20000,defaultValue:20000,unit:"Hz"),value:Binding(get:{layer.importedRack?.effects[index].importedDelay?.highCut ?? 20000},set:{layer.importedRack?.effects[index].importedDelay?.highCut=$0}))
+        }
+    }
+    var body: some View {
+        VStack(alignment:.leading,spacing:12) {
+            Text("Imported Sound Controls").font(StageTheme.font(15,weight:.semibold))
+            if let rack=layer.importedRack {
+                if !rack.macros.isEmpty {
+                    LazyVGrid(columns:[GridItem(.adaptive(minimum:140))],spacing:8) {
+                        ForEach(rack.macros) { macro in
+                            EffectKnob(descriptor:.init(index:macro.index,name:macro.name,minimum:0,maximum:127,defaultValue:macro.value,unit:""),value:Binding(get:{layer.importedRack?.macros.first(where:{$0.index==macro.index})?.value ?? macro.value},set:{layer.importedRack?.setMacro(macro.index,value:$0)}))
+                        }
+                    }
+                }
+                ForEach(Array(rack.effects.enumerated()),id:\.offset) { index,effect in
+                    DisclosureGroup("\(index+1). \(effect.title)") {
+                        Toggle("Enabled",isOn:Binding(get:{layer.importedRack?.effects[index].enabled ?? false},set:{layer.importedRack?.effects[index].enabled=$0}))
+                        LazyVGrid(columns:[GridItem(.adaptive(minimum:140))],spacing:8) {
+                            if effect.importedDelay != nil { delayControls(index) }
+                            ForEach(AudioEffectCatalog.descriptors(for:effect.kind).filter{effect.importedDelay == nil || ![1,2].contains($0.index)}) { parameter in
+                                EffectKnob(descriptor:parameter,value:Binding(get:{layer.importedRack?.effects[index].values[parameter.index] ?? parameter.defaultValue},set:{value in guard var imported=layer.importedRack else{return};var values=imported.effects[index].values;values[parameter.index]=value;imported.effects[index].parameters=values;layer.importedRack=imported}))
+                            }
+                        }
+                    }
+                }
+                if let branches=rack.branches {
+                    ForEach(Array(branches.enumerated()),id:\.offset){index,branch in
+                        ImportedBranchControls(branch:Binding(get:{layer.importedRack?.branches?[index] ?? branch},set:{layer.importedRack?.branches?[index]=$0}))
+                    }
+                }
+                if rack.effects.isEmpty && rack.branches == nil {Text("No translated rack effects").foregroundStyle(.secondary)}
+            }
+        }.padding(16).background(StageTheme.panel,in:RoundedRectangle(cornerRadius:8))
+    }
+}
+
+struct ImportedBranchControls:View {
+    @Binding var branch:ImportedBranch
+    private var rackLayer:Binding<Layer>{Binding(get:{var layer=Layer(name:branch.name,instrument:0,gain:0.5);layer.importedRack=branch.rack;return layer},set:{if let rack=$0.importedRack{branch.rack=rack}})}
+    var body:some View {
+        DisclosureGroup(branch.name) {
+            Toggle("Branch On",isOn:Binding(get:{branch.enabled ?? true},set:{branch.enabled=$0}))
+            HStack {
+                EffectKnob(descriptor:.init(index:0,name:"Branch Level",minimum:-60,maximum:12.0412,defaultValue:0,unit:"dB"),value:Binding(get:{max(-60,20*log10(max(0.001,branch.gain ?? 1)))},set:{branch.gain=$0<=(-60) ? 0:pow(10,$0/20)}))
+                EffectKnob(descriptor:.init(index:1,name:"Branch Pan",minimum:-1,maximum:1,defaultValue:0,unit:""),value:$branch.pan)
+            }
+            if let midi=branch.midi {
+                DisclosureGroup("MIDI · \(midi.kind.title)") {
+                    Toggle("MIDI Effect On",isOn:Binding(get:{branch.midiEnabled ?? true},set:{branch.midiEnabled=$0}))
+                    if midi.kind == .arpeggiator {
+                        Picker("Style",selection:Binding(get:{branch.midi?.style ?? .up},set:{branch.midi?.style=$0})) {ForEach(MIDIArpStyle.allCases,id:\.self){style in Text(style.title).tag(style)}}
+                        Picker("Rate",selection:Binding(get:{branch.midi?.subdivision ?? 0.25},set:{branch.midi?.subdivision=$0;branch.midi?.freeRateSeconds=nil})) {ForEach([128,96,64,48,32,24,16,12,8,6,4,3,2,1],id:\.self){division in Text("1/\(division)").tag(4.0/Double(division))}}
+                        HStack {Text("Gate");Slider(value:Binding(get:{branch.midi?.gate ?? 0.5},set:{branch.midi?.gate=$0}),in:0.01...2);Text("\(Int((branch.midi?.gate ?? 0.5)*100)) %")}
+                        Toggle("Hold",isOn:Binding(get:{branch.midi?.hold ?? false},set:{branch.midi?.hold=$0}))
+                        HStack {Text("Swing Amount");Slider(value:Binding(get:{branch.midi?.swingAmount ?? 0},set:{if var program=branch.midi {program.swingAmount=$0;program.swingGridBeats=program.swingGridBeats ?? 0.5;branch.midi=program}}),in:0...1)}
+                    }
+                }
+            }
+            ImportedRackControls(layer:rackLayer)
+        }.padding(12).background(StageTheme.base.opacity(0.35),in:RoundedRectangle(cornerRadius:8))
+    }
+}
