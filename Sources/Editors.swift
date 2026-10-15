@@ -64,7 +64,7 @@ struct SoundEditor: View {
                         ScrollView(.horizontal,showsIndicators:false) {
                             ChannelCompressorControls(settings:$draft.channelSettings).frame(width:max(720,geometry.size.width-24)).padding(12)
                         }
-                    }.frame(height:504)
+                    }.frame(height:368)
 
                 } else {
                     VStack(spacing:12) {
@@ -117,6 +117,7 @@ struct SoundEditor: View {
     }
 }
 struct EffectKnob: View {
+    var compact = false
     let descriptor: AudioEffectParameterDescriptor
     @Binding var value: Float
     @State private var initial: Float?
@@ -130,14 +131,14 @@ struct EffectKnob: View {
         if descriptor.unit == "bits" || descriptor.unit == "semitones" { value = value.rounded() }
     }
     var body: some View {
-        VStack(spacing: 10) {
-            Text(descriptor.name).font(StageTheme.font(13,weight:.semibold)).lineLimit(2).frame(height: 32)
+        VStack(spacing: compact ? 6:10) {
+            Text(descriptor.name).font(StageTheme.font(13,weight:.semibold)).lineLimit(2).frame(height:compact ? 24:32)
             ZStack {
                 Circle().trim(from:0.13,to:0.87).stroke(.white.opacity(0.14),lineWidth:3).rotationEffect(.degrees(90))
                 Circle().trim(from:0.13,to:0.13 + 0.74*CGFloat(position)).stroke(StageTheme.selected,lineWidth:3).rotationEffect(.degrees(90))
                 Circle().fill(LinearGradient(colors:[StageTheme.raised,StageTheme.base],startPoint:.topLeading,endPoint:.bottomTrailing)).padding(7).shadow(color:.black.opacity(0.5),radius:4,y:3)
-                Capsule().fill(StageTheme.selected).frame(width:3,height:16).offset(y:-23).rotationEffect(.degrees(-133+Double(position)*266))
-            }.frame(width:84,height:84).contentShape(Circle())
+                Capsule().fill(StageTheme.selected).frame(width:3,height:16).offset(y:compact ? -17:-23).rotationEffect(.degrees(-133+Double(position)*266))
+            }.frame(width:compact ? 56:84,height:compact ? 56:84).contentShape(Circle())
                 .gesture(DragGesture(minimumDistance:0).onChanged { v in if initial == nil { initial = position }; set(initial! - Float(v.translation.height)/180) }.onEnded { _ in initial=nil })
                 .accessibilityElement().accessibilityLabel(descriptor.name).accessibilityValue("\(value) \(descriptor.unit)")
                 .accessibilityAdjustableAction { set(position + ($0 == .increment ? 0.02 : -0.02)) }
@@ -145,7 +146,7 @@ struct EffectKnob: View {
                 TextField(descriptor.name,value:Binding(get:{descriptor.unit == "%" ? value*100 : value},set:{ if $0.isFinite { let raw=descriptor.unit == "%" ? $0/100 : $0; value=min(descriptor.maximum,max(descriptor.minimum,raw)) } }),format:.number.precision(.fractionLength(2))).textFieldStyle(.roundedBorder).frame(width:75)
                 Text(descriptor.unit).font(StageTheme.font(10)).foregroundStyle(.secondary)
             }
-        }.frame(maxWidth:.infinity).padding(10)
+        }.frame(maxWidth:.infinity).padding(compact ? 6:10)
     }
 }
 struct EffectEditor: View {

@@ -1,4 +1,16 @@
-# Piano fidelity — v0.19
+# Piano fidelity — v0.20
+
+## Fixed live sampler regression
+
+Rebuilding the imported effect graph reinitialized AUSampler, cleared its sample references and left its default sine tone active even though AVAudioEngine.start succeeded. Direct sampler comparisons did not exercise this later graph rebuild, and the older production checks accepted any finite audible output.
+
+Graph edits and instrument installation now snapshot each sampler's fullStateForDocument, including file references, and reload it after connections are rebuilt, before rendering restarts. Newly created parallel-branch samplers are included. Default full-keyboard zone ranges are written explicitly: AUSampler omits them in saved state, which otherwise lets filename inference narrow zones during reload. Plain-audio mapping also uses document state so sample references survive mapping edits. Only owned sampler nodes are enumerated, avoiding input-node creation and unintended microphone access. The Mac process raises its own file-descriptor soft limit within the existing hard limit; GUI apps otherwise start with a 256-file budget, which can exhaust while reloading a streamed multi-sample piano. Both piano fixtures pass with the test launched under that 256-file limit.
+
+A live production regression loads 220 Hz and 880 Hz samples with a third harmonic through Store MIDI and switches back again. Before the fix, the output was dominated by the default C sine and references were empty. After the fix, the referenced fundamental and upper harmonic survive each switch. A personal-fixture test loads Felt Room and Touchstone together, rebuilds effects, verifies all 222/9 references remain, and checks that their live output differs. It uses an isolated setlist and does not change the user's patches.
+
+Reverb predelay now delays the input entering the tank using a separate preallocated buffer. The previous implementation mixed a feedback-tank tap into the wet signal. Impulse tests verify an exact 18 ms wet shift with modulation off, unchanged dry attack, and complete panic cleanup. This corrects predelay behavior; it does not establish equivalence to Sunday's room algorithm.
+
+The compressor editor uses compact knobs so all five columns fit the sound editor without hiding release and threshold. Narrow displays retain scrolling. The Mac release was opened normally and inspected with its AudioBox USB 96 output running at 48 kHz/512 frames; all compressor controls and saved values fit the panel.
 
 ## What the comparison established
 

@@ -140,10 +140,10 @@ struct ImportedAudioBranchControls:View {
 struct ChannelCompressorControls:View {
     @Binding var settings:ChannelSettings
     private func knob(_ title:String,_ binding:Binding<Float>,_ low:Float,_ high:Float,_ unit:String)->some View {
-        EffectKnob(descriptor:.init(index:0,name:title,minimum:low,maximum:high,defaultValue:binding.wrappedValue,unit:unit),value:binding)
+        EffectKnob(compact:true,descriptor:.init(index:0,name:title,minimum:low,maximum:high,defaultValue:binding.wrappedValue,unit:unit),value:binding)
     }
     private func panel<Content:View>(_ title:String,@ViewBuilder content:()->Content)->some View {
-        VStack(spacing:12){Text(title).font(StageTheme.font(14,weight:.semibold)).padding(.vertical,12);Divider();content();Spacer(minLength:12)}.frame(maxWidth:.infinity).frame(height:480).background(StageTheme.panel,in:RoundedRectangle(cornerRadius:8))
+        VStack(spacing:12){Text(title).font(StageTheme.font(14,weight:.semibold)).padding(.vertical,12);Divider();content();Spacer(minLength:12)}.frame(maxWidth:.infinity).frame(height:344).background(StageTheme.panel,in:RoundedRectangle(cornerRadius:8))
     }
     private func fader(_ label:String,_ binding:Binding<Float>,_ low:Float,_ high:Float,_ unit:String)->some View {
         VStack {Text(label).font(.caption);VerticalFader(gain:Binding(get:{(binding.wrappedValue-low)/(high-low)},set:{binding.wrappedValue=low+$0*(high-low)}),color:StageTheme.selected,label:label,decibels:false).frame(width:64,height:190);Text(unit == "%" ? "\(Int(binding.wrappedValue*100)) %":String(format:"%.1f dB",binding.wrappedValue)).font(.caption)}

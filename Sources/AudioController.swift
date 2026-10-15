@@ -2,6 +2,9 @@ import Foundation
 import AVFoundation
 import CoreMIDI
 import AudioToolbox
+#if os(macOS)
+import Darwin
+#endif
 
 final class AudioController {
     private let engine = AVAudioEngine()
@@ -17,9 +20,25 @@ final class AudioController {
     private var levels: [Int: Float] = [:]
     var onError: ((String) -> Void)?
     var offline: Bool { engine.isInManualRenderingMode }
+    #if DEBUG
+    func installPlaybackProbe(_ callback:@escaping (AVAudioPCMBuffer)->Void) {
+        engine.mainMixerNode.installTap(onBus:0,bufferSize:512,format:nil){buffer,_ in callback(buffer)}
+    }
+    func removePlaybackProbe(){engine.mainMixerNode.removeTap(onBus:0)}
+    #endif
     func panic(channel:Int) { sk_panic_channel(synth,Int32(channel)); externalRack?.panic(channel) }
     var running: Bool { engine.isRunning }
     init() {
+        #if os(macOS)
+        // LaunchServices can give GUI apps a 256-file soft limit, unlike a shell.
+        // Streamed multi-sample pianos and graph reloads can exceed that budget.
+        // Raise only this process's soft limit, within its existing hard limit.
+        var files=rlimit()
+        if getrlimit(RLIMIT_NOFILE,&files)==0 {
+            let desired=min(files.rlim_max,rlim_t(16384))
+            if files.rlim_cur<desired {files.rlim_cur=desired;_ = setrlimit(RLIMIT_NOFILE,&files)}
+        }
+        #endif
         synth = sk_create(48_000)!
         let pointer = synth
         let format = AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 2)!

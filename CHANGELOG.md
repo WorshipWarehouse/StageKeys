@@ -1,3 +1,12 @@
+## 0.20.0
+
+- Preserve sampler instruments across effect graph rebuilds and channel installs, fixing imported patches becoming the default sine tone.
+- Preserve newly created parallel samplers and plain-audio sample references; make omitted full-keyboard range defaults explicit on reload.
+- Track only owned samplers to avoid activating audio input; give the Mac app enough process-local file handles to stream large instruments under GUI launch limits.
+- Verify live source fundamentals, upper harmonics, hot-swaps and both real piano mappings through the production Store/MIDI path.
+- Correct reverb predelay with a separate preallocated input delay; keep dry attacks unchanged and clear the delay on panic.
+- Fit all five compressor columns using compact controls.
+
 ## 0.19
 
 - Verify native Felt Piano against its source state, sample hashes and rendered soft/medium/hard notes.

@@ -32,6 +32,11 @@ import Darwin
             for _ in 0..<100 {let b=try store.audio.offlineBlock();for c in 0..<2{for i in 0..<Int(b.frameLength){let value=b.floatChannelData![c][i];assert(value.isFinite);peak=max(peak,abs(value))}}}
             store.panic();for _ in 0..<12{_ = try store.audio.offlineBlock()};return peak
         }
+        for state in store.audio.externalRack!.debugBranchStates(0) {
+            let layers=(state["Instrument"] as! [String:Any])["Layers"] as! [[String:Any]]
+            let zone=(layers[0]["Zones"] as! [[String:Any]])[0]
+            assert((zone["min key"] as? Int ?? 0)<=60 && (zone["max key"] as? Int ?? 127)>=60,"Snapshot reload inferred a filename key instead of retaining the source range")
+        }
         let first=try peak();assert(first>0.001)
         let initial=layer.importedRack!
         layer.importedRack!.setMacro(0,value:127);store.commitLayer(0,layer);let both=try peak();assert(both>first*1.5)

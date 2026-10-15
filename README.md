@@ -1,6 +1,6 @@
 ## Version 0.19
 
-Restored sampler cutoff/velocity controls, removed unrelated template vibrato, translated modern Delay, and added the observed Felt Piano Room voicing. Channel compression now honors input, ratio and blend with a five-column editor. See [piano fidelity evidence and limitations](Docs/PIANO-FIDELITY.md).
+Fixed the live sine-tone regression: effect graph rebuilds now preserve sampler document state and sample references, including parallel branches. Live source-content and real piano tests verify the playback path. Reverb predelay now delays the wet input correctly, and compact compressor controls fit the editor. See [piano fidelity evidence and limitations](Docs/PIANO-FIDELITY.md).
 
 ## Version 0.18
 

@@ -15,7 +15,7 @@ typedef struct { float b0,b1,b2,a1,a2,z1,z2; } Biquad;
 typedef struct { float p[32],z[8],coef[8],shiftPhase,stereo; int custom; Biquad eq[8]; } EffectState;
 struct SKSynth {
  double rate;
- int delayLength;
+ int delayLength,predelayLength;
  Voice voices[VOICES];
  Command queue[QUEUE];
  _Atomic unsigned read,write;
@@ -30,7 +30,8 @@ struct SKSynth {
  unsigned remaining[BUSES];
  int blockSustain[BUSES],fxKind[BUSES][3],delayPosition[BUSES][3];
  float fxAmount[BUSES][3],fxCurrent[BUSES][3],tone[BUSES][3];
- float *delay[BUSES][3];
+ float *delay[BUSES][3],*predelay[BUSES][3];
+ int predelayPosition[BUSES][3];
  double fxPhase[BUSES][3],clockRemaining,clockPhase;
  float clockTempo,clockEnvelope;
  int clockEnabled;
@@ -39,15 +40,16 @@ struct SKSynth {
 static SKSynth *create_engine(double rate,int buses,double seconds) {
  SKSynth *s=calloc(1,sizeof(*s)); if(!s) return NULL;
  s->delayLength=(int)fmax(DELAY,fmin(16,seconds)*rate);
+ s->predelayLength=(int)ceil(rate*.2)+2;
  atomic_init(&s->read,0);atomic_init(&s->write,0);atomic_init(&s->emergency,0);
- for(int l=0;l<buses;l++)for(int k=0;k<3;k++){s->delay[l][k]=calloc(s->delayLength,sizeof(float));if(!s->delay[l][k]){sk_destroy(s);return NULL;}}
+ for(int l=0;l<buses;l++)for(int k=0;k<3;k++){s->delay[l][k]=calloc(s->delayLength,sizeof(float));s->predelay[l][k]=calloc(s->predelayLength,sizeof(float));if(!s->delay[l][k]||!s->predelay[l][k]){sk_destroy(s);return NULL;}}
  s->rate=rate;s->clockTempo=72; for(int i=0;i<BUSES;i++){s->gain[i]=s->target[i]=0.5f;s->preGain[i]=1;s->compressorInput[i]=1;s->compressorWet[i]=1;s->voiceLimit[i]=64;s->cutoff[i]=20000;s->filter[i].b0=1;for(int k=0;k<8;k++)s->eq[i][k].b0=1;} return s;
 }
 SKSynth *sk_create(double rate){return create_engine(rate,BUSES,2);}
 SKSynth *sk_create_effects(double rate){return create_engine(rate,1,2);}
 SKSynth *sk_create_effects_with_capacity(double rate,double seconds){return create_engine(rate,1,seconds);}
-void sk_destroy(SKSynth *s){if(!s)return;for(int l=0;l<BUSES;l++)for(int k=0;k<3;k++)free(s->delay[l][k]);free(s);}
-static void clear_delay(SKSynth*s,int l,int k){if(s->delay[l][k])memset(s->delay[l][k],0,s->delayLength*sizeof(float));}
+void sk_destroy(SKSynth *s){if(!s)return;for(int l=0;l<BUSES;l++)for(int k=0;k<3;k++){free(s->delay[l][k]);free(s->predelay[l][k]);}free(s);}
+static void clear_delay(SKSynth*s,int l,int k){if(s->predelay[l][k])memset(s->predelay[l][k],0,s->predelayLength*sizeof(float));s->predelayPosition[l][k]=0;if(s->delay[l][k])memset(s->delay[l][k],0,s->delayLength*sizeof(float));}
 static void enqueue(SKSynth *s,Command c) {
  unsigned w=atomic_load_explicit(&s->write,memory_order_relaxed);
  unsigned next=(w+1)%QUEUE;
@@ -205,10 +207,11 @@ static float effectProcess(SKSynth*s,int l,int k,float x){
   if(kind==15){float pitch=shifted(s,e,buffer,pos,1+.015f*p[5]*sinf(phase*.37f),rate);wet=wet*(1-p[5]*.25f)+pitch*p[5]*.25f;}
   e->z[0]+=e->coef[0]*(wet-e->z[0]);wet-=e->z[0];e->z[1]+=e->coef[1]*(wet-e->z[1]);wet=e->z[1];
   if(kind==10){float a=p[3]*.65f,ap=-a*wet+e->z[2];e->z[2]=wet+a*ap;wet=ap;}
-  float input=predelay>0?tap(buffer,pos,rate*predelay*.001f):x;
+  int prepos=s->predelayPosition[l][k];
+  float input=predelay>0?tap_capacity(s->predelay[l][k],prepos,rate*predelay*.001f,s->predelayLength):x;
+  s->predelay[l][k][prepos]=x;s->predelayPosition[l][k]=(prepos+1)%s->predelayLength;
   // A single bounded feedback tank with four decorrelated taps. Independent algorithm.
-  buffer[pos]=tanhf(x+wet*feedback*.94f);
-  if(predelay>0)wet=(wet+input*.15f)*.87f;
+  buffer[pos]=tanhf(input+wet*feedback*.94f);
   int di=kind==10?7:kind==13?7:8,wi=di+1;y=x*p[di]+wet*p[wi];s->fxPhase[l][k]=fmod(phase+TAU*hz/rate,TAU);break;}
  case 11:{e->z[0]+=e->coef[0]*(x-e->z[0]);float v=x-e->z[0],drive=1+p[0]*30;v=tanhf(v*drive)/tanhf(drive);e->z[1]+=e->coef[1]*(v-e->z[1]);y=(x*(1-p[3])+e->z[1]*p[3])*e->coef[2];break;}
  case 12:buffer[pos]=x;y=p[0]==0?x:x*(1-p[1])+shifted(s,e,buffer,pos,e->coef[0],rate)*p[1];break;

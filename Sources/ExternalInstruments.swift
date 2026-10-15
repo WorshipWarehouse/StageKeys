@@ -135,13 +135,13 @@ final class ExternalInstrumentRack {
         let voice=ImportedBranchVoice(plan)
         for node in [voice.sum,voice.output] {engine.attach(node);nodes.append(node)}
         if let children=plan.rack.branches {
-            for child in children {let nested=try makeBranch(child,state:state,format:format,tempo:tempo,nodes:&nodes);voice.children.append(nested);engine.connect(nested.output,to:voice.sum,format:format)}
+            for (bus,child) in children.enumerated() {let nested=try makeBranch(child,state:state,format:format,tempo:tempo,nodes:&nodes);voice.children.append(nested);engine.connect(nested.output,to:voice.sum,fromBus:0,toBus:AVAudioNodeBus(bus),format:format)}
         } else {
             let sampler=AVAudioUnitSampler();try SamplerRendering.configure(sampler,offline:engine.isInManualRenderingMode);engine.attach(sampler);nodes.append(sampler);voice.sampler=sampler
             let temporary=FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString+".aupreset")
             defer{try? FileManager.default.removeItem(at:temporary)}
             try PropertyListSerialization.data(fromPropertyList:Self.branchState(state,indices:plan.sampleLayers),format:.xml,options:0).write(to:temporary)
-            try sampler.loadInstrument(at:temporary);engine.connect(sampler,to:voice.sum,format:nil)
+            try sampler.loadInstrument(at:temporary);rememberSampler(sampler);engine.connect(sampler,to:voice.sum,format:format)
         }
         let graph=ImportedAudioGraph(engine:engine,rack:plan.rack,format:format,tempo:tempo)
         voice.audioGraph=graph;nodes += graph.nodes
@@ -169,7 +169,7 @@ final class ExternalInstrumentRack {
                 if parallel.isEmpty {engine.connect(voice.unit,to:voice.filter,format:nil)}
                 else {
                     let mix=AVAudioMixerNode();engine.attach(mix);nodes.append(mix)
-                    for branch in parallel {engine.connect(branch.output,to:mix,format:voice.filter.inputFormat(forBus:0))}
+                    for (bus,branch) in parallel.enumerated() {engine.connect(branch.output,to:mix,fromBus:0,toBus:AVAudioNodeBus(bus),format:voice.filter.inputFormat(forBus:0))}
                     engine.connect(mix,to:voice.filter,format:voice.filter.inputFormat(forBus:0))
                 }
                 voice.parallel=parallel;voice.parallelNodes=nodes;voice.parallelTopology=topology;voices[channel]=voice
@@ -183,6 +183,7 @@ final class ExternalInstrumentRack {
     func releaseSource(_ source:Int32){for voice in voices.values {voice.parallel.forEach{$0.releaseSource(source)}}}
     #if DEBUG
     func advanceBranches(to time:Double){for voice in voices.values {voice.parallel.forEach{$0.advance(time)}}}
+    func debugBranchStates(_ channel:Int)->[[String:Any]] {voices[channel]?.parallel.compactMap{$0.sampler?.auAudioUnit.fullStateForDocument} ?? []}
     func parallelBranchCount(_ channel:Int)->Int {voices[channel]?.parallel.count ?? 0}
     #endif
     func configureImported(channel:Int,effects:[AudioEffect],tempo:Float)throws {
@@ -391,7 +392,7 @@ final class ExternalInstrumentRack {
     /// plain audio a chromatic C4 instrument instead of relying on that inference.
     private func loadSample(_ sampler: AVAudioUnitSampler, url: URL) throws {
         try sampler.loadAudioFiles(at: [url])
-        guard var state = sampler.auAudioUnit.fullState,
+        guard var state = sampler.auAudioUnit.fullStateForDocument,
               var instrument = state["Instrument"] as? [String: Any],
               var layers = instrument["Layers"] as? [[String: Any]] else { return }
         for layer in layers.indices {
@@ -405,7 +406,7 @@ final class ExternalInstrumentRack {
         }
         instrument["Layers"] = layers
         state["Instrument"] = instrument
-        sampler.auAudioUnit.fullState = state
+        sampler.auAudioUnit.fullStateForDocument = state
     }
     #if DEBUG
     func debugBuiltin(_ channel:Int)->AVAudioUnitEffect? {voices[channel]?.builtin}
@@ -468,21 +469,72 @@ final class ExternalInstrumentRack {
             node.outputVolume = gain; node.pan = pan
         }
     }
+    // Reconnecting an AVAudioEngine graph can reinitialize AUSampler and clear
+    // its instrument even when start() succeeds. Preserve document state (which
+    // includes file references), not fullState's nonportable transient state.
+    private final class SamplerHandle {weak var sampler:AVAudioUnitSampler?;init(_ sampler:AVAudioUnitSampler){self.sampler=sampler}}
+    private var samplerHandles:[ObjectIdentifier:SamplerHandle] = [:]
+    private var samplerDocuments:[ObjectIdentifier:[String:Any]] = [:]
+    private func rememberSampler(_ sampler:AVAudioUnitSampler) {
+        samplerHandles[ObjectIdentifier(sampler)]=SamplerHandle(sampler)
+        if var state=sampler.auAudioUnit.fullStateForDocument,
+           let refs=state["file-references"] as? [String:Any],!refs.isEmpty {
+            // AUSampler omits default full keyboard ranges when serializing. On
+            // reload, omitted ranges can be inferred from the sample filename
+            // instead (e.g. Tone.wav becomes a single key). Make defaults explicit.
+            if var instrument=state["Instrument"] as? [String:Any],var layers=instrument["Layers"] as? [[String:Any]] {
+                for i in layers.indices {if var zones=layers[i]["Zones"] as? [[String:Any]] {
+                    for j in zones.indices {for (key,value) in [("min key",0),("max key",127),("min vel",1),("max vel",127)] where zones[j][key]==nil {zones[j][key]=value}}
+                    layers[i]["Zones"]=zones
+                }}
+                instrument["Layers"]=layers;state["Instrument"]=instrument
+            }
+            samplerDocuments[ObjectIdentifier(sampler)]=state
+        }
+    }
+    private func samplerState() -> [(AVAudioUnitSampler,[String:Any])] {
+        // Enumerate only owned samplers. AVAudioEngine.attachedNodes can create
+        // the input singleton and trigger microphone access in a playback app.
+        samplerHandles=samplerHandles.filter{$0.value.sampler?.engine === engine}
+        let ids=Set(samplerHandles.keys)
+        samplerDocuments=samplerDocuments.filter{ids.contains($0.key)}
+        let samplers=samplerHandles.values.compactMap(\.sampler)
+        return samplers.compactMap { sampler in
+            rememberSampler(sampler)
+            guard let state=samplerDocuments[ObjectIdentifier(sampler)] else{return nil}
+            return (sampler,state)
+        }
+    }
+    private func restoreSamplers(_ states:[(AVAudioUnitSampler,[String:Any])]) throws {
+        for (sampler,state) in states where sampler.engine === engine {
+            // loadInstrument resolves document file references; assigning state
+            // alone can retain metadata without repopulating offline sample data.
+            let file=FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString+".aupreset")
+            defer{try? FileManager.default.removeItem(at:file)}
+            try PropertyListSerialization.data(fromPropertyList:state,format:.xml,options:0).write(to:file)
+            try sampler.loadInstrument(at:file)
+        }
+    }
     private func editGraph(_ operation: () throws -> Void) throws {
         let mixerSnapshot = mixerState()
-        defer { restoreMixers(mixerSnapshot) }
+        var samplers = samplerState()
+        var restored=false
+        defer {if !restored {try? restoreSamplers(samplers)};restoreMixers(mixerSnapshot)}
         let wasRunning = engine.isRunning
         if wasRunning { engine.stop() }
-        do {try operation()} catch {if wasRunning {try? engine.start()};throw error}
+        do {try operation(); samplers += samplerState().filter { candidate in !samplers.contains(where:{$0.0 === candidate.0}) }} catch {if wasRunning {try? engine.start()};throw error}
+        try restoreSamplers(samplers);restored=true
         if wasRunning { engine.prepare(); try engine.start() }
     }
     private func install(_ unit: AVAudioUnit, channel: Int, configure: (() throws -> Void)? = nil) throws {
         let mixerSnapshot = mixerState()
-        defer { restoreMixers(mixerSnapshot) }
+        var samplers = samplerState()
+        var restored=false
+        defer {if !restored {try? restoreSamplers(samplers)};restoreMixers(mixerSnapshot)}
         let wasRunning = engine.isRunning
         if wasRunning { engine.stop() }
         engine.attach(unit)
-        do { try configure?() } catch {
+        do { try configure?(); if let sampler=unit as? AVAudioUnitSampler {rememberSampler(sampler)}; samplers += samplerState().filter { candidate in !samplers.contains(where:{$0.0 === candidate.0}) } } catch {
             engine.detach(unit)
             if wasRunning { engine.prepare(); try? engine.start() }
             throw error
@@ -509,6 +561,7 @@ final class ExternalInstrumentRack {
         connectEffects(voice)
         engine.connect(mixer, to: engine.mainMixerNode, format: nil)
         voices[channel] = voice
+        try restoreSamplers(samplers);restored=true
         if wasRunning { engine.prepare(); try engine.start() }
     }
     private func detach(_ channel: Int) {
