@@ -64,7 +64,7 @@ struct SoundEditor: View {
                         ScrollView(.horizontal,showsIndicators:false) {
                             ChannelCompressorControls(settings:$draft.channelSettings).frame(width:max(720,geometry.size.width-24)).padding(12)
                         }
-                    }.frame(height:344)
+                    }.frame(height:504)
 
                 } else {
                     VStack(spacing:12) {
