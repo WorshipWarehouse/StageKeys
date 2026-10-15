@@ -34,6 +34,7 @@ struct SKSynth {
  int predelayPosition[BUSES][3];
  double fxPhase[BUSES][3],clockRemaining,clockPhase;
  float clockTempo,clockEnvelope;
+ int stereoSide;
  int clockEnabled;
  EffectState effect[BUSES][3];
 };
@@ -108,7 +109,7 @@ static const float effectDefault[16][32]={
 {0.75,0.66,0.9,0.75,0.5,100,10000,1,0.2},
 {0.96,402,4877,0.4,2},
 {12,0.2},
-{0.5,0,0.3,100,20000,0,1,0.8,0.4},
+{0.5,0,0.3,100,20000,0,1,0.8,0.4,1},
 {1,44,402,2.5,0,0,0.5,18,130,0.9,0.82,0.35},
 {20,0.5,0.5,100,14000,0.33,0.2,1,0.8,0.4},
 };
@@ -126,7 +127,7 @@ static const float effectMin[16][32]={
 {0,0,0,0,0,20,200,0,0},
 {0,20,600,0,-24},
 {-24,0},
-{0,0,0,20,200,0,0.01,0,0},
+{0,0,0,20,200,0,0,0,0,0},
 {0,1,120,0.1,0,-24,0,1,0,0,0,0},
 {0,0,0,20,200,0,0,0.01,0,0},
 };
@@ -144,11 +145,11 @@ static const float effectMax[16][32]={
 {1,0.95,1,1,1,2000,20000,1,1},
 {1,800,20000,1,12},
 {24,1},
-{1,200,0.95,2000,20000,1,10,1,1},
+{1,200,0.95,2000,20000,1,10,1,1,1},
 {2,120,600,10,1,12,1,100,200,1,1,1},
 {200,1,0.95,2000,20000,1,1,10,1,1},
 };
-static const int effectCount[16]={0,3,4,4,3,5,7,24,4,1,9,5,2,9,12,10};
+static const int effectCount[16]={0,3,4,4,3,5,7,24,4,1,9,5,2,10,12,10};
 
 // Delay taps interpolate bounded preallocated memory. All state is render-owned.
 static float tap_capacity(const float *buffer,int pos,float offset,int capacity){
@@ -201,8 +202,13 @@ static float effectProcess(SKSynth*s,int l,int k,float x){
  case 10:case 13:case 15:{
   float size=kind==10?p[2]:kind==13?p[0]:p[1],feedback=kind==10?p[1]:p[2];float predelay=kind==13?p[1]:kind==15?p[0]:0;
   float modulation=kind==10?p[4]:kind==13?p[5]:p[6];float hz=kind==10?.3f:kind==13?p[6]:p[7];
-  float base=rate*(.027f+size*.13f),mod=sinf(phase)*rate*.001f*modulation;
-  float wet=(tap(buffer,pos,base+mod)+tap(buffer,pos,base*1.31f-mod)+tap(buffer,pos,base*1.73f+mod)+tap(buffer,pos,base*2.17f-mod))*.25f;
+  float base=rate*(.027f+size*.13f)*(kind==13 && s->stereoSide ? 1.037f:1),mod=sinf(phase)*rate*.001f*modulation;
+  float first=tap(buffer,pos,base+mod);
+  float wet;
+  if(kind==13) {
+   float dense=(first+tap(buffer,pos,base*1.31f-mod)+tap(buffer,pos,base*1.73f+mod)+tap(buffer,pos,base*2.17f-mod))*.25f;
+   wet=first+(dense-first)*p[9];
+  } else {wet=(first+tap(buffer,pos,base*1.31f-mod)+tap(buffer,pos,base*1.73f+mod)+tap(buffer,pos,base*2.17f-mod))*.25f;}
   if(kind==10){float pitch=shifted(s,e,buffer,pos,2,rate);wet=wet*(1-p[0]) + pitch*p[0];}
   if(kind==15){float pitch=shifted(s,e,buffer,pos,1+.015f*p[5]*sinf(phase*.37f),rate);wet=wet*(1-p[5]*.25f)+pitch*p[5]*.25f;}
   e->z[0]+=e->coef[0]*(wet-e->z[0]);wet-=e->z[0];e->z[1]+=e->coef[1]*(wet-e->z[1]);wet=e->z[1];
@@ -276,6 +282,7 @@ void sk_process_effects(SKSynth*s,float*audio,uint32_t frames){
 // No allocation or Swift calls occur inside the render loop.
 void sk_process_effects_stereo(SKSynth*l,SKSynth*r,float*left,float*right,uint32_t frames){
  commands(l);commands(r);
+ l->stereoSide=0;r->stereoSide=1;
  for(uint32_t n=0;n<frames;n++){
   float x=isfinite(left[n])?left[n]:0,y=isfinite(right[n])?right[n]:0;
   for(int k=0;k<3;k++){

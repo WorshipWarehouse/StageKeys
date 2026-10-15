@@ -170,7 +170,10 @@ struct EffectEditor: View {
         })
     }
     var body: some View {
-        EditorFrame(title: replacing ? "Select Effect" : "0\(slot+1) \(draft.title)", width:800,height:600) {
+        EditorFrame(title: replacing ? "Select Effect" : "0\(slot+1) \(draft.title)", width:draft.kind==13 && !replacing ? 640:800,height:draft.kind==13 && !replacing ? 660:600,showsHeader:draft.kind != 13 || replacing) {
+            if draft.kind==13 && !replacing {
+                HStack(spacing:5){Text(String(format:"%02d",slot+1)).font(StageTheme.font(10,weight:.bold)).padding(3).background(Color.purple,in:RoundedRectangle(cornerRadius:2));Text(draft.title).font(StageTheme.font(16,weight:.bold))}.frame(maxWidth:.infinity).padding(.top,20).padding(.bottom,16)
+            }
             if store.patch.layers[index].midiDestinationID != nil {
                 Text("This channel sends MIDI to an external host. Configure audio effects in that host.").padding(24); Spacer()
                 Button("Done") { dismiss() }.buttonStyle(StageButtonStyle()).padding()
@@ -182,7 +185,10 @@ struct EffectEditor: View {
                         Button("Half Mix") { var values=draft.values; for p in controls where ["Mix","Wet","Amount"].contains(p.name) { values[p.index] *= 0.5 }; draft.parameters=values }
                     }.disabled(draft.kind==0)
                     Spacer()
-                    Toggle("Effect ON",isOn:$draft.enabled).toggleStyle(.switch)
+                    if draft.kind==13 && !replacing {
+                        Text("Effect ON").font(.caption).foregroundStyle(.secondary)
+                        Button{draft.enabled.toggle()}label:{Image(systemName:"power").frame(width:22,height:22)}.buttonStyle(StageButtonStyle(selected:draft.enabled)).accessibilityLabel("PrimaVerb power").accessibilityValue(draft.enabled ? "On":"Off")
+                    } else {Toggle("Effect ON",isOn:$draft.enabled).toggleStyle(.switch)}
                 }.padding(.horizontal,20).padding(.bottom,12)
                 ScrollView {
                     if replacing {
@@ -206,6 +212,8 @@ struct EffectEditor: View {
                         }
                         if draft.kind == 7 {
                             ChannelEqualizerControls(bands:equalizerBands,enabled:$draft.enabled).padding(.top,12)
+                        } else if draft.kind == 13 {
+                            ScrollView(.horizontal,showsIndicators:false){PrimaVerbControls(values:Binding(get:{draft.values},set:{draft.parameters=$0})).frame(minWidth:600).padding(.horizontal,16).padding(.vertical,8)}
                         } else { LazyVGrid(columns:Array(repeating:GridItem(.flexible(),spacing:10),count:3),spacing:15) {
                             ForEach(controls.filter { !(draft.kind==3 && $0.index==1) && !(draft.kind==2 && draft.syncBeats != nil && $0.index==1) && !(draft.kind==14 && $0.index==0) }) { descriptor in
                                 EffectKnob(descriptor:descriptor,value:parameter(descriptor))
@@ -213,7 +221,7 @@ struct EffectEditor: View {
                         }.padding(20) }
                     }
                 }
-                HStack { Button("Discard Changes") { dismiss() }; Spacer(); Button("Confirm") { var layer=store.patch.layers[index];layer.effects[slot]=draft;store.confirmAudition(auditionToken,index:index,layer:layer);dismiss() }.buttonStyle(StageButtonStyle(selected:true)) }.padding(16)
+                HStack { Spacer(); Button("Discard Changes") { dismiss() }.buttonStyle(StageButtonStyle()); Button("Confirm") { var layer=store.patch.layers[index];layer.effects[slot]=draft;store.confirmAudition(auditionToken,index:index,layer:layer);dismiss() }.buttonStyle(StageButtonStyle(selected:true)) }.padding(16)
             }
         }.onAppear { auditionToken=store.beginAudition(index) }.onDisappear { store.endAudition(auditionToken) }.onChange(of:draft) { effect in
             if let token=auditionToken { var layer=store.patch.layers[index]; layer.effects[slot]=effect; store.previewLayer(index,layer,token:token) }
@@ -493,5 +501,64 @@ struct SnapshotNoteEditor: View {
             TextEditor(text: Binding(get: { draft.noteText }, set: { draft.note = $0.components(separatedBy: "\n").prefix(5).joined(separator: "\n") })).font(StageTheme.font(22)).padding(20).frame(minHeight: 150)
             HStack { Button("Discard Changes") { dismiss() }; Spacer(); Button("Confirm") { store.setlist.patches[store.selected].snapshots[index] = draft; store.save(); dismiss() }.buttonStyle(StageButtonStyle(selected: true)) }.padding(20)
         }
+    }
+}
+
+/// Observed PrimaVerb grouping. Stored predelay remains milliseconds so older
+/// patches keep their timing; the percentage view uses the current 200 ms range.
+struct PrimaVerbControls: View {
+    @Binding var values:[Float]
+    private let sizes=["Small Room","Medium Room","Large Room","Medium Hall","Large Hall","Ambient Hall","Cathedral"]
+    private func value(_ index:Int)->Binding<Float> {Binding(get:{values[index]},set:{values[index]=$0})}
+    private var sizeIndex:Int {min(6,max(0,Int((values[0]*6).rounded())))}
+    private func section<Content:View>(_ title:String,@ViewBuilder content:()->Content)->some View {
+        VStack(spacing:0){Text(title).font(StageTheme.font(14)).frame(maxWidth:.infinity).padding(12);Divider();content().padding(14).frame(maxWidth:.infinity,maxHeight:.infinity)}.background(StageTheme.panel,in:RoundedRectangle(cornerRadius:8))
+    }
+    private func knob(_ index:Int,_ name:String?=nil)->some View {
+        let descriptor=AudioEffectCatalog.descriptors(for:13)[index]
+        return InlineEffectKnob(descriptor:.init(index:index,name:name ?? descriptor.name,minimum:descriptor.minimum,maximum:descriptor.maximum,defaultValue:descriptor.defaultValue,unit:descriptor.unit),value:value(index))
+    }
+    private func fader(_ index:Int,_ title:String)->some View {
+        VStack(spacing:8){Text(title).font(.caption);VerticalFader(gain:value(index),color:StageTheme.selected,label:title,decibels:false).frame(width:48,height:286);Text("\(Int((values[index]*100).rounded())) %").font(StageTheme.font(13,weight:.semibold))}.frame(maxWidth:.infinity)
+    }
+    var body:some View {
+        HStack(spacing:5){
+            VStack(spacing:5){
+                section("Settings") {
+                    HStack(spacing:18){
+                        VStack(alignment:.leading,spacing:7){Text("Reverb Size").font(.caption).foregroundStyle(.secondary)
+                            HStack(spacing:6){Button{values[0]=Float(sizeIndex-1)/6}label:{Image(systemName:"chevron.left")}.disabled(sizeIndex==0).accessibilityLabel("Previous reverb size");Text(sizes[sizeIndex]).font(StageTheme.font(14,weight:.semibold)).frame(minWidth:112);Button{values[0]=Float(sizeIndex+1)/6}label:{Image(systemName:"chevron.right")}.disabled(sizeIndex==6).accessibilityLabel("Next reverb size")}.buttonStyle(.plain).padding(12).background(StageTheme.raised,in:RoundedRectangle(cornerRadius:6))
+                        }
+                        InlineEffectKnob(descriptor:.init(index:1,name:"Predelay",minimum:0,maximum:1,defaultValue:0,unit:"%"),value:Binding(get:{values[1]/200},set:{values[1]=$0*200})).help("The percentage uses the 0–200 ms range; the source's exact scaling remains unverified")
+                    }
+                }
+                section("Character"){HStack(spacing:8){knob(2);knob(3);knob(4)}}
+                section("Modulation"){HStack(spacing:8){knob(9);knob(5,"Chorus AMT");knob(6,"Chorus Rate")}}
+            }
+            section("Output"){HStack(spacing:12){fader(7,"Dry");fader(8,"Wet")}}.frame(width:180)
+        }.frame(height:444)
+    }
+}
+
+struct InlineEffectKnob:View {
+    let descriptor:AudioEffectParameterDescriptor
+    @Binding var value:Float
+    @State private var initial:Float?
+    private var logarithmic:Bool {descriptor.unit=="Hz" && descriptor.minimum>0 && descriptor.maximum/descriptor.minimum>10}
+    private var position:Float {let v=min(descriptor.maximum,max(descriptor.minimum,value));return logarithmic ? log(v/descriptor.minimum)/log(descriptor.maximum/descriptor.minimum):(v-descriptor.minimum)/(descriptor.maximum-descriptor.minimum)}
+    private func set(_ p:Float){let x=min(1,max(0,p));value=logarithmic ? descriptor.minimum*pow(descriptor.maximum/descriptor.minimum,x):descriptor.minimum+x*(descriptor.maximum-descriptor.minimum)}
+    var body:some View {
+        HStack(spacing:7){
+            ZStack{
+                Circle().trim(from:0.13,to:0.87).stroke(.white.opacity(0.14),lineWidth:2).rotationEffect(.degrees(90))
+                Circle().trim(from:0.13,to:0.13+0.74*CGFloat(position)).stroke(StageTheme.selected,lineWidth:2).rotationEffect(.degrees(90))
+                Circle().fill(LinearGradient(colors:[StageTheme.raised,StageTheme.base],startPoint:.topLeading,endPoint:.bottomTrailing)).padding(5).shadow(color:.black.opacity(0.4),radius:3,y:2)
+                Capsule().fill(StageTheme.selected).frame(width:2,height:11).offset(y:-13).rotationEffect(.degrees(-133+Double(position)*266))
+            }.frame(width:44,height:44).contentShape(Circle()).gesture(DragGesture(minimumDistance:0).onChanged{v in if initial==nil{initial=position};set(initial!-Float(v.translation.height)/180)}.onEnded{_ in initial=nil})
+                .accessibilityElement().accessibilityLabel(descriptor.name).accessibilityValue("\(descriptor.unit == "%" ? value*100:value) \(descriptor.unit)").accessibilityAdjustableAction{set(position+($0 == .increment ? 0.02 : -0.02))}
+            VStack(alignment:.leading,spacing:3){Text(descriptor.name).font(StageTheme.font(11)).foregroundStyle(.secondary).lineLimit(1)
+                HStack(spacing:3){TextField(descriptor.name,value:Binding(get:{descriptor.unit=="%" ? value*100:value},set:{v in guard v.isFinite else{return};let raw=descriptor.unit=="%" ? v/100:v;value=min(descriptor.maximum,max(descriptor.minimum,raw))}),format:.number.precision(.fractionLength(0))).textFieldStyle(.plain).font(StageTheme.font(13,weight:.semibold)).frame(minWidth:25,maxWidth:55).accessibilityLabel("\(descriptor.name) value");Text(descriptor.unit).font(StageTheme.font(11)).foregroundStyle(StageTheme.selected)}
+            }
+        }.frame(maxWidth:.infinity,alignment:.leading)
     }
 }

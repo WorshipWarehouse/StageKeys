@@ -1,3 +1,10 @@
+## 0.21.0
+
+- Recreate PrimaVerb's observed Settings, Character, Modulation and Output layout with seven named room sizes, inline knobs, output faders and power control.
+- Add functional Quality and zero-Hz Chorus Rate controls; keep nine-value legacy presets compatible without rewriting stored settings.
+- Decorrelate the right wet reverb tank while preserving the dry attack and level.
+- Verify stereo impulse behavior, old-preset persistence, real piano playback and live sample identity. Exact Sunday reverb DSP and predelay scaling remain unverified.
+
 ## 0.20.0
 
 - Preserve sampler instruments across effect graph rebuilds and channel installs, fixing imported patches becoming the default sine tone.

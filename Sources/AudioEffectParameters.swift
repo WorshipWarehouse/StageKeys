@@ -114,9 +114,10 @@ enum AudioEffectCatalog {
             .init(index: 3, name: "Low Cut", minimum: 20, maximum: 2000, defaultValue: 100, unit: "Hz"),
             .init(index: 4, name: "Tone", minimum: 200, maximum: 20000, defaultValue: 20000, unit: "Hz"),
             .init(index: 5, name: "Chorus", minimum: 0, maximum: 1, defaultValue: 0, unit: "%"),
-            .init(index: 6, name: "Rate", minimum: 0.01, maximum: 10, defaultValue: 1, unit: "Hz"),
+            .init(index: 6, name: "Rate", minimum: 0, maximum: 10, defaultValue: 1, unit: "Hz"),
             .init(index: 7, name: "Dry", minimum: 0, maximum: 1, defaultValue: 0.8, unit: "%"),
             .init(index: 8, name: "Wet", minimum: 0, maximum: 1, defaultValue: 0.4, unit: "%"),
+            .init(index: 9, name: "Quality", minimum: 0, maximum: 1, defaultValue: 1, unit: "%"),
         ]
         case 14: return [
             .init(index: 0, name: "Speed", minimum: 0, maximum: 2, defaultValue: 1, unit: "0 brake / 1 slow / 2 fast"),

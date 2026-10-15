@@ -1,6 +1,6 @@
 ## Version 0.19
 
-Fixed the live sine-tone regression: effect graph rebuilds now preserve sampler document state and sample references, including parallel branches. Live source-content and real piano tests verify the playback path. Reverb predelay now delays the wet input correctly, and compact compressor controls fit the editor. See [piano fidelity evidence and limitations](Docs/PIANO-FIDELITY.md).
+PrimaVerb now matches the observed grouped editor with seven named size choices, inline controls, output faders, Quality and zero-rate modulation. Its wet stereo tail is decorrelated, and older presets remain compatible. The v0.20 sampler preservation fix remains covered by live waveform and real-piano tests. See [piano fidelity evidence and limitations](Docs/PIANO-FIDELITY.md).
 
 ## Version 0.18
 

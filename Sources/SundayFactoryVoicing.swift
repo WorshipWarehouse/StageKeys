@@ -13,7 +13,7 @@ enum SundayFactoryVoicing {
         layer.channelSettings=settings
         var room=AudioEffect();room.kind=13
         // Predelay's percent-to-time mapping and reverb DSP remain approximations.
-        room.parameters=[0,18,0.33,776,2884,0,0.01,1,0.23]
+        room.parameters=[0,18,0.33,776,2884,0,0,1,0.23,1]
         var delay=AudioEffect();delay.kind=3;delay.enabled=false
         var shimmer=AudioEffect();shimmer.kind=10;shimmer.enabled=false
         layer.effects=[delay,room,shimmer]

@@ -1,4 +1,4 @@
-# Piano fidelity — v0.20
+# Piano fidelity — v0.21
 
 ## Fixed live sampler regression
 
@@ -11,6 +11,16 @@ A live production regression loads 220 Hz and 880 Hz samples with a third harmon
 Reverb predelay now delays the input entering the tank using a separate preallocated buffer. The previous implementation mixed a feedback-tank tap into the wet signal. Impulse tests verify an exact 18 ms wet shift with modulation off, unchanged dry attack, and complete panic cleanup. This corrects predelay behavior; it does not establish equivalence to Sunday's room algorithm.
 
 The compressor editor uses compact knobs so all five columns fit the sound editor without hiding release and threshold. Narrow displays retain scrolling. The Mac release was opened normally and inspected with its AudioBox USB 96 output running at 48 kHz/512 frames; all compressor controls and saved values fit the panel.
+
+## PrimaVerb controls and stereo tail
+
+The accessible Felt Room effect was inspected again in Sunday Keys. Its size stepper has seven choices: Small Room, Medium Room, Large Room, Medium Hall, Large Hall, Ambient Hall, and Cathedral. The editor groups Settings, Character, Modulation and Output, with Quality at 100%, Chorus AMT at 0%, Chorus Rate at 0 Hz, Dry at 100% and Wet at 23%. Inspection changes were discarded in the source app.
+
+StageKeys now has this grouped layout, named size stepper, percentage predelay, inline knobs, output faders, power button and right-aligned Discard/Confirm actions. The percentage view retains the existing 0–200 ms predelay scale: 9% still means 18 ms here. That scaling has not been verified against Sunday's DSP. Seven UI size positions map to the existing normalized size range; old continuous values remain unchanged until edited.
+
+PrimaVerb now accepts 0 Hz chorus rate. Quality is an appended control: nine-value presets still validate and preserve their serialized values, while playback and editing supply 100% Quality when it is absent. StageKeys uses Quality to interpolate wet tap density; this is an independent implementation, not a verified model of Sunday's Quality algorithm. The new factory Felt Room profile stores the observed zero rate and full quality. Existing user effects keep their stored settings.
+
+The right reverb tank uses different delay lengths so mono sources no longer produce identical left/right wet tails. The dry signal and its timing remain unchanged. Impulse tests check stereo decorrelation, bounded energy, quality behavior, dry passthrough, predelay and panic cleanup. Live real-piano tests and waveform/harmonic tests continue to check that effect edits do not replace sampler instruments with fallback tones. The Mac editor was inspected with the user’s existing Piano Patch: size bounds, power and Quality edits worked, and Discard left the saved setlist, settings and library semantically identical to their backups.
 
 ## What the comparison established
 
