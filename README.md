@@ -1,3 +1,7 @@
+## Version 0.23
+
+The library now has five-star row ratings with click-again clearing, Rating / Recently Added / stable Random ordering, a Complexity filter and editable complexity tags. Ratings are personal library preferences and do not replace sounds or change patch audio. Filter menus open below their controls. Recently Added follows managed-library insertion order; missing complexity remains explicitly untagged. [Library behavior and verification](Docs/LIBRARY-RATINGS.md).
+
 ## Version 0.22
 
 The Felt Room reverb now uses a standalone MIT-licensed Airwindows CreamCoat core, the processor family identified in Sunday Keys' PrimaVerb. Predelay and Quality use that core's normalized controls instead of the previous delay-time/tap-density approximation. The adaptation matches pinned upstream float output in 153 room/rate/quality combinations. The complete Sunday Keys wrapper is still not verified identical; room selection mapping, wet EQ and chorus need further comparison.

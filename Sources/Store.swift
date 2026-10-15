@@ -155,12 +155,25 @@ final class PerformanceStore: ObservableObject {
     let audio = AudioController()
     let midi = MIDIInput()
     @Published var librarySounds: [LibrarySound] = []
+    @Published private(set) var soundRatings:[String:Int]=[:]
     @Published var libraryRangePreview: Layer?
     private var libraryRangePreviewIndex: Int?
     var displayedLayers:[Layer] {
         var layers=patch.layers
         if let index=libraryRangePreviewIndex,layers.indices.contains(index),var preview=libraryRangePreview {preview.id=layers[index].id;layers[index]=preview}
         return layers
+    }
+    func rateSound(_ id:String,_ value:Int) {
+        guard let updated=SoundRatingArchive.setting(value,for:id,in:soundRatings) else{return}
+        do {try SoundRatingArchive.save(updated,to:saveURL.deletingLastPathComponent().appendingPathComponent("sound-ratings.json"));soundRatings=updated}
+        catch {message="Could not save sound rating: \(error.localizedDescription)"}
+    }
+    func setSoundComplexity(_ id:String,_ value:String?) {
+        guard value.map({["Simple","Moderate","Complex"].contains($0)}) ?? true,let index=librarySounds.firstIndex(where:{$0.id==id}) else{return}
+        var updated=librarySounds;var tags=updated[index].tags ?? BrowserSound.library(updated[index]).tags
+        tags.complexity=value;updated[index].tags=tags
+        do {try SoundLibrary(url:saveURL.deletingLastPathComponent().appendingPathComponent("sound-library.json")).write(updated);librarySounds=updated}
+        catch {message="Could not save sound tags: \(error.localizedDescription)"}
     }
     func previewLibraryRange(_ index:Int,_ layer:Layer?) {libraryRangePreviewIndex=layer == nil ? nil:index;libraryRangePreview=layer}
     @Published var libraryImportBusy=false
@@ -178,6 +191,7 @@ final class PerformanceStore: ObservableObject {
     init() {
         let base = ProcessInfo.processInfo.environment["STAGEKEYS_DATA_DIR"].map { URL(fileURLWithPath: $0) } ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("StageKeys")
         saveURL = base.appendingPathComponent("setlist.json")
+        soundRatings=SoundRatingArchive.load(base.appendingPathComponent("sound-ratings.json"))
         effectPresets=EffectPresetArchive.load(base.appendingPathComponent("effect-presets.json"))
         do { librarySounds = try SoundLibrary(url: base.appendingPathComponent("sound-library.json")).read() }
         catch { message = "Could not read sound library: \(error.localizedDescription)" }

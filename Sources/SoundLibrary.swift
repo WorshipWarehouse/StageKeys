@@ -32,7 +32,7 @@ struct SoundLibrary {
             entries[i].collection = entries[i].collection.replacingOccurrences(of: "Sunday Free Ableton ·", with: "Sunday Free ·")
             if entries[i].collection == "Ableton Imports" { entries[i].collection = "Imported Sounds" }
         }
-        for i in entries.indices {if let tags=entries[i].tags,tags.inferred {entries[i].tags = .inferred(name:entries[i].name,source:tags.sourceModel)}}
+        for i in entries.indices {if let tags=entries[i].tags,tags.inferred {var updated=SoundTags.inferred(name:entries[i].name,source:tags.sourceModel);updated.complexity=tags.complexity;entries[i].tags=updated}}
         if let original=entries.first(where:{$0.collection.hasPrefix("Sunday App") && $0.name.hasPrefix("SK App Felt Piano")}),let voiced=SundayFactoryVoicing.feltRoom(from:original),!entries.contains(where:{$0.id==voiced.id}) {entries.append(voiced)}
         try Self.validate(entries); return entries
     }
@@ -55,6 +55,7 @@ struct SoundLibrary {
             if let previous=entry.previousImportedRack, !previous.validate() {throw SetlistError.invalid}
             if let notes=entry.conversionNotes {guard notes.count<=128,notes.allSatisfy({$0.count<=2000}) else{throw SetlistError.invalid}}
             if let tags=entry.tags {
+                guard tags.complexity.map({["Simple","Moderate","Complex"].contains($0)}) ?? true else{throw SetlistError.invalid}
                 let text=[tags.category,tags.type,tags.sourceModel]+tags.timbres+tags.articulations
                 guard tags.timbres.count<=64,tags.articulations.count<=64,text.allSatisfy({$0.count<=200}) else {throw SetlistError.invalid}
             }

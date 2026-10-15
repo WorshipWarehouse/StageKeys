@@ -20,6 +20,7 @@ struct SoundBrowser: View {
     private var sounds:[BrowserSound] {
         var result=["Soft Keys","Warm Pad","Glass Bells"].enumerated().map {i,name in BrowserSound(id:"builtin-\(i)",name:name,collection:"StageKeys",tags:.inferred(name:name,source:"StageKeys Synth"),builtin:i)}
         let entries=store.librarySounds
+        let entryOrder=Dictionary(entries.enumerated().map{($0.element.id,$0.offset+1)},uniquingKeysWith:{first,_ in first})
         result += entries.map {entry in
             if collection == "MainStage Archive",entry.hostPath != nil,
                let converted=entries.first(where:{$0.sourceArchiveID == entry.id && ($0.sound != nil || $0.layer != nil)}) {
@@ -39,6 +40,10 @@ struct SoundBrowser: View {
             case "Sunday App":return sound.collection.hasPrefix("Sunday App")
             default:return sound.collection == collection && sound.playable
             }
+        }.map {sound in
+            var item=sound;item.rating=store.soundRatings[sound.ratingID] ?? 0
+            item.addedOrder=entryOrder[sound.ratingID] ?? 0
+            return item
         }
     }
     private let selectionColor=Color(red:0.49,green:0.61,blue:0.82)
@@ -65,7 +70,7 @@ struct SoundBrowser: View {
         .onChange(of:collection){_ in selectedID=nil;query.filters=[:]}
         .onChange(of:query.search){_ in clearHiddenSelection()}
         .onChange(of:query.filters){_ in clearHiddenSelection()}
-        .onChange(of:store.librarySounds){_ in if collection == "My Sounds" {clearHiddenSelection()}}
+        .onChange(of:store.librarySounds){_ in clearHiddenSelection()}
     }
     private var header:some View {
         HStack(spacing:16) {
@@ -80,7 +85,7 @@ struct SoundBrowser: View {
     }
     private func facetColumn(_ facet:LibraryFacet,offset:Int)->some View {
         VStack(spacing:0) {
-            LibraryChoiceMenu(title:facet.rawValue,choices:LibraryFacet.allCases.map(\.rawValue),accessibility:"Filter column \(offset+1): \(facet.rawValue)"){name in
+            LibraryChoiceMenu(title:facet.rawValue,choices:LibraryFacet.allCases.map(\.rawValue).sorted(),accessibility:"Filter column \(offset+1): \(facet.rawValue)"){name in
                 guard let item=LibraryFacet(rawValue:name) else{return}
                 if let other=facets.firstIndex(of:item),other != offset {facets[other]=facet} else if item != facet {query.filters[facet]=nil};facets[offset]=item;clearHiddenSelection()
             }.padding(8).frame(height:70)
@@ -97,13 +102,18 @@ struct SoundBrowser: View {
         VStack(spacing:0) {
             HStack(spacing:8) {
                 Text("Order by").font(StageTheme.font(12))
-                LibraryChoiceMenu(title:query.sort?.rawValue ?? "Name",choices:["Name"]+[LibraryFacet.category,.type,.library,.source,.availability].map(\.rawValue),accessibility:"Order by \(query.sort?.rawValue ?? "Name")"){query.sort=LibraryFacet(rawValue:$0)}
+                LibraryChoiceMenu(title:query.ordering.rawValue,choices:LibrarySort.allCases.map(\.rawValue),accessibility:"Order by \(query.ordering.rawValue)"){if let order=LibrarySort(rawValue:$0){query.order(by:order)}}
                 Button{query.ascending.toggle()}label:{Image(systemName:query.ascending ? "arrow.down.to.line" : "arrow.up.to.line").frame(width:30,height:42)}.buttonStyle(.plain).accessibilityLabel(query.ascending ? "Sort descending" : "Sort ascending")
             }.padding(8).frame(height:70)
             ScrollView {
                 LazyVStack(spacing:2) {
                     ForEach(results){sound in
-                        Button{selectedID=sound.id}label:{HStack(spacing:8){VStack(alignment:.leading,spacing:5){Text(sound.name).font(StageTheme.font(16)).fontWeight(.regular).multilineTextAlignment(.leading);if collection == "MainStage Archive" {Text(sound.playable ? "Playable" : "Needs Conversion").font(StageTheme.font(11)).foregroundStyle(.secondary)}}.frame(maxWidth:.infinity,alignment:.leading)}.padding(.horizontal,14).padding(.vertical,13).background(selectedID == sound.id ? selectionColor : .clear,in:RoundedRectangle(cornerRadius:7)).foregroundStyle(selectedID == sound.id ? .white : .white.opacity(0.85))}.buttonStyle(.plain).accessibilityLabel("\(sound.name), \(sound.playable ? "Playable" : "Needs Conversion")")
+                        HStack(spacing:0){
+                            Button{selectedID=sound.id}label:{VStack(alignment:.leading,spacing:5){Text(sound.name).font(StageTheme.font(16)).multilineTextAlignment(.leading);if collection == "MainStage Archive" {Text(sound.playable ? "Playable":"Needs Conversion").font(StageTheme.font(11)).foregroundStyle(.secondary)}}.frame(maxWidth:.infinity,alignment:.leading).padding(.leading,14).padding(.vertical,13)}.buttonStyle(.plain).accessibilityLabel("\(sound.name), \(sound.playable ? "Playable":"Needs Conversion")")
+                            SoundRatingControl(name:sound.name,rating:sound.rating){store.rateSound(sound.ratingID,$0)}.padding(.horizontal,12)
+                        }.background(selectedID == sound.id ? selectionColor:.clear,in:RoundedRectangle(cornerRadius:7)).foregroundStyle(selectedID == sound.id ? .white:.white.opacity(0.85))
+                        .contextMenu {if let entry=sound.entry {Menu("Complexity"){ForEach(["Simple","Moderate","Complex"],id:\.self){value in Button(value){store.setSoundComplexity(entry.id,value)}};Divider();Button("Clear Complexity"){store.setSoundComplexity(entry.id,nil)}}}}
+
                     }
                     if results.isEmpty {
                         VStack(spacing:14) {
@@ -168,7 +178,7 @@ private struct LibraryChoiceMenu:View {
     @State private var expanded=false
     var body:some View {
         Button{expanded.toggle()}label:{HStack{Text(title).lineLimit(1);Spacer(minLength:4);Image(systemName:"chevron.down").font(.system(size:13))}.font(StageTheme.font(15)).padding(.horizontal,14).frame(height:46).frame(maxWidth:.infinity).background(StageTheme.raised.opacity(0.22),in:RoundedRectangle(cornerRadius:8)).overlay(RoundedRectangle(cornerRadius:8).stroke(Color.white.opacity(0.09)))}.buttonStyle(.plain).accessibilityLabel(accessibility)
-            .popover(isPresented:$expanded){ScrollView{VStack(spacing:2){ForEach(choices,id:\.self){choice in Button{choose(choice);expanded=false}label:{HStack{Text(choice);Spacer();if choice == title{Image(systemName:"checkmark")}}.padding(12).frame(maxWidth:.infinity,alignment:.leading)}.buttonStyle(.plain)}}.padding(6)}.frame(width:230,height:min(CGFloat(choices.count)*45+12,360)).background(StageTheme.panel)}
+            .popover(isPresented:$expanded,arrowEdge:.bottom){ScrollView{VStack(spacing:2){ForEach(choices,id:\.self){choice in Button{choose(choice);expanded=false}label:{HStack{Text(choice);Spacer();if choice == title{Image(systemName:"checkmark")}}.padding(12).frame(maxWidth:.infinity,alignment:.leading)}.buttonStyle(.plain)}}.padding(6)}.frame(width:230,height:min(CGFloat(choices.count)*45+12,360)).background(StageTheme.panel)}
     }
 }
 private struct LibraryActionStyle:ButtonStyle {
@@ -176,5 +186,29 @@ private struct LibraryActionStyle:ButtonStyle {
     var primary=false
     func makeBody(configuration:Configuration)->some View {
         configuration.label.font(StageTheme.font(14,weight:.semibold)).frame(width:120,height:44).background(primary ? StageTheme.selected.opacity(enabled ? 0.9 : 0.3) : StageTheme.base,in:RoundedRectangle(cornerRadius:9)).overlay(RoundedRectangle(cornerRadius:9).stroke(Color.white.opacity(0.12))).foregroundStyle(primary ? StageTheme.base : StageTheme.selected).opacity(configuration.isPressed ? 0.7 : 1)
+    }
+}
+
+private struct SoundRatingControl:View {
+    let name:String
+    let rating:Int
+    let set:(Int)->Void
+    @State private var hovering=false
+    var body:some View {
+        HStack(spacing:0) {
+            ForEach(1...5,id:\.self) { star in
+                Button {set(rating==star ? 0:star)} label: {
+                    ZStack {
+                        if star<=rating {Image(systemName:"star.fill").font(.system(size:12))}
+                        else if hovering {Image(systemName:"star").font(.system(size:12))}
+                        else {Circle().frame(width:3,height:3)}
+                    }.frame(width:17,height:28).contentShape(Rectangle())
+                }.buttonStyle(.plain)
+                .accessibilityLabel("Rate \(name) \(star) stars")
+                .accessibilityValue(star<=rating ? "Selected":"Not selected")
+                .help(rating==star ? "Clear rating":"Rate \(star) stars")
+            }
+        }.onHover{hovering=$0}.accessibilityElement(children:.contain)
+        .accessibilityLabel("\(name) rating, \(rating) of 5 stars")
     }
 }

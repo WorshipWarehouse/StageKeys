@@ -1,3 +1,7 @@
+## 0.23 library update
+
+Persistent five-star ratings, clear rating, Rating/Recently Added/stable Random ordering, explicit Complexity tags/filtering, and below-control library choice menus now work. Source Recommended sorting and Note Range filtering remain outstanding. See [library evidence](LIBRARY-RATINGS.md); this does not establish full app parity.
+
 ## 0.7 update
 
 Observed Sunday Keys channel editor: three main tabs, eight EQ knob columns (not a graph), two-column settings, and channel transpose explicitly before MIDI effects. Implemented corresponding UI structure, pre-MIDI-FX channel transpose, full sound presets in My Sounds, local setlist create/switch/rename/duplicate/Trash/restore, and layer drag/drop with identity-preserving reorder. Mac and mobile release builds pass; hardware MIDI/audio regressions and library/reorder/routing tests pass. Native Mac UI verified the eight-column editor, staged edit/discard, local setlist create/switch/Trash, and actual sound-order changes using the draggable grip. The temporary test setlist was archived and Sunday Morning restored. Full parity and remaining 0.6 sound-conversion gaps are not claimed complete.

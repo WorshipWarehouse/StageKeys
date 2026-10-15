@@ -8,6 +8,7 @@ struct SoundTags: Codable, Equatable {
     var articulations: [String] = []
     var sourceModel: String = "Sampler"
     var inferred: Bool = false
+    var complexity:String?
     static func inferred(name: String, source: String = "Sampler") -> SoundTags {
         let n = name.lowercased()
         let words=Set(n.split(whereSeparator:{!$0.isLetter && !$0.isNumber}).map(String.init))
@@ -28,7 +29,7 @@ struct SoundTags: Codable, Equatable {
     }
 }
 enum LibraryFacet: String, CaseIterable, Identifiable {
-    case category="Category", type="Type", timbre="Timbre", articulation="Articulation", library="Sound Library", source="Source/Model", availability="Availability"
+    case category="Category", type="Type", timbre="Timbre", articulation="Articulation", library="Sound Library", source="Source/Model", availability="Availability", complexity="Complexity"
     var id:String {rawValue}
 }
 struct BrowserSound: Identifiable {
@@ -40,9 +41,13 @@ struct BrowserSound: Identifiable {
     var entry:LibrarySound?
     var external:ExternalSound?
     var destination:ExternalMIDIDestination?
+    var rating=0
+    var addedOrder=0
+    var ratingID:String {entry?.id ?? id}
     var playable:Bool {builtin != nil || entry?.sound != nil || entry?.layer != nil || external != nil || destination != nil}
     func values(_ facet:LibraryFacet)->[String] {
         switch facet {
+        case .complexity:return [tags.complexity ?? "Not Tagged"]
         case .category:return [tags.category]
         case .type:return [tags.type]
         case .timbre:return tags.timbres
@@ -56,11 +61,24 @@ struct BrowserSound: Identifiable {
         BrowserSound(id:entry.id,name:entry.name,collection:entry.collection,tags:entry.tags ?? .inferred(name:entry.name,source:entry.hostPath != nil ? "MainStage" : entry.sound?.kind == .audioUnit ? "Audio Unit" : "Sampler"),entry:entry)
     }
 }
+enum LibrarySort:String,CaseIterable {case name="Name",rating="Rating",recent="Recently Added",random="Random"}
 struct LibraryQuery {
     var search=""
     var filters:[LibraryFacet:String]=[:]
     var sort:LibraryFacet?=nil
     var ascending=true
+    var ordering:LibrarySort = .name
+    var shuffleSeed:UInt64=0
+    mutating func order(by mode:LibrarySort) {
+        ordering=mode;sort=nil;ascending=mode == .name
+        if mode == .random {shuffleSeed=UInt64.random(in:1...UInt64.max)}
+    }
+    private func randomKey(_ id:String)->UInt64 {
+        // Stable within a browsing session and independent of process hash seeds.
+        var h:UInt64=14695981039346656037 ^ shuffleSeed
+        for byte in id.utf8 {h=(h ^ UInt64(byte)) &* 1099511628211}
+        h ^= h >> 30;h &*= 0xbf58476d1ce4e5b9;h ^= h >> 27;h &*= 0x94d049bb133111eb;return h ^ (h >> 31)
+    }
     func matches(_ sound:BrowserSound,ignoring:LibraryFacet?=nil)->Bool {
         let terms=search.split(whereSeparator:{$0.isWhitespace})
         let haystack=([sound.name,sound.collection]+LibraryFacet.allCases.flatMap{sound.values($0)}).joined(separator:" ")
@@ -69,6 +87,16 @@ struct LibraryQuery {
     }
     func results(_ sounds:[BrowserSound])->[BrowserSound] {
         sounds.filter{matches($0)}.sorted {a,b in
+            if sort == nil && ordering != .name {
+                let left:UInt64,right:UInt64
+                switch ordering {
+                case .rating:left=UInt64(max(0,a.rating));right=UInt64(max(0,b.rating))
+                case .recent:left=UInt64(max(0,a.addedOrder));right=UInt64(max(0,b.addedOrder))
+                case .random:left=randomKey(a.id);right=randomKey(b.id)
+                case .name:left=0;right=0
+                }
+                if left != right {return ascending ? left<right:left>right}
+            }
             let left=sort.map{a.values($0).joined(separator:", ")} ?? a.name
             let right=sort.map{b.values($0).joined(separator:", ")} ?? b.name
             let comparison=left.localizedStandardCompare(right)
@@ -78,5 +106,26 @@ struct LibraryQuery {
     }
     func options(_ facet:LibraryFacet,in sounds:[BrowserSound])->[String] {
         ["All"]+Set(sounds.filter{matches($0,ignoring:facet)}.flatMap{$0.values(facet)}).filter{!$0.isEmpty}.sorted{$0.localizedStandardCompare($1) == .orderedAscending}
+    }
+}
+
+/// Personal ratings are independent of samples, sound presets and patch snapshots.
+enum SoundRatingArchive {
+    static func valid(_ ratings:[String:Int])->Bool {ratings.count<=8192 && ratings.allSatisfy{!$0.key.isEmpty && $0.key.count<=512 && (1...5).contains($0.value)}}
+    static func load(_ url:URL)->[String:Int] {
+        guard let data=try? Data(contentsOf:url),data.count<=4_000_000,let ratings=try? JSONDecoder().decode([String:Int].self,from:data),valid(ratings) else{return [:]}
+        return ratings
+    }
+    static func setting(_ value:Int,for id:String,in ratings:[String:Int])->[String:Int]? {
+        guard !id.isEmpty,id.count<=512,(0...5).contains(value) else{return nil}
+        var updated=ratings;updated[id]=value==0 ? nil:value
+        return valid(updated) ? updated:nil
+    }
+    static func save(_ ratings:[String:Int],to url:URL)throws {
+        guard valid(ratings) else{throw CocoaError(.fileWriteInvalidFileName)}
+        let data=try JSONEncoder().encode(ratings)
+        guard data.count<=4_000_000 else{throw CocoaError(.fileWriteOutOfSpace)}
+        try FileManager.default.createDirectory(at:url.deletingLastPathComponent(),withIntermediateDirectories:true)
+        try data.write(to:url,options:.atomic)
     }
 }
