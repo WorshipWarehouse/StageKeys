@@ -41,6 +41,9 @@ final class BuiltinEffectUnit: AUAudioUnit {
         guard (0..<3).contains(slot),(0...15).contains(kind) else{return}
         var clean=AudioEffectCatalog.defaults(for:kind)
         for p in AudioEffectCatalog.descriptors(for:kind) {let value=p.index<values.count ? values[p.index]:p.defaultValue;clean[p.index]=value.isFinite ? max(p.minimum,min(p.maximum,value)):p.defaultValue}
+        // Internal engine selector is deliberately separate from visible controls.
+        // Keep it across format changes and render-resource reallocation.
+        if kind==13 {clean.append(values.count>10 && values[10].isFinite && values[10]>0 ? 1:0)}
         settings[slot]=Setting(kind:kind,enabled:enabled,values:clean,tempo:max(20,min(300,tempo)),delay:delay)
         apply(slot)
     }

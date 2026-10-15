@@ -20,6 +20,17 @@ struct AudioEffect: Codable, Equatable {
     var importedDelay: ImportedDelay?
     var syncBeats: Float?
     var parameters: [Float]?
+    /// Explicitly retained through edits; absent on legacy imported reverbs.
+    var reverbCore: String?
+    var usesCreamCoat: Bool {
+        guard kind == 13 else { return false }
+        if let reverbCore { return reverbCore == "creamcoat" }
+        // Upgrade only the previously reconstructed, untouched Felt Room profile.
+        guard let p=parameters, p.count==9 || p.count==10 else{return false}
+        let observed:[Float]=[0,18,0.33,776,2884,0,0,1,0.23]
+        return zip(p.prefix(9),observed).enumerated().allSatisfy { i,pair in abs(pair.0-pair.1)<(i==6 ? 0.011:0.0001) } && (p.count==9 || p[9]==1)
+    }
+    var renderValues:[Float] { kind == 13 ? values+[usesCreamCoat ? 1:0]:values }
     var title: String { AudioEffectCatalog.names.indices.contains(kind) ? AudioEffectCatalog.names[kind] : "No Effect" }
     var values: [Float] {
         if let parameters { return kind == 13 && parameters.count == 9 ? parameters+[1]:parameters }
@@ -30,6 +41,7 @@ struct AudioEffect: Codable, Equatable {
         return values
     }
     func validate() -> Bool {
+        guard reverbCore.map({kind == 13 && ["creamcoat","legacy"].contains($0)}) ?? true else{return false}
         guard importedDelay.map({kind == 3 && $0.validate()}) ?? true else{return false}
         guard syncBeats.map({ $0.isFinite && (0.0625...4).contains($0) }) ?? true, (0...15).contains(kind), amount.isFinite, (0...1).contains(amount) else { return false }
         guard let parameters else { return true }
@@ -314,4 +326,22 @@ struct Setlist: Codable {
 enum SetlistError: LocalizedError {
     case invalid
     var errorDescription: String? { "This setlist has unsupported or invalid settings." }
+}
+
+struct EffectPreset: Codable, Equatable, Identifiable {
+    var id=UUID()
+    var name:String
+    var effect:AudioEffect
+    func validate()->Bool { !name.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty && name.count<=80 && effect.kind>0 && effect.validate() }
+}
+enum EffectPresetArchive {
+    static func load(_ url:URL)->[EffectPreset] {
+        guard let data=try? Data(contentsOf:url),let presets=try? JSONDecoder().decode([EffectPreset].self,from:data),presets.count<=128,presets.allSatisfy({$0.validate()}),Set(presets.map(\.id)).count==presets.count else{return []}
+        return presets
+    }
+    static func save(_ presets:[EffectPreset],to url:URL)throws {
+        guard presets.count<=128,presets.allSatisfy({$0.validate()}),Set(presets.map(\.id)).count==presets.count else{throw CocoaError(.fileWriteInvalidFileName)}
+        try FileManager.default.createDirectory(at:url.deletingLastPathComponent(),withIntermediateDirectories:true)
+        try JSONEncoder().encode(presets).write(to:url,options:.atomic)
+    }
 }

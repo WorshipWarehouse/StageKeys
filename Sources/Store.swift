@@ -9,6 +9,7 @@ import AppKit
 final class PerformanceStore: ObservableObject {
     @Published var setlist = Setlist()
     @Published var selected = 0
+    @Published private(set) var effectPresets:[EffectPreset]=[]
     @Published var started = false
     @Published var audioOutputs: [AudioOutputDevice] = []
     @Published var audioStatus: AudioDeviceStatus?
@@ -82,6 +83,15 @@ final class PerformanceStore: ObservableObject {
         var isolatedLibrary = false
     }
     private var audition: Audition?
+    func saveEffectPreset(_ effect:AudioEffect,name:String) {
+        var saved=effect
+        if effect.usesCreamCoat {saved.reverbCore="creamcoat"}
+        let preset=EffectPreset(name:name.trimmingCharacters(in:.whitespacesAndNewlines),effect:saved)
+        guard preset.validate(),effectPresets.count<128 else{message="Enter a preset name of 1–80 characters. Up to 128 presets can be saved.";return}
+        let updated=effectPresets+[preset]
+        do {try EffectPresetArchive.save(updated,to:saveURL.deletingLastPathComponent().appendingPathComponent("effect-presets.json"));effectPresets=updated}
+        catch {message="Could not save effect preset: \(error.localizedDescription)"}
+    }
     func playbackLayer(_ index: Int) -> Layer {
         if let audition, audition.patchID == patch.id, audition.index == index, patch.layers[index].id == audition.layerID { return audition.draft }
         return patch.layers[index]
@@ -168,6 +178,7 @@ final class PerformanceStore: ObservableObject {
     init() {
         let base = ProcessInfo.processInfo.environment["STAGEKEYS_DATA_DIR"].map { URL(fileURLWithPath: $0) } ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("StageKeys")
         saveURL = base.appendingPathComponent("setlist.json")
+        effectPresets=EffectPresetArchive.load(base.appendingPathComponent("effect-presets.json"))
         do { librarySounds = try SoundLibrary(url: base.appendingPathComponent("sound-library.json")).read() }
         catch { message = "Could not read sound library: \(error.localizedDescription)" }
         if FileManager.default.fileExists(atPath: saveURL.path) {

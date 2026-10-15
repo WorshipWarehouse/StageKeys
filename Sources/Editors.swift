@@ -156,8 +156,12 @@ struct EffectEditor: View {
     let slot: Int
     @State private var draft: AudioEffect
     @State private var replacing = false
+    @State private var showPresets=false
+    @State private var selectedPreset:String?
+    @State private var namingPreset=false
+    @State private var presetName=""
     @State private var auditionToken: UUID?
-    init(index: Int, slot: Int, initial: AudioEffect) { self.index=index; self.slot=slot; _draft=State(initialValue:initial); _replacing=State(initialValue:initial.kind==0) }
+    init(index: Int, slot: Int, initial: AudioEffect) { self.index=index; self.slot=slot; var effect=initial;if initial.usesCreamCoat {effect.reverbCore="creamcoat"};_draft=State(initialValue:effect); _replacing=State(initialValue:initial.kind==0) }
     private var imported: Bool { store.patch.layers[index].external != nil }
     private var controls: [AudioEffectParameterDescriptor] { AudioEffectCatalog.descriptors(for:draft.kind) }
     private func parameter(_ descriptor: AudioEffectParameterDescriptor) -> Binding<Float> {
@@ -180,13 +184,18 @@ struct EffectEditor: View {
             } else {
                 HStack {
                     Button(replacing ? "Back to Effect" : "Replace Effect") { replacing.toggle() }.buttonStyle(StageButtonStyle())
-                    Menu("Presets") {
-                        Button("Factory Default") { draft.parameters=AudioEffectCatalog.defaults(for:draft.kind) }
-                        Button("Half Mix") { var values=draft.values; for p in controls where ["Mix","Wet","Amount"].contains(p.name) { values[p.index] *= 0.5 }; draft.parameters=values }
-                    }.disabled(draft.kind==0)
+                    Button {selectedPreset=nil;showPresets.toggle()}label:{HStack(spacing:12){Text("Presets");Image(systemName:showPresets ? "chevron.up":"chevron.down")}}.buttonStyle(StageButtonStyle(selected:showPresets)).disabled(draft.kind==0).popover(isPresented:$showPresets,arrowEdge:.bottom){
+                        VStack(spacing:0){
+                            ScrollView {VStack(spacing:0){presetRow("Default",id:"default",effect:defaultEffect)
+                                ForEach(store.effectPresets.filter{$0.effect.kind==draft.kind}){preset in presetRow(preset.name,id:preset.id.uuidString,effect:preset.effect)}
+                            }}.frame(maxHeight:240)
+                            Divider()
+                            Button {showPresets=false;presetName="";namingPreset=true}label:{Label("Save Preset as",systemImage:"plus").frame(maxWidth:.infinity,alignment:.leading).padding(14)}.buttonStyle(.plain)
+                        }.frame(width:284).background(StageTheme.panel)
+                    }
                     Spacer()
                     if draft.kind==13 && !replacing {
-                        Text("Effect ON").font(.caption).foregroundStyle(.secondary)
+                        Text(draft.enabled ? "Effect ON":"Effect OFF").font(.caption).foregroundStyle(.secondary)
                         Button{draft.enabled.toggle()}label:{Image(systemName:"power").frame(width:22,height:22)}.buttonStyle(StageButtonStyle(selected:draft.enabled)).accessibilityLabel("PrimaVerb power").accessibilityValue(draft.enabled ? "On":"Off")
                     } else {Toggle("Effect ON",isOn:$draft.enabled).toggleStyle(.switch)}
                 }.padding(.horizontal,20).padding(.bottom,12)
@@ -196,7 +205,7 @@ struct EffectEditor: View {
                             HStack(alignment:.top,spacing:12){Image(systemName:"info.circle").font(.title2);VStack(alignment:.leading,spacing:4){Text("Changes to Effects").font(.headline);Text("Confirming changes to this effect slot updates existing patch snapshots.").font(.callout)}}.padding(20).frame(maxWidth:.infinity,alignment:.leading).overlay{RoundedRectangle(cornerRadius:10).stroke(.white.opacity(0.08))}
                             LazyVGrid(columns:Array(repeating:GridItem(.flexible(),spacing:18),count:4),spacing:14) {
                                 ForEach([4,7,11,15,5,8,12,1,6,9,13,2,3,10,14],id:\.self){kind in
-                                    Button { draft.kind=kind;draft.parameters=AudioEffectCatalog.defaults(for:kind);draft.enabled=true;draft.syncBeats=nil;replacing=false } label:{HStack{Text(AudioEffectCatalog.names[kind]).font(StageTheme.font(12,weight:.semibold));Spacer(minLength:4);Image(systemName:"arrow.right.circle").font(.system(size:20))}.padding(14).frame(maxWidth:.infinity,minHeight:58,alignment:.leading).background(StageTheme.panel,in:RoundedRectangle(cornerRadius:10))}.buttonStyle(.plain)
+                                    Button { draft.kind=kind;draft.reverbCore=kind==13 ? "creamcoat":nil;draft.parameters=AudioEffectCatalog.defaults(for:kind);draft.enabled=true;draft.syncBeats=nil;replacing=false } label:{HStack{Text(AudioEffectCatalog.names[kind]).font(StageTheme.font(12,weight:.semibold));Spacer(minLength:4);Image(systemName:"arrow.right.circle").font(.system(size:20))}.padding(14).frame(maxWidth:.infinity,minHeight:58,alignment:.leading).background(StageTheme.panel,in:RoundedRectangle(cornerRadius:10))}.buttonStyle(.plain)
                                 }
                             }
                             Button{draft=AudioEffect();replacing=false}label:{Label("No effect",systemImage:"nosign")}.buttonStyle(StageButtonStyle())
@@ -213,7 +222,7 @@ struct EffectEditor: View {
                         if draft.kind == 7 {
                             ChannelEqualizerControls(bands:equalizerBands,enabled:$draft.enabled).padding(.top,12)
                         } else if draft.kind == 13 {
-                            ScrollView(.horizontal,showsIndicators:false){PrimaVerbControls(values:Binding(get:{draft.values},set:{draft.parameters=$0})).frame(minWidth:600).padding(.horizontal,16).padding(.vertical,8)}
+                            ScrollView(.horizontal,showsIndicators:false){PrimaVerbControls(sourceCore:draft.usesCreamCoat,values:Binding(get:{draft.values},set:{draft.parameters=$0})).frame(minWidth:600).padding(.horizontal,16).padding(.vertical,8)}
                         } else { LazyVGrid(columns:Array(repeating:GridItem(.flexible(),spacing:10),count:3),spacing:15) {
                             ForEach(controls.filter { !(draft.kind==3 && $0.index==1) && !(draft.kind==2 && draft.syncBeats != nil && $0.index==1) && !(draft.kind==14 && $0.index==0) }) { descriptor in
                                 EffectKnob(descriptor:descriptor,value:parameter(descriptor))
@@ -223,9 +232,19 @@ struct EffectEditor: View {
                 }
                 HStack { Spacer(); Button("Discard Changes") { dismiss() }.buttonStyle(StageButtonStyle()); Button("Confirm") { var layer=store.patch.layers[index];layer.effects[slot]=draft;store.confirmAudition(auditionToken,index:index,layer:layer);dismiss() }.buttonStyle(StageButtonStyle(selected:true)) }.padding(16)
             }
-        }.onAppear { auditionToken=store.beginAudition(index) }.onDisappear { store.endAudition(auditionToken) }.onChange(of:draft) { effect in
+        }.alert("Save Preset as",isPresented:$namingPreset){TextField("Preset name",text:$presetName);Button("Cancel",role:.cancel){};Button("Save"){store.saveEffectPreset(draft,name:presetName)}.disabled(presetName.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty || presetName.count>80)}.onAppear { auditionToken=store.beginAudition(index) }.onDisappear { store.endAudition(auditionToken) }.onChange(of:draft) { effect in
             if let token=auditionToken { var layer=store.patch.layers[index]; layer.effects[slot]=effect; store.previewLayer(index,layer,token:token) }
         }
+    }
+    private var defaultEffect:AudioEffect {
+        var effect=AudioEffect();effect.kind=draft.kind;effect.enabled=draft.enabled;effect.parameters=AudioEffectCatalog.defaults(for:draft.kind)
+        if effect.kind==13 {effect.reverbCore="creamcoat"}
+        return effect
+    }
+    private func presetRow(_ title:String,id:String,effect:AudioEffect)->some View {
+        HStack {Button{selectedPreset=id}label:{Text(title).frame(maxWidth:.infinity,alignment:.leading).padding(14)}.buttonStyle(.plain)
+            if selectedPreset==id {Button("Apply"){var applied=effect;applied.enabled=draft.enabled;draft=applied;showPresets=false}.buttonStyle(StageButtonStyle()).padding(.trailing,10)}
+        }.background(selectedPreset==id ? StageTheme.raised:StageTheme.panel)
     }
     private var subdivision: some View {
         HStack(spacing:5) {
@@ -504,9 +523,10 @@ struct SnapshotNoteEditor: View {
     }
 }
 
-/// Observed PrimaVerb grouping. Stored predelay remains milliseconds so older
-/// patches keep their timing; the percentage view uses the current 200 ms range.
+/// Predelay retains the serialized 0–200 scale. Source core interprets it as
+/// normalized CreamCoat predelay; legacy reverbs retain literal milliseconds.
 struct PrimaVerbControls: View {
+    var sourceCore=false
     @Binding var values:[Float]
     private let sizes=["Small Room","Medium Room","Large Room","Medium Hall","Large Hall","Ambient Hall","Cathedral"]
     private func value(_ index:Int)->Binding<Float> {Binding(get:{values[index]},set:{values[index]=$0})}
@@ -529,7 +549,7 @@ struct PrimaVerbControls: View {
                         VStack(alignment:.leading,spacing:7){Text("Reverb Size").font(.caption).foregroundStyle(.secondary)
                             HStack(spacing:6){Button{values[0]=Float(sizeIndex-1)/6}label:{Image(systemName:"chevron.left")}.disabled(sizeIndex==0).accessibilityLabel("Previous reverb size");Text(sizes[sizeIndex]).font(StageTheme.font(14,weight:.semibold)).frame(minWidth:112);Button{values[0]=Float(sizeIndex+1)/6}label:{Image(systemName:"chevron.right")}.disabled(sizeIndex==6).accessibilityLabel("Next reverb size")}.buttonStyle(.plain).padding(12).background(StageTheme.raised,in:RoundedRectangle(cornerRadius:6))
                         }
-                        InlineEffectKnob(descriptor:.init(index:1,name:"Predelay",minimum:0,maximum:1,defaultValue:0,unit:"%"),value:Binding(get:{values[1]/200},set:{values[1]=$0*200})).help("The percentage uses the 0–200 ms range; the source's exact scaling remains unverified")
+                        InlineEffectKnob(descriptor:.init(index:1,name:"Predelay",minimum:0,maximum:1,defaultValue:0,unit:"%"),value:Binding(get:{values[1]/200},set:{values[1]=$0*200})).help(sourceCore ? "Normalized reverb predelay; 100% is the processor’s full predelay range" : "Legacy predelay: 100% is 200 ms")
                     }
                 }
                 section("Character"){HStack(spacing:8){knob(2);knob(3);knob(4)}}

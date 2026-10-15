@@ -12,11 +12,12 @@ enum SundayFactoryVoicing {
         settings.eqEnabled=true;settings.compressorEnabled=true;settings.compressorInputGain=0;settings.compressorAttack=0.02;settings.compressorRelease=0.2;settings.ratio=3;settings.threshold = -26;settings.compressorMix=0.68;settings.makeup=3
         layer.channelSettings=settings
         var room=AudioEffect();room.kind=13
-        // Predelay's percent-to-time mapping and reverb DSP remain approximations.
+        // Same identified open-source reverb family; wrapper mapping remains under verification.
+        room.reverbCore="creamcoat"
         room.parameters=[0,18,0.33,776,2884,0,0,1,0.23,1]
         var delay=AudioEffect();delay.kind=3;delay.enabled=false
         var shimmer=AudioEffect();shimmer.kind=10;shimmer.enabled=false
         layer.effects=[delay,room,shimmer]
-        return LibrarySound(id:source.id+"-room-voicing-v1",name:layer.name,collection:"Sunday App · Voiced",sound:sound,layer:layer,tags:.init(category:"Acoustic Piano & Keys",type:"Felt Piano",timbres:["Warm"],articulations:["Struck"],sourceModel:"Sunday App sampler"),conversionNotes:["EQ, channel compression, sampler level and room effect settings observed in the accessible SK Felt Piano | Room demo. Native sampler state and audio are reused unchanged.","Reverb uses StageKeys DSP; 9% predelay is mapped to 18 ms. This is a voicing reconstruction, not a verified identical render of Sunday Keys."])
+        return LibrarySound(id:source.id+"-room-voicing-v1",name:layer.name,collection:"Sunday App · Voiced",sound:sound,layer:layer,tags:.init(category:"Acoustic Piano & Keys",type:"Felt Piano",timbres:["Warm"],articulations:["Struck"],sourceModel:"Sunday App sampler"),conversionNotes:["EQ, channel compression, sampler level and room effect settings observed in the accessible SK Felt Piano | Room demo. Native sampler state and audio are reused unchanged.","Reverb uses Airwindows CreamCoat with normalized 9% predelay. The complete Sunday Keys wrapper mapping and processed output are not yet verified identical."])
     }
 }

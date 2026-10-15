@@ -1,4 +1,5 @@
 #include "Synth.h"
+#include "CreamCoat.h"
 #include <math.h>
 #include <stdlib.h>
 #include <stdatomic.h>
@@ -32,6 +33,7 @@ struct SKSynth {
  float fxAmount[BUSES][3],fxCurrent[BUSES][3],tone[BUSES][3];
  float *delay[BUSES][3],*predelay[BUSES][3];
  int predelayPosition[BUSES][3];
+ _Atomic(SKCreamCoat*) cream[BUSES][3];
  double fxPhase[BUSES][3],clockRemaining,clockPhase;
  float clockTempo,clockEnvelope;
  int stereoSide;
@@ -40,6 +42,7 @@ struct SKSynth {
 };
 static SKSynth *create_engine(double rate,int buses,double seconds) {
  SKSynth *s=calloc(1,sizeof(*s)); if(!s) return NULL;
+ for(int l=0;l<BUSES;l++)for(int k=0;k<3;k++)atomic_init(&s->cream[l][k],NULL);
  s->delayLength=(int)fmax(DELAY,fmin(16,seconds)*rate);
  s->predelayLength=(int)ceil(rate*.2)+2;
  atomic_init(&s->read,0);atomic_init(&s->write,0);atomic_init(&s->emergency,0);
@@ -49,8 +52,8 @@ static SKSynth *create_engine(double rate,int buses,double seconds) {
 SKSynth *sk_create(double rate){return create_engine(rate,BUSES,2);}
 SKSynth *sk_create_effects(double rate){return create_engine(rate,1,2);}
 SKSynth *sk_create_effects_with_capacity(double rate,double seconds){return create_engine(rate,1,seconds);}
-void sk_destroy(SKSynth *s){if(!s)return;for(int l=0;l<BUSES;l++)for(int k=0;k<3;k++){free(s->delay[l][k]);free(s->predelay[l][k]);}free(s);}
-static void clear_delay(SKSynth*s,int l,int k){if(s->predelay[l][k])memset(s->predelay[l][k],0,s->predelayLength*sizeof(float));s->predelayPosition[l][k]=0;if(s->delay[l][k])memset(s->delay[l][k],0,s->delayLength*sizeof(float));}
+void sk_destroy(SKSynth *s){if(!s)return;for(int l=0;l<BUSES;l++)for(int k=0;k<3;k++){sk_cream_destroy(atomic_load(&s->cream[l][k]));free(s->delay[l][k]);free(s->predelay[l][k]);}free(s);}
+static void clear_delay(SKSynth*s,int l,int k){SKCreamCoat*c=atomic_load_explicit(&s->cream[l][k],memory_order_acquire);if(c)sk_cream_reset(c);if(s->predelay[l][k])memset(s->predelay[l][k],0,s->predelayLength*sizeof(float));s->predelayPosition[l][k]=0;if(s->delay[l][k])memset(s->delay[l][k],0,s->delayLength*sizeof(float));}
 static void enqueue(SKSynth *s,Command c) {
  unsigned w=atomic_load_explicit(&s->write,memory_order_relaxed);
  unsigned next=(w+1)%QUEUE;
@@ -64,7 +67,15 @@ void sk_note_on(SKSynth *s,int key,int pitch,int instrument,int layer,float velo
 void sk_note_off_channel(SKSynth *s,int key,int layer,int forceRelease){if(layer>=0&&layer<BUSES)enqueue(s,(Command){.kind=16,.key=key,.layer=layer,.instrument=forceRelease});}
 void sk_note_off(SKSynth *s,int key){enqueue(s,(Command){.kind=2,.key=key});}
 void sk_gain(SKSynth *s,int layer,float gain,float seconds){if(layer>=0&&layer<BUSES)enqueue(s,(Command){.kind=3,.layer=layer,.value=fminf(4,fmaxf(0,gain)),.seconds=fminf(30,fmaxf(0,seconds))});}
-void sk_effect(SKSynth *s,int layer,int slot,int kind,float amount){if(layer>=0&&layer<BUSES&&slot>=0&&slot<3&&kind>=0&&kind<=15)enqueue(s,(Command){.kind=5,.layer=layer,.key=slot,.instrument=kind,.value=fminf(1,fmaxf(0,amount))});}
+void sk_effect(SKSynth *s,int layer,int slot,int kind,float amount){
+ if(layer<0||layer>=BUSES||slot<0||slot>=3||kind<0||kind>15)return;
+ // Allocate on the control thread, publish once, and retain through bypass/panic.
+ if(kind==13&&!atomic_load_explicit(&s->cream[layer][slot],memory_order_acquire)){
+  SKCreamCoat*c=sk_cream_create(s->rate),*expected=NULL;
+  if(c&&!atomic_compare_exchange_strong(&s->cream[layer][slot],&expected,c))sk_cream_destroy(c);
+ }
+ enqueue(s,(Command){.kind=5,.layer=layer,.key=slot,.instrument=kind,.value=fminf(1,fmaxf(0,amount))});
+}
 void sk_pan(SKSynth *s,int layer,float pan){if(layer>=0&&layer<BUSES)enqueue(s,(Command){.kind=6,.layer=layer,.value=fminf(1,fmaxf(-1,pan))});}
 void sk_block_sustain(SKSynth *s,int layer,int enabled){if(layer>=0&&layer<BUSES)enqueue(s,(Command){.kind=7,.layer=layer,.value=enabled?1:0});}
 void sk_clock(SKSynth *s,float tempo,int enabled){enqueue(s,(Command){.kind=8,.value=fminf(300,fmaxf(20,tempo)),.key=enabled});}
@@ -145,11 +156,11 @@ static const float effectMax[16][32]={
 {1,0.95,1,1,1,2000,20000,1,1},
 {1,800,20000,1,12},
 {24,1},
-{1,200,0.95,2000,20000,1,10,1,1,1},
+{1,200,0.95,2000,20000,1,10,1,1,1,1},
 {2,120,600,10,1,12,1,100,200,1,1,1},
 {200,1,0.95,2000,20000,1,1,10,1,1},
 };
-static const int effectCount[16]={0,3,4,4,3,5,7,24,4,1,9,5,2,10,12,10};
+static const int effectCount[16]={0,3,4,4,3,5,7,24,4,1,9,5,2,11,12,10};
 
 // Delay taps interpolate bounded preallocated memory. All state is render-owned.
 static float tap_capacity(const float *buffer,int pos,float offset,int capacity){
@@ -180,10 +191,20 @@ static float shifted(SKSynth*s,EffectState*e,float *buffer,int pos,float ratio,d
  float a=.5f-.5f*cosf(TAU*phase),b=1-a;
  return a*tap(buffer,pos,16+phase*window)+b*tap(buffer,pos,16+phase2*window);
 }
+// Wet-only source core; the host retains independent additive Dry/Wet controls.
+static float cream_output(SKSynth*s,int l,int k,float dry,float wet){
+ EffectState*e=&s->effect[l][k];float*p=e->p;
+ e->z[0]+=e->coef[0]*(wet-e->z[0]);wet-=e->z[0];e->z[1]+=e->coef[1]*(wet-e->z[1]);wet=e->z[1];
+ int pos=s->delayPosition[l][k];s->delay[l][k][pos]=wet;
+ if(p[5]>0&&p[6]>0){float offset=s->rate*(.015f+.010f*(.5f+.5f*sinf(s->fxPhase[l][k])));float mod=tap(s->delay[l][k],pos,offset);wet=wet*(1-p[5])+mod*p[5];}
+ s->fxPhase[l][k]=fmod(s->fxPhase[l][k]+TAU*p[6]/s->rate,TAU);s->delayPosition[l][k]=(pos+1)%s->delayLength;
+ return dry*p[7]+wet*p[8];
+}
 static float effectProcess(SKSynth*s,int l,int k,float x){
  int kind=s->fxKind[l][k];EffectState*e=&s->effect[l][k];float *p=e->p,*buffer=s->delay[l][k],dry=x,y=x;
  int pos=s->delayPosition[l][k];double rate=s->rate;float phase=s->fxPhase[l][k];
  e->stereo=0;
+ if(kind==13&&p[10]>0){float a=x,b=x;SKCreamCoat*c=atomic_load_explicit(&s->cream[l][k],memory_order_acquire);if(!c)return x;sk_cream_frame(c,&a,&b);return cream_output(s,l,k,x,(a+b)*.5f);}
  if(!e->custom&&kind<=3){
   s->fxCurrent[l][k]+=(s->fxAmount[l][k]-s->fxCurrent[l][k])*.002f;float a=s->fxCurrent[l][k];
   if(kind==1){float c=.004f+a*a*.8f;s->tone[l][k]+=c*(x-s->tone[l][k]);return s->tone[l][k];}
@@ -268,6 +289,8 @@ static void commands(SKSynth *s) {
   else if(c.kind==17){int kind=s->fxKind[c.layer][c.key];if(c.pitch<effectCount[kind]){EffectState*e=&s->effect[c.layer][c.key];e->custom=1;e->p[c.pitch]=bounded(c.value,effectMin[kind][c.pitch],effectMax[kind][c.pitch]);effectCoefficients(e,kind,s->rate);}}
   r=(r+1)%QUEUE;
  }
+ // Cache coefficients once per block, never allocate from the render callback.
+ for(int l=0;l<BUSES;l++)for(int k=0;k<3;k++)if(s->fxKind[l][k]==13&&s->effect[l][k].p[10]>0){SKCreamCoat*c=atomic_load_explicit(&s->cream[l][k],memory_order_acquire);float*p=s->effect[l][k].p;if(c)sk_cream_configure(c,p[0],p[2],p[9],p[1]/200);}
  atomic_store_explicit(&s->read,r,memory_order_release);
 }
 void sk_process_effects(SKSynth*s,float*audio,uint32_t frames){
@@ -287,7 +310,10 @@ void sk_process_effects_stereo(SKSynth*l,SKSynth*r,float*left,float*right,uint32
   float x=isfinite(left[n])?left[n]:0,y=isfinite(right[n])?right[n]:0;
   for(int k=0;k<3;k++){
    EffectState*a=&l->effect[0][k],*b=&r->effect[0][k];
-   if(l->fxKind[0][k]==3&&a->p[24]>0){
+   if(l->fxKind[0][k]==13&&a->p[10]>0){
+    SKCreamCoat*c=atomic_load_explicit(&l->cream[0][k],memory_order_acquire);
+    if(c){float wl=x,wr=y;sk_cream_frame(c,&wl,&wr);x=cream_output(l,0,k,x,wl);y=cream_output(r,0,k,y,wr);}
+   }else if(l->fxKind[0][k]==3&&a->p[24]>0){
     int lp=l->delayPosition[0][k],rp=r->delayPosition[0][k];
     float dl=tap_capacity(l->delay[0][k],lp,a->p[25]*l->rate,l->delayLength),dr=tap_capacity(r->delay[0][k],rp,a->p[26]*r->rate,r->delayLength);
     if(a->p[28]>20){a->z[2]+=a->coef[4]*(dl-a->z[2]);b->z[2]+=b->coef[4]*(dr-b->z[2]);dl-=a->z[2];dr-=b->z[2];}

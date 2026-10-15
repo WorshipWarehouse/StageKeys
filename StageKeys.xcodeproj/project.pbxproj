@@ -20,10 +20,12 @@
 		0AE3EF986C8F8C67E7E699E7 /* MIDIPrograms.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37DC9989A265AC3477867CFC /* MIDIPrograms.swift */; };
 		0F0691181F56802DC1E1127E /* SetlistLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA27432EBE775B734A1C07E5 /* SetlistLibrary.swift */; };
 		1473580B1A7BF7C6283B7A26 /* ChannelSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A5C5ED767C40901AA9DA3EE /* ChannelSettings.swift */; };
+		14BF372C190E5C655A0C5B32 /* CreamCoat.c in Sources */ = {isa = PBXBuildFile; fileRef = C5F13CB955DB56C7E098A4C8 /* CreamCoat.c */; };
 		1628164B90370C3CF4A9CAA0 /* EXSCaptureCompatibility.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06CB1E47D8766D6FCE38E05D /* EXSCaptureCompatibility.swift */; };
 		16AE07EBE684BE9A1DB69E38 /* SoundSettingsControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D547913C4EE45754ABC5FA9 /* SoundSettingsControls.swift */; };
 		192E90344DC059CF7407C9D3 /* CoreMIDI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DB709BD3254B97828F59D853 /* CoreMIDI.framework */; };
 		19910BE4524EF426AD3DC5C9 /* SundayFactoryVoicing.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA8B3D76CFB10D231C45CDE5 /* SundayFactoryVoicing.swift */; };
+		1BEBCECF4552A195F45BD1C1 /* Airwindows-MIT.txt in Resources */ = {isa = PBXBuildFile; fileRef = D4B91BEF3486CE615B3CCBF7 /* Airwindows-MIT.txt */; };
 		1EEF2ACBE84AA7387495491E /* SessionSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA769779A45E704F134E0AB4 /* SessionSettings.swift */; };
 		237DC2123ABFA6DD9920D15B /* Store.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE199D254288342CC8E4434F /* Store.swift */; };
 		29A0434794956478ED9DF52F /* IBMPlexSans-SemiBold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = C5A92EE64D708FD2F3756A43 /* IBMPlexSans-SemiBold.ttf */; };
@@ -87,7 +89,9 @@
 		BD5C35B6C4653F9D14F7828C /* MIDIPrograms.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37DC9989A265AC3477867CFC /* MIDIPrograms.swift */; };
 		BDE5D455606D9A60D1AF5CE6 /* BuiltinEffectUnit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 432055172FE18739B39F45A4 /* BuiltinEffectUnit.swift */; };
 		BE4285C029213AEA2AD53AB9 /* SundayFactoryVoicing.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA8B3D76CFB10D231C45CDE5 /* SundayFactoryVoicing.swift */; };
+		C676D610CDA685ABB7E711AC /* Airwindows-MIT.txt in Resources */ = {isa = PBXBuildFile; fileRef = D4B91BEF3486CE615B3CCBF7 /* Airwindows-MIT.txt */; };
 		CF11F15C55378A75465EDE95 /* Editors.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4F3A33EDFC20447010E3E7E /* Editors.swift */; };
+		D61AE6EB00FD1BAC44B161D7 /* CreamCoat.c in Sources */ = {isa = PBXBuildFile; fileRef = C5F13CB955DB56C7E098A4C8 /* CreamCoat.c */; };
 		D6EA0F579BC15B2637C6E13C /* LibraryBrowserModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8540F9651B0A97E3C0F205F /* LibraryBrowserModel.swift */; };
 		DB8277B90A78F628B5E93B7E /* libz.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = EFA6073004859909EFFC68D0 /* libz.tbd */; };
 		DC860CA2E82E9022119BDDBE /* SnapshotMorph.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CC60EE6D79434D00675DEA5 /* SnapshotMorph.swift */; };
@@ -104,6 +108,7 @@
 		06CB1E47D8766D6FCE38E05D /* EXSCaptureCompatibility.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EXSCaptureCompatibility.swift; sourceTree = "<group>"; };
 		08168477F8D489D51C2417D1 /* ExternalInstruments.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExternalInstruments.swift; sourceTree = "<group>"; };
 		0965116E8E05937D142ECF99 /* PerformanceControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PerformanceControls.swift; sourceTree = "<group>"; };
+		0C159FC9DE11BDD922B08EA2 /* CreamCoat.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = CreamCoat.h; sourceTree = "<group>"; };
 		0D0BBC46040EB3A625B8C95C /* ImportedAudioGraph.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImportedAudioGraph.swift; sourceTree = "<group>"; };
 		2756ADC10DD4E3EF6592C0CF /* SoundImportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SoundImportView.swift; sourceTree = "<group>"; };
 		30834EBBB61FCB1DBCCC76DA /* SoundLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SoundLibrary.swift; sourceTree = "<group>"; };
@@ -138,8 +143,10 @@
 		C00F1F02C3CF4226328A4FA9 /* MIDIControlTarget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MIDIControlTarget.swift; sourceTree = "<group>"; };
 		C3A3010041D10648ABE486A3 /* SamplerInterchange.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SamplerInterchange.swift; sourceTree = "<group>"; };
 		C5A92EE64D708FD2F3756A43 /* IBMPlexSans-SemiBold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "IBMPlexSans-SemiBold.ttf"; sourceTree = "<group>"; };
+		C5F13CB955DB56C7E098A4C8 /* CreamCoat.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = CreamCoat.c; sourceTree = "<group>"; };
 		C77E58B7DF2BC246493953B0 /* StageKeys.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; path = StageKeys.icns; sourceTree = "<group>"; };
 		CA27432EBE775B734A1C07E5 /* SetlistLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetlistLibrary.swift; sourceTree = "<group>"; };
+		D4B91BEF3486CE615B3CCBF7 /* Airwindows-MIT.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = "Airwindows-MIT.txt"; sourceTree = "<group>"; };
 		D4F3A33EDFC20447010E3E7E /* Editors.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Editors.swift; sourceTree = "<group>"; };
 		D518EAD59E323D92284C88FE /* SoundBrowser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SoundBrowser.swift; sourceTree = "<group>"; };
 		DA8B3D76CFB10D231C45CDE5 /* SundayFactoryVoicing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SundayFactoryVoicing.swift; sourceTree = "<group>"; };
@@ -185,10 +192,19 @@
 			path = Resources;
 			sourceTree = "<group>";
 		};
+		2A8EB411247D4328C56A8F98 /* Licenses */ = {
+			isa = PBXGroup;
+			children = (
+				D4B91BEF3486CE615B3CCBF7 /* Airwindows-MIT.txt */,
+			);
+			path = Licenses;
+			sourceTree = "<group>";
+		};
 		848F00A0A956857CBAD3C604 = {
 			isa = PBXGroup;
 			children = (
 				CE8CBAD071C8E058CBE97AE7 /* Fonts */,
+				2A8EB411247D4328C56A8F98 /* Licenses */,
 				02ADDEE164C9CFD63F4FEFFD /* Resources */,
 				E2432909FE72DFDBD895DC47 /* Sources */,
 				B5C7CC52B3E6CD0EBEED6E78 /* Frameworks */,
@@ -238,6 +254,8 @@
 				7EDCEE28BAED5A4C8502D9CA /* Bridge.h */,
 				432055172FE18739B39F45A4 /* BuiltinEffectUnit.swift */,
 				5A5C5ED767C40901AA9DA3EE /* ChannelSettings.swift */,
+				C5F13CB955DB56C7E098A4C8 /* CreamCoat.c */,
+				0C159FC9DE11BDD922B08EA2 /* CreamCoat.h */,
 				D4F3A33EDFC20447010E3E7E /* Editors.swift */,
 				EDB66D62EF57AEA9A6308A9B /* EQBandwidth.swift */,
 				ED265E8EFF001037EAF7DA64 /* EqualizerEditor.swift */,
@@ -351,6 +369,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				1BEBCECF4552A195F45BD1C1 /* Airwindows-MIT.txt in Resources */,
 				43BEEAD5F32858CBE1D15390 /* IBMPlexSans-Bold.ttf in Resources */,
 				9390F437E14C43D331CE990B /* IBMPlexSans-Regular.ttf in Resources */,
 				29A0434794956478ED9DF52F /* IBMPlexSans-SemiBold.ttf in Resources */,
@@ -363,6 +382,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				C676D610CDA685ABB7E711AC /* Airwindows-MIT.txt in Resources */,
 				B1D2C0303B3EBD357A3237FD /* IBMPlexSans-Bold.ttf in Resources */,
 				5FC121D86AE7721D0C6436FF /* IBMPlexSans-Regular.ttf in Resources */,
 				5880ACCB6A3F70B1F11D9C6F /* IBMPlexSans-SemiBold.ttf in Resources */,
@@ -384,6 +404,7 @@
 				020E4FBA01E167ADA78313A0 /* AudioEffectParameters.swift in Sources */,
 				BDE5D455606D9A60D1AF5CE6 /* BuiltinEffectUnit.swift in Sources */,
 				04B50CD2A5F2EBC8A3DE8E44 /* ChannelSettings.swift in Sources */,
+				14BF372C190E5C655A0C5B32 /* CreamCoat.c in Sources */,
 				7CE395179776D7033F1C371C /* EQBandwidth.swift in Sources */,
 				AA65A10A28FC2F20B9835B55 /* EXSCaptureCompatibility.swift in Sources */,
 				B8416DBF27959203D9B4BF44 /* Editors.swift in Sources */,
@@ -429,6 +450,7 @@
 				E9452746781770D9767BBFA8 /* AudioEffectParameters.swift in Sources */,
 				F23391F333EF05E0C864E0D5 /* BuiltinEffectUnit.swift in Sources */,
 				1473580B1A7BF7C6283B7A26 /* ChannelSettings.swift in Sources */,
+				D61AE6EB00FD1BAC44B161D7 /* CreamCoat.c in Sources */,
 				5FEA052420C2CE54C897C87D /* EQBandwidth.swift in Sources */,
 				1628164B90370C3CF4A9CAA0 /* EXSCaptureCompatibility.swift in Sources */,
 				CF11F15C55378A75465EDE95 /* Editors.swift in Sources */,
@@ -542,7 +564,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 21;
+				CURRENT_PROJECT_VERSION = 22;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
@@ -568,7 +590,7 @@
 					"IBMPlexSans-SemiBold.ttf",
 					"IBMPlexSans-Bold.ttf",
 				);
-				MARKETING_VERSION = 0.21.0;
+				MARKETING_VERSION = 0.22.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
@@ -656,7 +678,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 21;
+				CURRENT_PROJECT_VERSION = 22;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -676,7 +698,7 @@
 					"IBMPlexSans-SemiBold.ttf",
 					"IBMPlexSans-Bold.ttf",
 				);
-				MARKETING_VERSION = 0.21.0;
+				MARKETING_VERSION = 0.22.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";

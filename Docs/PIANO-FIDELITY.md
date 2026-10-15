@@ -1,4 +1,24 @@
-# Piano fidelity — v0.21
+# Piano fidelity — v0.22
+
+## Identified reverb core
+
+Read-only Swift field metadata in the installed Sunday Keys app identifies `Audio.PrimaVerb` with `Audio.AirwindowsCreamCoat`, `Audio.HighPassLowPassEqualizer`, chorus and `Audio.AppleDryWetDualMixer` state. CreamCoat's wrapper fields are selection, regen, derez, predelay and wetness. This establishes the processor family, not its exact revision, parameter transforms or graph order. No proprietary implementation code or sound assets were copied into StageKeys.
+
+StageKeys adapts the [official Airwindows CreamCoat double processor](https://github.com/airwindows/airwindows/blob/7623a1c14b012a1a6407bb0e3ba252d1f027a823/plugins/WinVST/CreamCoat/CreamCoatProc.cpp) under its [MIT license](../Licenses/Airwindows-MIT.txt). Delay tables, stereo feedback matrix, Bezier reconstruction, regeneration equation and quantized DeRez behavior are retained. Host changes are standalone C state, deterministic denormal-noise seeds, cached block preparation and float I/O. It uses the upstream double path without adding float dither. Core memory is allocated on the control thread, retained through bypass, and reset by panic; rendering performs no allocation.
+
+A local independent build of the unmodified upstream double processing routine was compared to the adaptation over 4,896,000 stereo frames: all 17 selections, 44.1/48/96 kHz and Quality 100/55/10%, with reflectivity 33% and predelay 9%. Maximum float-output difference was zero. Repository impulse goldens cover zero and 9% predelay, with sanitizer checks for stereo wiring, dry identity, panic and bypass reset. Run `Tests/test-reverb.sh` on macOS for the checked-in DSP regressions. This verifies the adaptation against upstream, **not a null test against Sunday Keys**.
+
+The source-family path maps serialized predelay `p[1]/200` to normalized CreamCoat D, Quality to DeRez C, reflectivity to B, and normalized size to A; the core is wet-only and the host adds independent dry/wet levels. These wrapper mappings are informed by the matching field names but remain inferred. In particular, the seven UI sizes currently span the upstream 17 selections; Sunday's exact table is unverified. At 48 kHz/full quality/Small Room, a 0.1 impulse crosses 1e-6 at frame 517 without predelay and frame 3215 at 9%. The resulting 2698-frame onset difference is about 56.2 ms, not the old assumed 18 ms. Internal undersampling/rounding makes this different from a simple delay in milliseconds.
+
+The observed unchanged Felt Room profile automatically selects the core without rewriting its saved parameters, gains, routing or other channels. New PrimaVerb selections and freshly reconstructed Felt Room sounds use it explicitly. An optional `reverbCore` field retains that choice through editor confirmation and saved presets. Other existing imported reverbs keep their legacy engine and literal millisecond predelay. Legacy nine-parameter effects still supply full Quality without rewriting their arrays. Wet-path EQ and nonzero chorus remain StageKeys approximations; the Piano profile's chorus amount is zero.
+
+## Preset interaction
+
+Sunday Keys' accessible PrimaVerb menu was inspected: selecting Default reveals Apply; Apply loads Medium Hall, 0% predelay, 30% reflectivity, 100 Hz low cut, 20 kHz tone, Quality 100%, chorus 0%/1 Hz, Dry 80% and Wet 40%. Source changes were discarded. StageKeys now follows selection → Apply and offers Save Preset as, with named presets stored atomically in the personal `effect-presets.json`. Applying presets previews the draft, retains the current power state, and respects the editor's Discard/Confirm boundary. Canceling preset naming writes nothing. Preset archive tests cover round-trip settings/core identity, invalid-save preservation and malformed-data rejection.
+
+The native Audio Unit also matches the direct stereo core with zero relative error and the same frame-3215 onset; this catches engine-selector loss at the Swift/C boundary. Universal Apple Silicon/Intel Mac and iPhone/iPad simulator Release builds pass. Live tests preserve all 222 Felt and nine Touchstone sample references across graph edits, and their waveforms remain distinct. Synthetic live hot-swap tests verify original fundamentals and upper harmonics; parallel graph and groove regressions also pass. Native Mac inspection verified preset selection leaves controls unchanged, Apply matches source defaults, naming Cancel, and editor Discard. Physical iOS listening and complete source-output parity remain outstanding.
+
+The following sections document the earlier v0.20/v0.21 implementation and its evidence.
 
 ## Fixed live sampler regression
 
@@ -40,6 +60,6 @@ The backed-up rebuild was verified on all 213 free imports in an isolated librar
 
 ## Remaining differences
 
-Room reverb is StageKeys DSP, not a verified equivalent of Sunday's algorithm. Its 9% predelay display is currently approximated as 18 ms. EQ values were read from rounded UI displays, shelf shapes may differ, and the compressor model has not been null-tested against Sunday's. Live filter slope/circuit, velocity-filter modulation, envelopes/LFOs and attenuation curves remain incomplete. Modern Delay's saved sixteenth chooser ordering is inferred. These changes improve reconstruction but do not establish identical Live or Sunday patch audio.
+The legacy imported-room path remains StageKeys DSP. The Felt Room path now uses the identified CreamCoat family, but the complete Sunday wrapper, room-selection table, EQ and chorus are not verified equivalent. EQ values were read from rounded UI displays, shelf shapes may differ, and the compressor model has not been null-tested against Sunday's. Live filter slope/circuit, velocity-filter modulation, envelopes/LFOs and attenuation curves remain incomplete. Modern Delay's saved sixteenth chooser ordering is inferred. These changes improve reconstruction but do not establish identical Live or Sunday patch audio.
 
 The native sampler did not honor an attempted saved voice-count change in verification. Imported voice count therefore remains disabled rather than exposing a control with no verified effect. The installed Mac library and Piano Patch were upgraded with backups; native UI inspection verified the Room EQ and compressor values. Compressor panels now scroll vertically so release and threshold remain reachable. Physical iPhone/iPad listening still requires device verification.

@@ -24,6 +24,7 @@ __pycache__/
 Imported Sounds/
 sound-library.json
 settings.json
+effect-presets.json
 setlist.json
 
 # Distribution files
@@ -31,4 +32,4 @@ setlist.json
 *.zip
 
 # Superseded generated project
-StageKeys 2.xcodeproj/
+StageKeys [0-9]*.xcodeproj/

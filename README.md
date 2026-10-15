@@ -1,4 +1,10 @@
-## Version 0.19
+## Version 0.22
+
+The Felt Room reverb now uses a standalone MIT-licensed Airwindows CreamCoat core, the processor family identified in Sunday Keys' PrimaVerb. Predelay and Quality use that core's normalized controls instead of the previous delay-time/tap-density approximation. The adaptation matches pinned upstream float output in 153 room/rate/quality combinations. The complete Sunday Keys wrapper is still not verified identical; room selection mapping, wet EQ and chorus need further comparison.
+
+Effect presets now follow selection → Apply, with the observed Default values and persistent Save Preset as. Existing unrelated imported reverbs keep the legacy engine. Your sound assets and patch settings remain local. See [evidence, compatibility and remaining differences](Docs/PIANO-FIDELITY.md).
+
+## Version 0.21
 
 PrimaVerb now matches the observed grouped editor with seven named size choices, inline controls, output faders, Quality and zero-rate modulation. Its wet stereo tail is decorrelated, and older presets remain compatible. The v0.20 sampler preservation fix remains covered by live waveform and real-piano tests. See [piano fidelity evidence and limitations](Docs/PIANO-FIDELITY.md).
 
