@@ -36,3 +36,5 @@ void sk_compressor(SKSynth *s,int layer,int enabled,float thresholdDB,float rati
 
 // Physical parameter values and indices match AudioEffectCatalog descriptors.
 void sk_effect_parameter(SKSynth *s,int layer,int slot,int parameterIndex,float value);
+
+void sk_compressor_blend(SKSynth *s,int layer,float inputGainDB,float wet);

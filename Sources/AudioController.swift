@@ -87,7 +87,7 @@ final class AudioController {
         sk_filter(synth, Int32(index), cutoff, c.resonance)
         externalRack?.processing(channel: index, gain: c.samplerGain, cutoff: cutoff, resonance: c.resonance,
             eqEnabled: c.eqEnabled, bands: c.equalizer.map { ($0.frequency, $0.gain, $0.q) },
-            compressorEnabled: c.compressorEnabled, threshold: c.threshold, attack: c.compressorAttack, release: c.compressorRelease, makeup: c.makeup)
+            compressorEnabled: c.compressorEnabled, threshold: c.threshold, attack: c.compressorAttack, release: c.compressorRelease, makeup: c.makeup,ratio:c.ratio,inputGain:c.compressorInputGain ?? 0,mix:c.compressorMix ?? 1)
     }
     func configure(_ index: Int, _ layer: Layer) {
         pans[index] = layer.pan
@@ -121,6 +121,7 @@ final class AudioController {
         sk_sampler_gain(synth, Int32(index), c.samplerGain)
         for (band, eq) in c.equalizer.enumerated() { sk_eq(synth, Int32(index), Int32(band), c.eqEnabled ? eq.frequency : (band == 0 ? 20 : band == 7 ? 20000 : eq.frequency), c.eqEnabled ? eq.gain : 0, eq.q) }
         sk_compressor(synth, Int32(index), c.compressorEnabled ? 1 : 0, c.threshold, c.ratio, c.compressorAttack, c.compressorRelease, c.makeup)
+        sk_compressor_blend(synth,Int32(index),c.compressorInputGain ?? 0,c.compressorMix ?? 1)
         filter(index, layer, mod: modulationValues[index] ?? 1)
         sk_pan(synth, Int32(index), layer.pan)
         sk_block_sustain(synth, Int32(index), layer.blockSustain ? 1 : 0)
@@ -181,6 +182,7 @@ final class AudioController {
     func prepareOffline() throws {
         let format = AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 2)!
         try engine.enableManualRenderingMode(.offline, format: format, maximumFrameCount: 512)
+        try externalRack?.prepareOfflineSamples()
         try engine.start()
     }
     func offlineBlock() throws -> AVAudioPCMBuffer {

@@ -33,6 +33,7 @@ struct SoundLibrary {
             if entries[i].collection == "Ableton Imports" { entries[i].collection = "Imported Sounds" }
         }
         for i in entries.indices {if let tags=entries[i].tags,tags.inferred {entries[i].tags = .inferred(name:entries[i].name,source:tags.sourceModel)}}
+        if let original=entries.first(where:{$0.collection.hasPrefix("Sunday App") && $0.name.hasPrefix("SK App Felt Piano")}),let voiced=SundayFactoryVoicing.feltRoom(from:original),!entries.contains(where:{$0.id==voiced.id}) {entries.append(voiced)}
         try Self.validate(entries); return entries
     }
     static func cleanImportedName(_ name: String) -> String {

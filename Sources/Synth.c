@@ -24,6 +24,7 @@ struct SKSynth {
  float adsr[BUSES][4],preGain[BUSES],cutoff[BUSES];
  int customEnvelope[BUSES],voiceLimit[BUSES],compressEnabled[BUSES];
  Biquad filter[BUSES],eq[BUSES][8];
+ float compressorInput[BUSES],compressorWet[BUSES];
  float threshold[BUSES],ratio[BUSES],compAttack[BUSES],compRelease[BUSES],makeup[BUSES],detector[BUSES];
  float gain[BUSES],target[BUSES],delta[BUSES],pan[BUSES];
  unsigned remaining[BUSES];
@@ -40,7 +41,7 @@ static SKSynth *create_engine(double rate,int buses,double seconds) {
  s->delayLength=(int)fmax(DELAY,fmin(16,seconds)*rate);
  atomic_init(&s->read,0);atomic_init(&s->write,0);atomic_init(&s->emergency,0);
  for(int l=0;l<buses;l++)for(int k=0;k<3;k++){s->delay[l][k]=calloc(s->delayLength,sizeof(float));if(!s->delay[l][k]){sk_destroy(s);return NULL;}}
- s->rate=rate;s->clockTempo=72; for(int i=0;i<BUSES;i++){s->gain[i]=s->target[i]=0.5f;s->preGain[i]=1;s->voiceLimit[i]=64;s->cutoff[i]=20000;s->filter[i].b0=1;for(int k=0;k<8;k++)s->eq[i][k].b0=1;} return s;
+ s->rate=rate;s->clockTempo=72; for(int i=0;i<BUSES;i++){s->gain[i]=s->target[i]=0.5f;s->preGain[i]=1;s->compressorInput[i]=1;s->compressorWet[i]=1;s->voiceLimit[i]=64;s->cutoff[i]=20000;s->filter[i].b0=1;for(int k=0;k<8;k++)s->eq[i][k].b0=1;} return s;
 }
 SKSynth *sk_create(double rate){return create_engine(rate,BUSES,2);}
 SKSynth *sk_create_effects(double rate){return create_engine(rate,1,2);}
@@ -74,6 +75,8 @@ void sk_sampler_gain(SKSynth*s,int l,float g){if(l>=0&&l<BUSES)enqueue(s,(Comman
 void sk_filter(SKSynth*s,int l,float f,float q){if(l>=0&&l<BUSES)enqueue(s,(Command){.kind=13,.layer=l,.value=bounded(f,20,20000),.a=bounded(q,.1,10)});}
 void sk_eq(SKSynth*s,int l,int band,float f,float db,float q){if(l>=0&&l<BUSES&&band>=0&&band<8)enqueue(s,(Command){.kind=14,.layer=l,.key=band,.value=bounded(f,20,20000),.a=bounded(db,-24,24),.b=bounded(q,.1,10)});}
 void sk_compressor(SKSynth*s,int l,int on,float db,float ratio,float a,float r,float makeup){if(l>=0&&l<BUSES)enqueue(s,(Command){.kind=15,.layer=l,.key=on!=0,.value=bounded(db,-60,0),.seconds=bounded(ratio,1,20),.a=bounded(a,.0001,1),.b=bounded(r,.001,5),.d=bounded(makeup,-24,24)});}
+void sk_compressor_blend(SKSynth*s,int l,float input,float wet){if(l>=0&&l<BUSES)enqueue(s,(Command){.kind=20,.layer=l,.value=bounded(input,-24,24),.a=bounded(wet,0,1)});}
+
 static void coefficients(Biquad*b,double rate,float f,float q,float db,int peak){
  double w=TAU*fmin(f,rate*.45)/rate,cs=cos(w),sn=sin(w),alpha=sn/(2*q),A=pow(10,db/40),a0;
  if(peak){a0=1+alpha/A;b->b0=(1+alpha*A)/a0;b->b1=-2*cs/a0;b->b2=(1-alpha*A)/a0;b->a1=-2*cs/a0;b->a2=(1-alpha/A)/a0;}
@@ -132,7 +135,7 @@ static const float effectMax[16][32]={
 {0.95,2,20000,1},
 {24,48000,1},
 {20,1,0.95,12,1},
-{24,500,2000,20,0,1,24},
+{24,1000,3000,20,0,1,24},
 {20000,24,10,20000,24,10,20000,24,10,20000,24,10,20000,24,10,20000,24,10,20000,24,10,20000,24,10},
 {10,1,0.95,1},
 {6},
@@ -251,6 +254,7 @@ static void commands(SKSynth *s) {
   else if(c.kind==15){int l=c.layer;s->compressEnabled[l]=c.key;s->threshold[l]=c.value;s->ratio[l]=c.seconds;s->compAttack[l]=exp(-1/(s->rate*c.a));s->compRelease[l]=exp(-1/(s->rate*c.b));s->makeup[l]=c.d;}
   else if(c.kind==18){int l=c.layer;for(int i=0;i<VOICES;i++)if(s->voices[i].layer==l)s->voices[i].active=0;for(int dk=0;dk<3;dk++)clear_delay(s,l,dk);memset(s->tone[l],0,sizeof(s->tone[l]));s->filter[l].z1=s->filter[l].z2=s->detector[l]=0;for(int k=0;k<3;k++){EffectState*e=&s->effect[l][k];memset(e->z,0,sizeof(e->z));e->shiftPhase=e->stereo=0;s->delayPosition[l][k]=0;s->fxPhase[l][k]=0;for(int b=0;b<8;b++)e->eq[b].z1=e->eq[b].z2=0;}for(int b=0;b<8;b++)s->eq[l][b].z1=s->eq[l][b].z2=0;}
   else if(c.kind==16){for(int i=0;i<VOICES;i++)if(s->voices[i].active&&s->voices[i].layer==c.layer&&s->voices[i].key==c.key){s->voices[i].held=0;if(c.instrument||!s->sustain||s->blockSustain[c.layer])s->voices[i].releasing=1;}}
+  else if(c.kind==20){s->compressorInput[c.layer]=powf(10,c.value/20);s->compressorWet[c.layer]=c.a;}
   else if(c.kind==19){EffectState*e=&s->effect[0][c.key];e->p[24]=c.instrument?1:0;e->p[25]=bounded(c.value,.001f,16);e->p[26]=bounded(c.a,.001f,16);e->p[27]=c.b;e->p[28]=bounded(c.d,20,20000);e->p[29]=bounded(c.seconds,e->p[28],20000);e->coef[4]=1-exp(-TAU*e->p[28]/s->rate);e->coef[5]=1-exp(-TAU*e->p[29]/s->rate);}
   else if(c.kind==17){int kind=s->fxKind[c.layer][c.key];if(c.pitch<effectCount[kind]){EffectState*e=&s->effect[c.layer][c.key];e->custom=1;e->p[c.pitch]=bounded(c.value,effectMin[kind][c.pitch],effectMax[kind][c.pitch]);effectCoefficients(e,kind,s->rate);}}
   r=(r+1)%QUEUE;
@@ -321,7 +325,7 @@ void sk_render(SKSynth *s,float *left,float *right,uint32_t frames){
    float x=bus[l]*s->preGain[l];
    if(s->cutoff[l]<20000)x=process(&s->filter[l],x);
    for(int band=0;band<8;band++)x=process(&s->eq[l][band],x);
-   if(s->compressEnabled[l]){float level=fabsf(x),c=level>s->detector[l]?s->compAttack[l]:s->compRelease[l];s->detector[l]=c*s->detector[l]+(1-c)*level;float db=20*log10f(fmaxf(1e-9,s->detector[l]));float reduction=fmaxf(0,db-s->threshold[l])*(1-1/s->ratio[l]);x*=powf(10,(s->makeup[l]-reduction)/20);}
+   if(s->compressEnabled[l]){float dry=x;x*=s->compressorInput[l];float level=fabsf(x),c=level>s->detector[l]?s->compAttack[l]:s->compRelease[l];s->detector[l]=c*s->detector[l]+(1-c)*level;float db=20*log10f(fmaxf(1e-9,s->detector[l]));float reduction=fmaxf(0,db-s->threshold[l])*(1-1/s->ratio[l]);x*=powf(10,-reduction/20);x=(dry*(1-s->compressorWet[l])+x*s->compressorWet[l])*powf(10,s->makeup[l]/20);}
 
    float spread=0;
    for(int k=0;k<3;k++)if(s->fxKind[l][k]){x=effectProcess(s,l,k,x);spread+=s->effect[l][k].stereo;}

@@ -13,6 +13,9 @@ import Foundation
         assert(timing.left==1.25 && timing.right==0.75 && timing.leftSynced && timing.rightSynced)
         assert(abs(timing.seconds(timing.left,synced:true,tempo:120)-0.625)<0.001)
         assert(delay.rack.validate())
+        let modern=try behavior(device("Delay",parameter("DelayLine_SyncL","true")+parameter("DelayLine_SyncR","false")+parameter("DelayLine_SyncedSixteenthL","2")+parameter("DelayLine_TimeR","0.375")+parameter("Feedback","0.35")+parameter("DryWet","0.15")))
+        assert(modern.rack.effects[0].importedDelay?.left==0.75 && modern.rack.effects[0].importedDelay?.right==0.375 && modern.rack.effects[0].importedDelay?.rightSynced==false)
+        assert(abs(modern.rack.effects[0].values[3]-0.15)<0.001 && modern.rack.validate())
         let free=try behavior(device("CrossDelay",parameter("SyncModeLeft","false")+parameter("MsDelayLeft","275")+parameter("Linked","true")))
         assert(free.rack.effects[0].importedDelay!.left==0.275 && free.rack.effects[0].importedDelay!.right==0.275)
         let nested="<GroupDevicePreset><Device><AudioEffectGroupDevice/></Device><BranchPresets><AudioEffectBranchPreset><DevicePresets>"+device("CrossDelay","")+device("Reverb","")+"</DevicePresets></AudioEffectBranchPreset></BranchPresets></GroupDevicePreset>"

@@ -1,3 +1,13 @@
+## 0.19
+
+- Verify native Felt Piano against its source state, sample hashes and rendered soft/medium/hard notes.
+- Restore supported sampler cutoff and velocity controls; remove unrelated generic-template vibrato.
+- Translate modern Delay devices and add backed-up, hash-checked native preset repair tools.
+- Add observed Felt Piano Room voicing using the existing private instrument.
+- Honor channel compressor input gain, ratio and dry/wet for imported instruments and built-in sounds.
+- Match the five-column compressor layout and allow horizontal scrolling on narrow screens.
+- Use resident samples for Mac offline fidelity checks while retaining normal real-time streaming.
+
 # 0.4.0
 
 - Fixed stable MIDI hot-plug, idempotent startup, named device status, per-source/channel note identity and unplug/pedal cleanup. Alesis Prestige actual note/pedal input and audible playback verified.

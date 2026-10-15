@@ -164,6 +164,17 @@ enum AbletonImport {
             }
             if zones.isEmpty{continue}
             var layer=template;layer["ID"]=layers.count;layer["name"]=device.string("UserName","Imported Layer");layer["Zones"]=zones;layer["Filters"]=["ID":0,"enabled":false,"cutoff":20000.0,"resonance":0.0]
+            if device.flag("Filter/IsOn/Manual"),let filter=device.at("Filter/Slot/Value/SimplerFilter") {
+                let type=try filter.number("Type/Manual",-1),circuit=try filter.number("CircuitLpHp/Manual",0),resonance=try filter.number("Res/Manual",0)
+                if type==0 && circuit==0 && resonance==0 {
+                    layer["Filters"]=["ID":0,"enabled":true,"cutoff":max(20,min(20000,try filter.number("Freq/Manual",20000))),"resonance":-3.0]
+                    warnings.insert("Saved clean low-pass cutoff is retained in the native sampler. Slope, resonance and velocity/envelope/LFO filter modulation are not an exact Live model.")
+                } else {warnings.insert("This sampler filter type/circuit/resonance is not translated.")}
+            }
+            // loadAudioFiles installs a generic CC1-to-pitch vibrato route. It is not
+            // part of the Live instrument and must not color every imported sound.
+            if var lfos=layer["LFOs"] as? [[String:Any]] {for i in lfos.indices {lfos[i]["enabled"]=false};layer["LFOs"]=lfos}
+            if device.flag("Lfo/IsOn/Manual") {warnings.insert("Live LFO modulation is not translated; the unrelated native template vibrato is disabled.")}
             var envelopes=template["Envelopes"] as? [[String:Any]] ?? []
             if !envelopes.isEmpty,var stages=envelopes[0]["Stages"] as? [[String:Any]] {
                 let attack=try device.number("VolumeAndPan/Envelope/AttackTime/Manual",0)/1000
@@ -178,6 +189,13 @@ enum AbletonImport {
             // Native sampler connection IDs encode the owning layer in bits 8–15.
             // Cloning layer zero without rebasing these leaves higher layers silent.
             if var connections=layer["Connections"] as? [[String:Any]] {
+                connections.removeAll{($0["source"] as? Int)==268435456 && ($0["destination"] as? Int)==816840704}
+                if device.at("VolumeAndPan/VolumeVelScale/Manual") != nil {
+                    let depth=try device.number("VolumeAndPan/VolumeVelScale/Manual",1)
+                    guard (0...1).contains(depth) else{throw AbletonImportError.invalid("Invalid amplitude velocity depth.")}
+                    for index in connections.indices where (connections[index]["source"] as? Int)==301 && (connections[index]["destination"] as? Int)==1343225856 {connections[index]["scale"] = -96*depth}
+                    warnings.insert("Amplitude velocity depth is retained with the native sampler's attenuation curve; the curve can differ from Live.")
+                }
                 for index in connections.indices {
                     for key in ["source","destination","control"] {
                         if let value=connections[index][key] as? Int,value>=0x10000000 {connections[index][key]=value+layers.count*256}
@@ -229,7 +247,7 @@ enum AbletonImport {
         engine.attach(sampler);engine.connect(sampler,to:engine.mainMixerNode,format:nil)
         let format=AVAudioFormat(standardFormatWithSampleRate:44100,channels:2)!
         try engine.enableManualRenderingMode(.offline,format:format,maximumFrameCount:512)
-        try sampler.loadInstrument(at:preset);try engine.start();defer{engine.stop()}
+        try SamplerRendering.configure(sampler,offline:true);try sampler.loadInstrument(at:preset);try engine.start();defer{engine.stop()}
         let buffer=AVAudioPCMBuffer(pcmFormat:format,frameCapacity:512)!
         var tested:Set<String>=[]
         for zone in zones {
@@ -252,7 +270,7 @@ enum AbletonImport {
 
 extension AbletonImport {
     struct Behavior {
-        var rack = ImportedRack(translationVersion:4)
+        var rack = ImportedRack(translationVersion:6)
         var midi: MIDIProgram?
         var macroSources:[Int:ObjectIdentifier]=[:]
         var warnings: [String] = []
@@ -361,7 +379,7 @@ extension AbletonImport {
                 continue
             }
             let kind:Int
-            switch device.name {case "FilterEQ3":kind=7;case "Compressor2":kind=6;case "Reverb":kind=13;case "CrossDelay","PingPongDelay":kind=3;case "AudioBranchMixerDevice","StereoGain":kind=9;default:continue}
+            switch device.name {case "FilterEQ3":kind=7;case "Compressor2":kind=6;case "Reverb":kind=13;case "CrossDelay","PingPongDelay","Delay":kind=3;case "AudioBranchMixerDevice","StereoGain":kind=9;default:continue}
             guard result.rack.effects.count<12 else{result.warnings.append("Rack effect limit reached; remaining processors are not translated.");break}
             var fx=AudioEffect();fx.kind=kind;fx.enabled=device.flag("On/Manual",true)
             var values=AudioEffectCatalog.defaults(for:kind)
@@ -392,7 +410,22 @@ extension AbletonImport {
                     guard (-0.3334...0.3334).contains(adjustment) else{throw AbletonImportError.invalid("Unsupported delay time offset.")}
                     return choices[index]/4*(1+adjustment)
                 }
-                let ping=device.name == "PingPongDelay"
+                let modern=device.name == "Delay",ping=device.name == "PingPongDelay" || (modern && device.flag("DelayLine_PingPong/Manual"))
+                if modern {
+                    let choices:[Double]=[1,2,3,4,5,6,8,16]
+                    func modernTime(_ side:String,_ sync:Bool)throws->Double {
+                        if !sync {return max(0.001,min(5.334,try device.number("DelayLine_Time"+side+"/Manual",0.1)))}
+                        let index=Int(try device.number("DelayLine_SyncedSixteenth"+side+"/Manual",0)),offset=try device.number("DelayLine_Offset"+side+"/Manual",0)
+                        guard choices.indices.contains(index),(-33.34...33.34).contains(offset) else{throw AbletonImportError.invalid("Unsupported modern delay time.")}
+                        return choices[index]/4*(1+offset/100)
+                    }
+                    let leftSynced=device.flag("DelayLine_SyncL/Manual",true),linked=device.flag("DelayLine_Link/Manual"),rightSynced=linked ? leftSynced:device.flag("DelayLine_SyncR/Manual",true)
+                    let left=try modernTime("L",leftSynced),right=linked ? left:try modernTime("R",rightSynced)
+                    var delay=ImportedDelay(left:left,right:right,leftSynced:leftSynced,rightSynced:rightSynced,pingPong:ping)
+                    if device.flag("Filter_On/Manual",true) {let frequency=try value(device,"Filter_Frequency",1000),width=try value(device,"Filter_Bandwidth",4);delay.lowCut=max(20,min(20000,frequency/pow(2,width/2)));delay.highCut=max(delay.lowCut,min(20000,frequency*pow(2,width/2)))}
+                    fx.importedDelay=delay;try map("Feedback",0,0.3);try map("DryWet",3,0.5);values[1]=Float(min(2,max(0.0625,left)));values[2]=delay.highCut
+                    result.warnings.append("Modern Delay translated with separate left/right sync, times, filter, feedback and mix. Sixteenth chooser ordering is inferred; modulation and smoothing modes remain approximate.")
+                } else {
                 let ls=device.flag(ping ? "DelayModeSwitch/Manual":"SyncModeLeft/Manual",true)
                 let linked=device.flag("Linked/Manual"),rs=ping || linked ? ls:device.flag("SyncModeRight/Manual",true)
                 let left=try time(ls,ping ? "BeatDelayTime":"BeatDelayEnumL",ping ? "BeatDelayOffset":"NoteOffsetLeft",ping ? "MsDelayTime":"MsDelayLeft")
@@ -403,6 +436,7 @@ extension AbletonImport {
                 try map("Feedback",0,0.3);try map("DryWet",3,0.5)
                 values[1]=Float(min(2,max(0.0625,left)));values[2]=delay.highCut
                 result.warnings.append("Stereo delay preserves saved left/right beat or millisecond times, offsets, feedback and blend. Ping-pong uses cross-feedback; filter shape and time-change transitions differ. Delay time is bounded to 16 seconds.")
+                }
             case 7:
                 // Shelf + broad mid-band approximation; EQ3's crossover topology differs.
                 try map("FreqLo",3,250,logarithmic:true)

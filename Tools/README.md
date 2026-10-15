@@ -60,3 +60,12 @@ For a batch conversion with a detailed report, compile `ConvertAbletonLibrary.sw
 The CLI also accepts an extracted folder. Its report includes per-preset failure details, source sample hashes, mapped-zone counts and layer-isolated playback check counts. Successful entries are appended without replacing an existing library. Do not run two library writers at once. Pure MIDI presets, missing factory samples and saved rack settings with no active samples are reported separately from playable instruments. Live rack effects/macros/MIDI chains are not converted.
 
 `ExtractAbletonPack.py` is an optional standalone extraction/audit tool for the observed `pl-a` format. The app's native implementation has no Python dependency. Both implementations bound decompression/member sizes and reject unsafe paths and ambiguous duplicate filenames. Extracted sample bytes remain unchanged; unknown archive formats are rejected.
+
+
+## Fidelity repair tools (0.19)
+
+`UpgradeImportedBehavior library.json sourceFolderOrALP report.json baseline-library.json NEW-backup-directory` restores sampler filter, envelope, velocity and LFO controls as well as rack metadata. The optional backup directory enables native preset repair: source sample hashes and full zone arrays must match, each original preset is backed up, and audio files are never rewritten. Without that directory the operation updates rack metadata only. Customized rack entries are preserved. Close StageKeys before changing its installed library, and keep a copy of its JSON files.
+
+`RepairSamplerVoicing managed.aupreset source.adg sampleRoot NEW-backup.aupreset report.json` performs the same guarded source-control repair for one instrument.
+
+`ApplyFactoryVoicing StageKeysDataDirectory patchName NEW-backup.json report.json` applies the observed Felt Piano Room settings only to pristine native Felt Piano modules in the named patch. It preserves user levels, routing, custom channel settings and unrelated patches. The original setlist is backed up before writing. These tools reconstruct supported controls; see the fidelity document for remaining algorithm differences.

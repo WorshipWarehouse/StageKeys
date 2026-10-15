@@ -58,6 +58,7 @@ private final class ImportedBranchVoice {
     func control(_ controller:UInt8,_ value:UInt8){sampler?.sendController(controller,withValue:value,onChannel:0);children.forEach{$0.control(controller,value)}}
     func releaseSource(_ source:Int32){midi.releaseSource(source);children.forEach{$0.releaseSource(source)}}
     func advance(_ time:Double){midi.advance(to:time);children.forEach{$0.advance(time)}}
+    func prepareOffline()throws {if let sampler{try SamplerRendering.configure(sampler,offline:true)};for child in children{try child.prepareOffline()}}
     func panic(){midi.panic();children.forEach{$0.panic()};sampler?.sendController(64,withValue:0,onChannel:0);sampler?.sendController(120,withValue:0,onChannel:0);pitches.removeAll();audioGraph?.reset()}
 }
 
@@ -136,7 +137,7 @@ final class ExternalInstrumentRack {
         if let children=plan.rack.branches {
             for child in children {let nested=try makeBranch(child,state:state,format:format,tempo:tempo,nodes:&nodes);voice.children.append(nested);engine.connect(nested.output,to:voice.sum,format:format)}
         } else {
-            let sampler=AVAudioUnitSampler();engine.attach(sampler);nodes.append(sampler);voice.sampler=sampler
+            let sampler=AVAudioUnitSampler();try SamplerRendering.configure(sampler,offline:engine.isInManualRenderingMode);engine.attach(sampler);nodes.append(sampler);voice.sampler=sampler
             let temporary=FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString+".aupreset")
             defer{try? FileManager.default.removeItem(at:temporary)}
             try PropertyListSerialization.data(fromPropertyList:Self.branchState(state,indices:plan.sampleLayers),format:.xml,options:0).write(to:temporary)
@@ -175,6 +176,9 @@ final class ExternalInstrumentRack {
             }
         }
         for (i,branch) in voice.parallel.enumerated(){branch.configure(branches![i],tempo:tempo)}
+    }
+    func prepareOfflineSamples()throws {
+        for voice in voices.values {if let sampler=voice.unit as? AVAudioUnitSampler {try SamplerRendering.configure(sampler,offline:true)};for branch in voice.parallel {try branch.prepareOffline()}}
     }
     func releaseSource(_ source:Int32){for voice in voices.values {voice.parallel.forEach{$0.releaseSource(source)}}}
     #if DEBUG
@@ -437,6 +441,7 @@ final class ExternalInstrumentRack {
                 let file = libraryURL.appendingPathComponent(name)
                 guard FileManager.default.fileExists(atPath: file.path) else { throw ExternalInstrumentError.missingFile }
                 let sampler = AVAudioUnitSampler()
+                try SamplerRendering.configure(sampler,offline:engine.isInManualRenderingMode)
                 if sound.kind == .soundBank {
                     try sampler.loadSoundBankInstrument(at: file, program: sound.program, bankMSB: sound.bankMSB, bankLSB: sound.bankLSB)
                 } else if sound.kind == .samplerPreset {
@@ -493,14 +498,12 @@ final class ExternalInstrumentRack {
             band.filterType = i == 0 ? .highPass : i == 1 ? .lowShelf : i == 6 ? .highShelf : i == 7 ? .lowPass : .parametric
             band.bypass = i == 0 || i == 7
         }
-        let compressor = AVAudioUnitEffect(audioComponentDescription: AudioComponentDescription(
-            componentType: kAudioUnitType_Effect, componentSubType: kAudioUnitSubType_DynamicsProcessor,
-            componentManufacturer: kAudioUnitManufacturer_Apple, componentFlags: 0, componentFlagsMask: 0))
-        compressor.bypass = true
+        let compressor=BuiltinEffectUnit.make()
         for node in [mixer as AVAudioNode, filter, eq, compressor] { engine.attach(node) }
-        engine.connect(unit, to: filter, format: nil)
-        engine.connect(filter, to: eq, format: nil)
-        engine.connect(eq, to: compressor, format: nil)
+        let processingFormat=AVAudioFormat(standardFormatWithSampleRate:engine.isInManualRenderingMode ? engine.manualRenderingFormat.sampleRate:48000,channels:2)!
+        engine.connect(unit, to: filter, format: processingFormat)
+        engine.connect(filter, to: eq, format: processingFormat)
+        engine.connect(eq, to: compressor, format: processingFormat)
         let builtin=BuiltinEffectUnit.make();engine.attach(builtin)
         let voice = Voice(unit: unit, mixer: mixer, filter: filter, eq: eq, compressor: compressor,builtin:builtin)
         connectEffects(voice)
@@ -563,7 +566,7 @@ final class ExternalInstrumentRack {
     /// interpolated cutoff; instrument envelopes remain the plug-in's own controls.
     func processing(channel: Int, gain: Float, cutoff: Float, resonance: Float,
                     eqEnabled: Bool, bands: [(frequency: Float, gain: Float, q: Float)],
-                    compressorEnabled: Bool, threshold: Float, attack: Float, release: Float, makeup: Float) {
+                    compressorEnabled: Bool, threshold: Float, attack: Float, release: Float, makeup: Float,ratio:Float=4,inputGain:Float=0,mix:Float=1) {
         precondition(Thread.isMainThread)
         guard let voice = voices[channel] else { return }
         voice.filter.globalGain = gain > 0 ? max(-96, min(12, 20 * log10(gain))) : -96
@@ -578,16 +581,8 @@ final class ExternalInstrumentRack {
             // AVAudioUnitEQ uses octaves, while the UI uses Q.
             voice.eq.bands[index].bandwidth = max(0.05, min(5, 2 * asinh(1 / (2 * max(0.1, band.q))) / log(2)))
         }
-        voice.compressor.bypass = !compressorEnabled
-        let parameters: [(AudioUnitParameterID, Float)] = [
-            (kDynamicsProcessorParam_Threshold, threshold),
-            (kDynamicsProcessorParam_AttackTime, attack),
-            (kDynamicsProcessorParam_ReleaseTime, release),
-            (kDynamicsProcessorParam_OverallGain, makeup)
-        ]
-        for (parameter, value) in parameters {
-            AudioUnitSetParameter(voice.compressor.audioUnit, parameter, kAudioUnitScope_Global, 0, value, 0)
-        }
+        (voice.compressor.auAudioUnit as? BuiltinEffectUnit)?.configure(slot:0,kind:6,enabled:compressorEnabled,values:[inputGain,attack*1000,release*1000,ratio,threshold,mix,makeup],tempo:120)
+
     }
     func stateData(channel: Int) throws -> Data? {
         guard let state = state(channel: channel) else { return nil }
@@ -612,6 +607,7 @@ final class ExternalInstrumentRack {
             midi(index, 0xB0, 123, 0); midi(index, 0xB0, 120, 0)
             voices[index]?.pitches.removeAll()
             voices[index]?.builtin.auAudioUnit.reset()
+            voices[index]?.compressor.auAudioUnit.reset()
             voices[index]?.imported.forEach{$0.auAudioUnit.reset()}
             voices[index]?.audioGraph?.reset()
         }

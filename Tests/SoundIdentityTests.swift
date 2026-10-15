@@ -1,13 +1,15 @@
 import Foundation
+import Darwin
 @main struct SoundIdentityTests {
  static func main()throws {
+ setbuf(stdout,nil)
  let store=PerformanceStore();store.setlist=Setlist();store.master=0.6;store.reverb=0
  for i in store.patch.layers.indices{store.removeSound(i)}
  try store.audio.prepareOffline();store.start()
  var captures:[[Float]]=[]
  for prefix in ["SK App Felt Piano","Touchstone Piano"] {
   guard let entry=store.librarySounds.first(where:{$0.name.hasPrefix(prefix) && $0.sound != nil}) else{fatalError("Missing fixture")}
-  store.addLibrarySound(entry,index:0);store.setGain(0,0.6);store.noteOn(48,velocity:0.8)
+  store.addLibrarySound(entry,index:0);print("LOADED",entry.name,"running",store.audio.running,"message",store.message ?? "none");assert(store.audio.running && store.message==nil,store.message ?? "Engine stopped");store.setGain(0,0.6);store.noteOn(48,velocity:0.8)
   var samples:[Float]=[];var time=ProcessInfo.processInfo.systemUptime
   for _ in 0..<150 {time+=512.0/48000;store.midiFX.advance(to:time);store.audio.externalRack?.advanceBranches(to:time);let buffer=try store.audio.offlineBlock();samples += Array(UnsafeBufferPointer(start:buffer.floatChannelData![0],count:Int(buffer.frameLength)))}
   store.panic();captures.append(samples)

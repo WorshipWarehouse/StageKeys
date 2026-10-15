@@ -23,6 +23,7 @@
 		1628164B90370C3CF4A9CAA0 /* EXSCaptureCompatibility.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06CB1E47D8766D6FCE38E05D /* EXSCaptureCompatibility.swift */; };
 		16AE07EBE684BE9A1DB69E38 /* SoundSettingsControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D547913C4EE45754ABC5FA9 /* SoundSettingsControls.swift */; };
 		192E90344DC059CF7407C9D3 /* CoreMIDI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DB709BD3254B97828F59D853 /* CoreMIDI.framework */; };
+		19910BE4524EF426AD3DC5C9 /* SundayFactoryVoicing.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA8B3D76CFB10D231C45CDE5 /* SundayFactoryVoicing.swift */; };
 		1EEF2ACBE84AA7387495491E /* SessionSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA769779A45E704F134E0AB4 /* SessionSettings.swift */; };
 		237DC2123ABFA6DD9920D15B /* Store.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE199D254288342CC8E4434F /* Store.swift */; };
 		29A0434794956478ED9DF52F /* IBMPlexSans-SemiBold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = C5A92EE64D708FD2F3756A43 /* IBMPlexSans-SemiBold.ttf */; };
@@ -85,6 +86,7 @@
 		BB8609A640F674CF2DB15821 /* OFL.txt in Resources */ = {isa = PBXBuildFile; fileRef = 732E94F6D60EC34BCACE07C1 /* OFL.txt */; };
 		BD5C35B6C4653F9D14F7828C /* MIDIPrograms.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37DC9989A265AC3477867CFC /* MIDIPrograms.swift */; };
 		BDE5D455606D9A60D1AF5CE6 /* BuiltinEffectUnit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 432055172FE18739B39F45A4 /* BuiltinEffectUnit.swift */; };
+		BE4285C029213AEA2AD53AB9 /* SundayFactoryVoicing.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA8B3D76CFB10D231C45CDE5 /* SundayFactoryVoicing.swift */; };
 		CF11F15C55378A75465EDE95 /* Editors.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4F3A33EDFC20447010E3E7E /* Editors.swift */; };
 		D6EA0F579BC15B2637C6E13C /* LibraryBrowserModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8540F9651B0A97E3C0F205F /* LibraryBrowserModel.swift */; };
 		DB8277B90A78F628B5E93B7E /* libz.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = EFA6073004859909EFFC68D0 /* libz.tbd */; };
@@ -140,6 +142,7 @@
 		CA27432EBE775B734A1C07E5 /* SetlistLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetlistLibrary.swift; sourceTree = "<group>"; };
 		D4F3A33EDFC20447010E3E7E /* Editors.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Editors.swift; sourceTree = "<group>"; };
 		D518EAD59E323D92284C88FE /* SoundBrowser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SoundBrowser.swift; sourceTree = "<group>"; };
+		DA8B3D76CFB10D231C45CDE5 /* SundayFactoryVoicing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SundayFactoryVoicing.swift; sourceTree = "<group>"; };
 		DB709BD3254B97828F59D853 /* CoreMIDI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreMIDI.framework; path = System/Library/Frameworks/CoreMIDI.framework; sourceTree = SDKROOT; };
 		DC0938544D22DFEF7A932295 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
 		E8540F9651B0A97E3C0F205F /* LibraryBrowserModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryBrowserModel.swift; sourceTree = "<group>"; };
@@ -264,6 +267,7 @@
 				4D547913C4EE45754ABC5FA9 /* SoundSettingsControls.swift */,
 				7829D37C585858D39206C231 /* StageKeysApp.swift */,
 				FE199D254288342CC8E4434F /* Store.swift */,
+				DA8B3D76CFB10D231C45CDE5 /* SundayFactoryVoicing.swift */,
 				37F196176F4E92FA646FA2EA /* Synth.c */,
 				7DA4118DD695F47726100D8C /* Synth.h */,
 			);
@@ -409,6 +413,7 @@
 				587E21182AA6ACCC3DEA93FB /* SoundSettingsControls.swift in Sources */,
 				505732FD6179E1817782959A /* StageKeysApp.swift in Sources */,
 				237DC2123ABFA6DD9920D15B /* Store.swift in Sources */,
+				19910BE4524EF426AD3DC5C9 /* SundayFactoryVoicing.swift in Sources */,
 				872837C9BCCD671ED4AFF4BD /* Synth.c in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -453,6 +458,7 @@
 				16AE07EBE684BE9A1DB69E38 /* SoundSettingsControls.swift in Sources */,
 				6B50034CD5A5AA38F981D2D2 /* StageKeysApp.swift in Sources */,
 				0464FBE41AE470D26F568499 /* Store.swift in Sources */,
+				BE4285C029213AEA2AD53AB9 /* SundayFactoryVoicing.swift in Sources */,
 				4B70B005AA6F28A4E77CB9C7 /* Synth.c in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -536,7 +542,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 18;
+				CURRENT_PROJECT_VERSION = 19;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
@@ -562,7 +568,7 @@
 					"IBMPlexSans-SemiBold.ttf",
 					"IBMPlexSans-Bold.ttf",
 				);
-				MARKETING_VERSION = 0.18.0;
+				MARKETING_VERSION = 0.19.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
@@ -650,7 +656,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 18;
+				CURRENT_PROJECT_VERSION = 19;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -670,7 +676,7 @@
 					"IBMPlexSans-SemiBold.ttf",
 					"IBMPlexSans-Bold.ttf",
 				);
-				MARKETING_VERSION = 0.18.0;
+				MARKETING_VERSION = 0.19.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";

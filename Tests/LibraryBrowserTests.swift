@@ -1,6 +1,11 @@
 import Foundation
 @main struct LibraryBrowserTests {
     static func main() throws {
+        let native=LibrarySound(id:"native-felt",name:"SK App Felt Piano v1_6",collection:"Sunday App · Native",sound:ExternalSound(kind:.samplerPreset,name:"Felt",fileName:"fixture.aupreset"))
+        let voiced=SundayFactoryVoicing.feltRoom(from:native)!
+        assert(voiced.sound==native.sound && voiced.layer!.channelSettings.validate())
+        assert(voiced.layer!.channelSettings.compressorMix==0.68 && voiced.layer!.channelSettings.ratio==3)
+        assert(voiced.layer!.channelSettings.equalizer[3].gain == -5.5 && voiced.layer!.effects[1].values[8]==0.23)
         assert(SoundTags.inferred(name:"Touchstone Piano - Sunday Sounds").type == "Acoustic Piano")
         assert(SoundTags.inferred(name:"Airy EP- Sunday Sounds").type == "Electric Piano")
         assert(SoundTags.inferred(name:"DX E Piano 1 | Ballad").type == "Electric Piano")

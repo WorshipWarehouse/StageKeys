@@ -335,7 +335,7 @@ final class PerformanceStore: ObservableObject {
             setlist.patches[selected].layers[i].name=SoundLibrary.cleanImportedName(patch.layers[i].name)
             if var sound=patch.layers[i].external {sound.name=SoundLibrary.cleanImportedName(sound.name);setlist.patches[selected].layers[i].external=sound}
             let old=patch.layers[i].importedRack
-            if old == nil || (old?.translationVersion != 4 && old == entry.previousImportedRack) {
+            if old == nil || (old?.translationVersion != 6 && old == entry.previousImportedRack) {
                 setlist.patches[selected].layers[i].importedRack=entry.layer?.importedRack
                 if patch.layers[i].midiProgram == nil && !patch.layers[i].octaveEffect {setlist.patches[selected].layers[i].midiProgram=entry.layer?.midiProgram}
                 for snapshot in patch.snapshots.indices {

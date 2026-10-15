@@ -136,3 +136,28 @@ struct ImportedAudioBranchControls:View {
         }.padding(10).background(StageTheme.base.opacity(0.35),in:RoundedRectangle(cornerRadius:8))
     }
 }
+
+struct ChannelCompressorControls:View {
+    @Binding var settings:ChannelSettings
+    private func knob(_ title:String,_ binding:Binding<Float>,_ low:Float,_ high:Float,_ unit:String)->some View {
+        EffectKnob(descriptor:.init(index:0,name:title,minimum:low,maximum:high,defaultValue:binding.wrappedValue,unit:unit),value:binding)
+    }
+    private func panel<Content:View>(_ title:String,@ViewBuilder content:()->Content)->some View {
+        VStack(spacing:12){Text(title).font(StageTheme.font(14,weight:.semibold)).padding(.vertical,12);Divider();content();Spacer(minLength:12)}.frame(maxWidth:.infinity).frame(height:320).background(StageTheme.panel,in:RoundedRectangle(cornerRadius:8))
+    }
+    private func fader(_ label:String,_ binding:Binding<Float>,_ low:Float,_ high:Float,_ unit:String)->some View {
+        VStack {Text(label).font(.caption);VerticalFader(gain:Binding(get:{(binding.wrappedValue-low)/(high-low)},set:{binding.wrappedValue=low+$0*(high-low)}),color:StageTheme.selected,label:label,decibels:false).frame(width:64,height:190);Text(unit == "%" ? "\(Int(binding.wrappedValue*100)) %":String(format:"%.1f dB",binding.wrappedValue)).font(.caption)}
+    }
+    var body:some View {
+        HStack(alignment:.top,spacing:5) {
+            panel("Input"){fader("Gain",Binding(get:{settings.compressorInputGain ?? 0},set:{settings.compressorInputGain=$0}),-24,24,"dB")}
+            panel("Envelope") {
+                knob("Attack",Binding(get:{settings.compressorAttack*1000},set:{settings.compressorAttack=$0/1000}),1,1000,"ms")
+                knob("Release",Binding(get:{settings.compressorRelease*1000},set:{settings.compressorRelease=$0/1000}),10,3000,"ms")
+            }
+            panel("Loudness") {knob("Ratio",$settings.ratio,1,20,":1");knob("Threshold",$settings.threshold,-60,0,"dB")}
+            panel("Mix"){fader("Dry / Wet",Binding(get:{settings.compressorMix ?? 1},set:{settings.compressorMix=$0}),0,1,"%")}
+            panel("Output"){fader("Gain",$settings.makeup,-24,24,"dB")}
+        }.disabled(!settings.compressorEnabled)
+    }
+}

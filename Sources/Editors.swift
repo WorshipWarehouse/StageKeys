@@ -60,17 +60,23 @@ struct SoundEditor: View {
                 if tab == "FX A: Equalizer" {
                     ChannelEqualizerControls(bands:$draft.channelSettings.equalizer,enabled:$draft.channelSettings.eqEnabled).padding(.top,12).padding(.horizontal,12)
                 } else if tab == "FX B: Compressor" {
-                    LazyVGrid(columns:[GridItem(.adaptive(minimum:140))],spacing:8) {
-                        channelKnob("Threshold",value:$draft.channelSettings.threshold,min:-60,max:0,unit:"dB")
-                        if draft.external == nil { channelKnob("Ratio",value:$draft.channelSettings.ratio,min:1,max:20,unit:":1") }
-                        channelKnob("Attack",value:$draft.channelSettings.compressorAttack,min:0.001,max:1,unit:"sec")
-                        channelKnob("Release",value:$draft.channelSettings.compressorRelease,min:0.01,max:3,unit:"sec")
-                        channelKnob("Makeup",value:$draft.channelSettings.makeup,min:0,max:24,unit:"dB")
-                    }.padding(16).disabled(!draft.channelSettings.compressorEnabled)
+                    GeometryReader { geometry in
+                        ScrollView(.horizontal,showsIndicators:false) {
+                            ChannelCompressorControls(settings:$draft.channelSettings).frame(width:max(720,geometry.size.width-24)).padding(12)
+                        }
+                    }.frame(height:344)
+
                 } else {
                     VStack(spacing:12) {
                         ScrollView(.horizontal,showsIndicators:false) { SoundSettingsControls(layer:$draft).frame(minWidth:700) }
                         if draft.importedRack != nil { ImportedRackControls(layer:$draft) }
+                        if draft.name.hasPrefix("SK App Felt Piano") || draft.name == "SK Felt Piano | Room" {
+                            Button("Use Felt Piano | Room Voicing") {
+                                if let source=store.librarySounds.first(where:{$0.sound?.fileName==draft.external?.fileName && $0.name.hasPrefix("SK App Felt Piano")}),let voiced=SundayFactoryVoicing.feltRoom(from:source)?.layer {
+                                    draft.name=voiced.name;draft.channelSettings=voiced.channelSettings;draft.effects=voiced.effects
+                                }
+                            }.buttonStyle(StageButtonStyle()).help("Apply the observed EQ, compressor and room settings; Discard restores your previous sound")
+                        }
                         DisclosureGroup("More Sound Controls") {
                             VStack(spacing:10) {
                                 if draft.external?.kind == .audioUnit { Button("Open Instrument Interface") { plugin=true }.buttonStyle(StageButtonStyle()) }

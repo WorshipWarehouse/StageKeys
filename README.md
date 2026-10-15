@@ -1,3 +1,7 @@
+## Version 0.19
+
+Restored sampler cutoff/velocity controls, removed unrelated template vibrato, translated modern Delay, and added the observed Felt Piano Room voicing. Channel compression now honors input, ratio and blend with a five-column editor. See [piano fidelity evidence and limitations](Docs/PIANO-FIDELITY.md).
+
 ## Version 0.18
 
 Shared-input parallel audio-effect racks, nested audio macros and editors, groove timing after scheduler stalls, and isolated library Audition. See [behavior and verification](Docs/PARALLEL-AUDIO.md).

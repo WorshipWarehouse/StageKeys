@@ -45,8 +45,8 @@ enum AudioEffectCatalog {
         ]
         case 6: return [
             .init(index: 0, name: "Input Gain", minimum: -24, maximum: 24, defaultValue: 0, unit: "dB"),
-            .init(index: 1, name: "Attack", minimum: 0.1, maximum: 500, defaultValue: 20, unit: "ms"),
-            .init(index: 2, name: "Release", minimum: 1, maximum: 2000, defaultValue: 60, unit: "ms"),
+            .init(index: 1, name: "Attack", minimum: 0.1, maximum: 1000, defaultValue: 20, unit: "ms"),
+            .init(index: 2, name: "Release", minimum: 1, maximum: 3000, defaultValue: 60, unit: "ms"),
             .init(index: 3, name: "Ratio", minimum: 1, maximum: 20, defaultValue: 2, unit: ":1"),
             .init(index: 4, name: "Threshold", minimum: -60, maximum: 0, defaultValue: -40, unit: "dB"),
             .init(index: 5, name: "Mix", minimum: 0, maximum: 1, defaultValue: 0, unit: "%"),
