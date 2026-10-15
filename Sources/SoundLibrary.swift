@@ -32,8 +32,18 @@ struct SoundLibrary {
             entries[i].collection = entries[i].collection.replacingOccurrences(of: "Sunday Free Ableton ·", with: "Sunday Free ·")
             if entries[i].collection == "Ableton Imports" { entries[i].collection = "Imported Sounds" }
         }
-        for i in entries.indices {if let tags=entries[i].tags,tags.inferred {var updated=SoundTags.inferred(name:entries[i].name,source:tags.sourceModel);updated.complexity=tags.complexity;entries[i].tags=updated}}
-        if let original=entries.first(where:{$0.collection.hasPrefix("Sunday App") && $0.name.hasPrefix("SK App Felt Piano")}),let voiced=SundayFactoryVoicing.feltRoom(from:original),!entries.contains(where:{$0.id==voiced.id}) {entries.append(voiced)}
+        for i in entries.indices {if let tags=entries[i].tags,tags.inferred {var updated=SoundTags.inferred(name:entries[i].name,source:tags.sourceModel);updated.complexity=tags.complexity;updated.noteRanges=tags.noteRanges;updated.types=tags.types;entries[i].tags=updated}}
+        if let original=entries.first(where:{$0.collection.hasPrefix("Sunday App") && $0.name.hasPrefix("SK App Felt Piano")}),let voiced=SundayFactoryVoicing.feltRoom(from:original) {
+            if let index=entries.firstIndex(where:{$0.id==voiced.id}) {
+                // Upgrade only our generated variant's missing metadata, preserving edits.
+                // An explicit empty array means the user cleared the tags.
+                if var tags=entries[index].tags {
+                    if tags.noteRanges==nil {tags.noteRanges=voiced.tags?.noteRanges}
+                    if tags.types==nil {tags.types=voiced.tags?.types}
+                    entries[index].tags=tags
+                }
+            } else {entries.append(voiced)}
+        }
         try Self.validate(entries); return entries
     }
     static func cleanImportedName(_ name: String) -> String {
@@ -56,6 +66,8 @@ struct SoundLibrary {
             if let notes=entry.conversionNotes {guard notes.count<=128,notes.allSatisfy({$0.count<=2000}) else{throw SetlistError.invalid}}
             if let tags=entry.tags {
                 guard tags.complexity.map({["Simple","Moderate","Complex"].contains($0)}) ?? true else{throw SetlistError.invalid}
+                guard tags.noteRanges.map({$0.count<=4 && Set($0).count==$0.count && $0.allSatisfy{LibraryNoteRange(rawValue:$0) != nil}}) ?? true else{throw SetlistError.invalid}
+                guard tags.types.map({$0.count<=64 && Set($0).count==$0.count && $0.allSatisfy{!$0.isEmpty && $0.count<=200}}) ?? true else{throw SetlistError.invalid}
                 let text=[tags.category,tags.type,tags.sourceModel]+tags.timbres+tags.articulations
                 guard tags.timbres.count<=64,tags.articulations.count<=64,text.allSatisfy({$0.count<=200}) else {throw SetlistError.invalid}
             }

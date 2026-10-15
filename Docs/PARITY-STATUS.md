@@ -1,3 +1,7 @@
+## 0.24 Note Range update
+
+Observed Note Range tags and overlapping sound types are supported, with fixed range choices, explicit unknown metadata, editable multi-range tags, and consistent annotations across converted archive aliases. Source Recommended sorting and complete original-library tagging remain outstanding. See [Note Range evidence](LIBRARY-NOTE-RANGE.md).
+
 ## 0.23 library update
 
 Persistent five-star ratings, clear rating, Rating/Recently Added/stable Random ordering, explicit Complexity tags/filtering, and below-control library choice menus now work. Source Recommended sorting and Note Range filtering remain outstanding. See [library evidence](LIBRARY-RATINGS.md); this does not establish full app parity.

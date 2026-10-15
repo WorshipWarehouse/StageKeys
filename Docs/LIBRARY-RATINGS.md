@@ -14,7 +14,7 @@ Its Order by menu includes Name, Rating, Recently Added, Random and Recommended.
 - Complexity accepts explicit Simple, Moderate or Complex metadata. Unknown sounds remain Not Tagged. A library row's context menu can set or clear this tag; inferred name tags preserve explicit complexity when refreshed. No source complexity is guessed from a sound's name or number of effects.
 - Choice popovers open below their controls. The result row reserves space for ratings and wraps the sound name, closer to the observed source layout.
 
-Recommended sorting and the source Note Range facet are not implemented. The source recommendation algorithm and exact recent/random ordering have not been established. Complexity tagging through a context menu is a StageKeys extension; the reference's metadata editing workflow was not inspected. Full library parity is not claimed.
+The source Note Range facet was subsequently added in [v0.24](LIBRARY-NOTE-RANGE.md). Recommended sorting is not implemented. The source recommendation algorithm and exact recent/random ordering have not been established. Complexity tagging through a context menu is a StageKeys extension; the reference's metadata editing workflow was not inspected. Full library parity is not claimed.
 
 ## Verification
 

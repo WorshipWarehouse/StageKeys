@@ -1,3 +1,7 @@
+## Version 0.24
+
+The library now supports the observed Full Range, Left Hand, Mid Range and Right Hand filters, including overlapping tags. Range choices stay visible when other filters narrow the list. Felt Room also matches both Acoustic Piano and Felt Piano. Range tags can be edited independently of playable keys, and converted MainStage aliases share their metadata. [Note Range evidence and limitations](Docs/LIBRARY-NOTE-RANGE.md).
+
 ## Version 0.23
 
 The library now has five-star row ratings with click-again clearing, Rating / Recently Added / stable Random ordering, a Complexity filter and editable complexity tags. Ratings are personal library preferences and do not replace sounds or change patch audio. Filter menus open below their controls. Recently Added follows managed-library insertion order; missing complexity remains explicitly untagged. [Library behavior and verification](Docs/LIBRARY-RATINGS.md).

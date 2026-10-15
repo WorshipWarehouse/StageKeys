@@ -18,15 +18,13 @@ struct SoundBrowser: View {
         return builtins + Set(store.librarySounds.map(\.collection)).subtracting(builtins).sorted{$0.localizedStandardCompare($1) == .orderedAscending}
     }
     private var sounds:[BrowserSound] {
-        var result=["Soft Keys","Warm Pad","Glass Bells"].enumerated().map {i,name in BrowserSound(id:"builtin-\(i)",name:name,collection:"StageKeys",tags:.inferred(name:name,source:"StageKeys Synth"),builtin:i)}
+        var result=["Soft Keys","Warm Pad","Glass Bells"].enumerated().map {i,name in var tags=SoundTags.inferred(name:name,source:"StageKeys Synth");tags.noteRanges=[LibraryNoteRange.full.rawValue];return BrowserSound(id:"builtin-\(i)",name:name,collection:"StageKeys",tags:tags,builtin:i)}
         let entries=store.librarySounds
         let entryOrder=Dictionary(entries.enumerated().map{($0.element.id,$0.offset+1)},uniquingKeysWith:{first,_ in first})
         result += entries.map {entry in
             if collection == "MainStage Archive",entry.hostPath != nil,
                let converted=entries.first(where:{$0.sourceArchiveID == entry.id && ($0.sound != nil || $0.layer != nil)}) {
-                var browser=BrowserSound.library(converted)
-                browser=BrowserSound(id:entry.id,name:entry.name,collection:entry.collection,tags:entry.tags ?? browser.tags,entry:converted)
-                return browser
+                return BrowserSound.archive(entry,converted:converted)
             }
             return BrowserSound.library(entry)
         }
@@ -112,7 +110,15 @@ struct SoundBrowser: View {
                             Button{selectedID=sound.id}label:{VStack(alignment:.leading,spacing:5){Text(sound.name).font(StageTheme.font(16)).multilineTextAlignment(.leading);if collection == "MainStage Archive" {Text(sound.playable ? "Playable":"Needs Conversion").font(StageTheme.font(11)).foregroundStyle(.secondary)}}.frame(maxWidth:.infinity,alignment:.leading).padding(.leading,14).padding(.vertical,13)}.buttonStyle(.plain).accessibilityLabel("\(sound.name), \(sound.playable ? "Playable":"Needs Conversion")")
                             SoundRatingControl(name:sound.name,rating:sound.rating){store.rateSound(sound.ratingID,$0)}.padding(.horizontal,12)
                         }.background(selectedID == sound.id ? selectionColor:.clear,in:RoundedRectangle(cornerRadius:7)).foregroundStyle(selectedID == sound.id ? .white:.white.opacity(0.85))
-                        .contextMenu {if let entry=sound.entry {Menu("Complexity"){ForEach(["Simple","Moderate","Complex"],id:\.self){value in Button(value){store.setSoundComplexity(entry.id,value)}};Divider();Button("Clear Complexity"){store.setSoundComplexity(entry.id,nil)}}}}
+                         .contextMenu {if let entry=sound.entry {
+                            Menu("Note Range") {
+                                ForEach(LibraryNoteRange.allCases,id:\.self) {range in
+                                    Button {store.setSoundNoteRanges(entry.id,LibraryNoteRange.toggling(range,in:sound.tags.noteRanges))}label:{HStack{Text(range.rawValue);if sound.tags.noteRanges?.contains(range.rawValue)==true {Image(systemName:"checkmark")}}}
+                                }
+                                Divider();Button("Clear Note Range Tags"){store.setSoundNoteRanges(entry.id,[])}
+                            }
+                            Menu("Complexity"){ForEach(["Simple","Moderate","Complex"],id:\.self){value in Button(value){store.setSoundComplexity(entry.id,value)}};Divider();Button("Clear Complexity"){store.setSoundComplexity(entry.id,nil)}}
+                        }}
 
                     }
                     if results.isEmpty {
@@ -133,8 +139,8 @@ struct SoundBrowser: View {
             VStack(alignment:.leading,spacing:4) {
                 if let selection {
                     Text(selection.collection).lineLimit(1)
-                    if !selection.playable {Text("This original MainStage patch needs a sampled conversion before it can play here.").foregroundStyle(.secondary)}
-                } else {Text("\(results.count) sounds").foregroundStyle(.secondary)}
+                    if !selection.playable {Text("This MainStage patch needs a compatible sound import before it can play here.").foregroundStyle(.secondary)}
+                } else {Text(results.count==1 ? "1 sound":"\(results.count) sounds").foregroundStyle(.secondary)}
             }.font(StageTheme.font(12)).frame(maxWidth:.infinity,alignment:.leading)
             if selection?.entry?.conversionNotes?.isEmpty == false {Button("Import Notes"){showingImportNotes=true}.buttonStyle(StageButtonStyle()).popover(isPresented:$showingImportNotes){ScrollView{VStack(alignment:.leading,spacing:12){ForEach(selection?.entry?.conversionNotes ?? [],id:\.self){Text($0)}}.padding(20)}.frame(width:420,height:300)}}
             if collection == "External MIDI" {Button("Refresh"){destinations=ExternalMIDIOutput.destinations()}.buttonStyle(StageButtonStyle())}

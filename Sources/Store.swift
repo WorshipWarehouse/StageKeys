@@ -175,6 +175,14 @@ final class PerformanceStore: ObservableObject {
         do {try SoundLibrary(url:saveURL.deletingLastPathComponent().appendingPathComponent("sound-library.json")).write(updated);librarySounds=updated}
         catch {message="Could not save sound tags: \(error.localizedDescription)"}
     }
+    func setSoundNoteRanges(_ id:String,_ values:[String]) {
+        guard values.count<=4,Set(values).count==values.count,values.allSatisfy({LibraryNoteRange(rawValue:$0) != nil}),let index=librarySounds.firstIndex(where:{$0.id==id}) else{return}
+        var updated=librarySounds;var tags=updated[index].tags ?? BrowserSound.library(updated[index]).tags
+        tags.noteRanges=LibraryNoteRange.allCases.map(\.rawValue).filter{values.contains($0)}
+        updated[index].tags=tags
+        do {try SoundLibrary(url:saveURL.deletingLastPathComponent().appendingPathComponent("sound-library.json")).write(updated);librarySounds=updated}
+        catch {message="Could not save Note Range tags: \(error.localizedDescription)"}
+    }
     func previewLibraryRange(_ index:Int,_ layer:Layer?) {libraryRangePreviewIndex=layer == nil ? nil:index;libraryRangePreview=layer}
     @Published var libraryImportBusy=false
     @Published var libraryImportProgress:String?

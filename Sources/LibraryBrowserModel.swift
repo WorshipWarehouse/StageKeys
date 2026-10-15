@@ -9,6 +9,8 @@ struct SoundTags: Codable, Equatable {
     var sourceModel: String = "Sampler"
     var inferred: Bool = false
     var complexity:String?
+    var noteRanges:[String]?
+    var types:[String]?
     static func inferred(name: String, source: String = "Sampler") -> SoundTags {
         let n = name.lowercased()
         let words=Set(n.split(whereSeparator:{!$0.isLetter && !$0.isNumber}).map(String.init))
@@ -28,8 +30,16 @@ struct SoundTags: Codable, Equatable {
         return result
     }
 }
+enum LibraryNoteRange:String,CaseIterable {
+    case full="Full Range",left="Left Hand",mid="Mid Range",right="Right Hand"
+    static func toggling(_ range:Self,in values:[String]?)->[String] {
+        var selected=Set(values ?? [])
+        if selected.contains(range.rawValue) {selected.remove(range.rawValue)} else {selected.insert(range.rawValue)}
+        return allCases.map(\.rawValue).filter{selected.contains($0)}
+    }
+}
 enum LibraryFacet: String, CaseIterable, Identifiable {
-    case category="Category", type="Type", timbre="Timbre", articulation="Articulation", library="Sound Library", source="Source/Model", availability="Availability", complexity="Complexity"
+    case category="Category", type="Type", timbre="Timbre", articulation="Articulation", library="Sound Library", source="Source/Model", availability="Availability", complexity="Complexity",noteRange="Note Range"
     var id:String {rawValue}
 }
 struct BrowserSound: Identifiable {
@@ -47,15 +57,23 @@ struct BrowserSound: Identifiable {
     var playable:Bool {builtin != nil || entry?.sound != nil || entry?.layer != nil || external != nil || destination != nil}
     func values(_ facet:LibraryFacet)->[String] {
         switch facet {
+        case .noteRange:return tags.noteRanges?.isEmpty == false ? tags.noteRanges!:["Not Tagged"]
         case .complexity:return [tags.complexity ?? "Not Tagged"]
         case .category:return [tags.category]
-        case .type:return [tags.type]
+        case .type:return Array(Set([tags.type]+(tags.types ?? []))).sorted()
         case .timbre:return tags.timbres
         case .articulation:return tags.articulations
         case .library:return [collection]
         case .source:return [tags.sourceModel]
         case .availability:return [playable ? "Playable" : "Needs Conversion"]
         }
+    }
+    static func archive(_ original:LibrarySound,converted:LibrarySound)->BrowserSound {
+        let playable=library(converted)
+        var tags=original.tags ?? playable.tags
+        // Row annotations belong to the playable entry, shared across collections.
+        tags.noteRanges=playable.tags.noteRanges;tags.complexity=playable.tags.complexity;tags.types=playable.tags.types
+        return BrowserSound(id:original.id,name:original.name,collection:original.collection,tags:tags,entry:converted)
     }
     static func library(_ entry:LibrarySound)->BrowserSound {
         BrowserSound(id:entry.id,name:entry.name,collection:entry.collection,tags:entry.tags ?? .inferred(name:entry.name,source:entry.hostPath != nil ? "MainStage" : entry.sound?.kind == .audioUnit ? "Audio Unit" : "Sampler"),entry:entry)
@@ -105,7 +123,14 @@ struct LibraryQuery {
         }
     }
     func options(_ facet:LibraryFacet,in sounds:[BrowserSound])->[String] {
-        ["All"]+Set(sounds.filter{matches($0,ignoring:facet)}.flatMap{$0.values(facet)}).filter{!$0.isEmpty}.sorted{$0.localizedStandardCompare($1) == .orderedAscending}
+        if facet == .noteRange {
+            // The source retains all four choices even after narrowing by type.
+            let unknown=filters[facet]=="Not Tagged" || sounds.filter{matches($0,ignoring:facet)}.contains{$0.values(.noteRange).contains("Not Tagged")}
+            return ["All"]+LibraryNoteRange.allCases.map(\.rawValue)+(unknown ? ["Not Tagged"]:[])
+        }
+        var values=Set(sounds.filter{matches($0,ignoring:facet)}.flatMap{$0.values(facet)})
+        if let selected=filters[facet],selected != "All" {values.insert(selected)}
+        return ["All"]+values.filter{!$0.isEmpty}.sorted{$0.localizedStandardCompare($1) == .orderedAscending}
     }
 }
 
