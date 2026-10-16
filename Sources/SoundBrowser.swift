@@ -16,7 +16,7 @@ struct SoundBrowser: View {
     @State private var destinations=ExternalMIDIOutput.destinations()
     private var collections:[String] {
         let builtins=["All Sounds","StageKeys","My Sounds","Sunday Free","Sunday App","MainStage Archive","Audio Units","External MIDI"]
-        return builtins + Set(store.librarySounds.map(\.collection)).subtracting(builtins).sorted{$0.localizedStandardCompare($1) == .orderedAscending}
+        return builtins + Set(store.librarySounds.map(\.collection).filter{$0 != "Tonic Pads"}).subtracting(builtins).sorted{$0.localizedStandardCompare($1) == .orderedAscending}
     }
     private var sounds:[BrowserSound] {
         var result=["Soft Keys","Warm Pad","Glass Bells"].enumerated().map {i,name in var tags=SoundTags.inferred(name:name,source:"StageKeys Synth");tags.noteRanges=[LibraryNoteRange.full.rawValue];return BrowserSound(id:"builtin-\(i)",name:name,collection:"StageKeys",tags:tags,builtin:i)}
@@ -32,6 +32,7 @@ struct SoundBrowser: View {
         result += instruments.map{BrowserSound(id:"au-\($0.id)",name:$0.name,collection:"Audio Units",tags:.init(category:"Instruments",type:"Audio Unit",sourceModel:"Audio Unit"),external:ExternalSound(kind:.audioUnit,name:$0.name,component:$0))}
         result += destinations.map{BrowserSound(id:"midi-\($0.id)",name:$0.name,collection:"External MIDI",tags:.init(category:"External MIDI",type:"MIDI Destination",sourceModel:"External MIDI"),destination:$0)}
         return result.filter {sound in
+            guard sound.collection != "Tonic Pads" else{return false}
             switch collection {
             case "All Sounds":return sound.playable && sound.destination == nil
             case "MainStage Archive":return entries.contains(where:{$0.id == sound.id && $0.hostPath != nil})

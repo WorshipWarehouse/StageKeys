@@ -11,7 +11,7 @@ struct AudioEffectParameterDescriptor: Identifiable, Equatable {
 }
 /// Original algorithms with observed control names. No claim of sonic parity.
 enum AudioEffectCatalog {
-    static let names = ["No Effect", "Tone", "Tremolo", "Delay", "Bitcrusher", "Chorus", "Compressor", "Equalizer", "Flanger", "Gain", "Halo Shimmer", "Overdrive", "Pitch Shifter", "PrimaVerb", "Rotor", "SolaVerb"]
+    static let names = ["No Effect", "Tone", "Tremolo", "Delay", "Bitcrusher", "Chorus", "Compressor", "Equalizer", "Flanger", "Gain", "Halo Shimmer", "Overdrive", "Pitch Shifter", "PrimaVerb", "Rotor", "SolaVerb", "Silver Reverb", "Clip Distortion"]
     static func descriptors(for kind: Int) -> [AudioEffectParameterDescriptor] {
         switch kind {
         case 1: return [
@@ -144,6 +144,31 @@ enum AudioEffectCatalog {
             .init(index: 7, name: "Rate", minimum: 0.01, maximum: 10, defaultValue: 1, unit: "Hz"),
             .init(index: 8, name: "Dry", minimum: 0, maximum: 1, defaultValue: 0.8, unit: "%"),
             .init(index: 9, name: "Wet", minimum: 0, maximum: 1, defaultValue: 0.4, unit: "%"),
+        ]
+        case 16: return [
+            .init(index:0,name:"Predelay",minimum:0,maximum:200,defaultValue:20,unit:"ms"),
+            .init(index:1,name:"Reflectivity",minimum:0,maximum:1,defaultValue:0.2,unit:"%"),
+            .init(index:2,name:"Room Size",minimum:1,maximum:1000,defaultValue:70,unit:""),
+            .init(index:3,name:"Density / Time",minimum:0,maximum:1,defaultValue:1,unit:"%"),
+            .init(index:4,name:"Low Cut",minimum:20,maximum:20000,defaultValue:410,unit:"Hz"),
+            .init(index:5,name:"High Cut",minimum:20,maximum:20000,defaultValue:6000,unit:"Hz"),
+            .init(index:6,name:"Modulation Rate",minimum:0,maximum:20,defaultValue:0.65,unit:"Hz"),
+            .init(index:7,name:"Modulation Intensity",minimum:0,maximum:1,defaultValue:0.51,unit:"%"),
+            .init(index:8,name:"Modulation Phase",minimum:0,maximum:360,defaultValue:60,unit:"degrees"),
+            .init(index:9,name:"Dry",minimum:0,maximum:1,defaultValue:0.7,unit:"%"),
+            .init(index:10,name:"Wet",minimum:0,maximum:1,defaultValue:0.3,unit:"%"),
+        ]
+        case 17: return [
+            .init(index:0,name:"Drive",minimum:0,maximum:100,defaultValue:15,unit:"dB"),
+            .init(index:1,name:"Tone",minimum:20,maximum:20000,defaultValue:170,unit:"Hz"),
+            .init(index:2,name:"Symmetry",minimum:-100,maximum:100,defaultValue:-16,unit:""),
+            .init(index:3,name:"Mix",minimum:0,maximum:1,defaultValue:0.45,unit:"%"),
+            .init(index:4,name:"Clip Filter",minimum:20,maximum:20000,defaultValue:4400,unit:"Hz"),
+            .init(index:5,name:"Sum Low Pass",minimum:20,maximum:20000,defaultValue:5300,unit:"Hz"),
+            .init(index:6,name:"High Shelf Gain",minimum:-30,maximum:30,defaultValue:0,unit:"dB"),
+            .init(index:7,name:"High Shelf Frequency",minimum:20,maximum:20000,defaultValue:980,unit:"Hz"),
+            .init(index:8,name:"Input Gain",minimum:-60,maximum:60,defaultValue:0,unit:"dB"),
+            .init(index:9,name:"Output Gain",minimum:-60,maximum:60,defaultValue:5,unit:"dB"),
         ]
         default: return []
         }

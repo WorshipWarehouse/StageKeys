@@ -32,11 +32,12 @@ sources=(
     "$repo/Sources/MainStagePatch.swift"
     "$repo/Sources/MainStageProcessing.swift"
     "$repo/Sources/SoundLibrary.swift"
+    "$repo/Sources/LibraryBackup.swift"
     "$repo/Sources/LibraryBrowserModel.swift"
     "$repo/Sources/SnapshotMorph.swift"
     "$repo/Sources/Store.swift"
 )
-if (( $# )); then tests=("$@"); else tests=(LibraryBrowserTests SoundRatingTests LibraryNoteRangeTests SoundLibraryTests ImportedSoundRetentionTests MainStagePatchTests StageKeysSamplerTests EXSEnvelopeTests MainStageProcessingTests NativeSamplerGroupTests); fi
+if (( $# )); then tests=("$@"); else tests=(LibraryBrowserTests SoundRatingTests LibraryNoteRangeTests SoundLibraryTests ImportedSoundRetentionTests MainStagePatchTests StageKeysSamplerTests EXSEnvelopeTests LibraryBackupTests TonicPadTests MainStageProcessingTests NativeSamplerGroupTests); fi
 for test in "${tests[@]}"; do
     xcrun swiftc -DDEBUG -import-objc-header "$repo/Sources/Bridge.h" \
         -module-cache-path "$build/modules" "${sources[@]}" "$repo/Tests/$test.swift" \

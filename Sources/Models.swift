@@ -10,9 +10,12 @@ struct ImportedDelay: Codable, Equatable {
         var feedback:Float
         var crossFeedback:Float
         var mix:Float
+        var input:Int?
+        var feedbackPolarity:Float?
+        var crossPolarity:Float?
         var lowCut:Float=20
         var highCut:Float=20000
-        var valid:Bool {feedback.isFinite && crossFeedback.isFinite && (0...0.95).contains(feedback) && (0...0.95).contains(crossFeedback) && feedback+crossFeedback<=0.95 && mix.isFinite && (0...1).contains(mix) && lowCut.isFinite && highCut.isFinite && (20...20000).contains(lowCut) && (lowCut...20000).contains(highCut)}
+        var valid:Bool {(input.map{(0...4).contains($0)} ?? true) && (feedbackPolarity.map{$0 == -1 || $0 == 1} ?? true) && (crossPolarity.map{$0 == -1 || $0 == 1} ?? true) && feedback.isFinite && crossFeedback.isFinite && (0...0.95).contains(feedback) && (0...0.95).contains(crossFeedback) && feedback+crossFeedback<=0.95 && mix.isFinite && (0...1).contains(mix) && lowCut.isFinite && highCut.isFinite && (20...20000).contains(lowCut) && (lowCut...20000).contains(highCut)}
     }
     var leftChannel:Channel?
     var rightChannel:Channel?
@@ -53,7 +56,7 @@ struct AudioEffect: Codable, Equatable {
     func validate() -> Bool {
         guard reverbCore.map({kind == 13 && ["creamcoat","legacy"].contains($0)}) ?? true else{return false}
         guard importedDelay.map({kind == 3 && $0.validate()}) ?? true else{return false}
-        guard syncBeats.map({ $0.isFinite && (0.0625...4).contains($0) }) ?? true, (0...15).contains(kind), amount.isFinite, (0...1).contains(amount) else { return false }
+        guard syncBeats.map({ $0.isFinite && (0.0625...4).contains($0) }) ?? true, (0...17).contains(kind), amount.isFinite, (0...1).contains(amount) else { return false }
         guard let parameters else { return true }
         guard (parameters.count == AudioEffectCatalog.defaults(for: kind).count || kind == 13 && parameters.count == 9), parameters.allSatisfy(\.isFinite) else { return false }
         return AudioEffectCatalog.descriptors(for: kind).allSatisfy { ($0.minimum...$0.maximum).contains(values[$0.index]) }
@@ -251,6 +254,7 @@ struct Snapshot: Codable, Identifiable {
     var gains: [Float]
     var sounds: [SnapshotSoundState]?
     var modulation: Float?
+    var tonicTimbre:Int?
     var tonicRoot: Int?
     var tonicEnabled: Bool?
     var tonicLevel: Float?
@@ -341,7 +345,7 @@ struct Setlist: Codable {
             }
             for s in p.snapshots {
                 if let states = s.sounds { guard states.count == p.layers.count, states.allSatisfy({ ($0.importedRack?.validate() ?? true) && $0.effects.count == 3 && $0.effects.allSatisfy({ $0.validate() }) && $0.pan.isFinite && (-1...1).contains($0.pan) && ($0.midiProgram.map { $0 == $0.validated } ?? true) }) else { throw SetlistError.invalid } }
-                guard [s.modulation,s.tonicLevel,s.tonicBrightness,s.tonicShimmer].allSatisfy({ $0.map { $0.isFinite && (0...1).contains($0) } ?? true }), s.tonicRoot.map({ (0...11).contains($0) }) ?? true else { throw SetlistError.invalid }
+                guard [s.modulation,s.tonicLevel,s.tonicBrightness,s.tonicShimmer].allSatisfy({ $0.map { $0.isFinite && (0...1).contains($0) } ?? true }), s.tonicRoot.map({ (0...11).contains($0) }) ?? true, s.tonicTimbre.map({(0..<12).contains($0)}) ?? true else { throw SetlistError.invalid }
                 guard s.name.count <= 200, (s.note?.count ?? 0) <= 10_000, (0...2).contains(s.alignment ?? 0), s.gains.count == p.layers.count, s.gains.allSatisfy({ $0.isFinite && (0...1).contains($0) }), s.seconds.map({ $0.isFinite && (0...30).contains($0) }) ?? true, s.beats.map({ $0.isFinite && (0.25...32).contains($0) }) ?? true else { throw SetlistError.invalid }
             }
         }

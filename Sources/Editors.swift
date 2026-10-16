@@ -86,11 +86,17 @@ struct SoundEditor: View {
                                             VStack(alignment:.leading,spacing:4) {
                                                 Text("\(index+1). \(effect.title)").font(.subheadline.bold())
                                                 Text(preview.sourceNames.indices.contains(index) ? preview.sourceNames[index]:effect.title).font(.caption).foregroundStyle(.secondary)
-                                                ForEach(AudioEffectCatalog.descriptors(for:effect.kind)){parameter in
+                                                ForEach(AudioEffectCatalog.descriptors(for:effect.kind).filter{_ in effect.importedDelay==nil}){parameter in
                                                     let value=effect.values[parameter.index]*(parameter.unit == "%" ? 100:1)
                                                     Text("\(parameter.name): \(value,specifier: "%.2f") \(parameter.unit)").font(.caption).monospacedDigit()
                                                 }
-                                                if let delay=effect.importedDelay {Text("Left \(delay.left,specifier: "%.3f") s · Right \(delay.right,specifier: "%.3f") s").font(.caption)}
+                                                if let delay=effect.importedDelay {
+                                                    Text("Left \(delay.left,specifier: "%.3f") \(delay.leftSynced ? "beats":"s") · Right \(delay.right,specifier: "%.3f") \(delay.rightSynced ? "beats":"s")").font(.caption)
+                                                    if let left=delay.leftChannel,let right=delay.rightChannel {
+                                                        Text("Left · Feedback \(left.feedback*100,specifier: "%.1f")% · Crossfeed \(left.crossFeedback*100,specifier: "%.1f")% · Mix \(left.mix*100,specifier: "%.1f")%").font(.caption)
+                                                        Text("Right · Feedback \(right.feedback*100,specifier: "%.1f")% · Crossfeed \(right.crossFeedback*100,specifier: "%.1f")% · Mix \(right.mix*100,specifier: "%.1f")%").font(.caption)
+                                                    }
+                                                }
                                             }.frame(maxWidth:.infinity,alignment:.leading).padding(10).background(StageTheme.panel,in:RoundedRectangle(cornerRadius:6))
                                         }
                                         if let low=preview.low,let high=preview.high {Text("Note Range: \(low)–\(high)").font(.caption)}
@@ -183,7 +189,7 @@ struct EffectKnob: View {
                 Capsule().fill(StageTheme.selected).frame(width:3,height:16).offset(y:compact ? -17:-23).rotationEffect(.degrees(-133+Double(position)*266))
             }.frame(width:compact ? 56:84,height:compact ? 56:84).contentShape(Circle())
                 .gesture(DragGesture(minimumDistance:0).onChanged { v in if initial == nil { initial = position }; set(initial! - Float(v.translation.height)/180) }.onEnded { _ in initial=nil })
-                .accessibilityElement().accessibilityLabel(descriptor.name).accessibilityValue("\(value) \(descriptor.unit)")
+                .accessibilityElement().accessibilityLabel(descriptor.name).accessibilityValue("\(descriptor.unit == "%" ? value*100:value) \(descriptor.unit)")
                 .accessibilityAdjustableAction { set(position + ($0 == .increment ? 0.02 : -0.02)) }
             HStack(spacing:4) {
                 TextField(descriptor.name,value:Binding(get:{descriptor.unit == "%" ? value*100 : value},set:{ if $0.isFinite { let raw=descriptor.unit == "%" ? $0/100 : $0; value=min(descriptor.maximum,max(descriptor.minimum,raw)) } }),format:.number.precision(.fractionLength(2))).textFieldStyle(.roundedBorder).frame(width:75)

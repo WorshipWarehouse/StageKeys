@@ -49,7 +49,7 @@ private final class ImportedBranchVoice {
         midi.noteOn(channel:0,key:key,pitch:pitch,velocity:velocity,sourceID:source)
     }
     func sendNote(_ key:Int,_ pitch:Int,_ velocity:Float,_ source:Int32?) {
-        if let sampler {pitches[key]=UInt8(pitch);sampler.startNote(UInt8(pitch),withVelocity:UInt8(max(1,min(127,Int(velocity*127)))),onChannel:0)}
+        if let sampler {pitches[key]=UInt8(pitch);sampler.startNote(UInt8(pitch),withVelocity:UInt8(max(1,min(127,Int((velocity*127).rounded())))),onChannel:0)}
         for child in children{child.noteOn(key,pitch,velocity,source)}
     }
     func sendOff(_ key:Int,_ force:Bool){
@@ -85,7 +85,7 @@ final class ExternalInstrumentRack {
         var parallelTopology=""
         var pitches: [Int: UInt8] = [:]
     }
-    static func supportsEffect(kind: Int) -> Bool { (0...15).contains(kind) }
+    static func supportsEffect(kind: Int) -> Bool { (0...17).contains(kind) }
     /// Legacy names accepted by the adapter; the descriptor API exposes all built-in controls.
     static func supportedEffectParameters(kind: Int) -> Set<String> {
         switch kind {
@@ -429,7 +429,7 @@ final class ExternalInstrumentRack {
     func contains(_ channel: Int) -> Bool { voices[channel] != nil }
     func load(_ sound: ExternalSound, channel: Int, completion: @escaping (Result<Void, Error>) -> Void) {
         precondition(Thread.isMainThread)
-        guard (0..<15).contains(channel) else { completion(.failure(ExternalInstrumentError.invalidChannel)); return }
+        guard (0..<16).contains(channel) else { completion(.failure(ExternalInstrumentError.invalidChannel)); return }
         let generation = UUID()
         generations[channel] = generation
         if sound.kind == .audioUnit {
@@ -608,7 +608,7 @@ final class ExternalInstrumentRack {
         if let previous = voices[channel]?.pitches[key] { midi(channel, 0x80, previous, 0) }
         let note = UInt8(pitch)
         voices[channel]?.pitches[key] = note
-        midi(channel, 0x90, note, UInt8(max(1, min(127, Int(velocity * 127)))))
+        midi(channel, 0x90, note, UInt8(max(1, min(127, Int((velocity * 127).rounded())))))
     }
     func noteOff(channel: Int, key: Int, forceRelease: Bool = false) {
         precondition(Thread.isMainThread)

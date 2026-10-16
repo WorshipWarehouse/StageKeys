@@ -1,0 +1,15 @@
+name: Library-free distribution
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  app-without-library:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check source contains no sampled library
+        run: python3 Tools/check-distribution.py --repo .
+      - name: Build independently of the private library repository
+        run: xcodebuild -project StageKeys.xcodeproj -scheme StageKeysMac -configuration Release -derivedDataPath build CODE_SIGNING_ALLOWED=NO build
+      - name: Check application bundle contains no sampled library
+        run: python3 Tools/check-distribution.py --bundle build/Build/Products/Release/StageKeysMac.app

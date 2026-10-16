@@ -64,13 +64,14 @@ struct TonicPanel: View {
         HStack(alignment: .top, spacing: 8) {
             VStack(spacing: 4) {
                 HStack(spacing: 8) {
-                    Button { store.toggleTonic(store.tonic ?? 0) } label: { Image(systemName: "power") }.buttonStyle(.plain).foregroundStyle(store.tonic == nil ? .secondary : StageTheme.selected).accessibilityLabel("Tonic Pad power")
-                    Button(action:onSettings) { VStack(alignment: .leading, spacing: 2) { Text("Tonic Pad").font(.caption2); Text("1. Warm").font(.system(size: 10)).foregroundStyle(.secondary) } }.buttonStyle(.plain).accessibilityLabel("Tonic Pad Settings")
+                    Button { store.toggleTonic(store.tonic ?? store.tonicLastRoot) } label: { Image(systemName: "power") }.buttonStyle(.plain).foregroundStyle(store.tonic == nil ? .secondary : StageTheme.selected).accessibilityLabel("Tonic Pad power")
+                    Button(action:onSettings) { VStack(alignment: .leading, spacing: 2) { Text("Tonic Pad").font(.caption2); Text(store.tonicLabel).font(.system(size: 10)).foregroundStyle(.secondary) } }.buttonStyle(.plain).accessibilityLabel("Tonic Pad Settings")
                     Spacer(minLength: 0)
+                    Button {store.tonicLocked.toggle();store.save()}label:{Image(systemName:store.tonicLocked ? "lock.fill":"lock.open")}.buttonStyle(.plain).accessibilityLabel("Tonic Pad snapshot lock")
                 }.padding(7).background(StageTheme.raised.opacity(0.5), in: RoundedRectangle(cornerRadius: 5))
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 4), count: 4), spacing: 4) {
                     ForEach(0..<12) { root in
-                        Button { store.toggleTonic(root) } label: { Text(StageTheme.notes[root]).font(.system(size: 14, weight: .semibold)).frame(maxWidth: .infinity).frame(height: 49) }
+                        Button { store.selectTonicRoot(root) } label: { Text(StageTheme.notes[root]).font(.system(size: 14, weight: .semibold)).frame(maxWidth: .infinity).frame(height: 49) }
                             .buttonStyle(.plain).background(store.tonic == root ? StageTheme.selected : StageTheme.raised.opacity(0.5), in: RoundedRectangle(cornerRadius: 5))
                             .foregroundStyle(store.tonic == root ? StageTheme.base : .white).accessibilityLabel("Tonic \(StageTheme.notes[root])")
                     }

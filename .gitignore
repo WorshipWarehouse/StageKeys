@@ -34,3 +34,9 @@ setlist.json
 
 # Superseded generated project
 StageKeys [0-9]*.xcodeproj/
+
+# Sound library lives in its own private repository
+*.caf
+*.cst
+*.patch/
+StageKeys-Library/

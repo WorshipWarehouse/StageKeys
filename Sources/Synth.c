@@ -68,7 +68,7 @@ void sk_note_off_channel(SKSynth *s,int key,int layer,int forceRelease){if(layer
 void sk_note_off(SKSynth *s,int key){enqueue(s,(Command){.kind=2,.key=key});}
 void sk_gain(SKSynth *s,int layer,float gain,float seconds){if(layer>=0&&layer<BUSES)enqueue(s,(Command){.kind=3,.layer=layer,.value=fminf(4,fmaxf(0,gain)),.seconds=fminf(30,fmaxf(0,seconds))});}
 void sk_effect(SKSynth *s,int layer,int slot,int kind,float amount){
- if(layer<0||layer>=BUSES||slot<0||slot>=3||kind<0||kind>15)return;
+ if(layer<0||layer>=BUSES||slot<0||slot>=3||kind<0||kind>17)return;
  // Allocate on the control thread, publish once, and retain through bypass/panic.
  if(kind==13&&!atomic_load_explicit(&s->cream[layer][slot],memory_order_acquire)){
   SKCreamCoat*c=sk_cream_create(s->rate),*expected=NULL;
@@ -106,7 +106,7 @@ static void equalizer(Biquad*b,double rate,int band,float f,float db,float q){
  else{a0=(A+1)-(A-1)*c+t;b->b0=A*((A+1)+(A-1)*c+t)/a0;b->b1=-2*A*((A-1)+(A+1)*c)/a0;b->b2=A*((A+1)+(A-1)*c-t)/a0;b->a1=2*((A-1)-(A+1)*c)/a0;b->a2=((A+1)-(A-1)*c-t)/a0;}
 }
 static float process(Biquad*b,float x){float y=b->b0*x+b->z1;b->z1=b->b1*x-b->a1*y+b->z2;b->z2=b->b2*x-b->a2*y;return y;}
-static const float effectDefault[16][32]={
+static const float effectDefault[18][32]={
 {},
 {20000,0.707,1},
 {0.8,3,1,0},
@@ -123,8 +123,10 @@ static const float effectDefault[16][32]={
 {0.5,0,0.3,100,20000,0,1,0.8,0.4,1},
 {1,44,402,2.5,0,0,0.5,18,130,0.9,0.82,0.35},
 {20,0.5,0.5,100,14000,0.33,0.2,1,0.8,0.4},
+{20,.2,70,1,410,6000,.65,.51,60,.7,.3},
+{15,170,-16,.45,4400,5300,0,980,0,5},
 };
-static const float effectMin[16][32]={
+static const float effectMin[18][32]={
 {},
 {20,0.1,0},
 {0,0.01,0,0},
@@ -141,8 +143,10 @@ static const float effectMin[16][32]={
 {0,0,0,20,200,0,0,0,0,0},
 {0,1,120,0.1,0,-24,0,1,0,0,0,0},
 {0,0,0,20,200,0,0,0.01,0,0},
+{0,0,1,0,20,20,0,0,0,0,0},
+{0,20,-100,0,20,20,-30,20,-60,-60},
 };
-static const float effectMax[16][32]={
+static const float effectMax[18][32]={
 {},
 {20000,10,1},
 {1,20,1,1},
@@ -159,8 +163,10 @@ static const float effectMax[16][32]={
 {1,200,0.95,2000,20000,1,10,1,1,1,1},
 {2,120,600,10,1,12,1,100,200,1,1,1},
 {200,1,0.95,2000,20000,1,1,10,1,1},
+{200,1,1000,1,20000,20000,20,1,360,1,1},
+{100,20000,100,1,20000,20000,30,20000,60,60},
 };
-static const int effectCount[16]={0,3,4,4,3,5,7,24,4,1,9,5,2,11,12,10};
+static const int effectCount[18]={0,3,4,4,3,5,7,24,4,1,9,5,2,11,12,10,11,10};
 
 // Delay taps interpolate bounded preallocated memory. All state is render-owned.
 static float tap_capacity(const float *buffer,int pos,float offset,int capacity){
@@ -180,6 +186,8 @@ static void effectCoefficients(EffectState*e,int kind,double rate){
  if(kind==5)e->coef[0]=pow(10,p[3]/20);
  if(kind==11){e->coef[0]=1-exp(-TAU*p[1]/rate);e->coef[1]=1-exp(-TAU*p[2]/rate);e->coef[2]=pow(10,p[4]/20);}
  if(kind==3)e->coef[0]=1-exp(-TAU*p[2]/rate);
+ if(kind==16){e->coef[0]=1-exp(-TAU*p[4]/rate);e->coef[1]=1-exp(-TAU*p[5]/rate);}
+ if(kind==17){e->coef[0]=pow(10,(p[0]+p[8])/20);e->coef[1]=1-exp(-TAU*p[1]/rate);e->coef[2]=1-exp(-TAU*p[4]/rate);e->coef[3]=1-exp(-TAU*p[5]/rate);e->coef[4]=pow(10,p[9]/20);equalizer(&e->eq[0],rate,6,p[7],p[6],.707f);}
  if(kind==12)e->coef[0]=pow(2,p[0]/12);
  if(kind==10||kind==13||kind==15){int low=kind==10?5:3,tone=kind==10?6:4;e->coef[0]=1-exp(-TAU*p[low]/rate);e->coef[1]=1-exp(-TAU*p[tone]/rate);}
  if(kind==14){e->coef[0]=pow(10,p[5]/20);e->coef[1]=1-exp(-1/(rate*p[3]));}
@@ -242,6 +250,32 @@ static float effectProcess(SKSynth*s,int l,int k,float x){
   int di=kind==10?7:kind==13?7:8,wi=di+1;y=x*p[di]+wet*p[wi];s->fxPhase[l][k]=fmod(phase+TAU*hz/rate,TAU);break;}
  case 11:{e->z[0]+=e->coef[0]*(x-e->z[0]);float v=x-e->z[0],drive=1+p[0]*30;v=tanhf(v*drive)/tanhf(drive);e->z[1]+=e->coef[1]*(v-e->z[1]);y=(x*(1-p[3])+e->z[1]*p[3])*e->coef[2];break;}
  case 12:buffer[pos]=x;y=p[0]==0?x:x*(1-p[1])+shifted(s,e,buffer,pos,e->coef[0],rate)*p[1];break;
+ case 16:{
+  int prepos=s->predelayPosition[l][k];
+  float input=p[0]>0?tap_capacity(s->predelay[l][k],prepos,rate*p[0]*.001f,s->predelayLength):x;
+  s->predelay[l][k][prepos]=x;s->predelayPosition[l][k]=(prepos+1)%s->predelayLength;
+  int capacity=s->delayLength/4,index=pos%capacity;float wet=0;
+  const float spacing[4]={.73f,.89f,1.07f,1.19f};
+  float room=.025f+p[2]*.0003f,decay=.2f+p[3]*8+p[1]*4;
+  float angle=phase+s->stereoSide*p[8]*TAU/360;
+  for(int line=0;line<4;line++){
+   float seconds=room*spacing[line]*(s->stereoSide?1.013f:1),offset=seconds*rate;
+   offset+=sinf(angle+line)*p[7]*rate*.0015f;
+   float tail=tap_capacity(buffer+line*capacity,index,offset,capacity);
+   float feedback=fminf(.985f,powf(.001f,seconds/decay));
+   buffer[line*capacity+index]=tanhf(input*.35f+tail*feedback);wet+=tail*.25f;
+  }
+  float diffusion=.15f+.55f*p[3];
+  for(int stage=2;stage<4;stage++){float ap=-diffusion*wet+e->z[stage];e->z[stage]=wet+diffusion*ap;wet=ap;}
+  e->z[0]+=e->coef[0]*(wet-e->z[0]);wet-=e->z[0];e->z[1]+=e->coef[1]*(wet-e->z[1]);wet=e->z[1];
+  y=x*p[9]+wet*p[10];s->fxPhase[l][k]=fmod(phase+TAU*p[6]/rate,TAU);break;
+ }
+ case 17:{
+  float amplified=x*e->coef[0];e->z[0]+=e->coef[1]*(amplified-e->z[0]);
+  float bias=p[2]*.01f,clipped=tanhf(amplified-e->z[0]+bias)-tanhf(bias);
+  e->z[1]+=e->coef[2]*(clipped-e->z[1]);float mixed=x*(1-p[3])+e->z[1]*p[3];
+  e->z[2]+=e->coef[3]*(mixed-e->z[2]);y=process(&e->eq[0],e->z[2])*e->coef[4];break;
+ }
  case 14:{float target=p[0]<.5f?0:p[0]<1.5f?p[1]/60:p[2]/60;e->z[0]+=(target-e->z[0])*e->coef[1];s->fxPhase[l][k]=fmod(phase+TAU*e->z[0]/rate,TAU);float doppler=rate*(.002f+.0015f*(p[7]/100)*sinf(phase));buffer[pos]=x;float body=tap(buffer,pos,doppler);float driven=tanhf(body*(1+p[4]*12));float ambience=tap(buffer,pos,rate*(.02f+.15f*p[9]));float amp=.72f+.28f*cosf(phase)*(1-p[6]*.5f);y=(driven*amp+ambience*p[11]*.4f)*e->coef[0];e->stereo=sinf(phase)*fminf(1,p[8]/200)*p[10];break;}
  default:break;
  }
@@ -253,8 +287,8 @@ static float effectProcess(SKSynth*s,int l,int k,float x){
 void sk_imported_delay(SKSynth*s,int slot,int enabled,float leftSeconds,float rightSeconds,int pingPong,float lowCut,float highCut){
  if(slot>=0&&slot<3&&isfinite(leftSeconds)&&isfinite(rightSeconds)&&isfinite(lowCut)&&isfinite(highCut))enqueue(s,(Command){.kind=19,.key=slot,.instrument=enabled,.value=leftSeconds,.a=rightSeconds,.b=pingPong?1:0,.d=lowCut,.seconds=highCut});
 }
-void sk_imported_delay_channel(SKSynth*s,int slot,int enabled,float feedback,float crossFeedback,float mix){
- if(slot>=0&&slot<3&&isfinite(feedback)&&isfinite(crossFeedback)&&isfinite(mix))enqueue(s,(Command){.kind=21,.key=slot,.instrument=enabled,.value=feedback,.a=crossFeedback,.b=mix});
+void sk_imported_delay_channel(SKSynth*s,int slot,int enabled,float feedback,float crossFeedback,float mix,int input){
+ if(slot>=0&&slot<3&&isfinite(feedback)&&isfinite(crossFeedback)&&isfinite(mix))enqueue(s,(Command){.kind=21,.key=slot,.instrument=enabled,.value=feedback,.a=crossFeedback,.b=mix,.d=input});
 }
 void sk_effect_parameter(SKSynth*s,int l,int slot,int index,float value){if(l>=0&&l<BUSES&&slot>=0&&slot<3&&index>=0&&index<32&&isfinite(value))enqueue(s,(Command){.kind=17,.layer=l,.key=slot,.pitch=index,.value=value});}
 static void commands(SKSynth *s) {
@@ -288,7 +322,7 @@ static void commands(SKSynth *s) {
   else if(c.kind==18){int l=c.layer;for(int i=0;i<VOICES;i++)if(s->voices[i].layer==l)s->voices[i].active=0;for(int dk=0;dk<3;dk++)clear_delay(s,l,dk);memset(s->tone[l],0,sizeof(s->tone[l]));s->filter[l].z1=s->filter[l].z2=s->detector[l]=0;for(int k=0;k<3;k++){EffectState*e=&s->effect[l][k];memset(e->z,0,sizeof(e->z));e->shiftPhase=e->stereo=0;s->delayPosition[l][k]=0;s->fxPhase[l][k]=0;for(int b=0;b<8;b++)e->eq[b].z1=e->eq[b].z2=0;}for(int b=0;b<8;b++)s->eq[l][b].z1=s->eq[l][b].z2=0;}
   else if(c.kind==16){for(int i=0;i<VOICES;i++)if(s->voices[i].active&&s->voices[i].layer==c.layer&&s->voices[i].key==c.key){s->voices[i].held=0;if(c.instrument||!s->sustain||s->blockSustain[c.layer])s->voices[i].releasing=1;}}
   else if(c.kind==20){s->compressorInput[c.layer]=powf(10,c.value/20);s->compressorWet[c.layer]=c.a;}
-  else if(c.kind==21){EffectState*e=&s->effect[0][c.key];e->p[30]=c.instrument?1:0;e->p[4]=bounded(c.value,0,.95f);e->p[5]=bounded(c.a,0,.95f-e->p[4]);e->p[6]=bounded(c.b,0,1);}
+  else if(c.kind==21){EffectState*e=&s->effect[0][c.key];e->p[30]=c.instrument?1:0;e->p[4]=bounded(c.value,-.95f,.95f);e->p[5]=bounded(c.a,-(.95f-fabsf(e->p[4])),.95f-fabsf(e->p[4]));e->p[6]=bounded(c.b,0,1);e->p[7]=bounded(c.d,0,4);}
   else if(c.kind==19){EffectState*e=&s->effect[0][c.key];e->p[24]=c.instrument?1:0;e->p[25]=bounded(c.value,.001f,16);e->p[26]=bounded(c.a,.001f,16);e->p[27]=c.b;e->p[28]=bounded(c.d,20,20000);e->p[29]=bounded(c.seconds,e->p[28],20000);e->coef[4]=1-exp(-TAU*e->p[28]/s->rate);e->coef[5]=1-exp(-TAU*e->p[29]/s->rate);}
   else if(c.kind==17){int kind=s->fxKind[c.layer][c.key];if(c.pitch<effectCount[kind]){EffectState*e=&s->effect[c.layer][c.key];e->custom=1;e->p[c.pitch]=bounded(c.value,effectMin[kind][c.pitch],effectMax[kind][c.pitch]);effectCoefficients(e,kind,s->rate);}}
   r=(r+1)%QUEUE;
@@ -327,8 +361,11 @@ void sk_process_effects_stereo(SKSynth*l,SKSynth*r,float*left,float*right,uint32
     float feedback=a->p[0],mix=a->p[3];
     float il=a->p[27]>0?(x+y)*.5f:x,ir=a->p[27]>0?0:y;
     if(a->p[30]>0 && b->p[30]>0){
-     l->delay[0][k][lp]=fminf(16,fmaxf(-16,x+dl*a->p[4]+dr*a->p[5]));
-     r->delay[0][k][rp]=fminf(16,fmaxf(-16,y+dr*b->p[4]+dl*b->p[5]));
+     int li=(int)a->p[7],ri=(int)b->p[7];
+     float lin=li==0?0:li==1?x:li==2?y:li==3?(x+y)*.5f:(x-y)*.5f;
+     float rin=ri==0?0:ri==1?x:ri==2?y:ri==3?(x+y)*.5f:(x-y)*.5f;
+     l->delay[0][k][lp]=fminf(16,fmaxf(-16,lin+dl*a->p[4]+dr*a->p[5]));
+     r->delay[0][k][rp]=fminf(16,fmaxf(-16,rin+dr*b->p[4]+dl*b->p[5]));
      x=x*(1-a->p[6])+dl*a->p[6];y=y*(1-b->p[6])+dr*b->p[6];
     }else{
      l->delay[0][k][lp]=fminf(16,fmaxf(-16,il+(a->p[27]>0?dr:dl)*feedback));

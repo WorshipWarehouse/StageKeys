@@ -11,7 +11,7 @@ static double powerAt(float*x,int n,double hz){double r=0,i=0;for(int k=0;k<n;k+
 int main(void){
  int frames=48000;float *dry=calloc(frames,sizeof(float)),*wet=calloc(frames,sizeof(float));assert(dry&&wet);
  SKSynth*base=sk_create(48000);setup(base);render(base,dry,frames);sk_destroy(base);
- for(int kind=1;kind<=15;kind++){
+ for(int kind=1;kind<=17;kind++){
   SKSynth*s=sk_create(48000);setup(s);sk_effect(s,0,0,kind,.7);
   // Trigger parameter mode for each effect; choose an audible setting for unity-default processors.
   switch(kind){

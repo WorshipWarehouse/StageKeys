@@ -1,3 +1,7 @@
+## 0.29 source processors, tonic and optional library
+
+Synced MainStage delay timing/routing/polarity, native SilverVerb/ClipDist parameter processing and supported macros are implemented. Tonic adds imported sampler timbres, pitch-shifted reverb shimmer, power key memory and snapshot lock. The application and private sound backup are separate repos, with an optional pack installer and no-sample distribution checks. Exact proprietary DSP, source bypass flags, v2 tonic mapping and complete Sunday Keys settings/crossfade parity remain unfinished. [Details](SOURCE-EFFECTS-AND-TONIC.md).
+
 ## 0.28 source envelopes and more processing
 
 EXS amplitude ADSR, protected legacy sampler envelope upgrades, native Compressor parameters, manual Stereo Delay channel feedback/cross-feedback/mix/filters, reversed linear CC macros and detailed preview controls are implemented. Library filter columns persist and default to Note Range. Source Steinway envelope timing and no-resampling sample retention are verified in private fixture tests. Exact envelope shapes/velocity-dependent attack, source synths, ClipDist/SilverVerb, synced Stereo Delay and complete MIDI/routing/bypass parity remain unfinished. [Details](NATIVE-EXS-PLAYBACK.md).

@@ -3,7 +3,7 @@ import UniformTypeIdentifiers
 
 struct SoundImportView:View {
     @EnvironmentObject private var store:PerformanceStore
-    private enum ImportChoice { case file, library, samples, mainStage, mainStageSamples }
+    private enum ImportChoice { case file, library, samples, mainStage, mainStageSamples, backup }
     @State private var choosing=false
     @State private var choice:ImportChoice = .file
     @State private var pending:URL?
@@ -17,6 +17,8 @@ struct SoundImportView:View {
                 Button{choice = .file;choosing=true}label:{HStack{Image(systemName:"plus.circle.fill").font(.title);VStack(alignment:.leading,spacing:4){Text("Choose a Sound File").font(.headline);Text("StageKeys Sampler · EXS · AUPRESET · audio · sound banks · ADG · ALP").font(.caption)};Spacer();Image(systemName:"chevron.right")}.padding(20).frame(maxWidth:.infinity,alignment:.leading)}.buttonStyle(.plain).background(StageTheme.panel,in:RoundedRectangle(cornerRadius:10))
                 Button{choice = .library;choosing=true}label:{HStack{Image(systemName:"folder.badge.plus").font(.title);VStack(alignment:.leading,spacing:4){Text("Import a Sampler Library Folder").font(.headline);Text("Add EXS, AUPRESET or Ableton ADG instruments and their samples").font(.caption)};Spacer();Image(systemName:"chevron.right")}.padding(20).frame(maxWidth:.infinity,alignment:.leading)}.buttonStyle(.plain).background(StageTheme.panel,in:RoundedRectangle(cornerRadius:10))
                 Button{choice = .mainStage;choosing=true}label:{HStack{Image(systemName:"pianokeys").font(.title);VStack(alignment:.leading,spacing:4){Text("Import a MainStage Patch").font(.headline);Text("Preserve the source and check instruments, effects, macros and MIDI compatibility").font(.caption)};Spacer();Image(systemName:"chevron.right")}.padding(20).frame(maxWidth:.infinity,alignment:.leading)}.buttonStyle(.plain).background(StageTheme.panel,in:RoundedRectangle(cornerRadius:10))
+                Button("Install a Separate Sound Library") {choice = .backup;choosing=true}.buttonStyle(StageButtonStyle())
+                Text("Choose a downloaded StageKeys-Library pack. Sounds and rack processing install separately; the app ships without sampled content.").font(.caption).foregroundStyle(.secondary)
                 if store.librarySounds.contains(where:{$0.sound?.nativeSampler != nil && ($0.sound?.nativeSampler?.conversionVersion ?? 1)<2}) {
                     Button("Update Converted Sampler Envelopes") {store.updateSamplerEnvelopes()}.buttonStyle(StageButtonStyle())
                     Text("Restore source decay and release on earlier EXS imports. Presets and settings are backed up; edited envelopes are left untouched.").font(.caption).foregroundStyle(.secondary)
@@ -56,6 +58,7 @@ struct SoundImportView:View {
                 case .samples:
                     if let pending {importFile(pending,samples:url)}
                     pending=nil
+                case .backup:store.importLibraryBackup(url)
                 case .mainStageSamples:
                     store.importMainStageSamplers(url);status=nil
                 case .mainStage:

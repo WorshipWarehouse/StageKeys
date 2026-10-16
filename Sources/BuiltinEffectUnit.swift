@@ -38,7 +38,7 @@ final class BuiltinEffectUnit: AUAudioUnit {
     override func deallocateRenderResources(){releaseDSP();super.deallocateRenderResources()}
     deinit {releaseDSP()}
     func configure(slot:Int,kind:Int,enabled:Bool,values:[Float],tempo:Float,delay:ImportedDelay?=nil){
-        guard (0..<3).contains(slot),(0...15).contains(kind) else{return}
+        guard (0..<3).contains(slot),(0...17).contains(kind) else{return}
         var clean=AudioEffectCatalog.defaults(for:kind)
         for p in AudioEffectCatalog.descriptors(for:kind) {let value=p.index<values.count ? values[p.index]:p.defaultValue;clean[p.index]=value.isFinite ? max(p.minimum,min(p.maximum,value)):p.defaultValue}
         // Internal engine selector is deliberately separate from visible controls.
@@ -57,7 +57,7 @@ final class BuiltinEffectUnit: AUAudioUnit {
             let leftSeconds=delay.map{$0.seconds($0.left,synced:$0.leftSynced,tempo:setting.tempo)} ?? 0.001
             let rightSeconds=delay.map{$0.seconds($0.right,synced:$0.rightSynced,tempo:setting.tempo)} ?? 0.001
             let channel=side==0 ? delay?.leftChannel:delay?.rightChannel
-            sk_imported_delay_channel(pointer,Int32(slot),channel != nil ? 1:0,channel?.feedback ?? 0,channel?.crossFeedback ?? 0,channel?.mix ?? 0)
+            sk_imported_delay_channel(pointer,Int32(slot),channel != nil ? 1:0,(channel?.feedback ?? 0)*(channel?.feedbackPolarity ?? 1),(channel?.crossFeedback ?? 0)*(channel?.crossPolarity ?? 1),channel?.mix ?? 0,Int32(channel?.input ?? (side==0 ? 1:2)))
             sk_imported_delay(pointer,Int32(slot),delay != nil && setting.enabled ? 1:0,leftSeconds,rightSeconds,delay?.pingPong == true ? 1:0,channel?.lowCut ?? delay?.lowCut ?? 20,channel?.highCut ?? delay?.highCut ?? 20000)
             if setting.enabled {for (index,value) in setting.values.enumerated(){sk_effect_parameter(pointer,0,Int32(slot),Int32(index),value)}}
         }

@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct NewPatchEditor:View {
     @EnvironmentObject private var store:PerformanceStore
@@ -39,16 +40,41 @@ struct PatchLibraryPicker:View {
     }
 }
 struct TonicSettingsEditor:View {
+    @State private var choosing=false
+    @State private var instrument:URL?
     @EnvironmentObject private var store:PerformanceStore
     var body:some View {
-        EditorFrame(title:"Tonic Pad Settings",width:600,height:360) {
-            VStack(alignment:.leading,spacing:24) {
-                Text("1. Warm").font(.headline)
-                ChannelSlider(title:"Brightness",value:$store.tonicBrightness,range:0...1,suffix:"%")
-                ChannelSlider(title:"Shimmer",value:$store.tonicShimmer,range:0...1,suffix:"%")
-                Text("Changes are heard immediately. Use the pad keys and volume control on the performance page.").font(.caption).foregroundStyle(.secondary)
-                Spacer()
-            }.padding(28)
+        EditorFrame(title:"Tonic Pad Settings",width:700,height:520) {
+            ScrollView {VStack(alignment:.leading,spacing:20) {
+                Menu("Pad Instrument: \(store.tonicSound?.name ?? "Built-in Warm")") {
+                    Button("Built-in Warm"){store.useBuiltinTonic()}
+                    ForEach(store.librarySounds.filter{$0.collection=="Tonic Pads"}){entry in
+                        if let sound=entry.sound {Button(entry.name){store.setTonicInstrument(sound)}}
+                    }
+                }.buttonStyle(StageButtonStyle())
+                HStack {
+                    Picker("Pad Sound",selection:$store.tonicTimbre){ForEach(Array(store.tonicNames.enumerated()),id:\.offset){index,name in Text("\(index+1). \(name)").tag(index)}}
+                    Button("Import Pad Instrument"){instrument=nil;choosing=true}.buttonStyle(StageButtonStyle())
+                }
+                Text(store.tonicSound == nil ? "Built-in pad · no sound library required":"Imported sampler · original looped audio").font(.caption).foregroundStyle(.secondary)
+                if store.tonicSound != nil {Button("Use Built-in Pad"){store.useBuiltinTonic()}.buttonStyle(StageButtonStyle())}
+                HStack(spacing:18) {
+                    EffectKnob(descriptor:.init(index:0,name:"Brightness",minimum:0,maximum:1,defaultValue:0.7,unit:"%"),value:$store.tonicBrightness)
+                    EffectKnob(descriptor:.init(index:1,name:"Shimmer",minimum:0,maximum:1,defaultValue:0,unit:"%"),value:$store.tonicShimmer)
+                    EffectKnob(descriptor:.init(index:2,name:"Volume",minimum:-60,maximum:0,defaultValue:-10,unit:"dB"),value:Binding(get:{store.tonicGain>0 ? max(-60,20*log10(store.tonicGain)):-60},set:{store.tonicGain=$0 <= -60 ? 0:pow(10,$0/20)}))
+                }
+                Toggle("Lock Tonic Pad Against Snapshot Changes",isOn:$store.tonicLocked)
+                Text("Brightness filters the pad. Shimmer adds pitch-shifted reverb without restarting its held note. Power remembers the last key. Changes are heard immediately.").font(.caption).foregroundStyle(.secondary)
+            }.padding(28)}
         }.onDisappear{store.save()}
+        .fileImporter(isPresented:$choosing,allowedContentTypes:instrument == nil ? [.data]:[.folder]){result in
+            switch result {
+            case .success(let file):
+                if let source=instrument {store.importTonicInstrument(source,samples:file);instrument=nil}
+                else {instrument=file;DispatchQueue.main.async{choosing=true}}
+            case .failure:instrument=nil
+            }
+        }
+
     }
 }

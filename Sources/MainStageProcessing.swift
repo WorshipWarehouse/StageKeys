@@ -100,14 +100,26 @@ enum MainStageProcessing {
                 draft.issues.append("Compressor threshold, ratio, attack, release, manual makeup and mix are translated. Circuit model, knee, automatic gain/release, sidechain and limiter behavior are not identical to Apple's compressor; review the native response.")
             case "St-Delay":
                 guard values.count>=26 else{draft.issues.append("Truncated Stereo Delay parameters.");continue}
-                // Synced note/deviation modes need an independently verified map.
-                guard values[10]==0,values[15]==0 else{draft.issues.append("Stereo Delay tempo-sync/note-deviation modes remain archived; no guessed delay timing was applied.");continue}
-                var delay=ImportedDelay(left:Double(values[2])/1000,right:Double(values[3])/1000,leftSynced:false,rightSynced:false)
-                delay.leftChannel = .init(feedback:values[4]/100,crossFeedback:values[6]/100,mix:values[0]/100,lowCut:max(20,values[23]),highCut:min(20000,values[22]))
-                delay.rightChannel = .init(feedback:values[5]/100,crossFeedback:values[7]/100,mix:values[1]/100,lowCut:max(20,values[25]),highCut:min(20000,values[24]))
+                guard [values[15],values[16]].allSatisfy({$0.isFinite && (0...4).contains($0) && $0.rounded()==$0}),[0,1].contains(values[10]),[1,-1].contains(values[17]),[1,-1].contains(values[18]),[1,-1].contains(values[19]),[1,-1].contains(values[20]),values[21]==0 else{draft.issues.append("Stereo Delay has unsupported sync/phase/tempo-freeze state.");continue}
+                let synced=values[10]==1
+                guard !synced || (values[11]>0 && values[13]>0 && (-99...100).contains(values[12]) && (-99...100).contains(values[14])) else{draft.issues.append("Invalid Stereo Delay note/deviation values.");continue}
+                let left=synced ? 4/Double(values[11])*(1+Double(values[12])/100):Double(values[2])/1000
+                let right=synced ? 4/Double(values[13])*(1+Double(values[14])/100):Double(values[3])/1000
+                var delay=ImportedDelay(left:left,right:right,leftSynced:synced,rightSynced:synced)
+                // Apple's parameter-order metadata: 6 is L→R, 7 is R→L.
+                delay.leftChannel = .init(feedback:values[4]/100,crossFeedback:values[7]/100,mix:values[0]/100,input:Int(values[15]),feedbackPolarity:values[17],crossPolarity:values[20],lowCut:max(20,values[23]),highCut:min(20000,values[22]))
+                delay.rightChannel = .init(feedback:values[5]/100,crossFeedback:values[6]/100,mix:values[1]/100,input:Int(values[16]),feedbackPolarity:values[18],crossPolarity:values[19],lowCut:max(20,values[25]),highCut:min(20000,values[24]))
                 guard delay.validate() else{draft.issues.append("Stereo Delay feedback/filter values exceed the stable native range.");continue}
                 effect.kind=3;effect.importedDelay=delay;effect.parameters=[0,1,20000,1]
-                draft.issues.append("Stereo Delay manual left/right times, feedback, cross-feedback, output mix and channel filters are translated. Feedback polarity, routing modes and exact filter response remain approximate/unmapped.")
+                draft.issues.append("Stereo Delay note sync, percentage deviation, input routing, feedback/crossfeed polarity, mix and channel filters are translated. Delay changes are immediate; original smoothing, freeze mode and exact filter/sum response are not identical.")
+            case "SilvVerb":
+                guard values.count>=10 else{draft.issues.append("Truncated SilverVerb parameters.");continue}
+                effect.kind=16;effect.parameters=[values[1],values[2]/100,values[3],values[6]/100,values[5],values[4],values[7],values[8],values[9],1-values[0]/100,values[0]/100]
+                draft.issues.append("SilverVerb named controls are translated into an independent four-comb/diffusion reverb with predelay, modulation and wet filtering. Apple's proprietary decay/density curve and extended Dry/Wet mode are not verified identical; legacy Mix is used.")
+            case "ClipDist":
+                guard values.count>=10 else{draft.issues.append("Truncated Clip Distortion parameters.");continue}
+                effect.kind=17;effect.parameters=Array(values.prefix(10));effect.parameters![3]/=100
+                draft.issues.append("Clip Distortion drive, tone, symmetry, mix, clip/sum filters, shelf and input/output gains are translated. The native nonlinear curve is independent and does not claim Apple's exact harmonic spectrum.")
             case "Chorus":
                 guard values.count>=3 else{continue}
                 effect.kind=5;effect.parameters=[values[2],values[0]/100,0,0,values[1]/100]
@@ -149,6 +161,10 @@ enum MainStageProcessing {
             case "Comp":
                 let mapping:[Int:(Int,Float)]=[0:(4,1),1:(3,1),2:(1,1),3:(2,1),4:(6,1),24:(5,0.01)]
                 guard let mapped=mapping[sourceParameter] else{continue};parameter=mapped.0;scale=mapped.1
+            case "SilvVerb":
+                let mapping:[Int:(Int,Float)]=[0:(10,0.01),1:(0,1),2:(1,0.01),3:(2,1),6:(3,0.01),5:(4,1),4:(5,1),7:(6,1),8:(7,1),9:(8,1)]
+                guard let mapped=mapping[sourceParameter] else{continue};parameter=mapped.0;scale=mapped.1
+            case "ClipDist":guard (0..<10).contains(sourceParameter) else{continue};parameter=sourceParameter;scale=sourceParameter==3 ? 0.01:1
             case "Chorus":guard (0...2).contains(sourceParameter) else{continue};parameter=[1,4,0][sourceParameter];scale=sourceParameter==2 ? 1:0.01
             default:continue
             }
@@ -158,14 +174,16 @@ enum MainStageProcessing {
             }
             let flipped=row["rangeIsFlipped"] as? Bool == true
             let binding=ImportedMacroBinding(effect:target.effect,parameter:parameter,minimum:(flipped ? high:low)*scale,maximum:(flipped ? low:high)*scale)
+            var bindings=[binding]
+            if target.name=="SilvVerb" && sourceParameter==0 {bindings.append(ImportedMacroBinding(effect:target.effect,parameter:9,minimum:1-binding.minimum,maximum:1-binding.maximum))}
             let fraction=Float((saved-Double(low))/Double(high-low))
             let normalized=(flipped ? 1-fraction:fraction)*127
             if let index=draft.macros.firstIndex(where:{$0.index==owner}) {
                 guard abs(draft.macros[index].value-normalized)<0.05 else{draft.issues.append("A Smart Control has conflicting saved positions; the conflicting mapping remains archived.");continue}
-                draft.macros[index].bindings.append(binding)
+                draft.macros[index].bindings.append(contentsOf:bindings)
             }
             else if (0..<128).contains(owner) {
-                var macro=ImportedMacro(index:owner,name:(row["controlName"] as? String ?? "MainStage Control \(owner+1)"),value:normalized,bindings:[binding])
+                var macro=ImportedMacro(index:owner,name:(row["controlName"] as? String ?? "MainStage Control \(owner+1)"),value:normalized,bindings:bindings)
                 if let event=row["inputControlEvent"] as? [String:Any],event["type"] as? Int==5,let cc=event["controllerID"] as? Int,(0...127).contains(cc) {
                     macro.midiCC=cc
                     if let channel=event["channelID"] as? Int,(0...15).contains(channel){macro.midiChannel=channel}

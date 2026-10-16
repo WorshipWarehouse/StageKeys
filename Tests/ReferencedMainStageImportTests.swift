@@ -18,7 +18,7 @@ import Foundation
         let after=try encoder.encode(store.setlist);assert(before==after,"Library import must not replace the user's active patch")
         let processing=try store.mainStageProcessing(0)
         assert(processing.effects.contains{$0.kind==7},"Real source Channel EQ must be available for native processing preview")
-        assert(processing.issues.contains{$0.contains("SilvVerb")})
+        assert(processing.effects.contains{$0.kind==16} && processing.effects.contains{$0.kind==17} && processing.effects.contains{$0.importedDelay?.leftSynced==true})
         print("PASS: real MainStage source → referenced modern EXS → native library layer with 20 active groups; original instrument/notes retained, real EQ translated, active setlist unchanged")
     }
 }

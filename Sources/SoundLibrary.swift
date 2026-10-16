@@ -102,7 +102,7 @@ struct SoundLibrary {
         guard bytes.count <= 16_000_000 else { throw CocoaError(.fileWriteOutOfSpace) }
         try bytes.write(to: url, options: .atomic)
     }
-    private static func validate(_ entries: [LibrarySound]) throws {
+    static func validate(_ entries: [LibrarySound]) throws {
         guard entries.count <= 4096, Set(entries.map(\.id)).count == entries.count else { throw SetlistError.invalid }
         for entry in entries {
             guard !entry.id.isEmpty, entry.id.count <= 256, !entry.name.isEmpty, entry.name.count <= 200, entry.collection.count <= 200 else { throw SetlistError.invalid }

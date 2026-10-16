@@ -1,3 +1,7 @@
+## Version 0.29
+
+MainStage synced Stereo Delay now retains note/deviation timing, routing and polarity. SilverVerb and ClipDist controls drive native processors, with remaining DSP differences shown in conversion notes. Tonic Pad supports imported timbres, actual shimmer processing, remembered keys and snapshot lock. Sampled sounds live in a separate private library repository and install optionally; the app builds and ships without them. [Scope and verification](Docs/SOURCE-EFFECTS-AND-TONIC.md).
+
 ## Version 0.28
 
 Native EXS imports now translate amplitude decay/sustain/release instead of using a flat fallback; a backed-up upgrade repairs earlier generated samplers while preserving samples, maps and user effects. MainStage Compressor and manual stereo-delay controls have native translations, reversed macros retain their MIDI behavior, and processing previews show actual values. Library filter columns persist and Note Range is visible by default. Full proprietary DSP/MIDI parity remains incomplete. [Scope and verification](Docs/NATIVE-EXS-PLAYBACK.md).

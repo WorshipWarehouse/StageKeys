@@ -70,6 +70,11 @@ struct ImportedRackControls: View {
             if delay.leftChannel != nil {
                 ForEach([false,true],id:\.self){right in
                     let side=right ? "Right":"Left"
+                    Picker(side+" Input",selection:Binding(get:{let delay=layer.importedRack?.effects[index].importedDelay;return (right ? delay?.rightChannel:delay?.leftChannel)?.input ?? (right ? 2:1)},set:{input in if right {layer.importedRack?.effects[index].importedDelay?.rightChannel?.input=input}else{layer.importedRack?.effects[index].importedDelay?.leftChannel?.input=input}})) {
+                        Text("Off").tag(0);Text("Left").tag(1);Text("Right").tag(2);Text("L + R").tag(3);Text("L − R").tag(4)
+                    }
+                    Toggle(side+" Invert Feedback",isOn:Binding(get:{let delay=layer.importedRack?.effects[index].importedDelay;return (right ? delay?.rightChannel:delay?.leftChannel)?.feedbackPolarity == -1},set:{on in if right {layer.importedRack?.effects[index].importedDelay?.rightChannel?.feedbackPolarity=on ? -1:1}else{layer.importedRack?.effects[index].importedDelay?.leftChannel?.feedbackPolarity=on ? -1:1}}))
+                    Toggle(side+" Invert Crossfeed",isOn:Binding(get:{let delay=layer.importedRack?.effects[index].importedDelay;return (right ? delay?.rightChannel:delay?.leftChannel)?.crossPolarity == -1},set:{on in if right {layer.importedRack?.effects[index].importedDelay?.rightChannel?.crossPolarity=on ? -1:1}else{layer.importedRack?.effects[index].importedDelay?.leftChannel?.crossPolarity=on ? -1:1}}))
                     EffectKnob(descriptor:.init(index:0,name:side+" Feedback",minimum:0,maximum:0.95,defaultValue:0.3,unit:"%"),value:channelBinding(index,right,\.feedback))
                     EffectKnob(descriptor:.init(index:1,name:side+" Cross Feedback",minimum:0,maximum:0.95,defaultValue:0,unit:"%"),value:channelBinding(index,right,\.crossFeedback))
                     EffectKnob(descriptor:.init(index:2,name:side+" Mix",minimum:0,maximum:1,defaultValue:0.3,unit:"%"),value:channelBinding(index,right,\.mix))

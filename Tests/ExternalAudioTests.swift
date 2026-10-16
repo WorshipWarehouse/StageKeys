@@ -58,7 +58,7 @@ for _ in 0..<30 {
 
 assert(reducedEnergy / referenceEnergy > 0.11 && reducedEnergy / referenceEnergy < 0.15, "Three serial -6 dB slots must apply -18 dB total")
 rack.panic()
-assert(!ExternalInstrumentRack.supportsEffect(kind: 16))
+assert(!ExternalInstrumentRack.supportsEffect(kind: 18))
 do {
  try rack.configureEffect(channel: 0, slot: 0, kind: 16, enabled: true, parameters: [Float]())
  assertionFailure("Unsupported effects must report an error")
