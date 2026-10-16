@@ -96,6 +96,9 @@ struct ImportedAudioRack: Codable, Equatable {
 }
 struct ImportedRack: Codable, Equatable {
     var audioRacks:[ImportedAudioRack]?
+    var effectCount:Int {
+        effects.filter{$0.kind != 0}.count + (branches ?? []).reduce(0){$0+$1.rack.effectCount} + (audioRacks ?? []).reduce(0){sum,stage in sum+stage.branches.reduce(0){$0+$1.rack.effectCount}}
+    }
     var audioTopology:String {
         effects.map{"\($0.kind):\($0.importedDelay != nil)"}.joined(separator:",") + (audioRacks ?? []).map{"@\($0.beforeEffect)["+$0.branches.map{$0.rack.audioTopology}.joined(separator:";")+"]"}.joined()
     }

@@ -28,6 +28,14 @@ import Foundation
         query=LibraryQuery();query.ascending=false
         assert(query.results(sounds).last?.id == "piano")
         query.filters[.timbre]="Warm";assert(query.results(sounds).count == 2)
+        var recommended=warm;var recommendedTags=recommended.tags;recommendedTags.recommended=true
+        recommended=BrowserSound(id:"recommended",name:"Z Pad",collection:warm.collection,tags:recommendedTags)
+        query=LibraryQuery();query.order(by:.recommended)
+        assert(query.results([piano,recommended,host]).map(\.id)==["recommended","piano","host"])
+        query.ascending=false;assert(query.results([piano,recommended,host]).last?.id=="recommended")
+        assert(SoundLibrary.cleanImportedName("Classic Pluck Synth- Sunday Sounds-1")=="Classic Pluck Synth")
+        assert(SoundLibrary.cleanImportedName("Synth Brass Pad- Sundy Sounds")=="Synth Brass Pad")
+        assert(SoundLibrary.cleanImportedName("Circular Echo- Layered Patch")=="Circular Echo")
         let old=Data("[{\"id\":\"old\",\"name\":\"Old\",\"collection\":\"My Sounds\",\"hostPath\":\"/old.patch\"}]".utf8)
         let decoded=try JSONDecoder().decode([LibrarySound].self,from:old);assert(decoded.first?.tags == nil)
         let root=FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

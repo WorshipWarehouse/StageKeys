@@ -168,6 +168,13 @@ final class PerformanceStore: ObservableObject {
         do {try SoundRatingArchive.save(updated,to:saveURL.deletingLastPathComponent().appendingPathComponent("sound-ratings.json"));soundRatings=updated}
         catch {message="Could not save sound rating: \(error.localizedDescription)"}
     }
+    func setSoundRecommended(_ id:String,_ value:Bool) {
+        guard let index=librarySounds.firstIndex(where:{$0.id==id}) else{return}
+        var updated=librarySounds;var tags=updated[index].tags ?? BrowserSound.library(updated[index]).tags
+        tags.recommended=value;updated[index].tags=tags
+        do {try SoundLibrary(url:saveURL.deletingLastPathComponent().appendingPathComponent("sound-library.json")).write(updated);librarySounds=updated}
+        catch {message="Could not save recommendation: \(error.localizedDescription)"}
+    }
     func setSoundComplexity(_ id:String,_ value:String?) {
         guard value.map({["Simple","Moderate","Complex"].contains($0)}) ?? true,let index=librarySounds.firstIndex(where:{$0.id==id}) else{return}
         var updated=librarySounds;var tags=updated[index].tags ?? BrowserSound.library(updated[index]).tags
@@ -688,8 +695,8 @@ final class PerformanceStore: ObservableObject {
         let library=SoundLibrary(url:saveURL.deletingLastPathComponent().appendingPathComponent("sound-library.json"))
         var entries=try library.read()
         entries.append(LibrarySound(id:id ?? UUID().uuidString,name:sound.name,collection:"My Sounds",sound:sound,layer:layer,conversionNotes:notes))
-        try library.write(entries);librarySounds=entries
-        return sound
+        try library.write(entries);librarySounds=try library.read()
+        return librarySounds.last(where:{$0.sound?.fileName==sound.fileName})?.sound ?? sound
     }
     @discardableResult
     func importLibrarySound(_ url:URL,sampleRoot:URL?=nil)->ExternalSound? {
@@ -723,15 +730,21 @@ final class PerformanceStore: ObservableObject {
                         _ = try installLibrarySound(file,sampleRoot:folder,id:id);imported+=1
                     } catch{failures.append(file.lastPathComponent+": "+error.localizedDescription)}
                 }
-                libraryImportProgress="Imported \(imported) sample maps; \(skipped) already present; \(failures.count) need attention. Live effects and macros are not translated."
+                libraryImportProgress="Imported \(imported) sample maps; \(skipped) already present; \(failures.count) need attention. Translated rack effects, macros and MIDI settings are retained; see each sound’s conversion notes for approximations."
                 let report=saveURL.deletingLastPathComponent().appendingPathComponent("ableton-import-report.json")
-                let result:[String:Any]=["imported":imported,"skipped":skipped,"failures":failures,"source":url.lastPathComponent,"sampleMapOnly":true]
+                let result:[String:Any]=["imported":imported,"skipped":skipped,"failures":failures,"source":url.lastPathComponent,"sampleMapOnly":false,"preservesTranslatedProcessing":true]
                 try JSONSerialization.data(withJSONObject:result,options:[.prettyPrinted,.sortedKeys]).write(to:report,options:.atomic)
             } catch{libraryImportProgress=error.localizedDescription}
         }
     }
     @discardableResult
-    func importSound(_ url:URL,index:Int,sampleRoot:URL?=nil)->Bool {guard let sound=importLibrarySound(url,sampleRoot:sampleRoot) else{return false};addExternal(sound,index:index);return true}
+    func importSound(_ url:URL,index:Int,sampleRoot:URL?=nil)->Bool {
+        guard let sound=importLibrarySound(url,sampleRoot:sampleRoot),
+              let entry=librarySounds.last(where:{$0.sound == sound}) else{return false}
+        // The library layer owns the translated rack, macros and MIDI program.
+        // Reconstructing a bare ExternalSound here silently discarded processing.
+        addLibrarySound(entry,index:index);return true
+    }
     func importSamplerLibrary(_ folder: URL) {
         let access = folder.startAccessingSecurityScopedResource()
         defer { if access { folder.stopAccessingSecurityScopedResource() } }

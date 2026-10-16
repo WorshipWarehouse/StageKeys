@@ -32,9 +32,10 @@ sources=(
     "$repo/Sources/SnapshotMorph.swift"
     "$repo/Sources/Store.swift"
 )
-for test in LibraryBrowserTests SoundRatingTests LibraryNoteRangeTests; do
+if (( $# )); then tests=("$@"); else tests=(LibraryBrowserTests SoundRatingTests LibraryNoteRangeTests SoundLibraryTests ImportedSoundRetentionTests); fi
+for test in "${tests[@]}"; do
     xcrun swiftc -DDEBUG -import-objc-header "$repo/Sources/Bridge.h" \
         -module-cache-path "$build/modules" "${sources[@]}" "$repo/Tests/$test.swift" \
         "$build/Synth.o" "$build/CreamCoat.o" -framework CoreMIDI -lz -o "$build/$test"
-    STAGEKEYS_DATA_DIR="$build/data" "$build/$test"
+    STAGEKEYS_DATA_DIR="$build/data-$test" "$build/$test"
 done

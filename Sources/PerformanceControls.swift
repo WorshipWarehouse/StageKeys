@@ -97,6 +97,12 @@ struct SoundModule: View {
             Divider().opacity(0.2)
             if layer.loaded {
                 if !store.notesMode {
+                    if let rack=layer.importedRack,rack.effectCount>0 {
+                        Button {open(.sound(index))} label:{
+                            HStack {Image(systemName:"waveform.path");Text("Rack FX · \(rack.effectCount)");Spacer();Image(systemName:"chevron.right")}
+                                .font(StageTheme.font(10)).foregroundStyle(color).padding(.vertical,4)
+                        }.buttonStyle(.plain).accessibilityLabel("Imported rack effects and macros")
+                    }
                     midiSlot
                     ForEach(0..<3) { slot in effectSlot(slot) }
                 }

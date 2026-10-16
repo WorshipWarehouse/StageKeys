@@ -111,6 +111,7 @@ struct SoundBrowser: View {
                             SoundRatingControl(name:sound.name,rating:sound.rating){store.rateSound(sound.ratingID,$0)}.padding(.horizontal,12)
                         }.background(selectedID == sound.id ? selectionColor:.clear,in:RoundedRectangle(cornerRadius:7)).foregroundStyle(selectedID == sound.id ? .white:.white.opacity(0.85))
                          .contextMenu {if let entry=sound.entry {
+                            Button(sound.tags.recommended == true ? "Remove from Recommended":"Mark Recommended"){store.setSoundRecommended(entry.id,sound.tags.recommended != true)}
                             Menu("Note Range") {
                                 ForEach(LibraryNoteRange.allCases,id:\.self) {range in
                                     Button {store.setSoundNoteRanges(entry.id,LibraryNoteRange.toggling(range,in:sound.tags.noteRanges))}label:{HStack{Text(range.rawValue);if sound.tags.noteRanges?.contains(range.rawValue)==true {Image(systemName:"checkmark")}}}
@@ -139,6 +140,8 @@ struct SoundBrowser: View {
             VStack(alignment:.leading,spacing:4) {
                 if let selection {
                     Text(selection.collection).lineLimit(1)
+                    if let rack=selection.entry?.layer?.importedRack,rack.effectCount>0 {Text("Rack effects: \(rack.effectCount)"+(selection.tags.inferred ? " · Suggested tags":"")).foregroundStyle(.secondary).lineLimit(1)}
+                    else if selection.tags.inferred {Text("Suggested tags · edit Note Range by right-clicking a sound").foregroundStyle(.secondary).lineLimit(1)}
                     if !selection.playable {Text("This MainStage patch needs a compatible sound import before it can play here.").foregroundStyle(.secondary)}
                 } else {Text(results.count==1 ? "1 sound":"\(results.count) sounds").foregroundStyle(.secondary)}
             }.font(StageTheme.font(12)).frame(maxWidth:.infinity,alignment:.leading)

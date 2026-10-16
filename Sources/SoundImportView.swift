@@ -26,7 +26,7 @@ struct SoundImportView:View {
                 switch choice {
                 case .file:
                     if ["exs","aupreset","adg","adv"].contains(url.pathExtension.lowercased()) {
-                        pending=url;status="Choose the folder containing this instrument’s samples. Ableton imports preserve sample maps; rack effects and macros are not translated."
+                        pending=url;status="Choose the folder containing this instrument’s samples. Imports preserve sample maps and translated rack effects, macros and MIDI settings. Conversion notes describe remaining approximations."
                         // Present the second picker after the first has dismissed.
                         DispatchQueue.main.async {choice = .samples;choosing=true}
                     } else if url.pathExtension.lowercased()=="alp" {status=nil;store.importAbletonPack(url)}

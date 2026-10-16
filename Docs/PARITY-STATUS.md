@@ -1,3 +1,7 @@
+## 0.25 library curation and processing retention
+
+Recommended sorting, editable recommendation flags, name cleanup, inferred free-import Note Range tags, optional private authored metadata, recursive rack summaries and direct-import processing retention are implemented. Original source taxonomy is not available for every free preset; inferred tags are labeled. Raw native instruments still need full factory channel reconstruction, and DSP/UI parity remains incomplete. See [scope and limitations](LIBRARY-CURATION.md).
+
 ## 0.24 Note Range update
 
 Observed Note Range tags and overlapping sound types are supported, with fixed range choices, explicit unknown metadata, editable multi-range tags, and consistent annotations across converted archive aliases. Source Recommended sorting and complete original-library tagging remain outstanding. See [Note Range evidence](LIBRARY-NOTE-RANGE.md).

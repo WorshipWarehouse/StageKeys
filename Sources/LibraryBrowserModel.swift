@@ -11,6 +11,7 @@ struct SoundTags: Codable, Equatable {
     var complexity:String?
     var noteRanges:[String]?
     var types:[String]?
+    var recommended:Bool?
     static func inferred(name: String, source: String = "Sampler") -> SoundTags {
         let n = name.lowercased()
         let words=Set(n.split(whereSeparator:{!$0.isLetter && !$0.isNumber}).map(String.init))
@@ -24,6 +25,8 @@ struct SoundTags: Codable, Equatable {
         else if n.contains("brass") || n.contains("trombone") {result.category="Brass";result.type="Brass Section";result.articulations=["Blown"]}
         else if n.contains("piano") || n.contains("keys") || n.contains("roads") || n.contains("tine") || words.contains("ep") {result.category="Acoustic Piano & Keys";result.type=n.contains("felt") ? "Felt Piano" : electric ? "Electric Piano" : "Acoustic Piano";result.articulations=["Struck"]}
         else if n.contains("organ") {result.category="Organs";result.type="Organ"}
+        else if n.contains("guitar") || n.contains("telecaster") {result.category="Guitars";result.type="Electric Guitar";result.articulations=["Plucked"]}
+        else if n.contains("pluck") || n.contains("pizz") {result.category="Leads";result.type="Synth Plucks";result.articulations=["Plucked"]}
         else if n.contains("lead") || n.contains("synth") {result.category="Leads";result.type="Synth Leads"}
         for pair in [("warm","Warm"),("bright","Bright"),("soft","Soft"),("dark","Dark"),("airy","Airy"),("retro","Retro"),("clean","Clean"),("shimmer","Shimmer"),("glass","Glassy")] where n.contains(pair.0) {result.timbres.append(pair.1)}
         if n.contains("mono") {result.articulations.append("Monophonic")}
@@ -72,14 +75,14 @@ struct BrowserSound: Identifiable {
         let playable=library(converted)
         var tags=original.tags ?? playable.tags
         // Row annotations belong to the playable entry, shared across collections.
-        tags.noteRanges=playable.tags.noteRanges;tags.complexity=playable.tags.complexity;tags.types=playable.tags.types
+        tags.noteRanges=playable.tags.noteRanges;tags.complexity=playable.tags.complexity;tags.types=playable.tags.types;tags.recommended=playable.tags.recommended
         return BrowserSound(id:original.id,name:original.name,collection:original.collection,tags:tags,entry:converted)
     }
     static func library(_ entry:LibrarySound)->BrowserSound {
         BrowserSound(id:entry.id,name:entry.name,collection:entry.collection,tags:entry.tags ?? .inferred(name:entry.name,source:entry.hostPath != nil ? "MainStage" : entry.sound?.kind == .audioUnit ? "Audio Unit" : "Sampler"),entry:entry)
     }
 }
-enum LibrarySort:String,CaseIterable {case name="Name",rating="Rating",recent="Recently Added",random="Random"}
+enum LibrarySort:String,CaseIterable {case name="Name",recommended="Recommended",rating="Rating",recent="Recently Added",random="Random"}
 struct LibraryQuery {
     var search=""
     var filters:[LibraryFacet:String]=[:]
@@ -88,7 +91,7 @@ struct LibraryQuery {
     var ordering:LibrarySort = .name
     var shuffleSeed:UInt64=0
     mutating func order(by mode:LibrarySort) {
-        ordering=mode;sort=nil;ascending=mode == .name
+        ordering=mode;sort=nil;ascending=mode == .name || mode == .recommended
         if mode == .random {shuffleSeed=UInt64.random(in:1...UInt64.max)}
     }
     private func randomKey(_ id:String)->UInt64 {
@@ -108,6 +111,7 @@ struct LibraryQuery {
             if sort == nil && ordering != .name {
                 let left:UInt64,right:UInt64
                 switch ordering {
+                case .recommended:left=a.tags.recommended == true ? 0:1;right=b.tags.recommended == true ? 0:1
                 case .rating:left=UInt64(max(0,a.rating));right=UInt64(max(0,b.rating))
                 case .recent:left=UInt64(max(0,a.addedOrder));right=UInt64(max(0,b.addedOrder))
                 case .random:left=randomKey(a.id);right=randomKey(b.id)

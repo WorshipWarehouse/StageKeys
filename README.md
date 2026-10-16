@@ -1,3 +1,7 @@
+## Version 0.25
+
+Recommended ordering now uses curated flags with alphabetical grouping. Free imports have cleaner display names, suggested Note Range tags and better pluck/guitar classification. Direct channel imports retain their complete translated rack and MIDI settings; Rack FX links make nested processing visible. Personal authored metadata can enrich exact matching processed presets without bundling source assets. [Details and remaining differences](Docs/LIBRARY-CURATION.md).
+
 ## Version 0.24
 
 The library now supports the observed Full Range, Left Hand, Mid Range and Right Hand filters, including overlapping tags. Range choices stay visible when other filters narrow the list. Felt Room also matches both Acoustic Piano and Felt Piano. Range tags can be edited independently of playable keys, and converted MainStage aliases share their metadata. [Note Range evidence and limitations](Docs/LIBRARY-NOTE-RANGE.md).

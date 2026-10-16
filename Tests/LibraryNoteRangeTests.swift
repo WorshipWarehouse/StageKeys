@@ -31,6 +31,26 @@ import Foundation
   assert(alias.ratingID==custom.id && alias.values(.noteRange)==tags.noteRanges! && alias.id==original.id)
   custom.tags!.noteRanges=[];assert(BrowserSound.archive(original,converted:custom).values(.noteRange)==["Not Tagged"])
   for invalid in [["Right Hand","Right Hand"],["Upper Keys"]] {custom.tags!.noteRanges=invalid;do{try library.write([custom]);fatalError("Invalid Note Range tags accepted")}catch{}}
+  var authored=tags;authored.recommended=true;authored.inferred=false
+  let metadataURL=root.appendingPathComponent("source-sound-tags.json")
+  try JSONEncoder().encode([old.name:authored]).write(to:metadataURL)
+  old.tags!.noteRanges=nil;try library.write([native,old]);loaded=try library.read()
+  let curated=loaded.first{$0.id==old.id}!
+  assert(curated.tags!.recommended==true && curated.tags!.noteRanges==tags.noteRanges && curated.layer==old.layer)
+  var edited=curated;edited.tags!.recommended=false;edited.tags!.noteRanges=[]
+  try library.write([native,edited]);loaded=try library.read()
+  assert(loaded.first{$0.id==old.id}!.tags!.recommended==false && loaded.first{$0.id==old.id}!.tags!.noteRanges==[])
+  authored.noteRanges=["invalid"];try JSONEncoder().encode([old.name:authored]).write(to:metadataURL)
+  loaded=try library.read();assert(loaded.count==2,"Invalid optional metadata must not hide the library")
+  var imported=LibrarySound(id:"ableton-samples-fixture",name:"Warm Pad- Sunday Sounds",collection:"My Sounds",layer:Layer(name:"Warm Pad- Sunday Sounds",instrument:1,gain:0.27))
+  var fx=AudioEffect();fx.kind=3;fx.enabled=false
+  imported.layer!.importedRack=ImportedRack(effects:[fx])
+  let originalRack=imported.layer!.importedRack
+  try library.write([imported]);loaded=try library.read()
+  assert(loaded[0].name=="Warm Pad" && loaded[0].tags!.noteRanges==["Full Range","Mid Range"])
+  assert(loaded[0].layer!.importedRack==originalRack && loaded[0].layer!.gain==0.27)
+  loaded[0].tags!.noteRanges=[];loaded[0].tags!.recommended=true;try library.write(loaded)
+  loaded=try library.read();assert(loaded[0].tags!.noteRanges==[] && loaded[0].tags!.recommended==true)
   let legacy=try JSONDecoder().decode(SoundTags.self,from:Data("{\"category\":\"Keys\",\"type\":\"Piano\",\"timbres\":[],\"articulations\":[],\"sourceModel\":\"Sampler\",\"inferred\":false}".utf8));assert(legacy.noteRanges==nil && legacy.types==nil)
   print("PASS: overlapping range/type filters, fixed range choices, unknown metadata, toggle, legacy migration, explicit clear and audio-range preservation")
  }
