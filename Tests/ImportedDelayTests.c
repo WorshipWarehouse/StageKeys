@@ -19,5 +19,11 @@ int main(void){
  for(int i=0;i<frames;i++)l[i]=r[i]=0;l[0]=1;sk_process_effects_stereo(a,b,l,r,frames);
  assert(fabsf(l[144000]-1)<.001f);for(int i=0;i<frames;i++){assert(isfinite(l[i])&&isfinite(r[i]));if(i<144000)assert(fabsf(l[i])<.001f);}
  sk_panic(a);sk_panic(b);for(int i=0;i<frames;i++)l[i]=r[i]=0;sk_process_effects_stereo(a,b,l,r,frames);for(int i=0;i<frames;i++)assert(l[i]==0&&r[i]==0);
+ sk_panic(a);sk_panic(b);configure(a,.1f,.2f,0);configure(b,.1f,.2f,0);
+ sk_imported_delay_channel(a,0,1,.2f,0,1);sk_imported_delay_channel(b,0,1,.3f,.4f,.5f);
+ for(int i=0;i<frames;i++)l[i]=r[i]=0;l[0]=1;sk_process_effects_stereo(a,b,l,r,30000);
+ assert(fabsf(l[4800]-1)<.001f);assert(fabsf(l[9600]-.2f)<.001f);
+ assert(fabsf(r[14400]-.2f)<.001f); // left echo .4 cross * right .5 mix
+ for(int i=0;i<30000;i++)assert(isfinite(l[i])&&isfinite(r[i]));
  sk_destroy(a);sk_destroy(b);free(l);free(r);puts("PASS: independent stereo delay times, linear feedback, ping-pong cross-feedback, three-second delay and panic silence");
 }

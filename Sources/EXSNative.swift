@@ -17,8 +17,10 @@ struct NativeSamplerProgram:Codable,Hashable {
     var groups:[Group]
     var notes:[String]
     var compactGroups:Bool?
+    var conversionVersion:Int?
+    var amplitudeEnvelope:EXSNative.Envelope?
     var valid:Bool {
-        !groups.isEmpty && groups.count<=64 && notes.count<=32 && notes.allSatisfy{$0.count<=2000} && groups.allSatisfy {group in
+        (conversionVersion.map{(1...2).contains($0)} ?? true) && (amplitudeEnvelope?.valid ?? true) && !groups.isEmpty && groups.count<=64 && notes.count<=32 && notes.allSatisfy{$0.count<=2000} && groups.allSatisfy {group in
             group.name.count<=200 && (0..<64).contains(group.layer) && (0...127).contains(group.low) && (group.low...127).contains(group.high) && (0...127).contains(group.velocityLow) && (group.velocityLow...127).contains(group.velocityHigh) && (group.controller.map{(0...127).contains($0)} ?? true) && (0...127).contains(group.controllerLow) && (group.controllerLow...127).contains(group.controllerHigh)
         } && rack.validate()
     }
@@ -54,6 +56,63 @@ struct SamplerControllerGate:Codable,Equatable {
 /// never rendered, sliced into new recordings, normalized or sample-rate converted.
 /// Zone/sample field layout informed by Matt Allan's MIT EXS parser (see Licenses).
 enum EXSNative {
+    struct Envelope:Codable,Hashable {
+        var attack:Double
+        var lowVelocityAttack:Double
+        var decay:Double
+        var sustain:Double
+        var release:Double
+        var valid:Bool {[attack,lowVelocityAttack,decay,release].allSatisfy{$0.isFinite && (0...10).contains($0)} && sustain.isFinite && (0...1).contains(sustain)}
+        // EXS control values use a fourth-power time curve, not milliseconds.
+        static func seconds(_ value:Int)->Double {10*pow(Double(value)/127,4)}
+    }
+    /// Decode parameter IDs and signed values as data, never executable state.
+    static func parameters(_ body:[UInt8])throws->[Int:Int] {
+        func u16(_ i:Int)->Int {Int(body[i]) | Int(body[i+1]) << 8}
+        func u32(_ i:Int)->Int {u16(i) | u16(i+2) << 16}
+        guard body.count>=4 else{throw MainStagePatch.Failure.invalid("Truncated EXS parameters.")}
+        let count=u32(0)
+        guard count<=512,4+count*3<=body.count else{throw MainStagePatch.Failure.invalid("Invalid EXS parameter count.")}
+        var values:[Int:Int]=[:]
+        for i in 0..<count where body[4+i] != 0 {
+            let id=Int(body[4+i]);guard values[id]==nil else{throw MainStagePatch.Failure.invalid("Duplicate EXS parameter ID.")}
+            values[id]=Int(Int16(bitPattern:UInt16(u16(4+count+i*2))))
+        }
+        let end=4+count*3
+        if body.count>end {
+            guard body.count>=end+4 else{throw MainStagePatch.Failure.invalid("Truncated extended EXS parameters.")}
+            let extra=u32(end)
+            guard extra<=512,end+4+extra*4<=body.count else{throw MainStagePatch.Failure.invalid("Invalid extended EXS parameters.")}
+            for i in 0..<extra {
+                let pos=end+4+i*4,id=u16(pos)
+                if id != 0 {values[id]=Int(Int16(bitPattern:UInt16(u16(pos+2))))}
+            }
+        }
+        return values
+    }
+    static func envelope(_ parts:[Chunk])throws->Envelope? {
+        guard let chunk=parts.first(where:{$0.kind==4}) else{return nil}
+        let values=try parameters(chunk.body)
+        guard [0x52,0x53,0x54,0x51,0x55].allSatisfy({values[$0].map{(0...127).contains($0)} ?? false}) else{return nil}
+        // Modern alternative envelope shapes need separate translation.
+        guard values[0x6b]==nil || values[0x6b]==2 else{return nil}
+        return Envelope(attack:Envelope.seconds(values[0x52]!),lowVelocityAttack:Envelope.seconds(values[0x53]!),decay:Envelope.seconds(values[0x54]!),sustain:Double(values[0x51]!)/127,release:Envelope.seconds(values[0x55]!))
+    }
+    static func applyEnvelope(_ envelope:Envelope?,group:[UInt8],to layer:inout [String:Any]) {
+        func offset(_ pos:Int)->Double {Double((0..<4).reduce(0){$0 | Int(group[pos+$1]) << ($1*8)})/1000}
+        guard var envelopes=layer["Envelopes"] as? [[String:Any]],!envelopes.isEmpty,var stages=envelopes[0]["Stages"] as? [[String:Any]] else{return}
+        for i in stages.indices {
+            switch stages[i]["stage"] as? Int {
+            case 1:stages[i]["time"]=max(0.001,(envelope?.attack ?? 0.001)+offset(56))
+            case 3:stages[i]["time"]=max(0.001,(envelope?.decay ?? 0.001)+offset(60))
+            case 4:stages[i]["level"]=min(1,max(0,(envelope?.sustain ?? 1)+offset(64)))
+            case 5:stages[i]["time"]=max(0.001,(envelope?.release ?? 0.1)+offset(68))
+            default:break
+            }
+        }
+        envelopes[0]["Stages"]=stages;layer["Envelopes"]=envelopes
+    }
+
     struct Chunk {var kind:Int;var modern:Bool;var index:Int;var name:String;var body:[UInt8]}
     static func chunks(_ data:Data)throws->[Chunk] {
         guard data.count>=84,data.count<=16_000_000 else{throw MainStagePatch.Failure.invalid("Invalid EXS document size.")}
@@ -104,7 +163,10 @@ enum EXSNative {
         guard var state=sampler.auAudioUnit.fullStateForDocument,var instrument=state["Instrument"] as? [String:Any],let template=(instrument["Layers"] as? [[String:Any]])?.first else{throw MainStagePatch.Failure.invalid("Cannot initialize StageKeys Sampler.")}
         var native:[[String:Any]]=[],rules:[NativeSamplerProgram.Group]=[]
         var notes=Set<String>()
-        if parts.contains(where:{$0.kind==4}) {notes.insert("Original EXS global parameter data is retained in the original instrument. Global filter/modulation and envelope mappings are not yet verified identical; this native map uses an unfiltered amplitude envelope.")}
+        let amplitude=try envelope(parts)
+        if amplitude != nil {
+            notes.insert("EXS amplitude attack, decay, sustain and release are translated using the source time curve. Velocity-dependent attack, envelope shape and group offset interaction remain approximate; global filter/modulation remain unmapped.")
+        } else if parts.contains(where:{$0.kind==4}) {notes.insert("Original EXS global parameter data is retained. The amplitude envelope layout is unsupported; a fallback envelope is used. Global filter/modulation remain unmapped.")}
         let ungrouped=zones.contains{$0.body.count>=92 && u32($0.body,88)==0xffffffff}
         var activeGroups=groups
         if groups.isEmpty || ungrouped {
@@ -163,13 +225,9 @@ enum EXSNative {
                 for i in connections.indices {for key in ["source","destination","control"] {if let value=connections[i][key] as? Int,value>=0x10000000 {connections[i][key]=value+(index-layerID)*256}}}
                 layer["Connections"]=connections
             }
-            if var envelopes=layer["Envelopes"] as? [[String:Any]],!envelopes.isEmpty,var stages=envelopes[0]["Stages"] as? [[String:Any]] {
-                let releaseOffset=u32(b,68)
-                if releaseOffset>0 {notes.insert("EXS group envelope release offset is applied in milliseconds; its interaction with the original global envelope is approximate.")}
-                for i in stages.indices {switch stages[i]["stage"] as? Int {case 1:stages[i]["time"]=0.001;case 3:stages[i]["time"]=0.001;case 4:stages[i]["level"]=1.0;case 5:stages[i]["time"]=0.1+Double(releaseOffset)/1000;default:break}}
-                envelopes[0]["Stages"]=stages;layer["Envelopes"]=envelopes
-            }
-            guard u32(b,56)==0,u32(b,60)==0,u32(b,64)==0 else{throw MainStagePatch.Failure.invalid("EXS group envelope offsets need translation.")}
+            guard [56,60,64].allSatisfy({u32(b,$0)==0}),u32(b,68)<=30000 else{throw MainStagePatch.Failure.invalid("EXS group envelope offsets require further translation.")}
+            applyEnvelope(amplitude,group:b,to:&layer)
+            if [56,60,64,68].contains(where:{u32(b,$0)>0}) {notes.insert("EXS group release offsets are applied to the native envelope. Their interaction with the original global envelope remains approximate.")}
             let keyRange=b[3]&1 != 0
             let rule=NativeSamplerProgram.Group(name:group.name,layer:index,low:keyRange ? Int(b[88]):0,high:keyRange ? Int(b[89]):127,velocityLow:Int(b[5]),velocityHigh:group.index==0xffffffff ? 127:Int(b[6]),controller:kind==3 ? Int(b[85]):nil,controllerLow:Int(b[86]),controllerHigh:Int(b[87]),enabled:b[3]&16==0)
             guard (0...127).contains(rule.low),(rule.low...127).contains(rule.high),(0...127).contains(rule.velocityLow),(max(1,rule.velocityLow)...127).contains(rule.velocityHigh) else{throw MainStagePatch.Failure.invalid("Invalid EXS group ranges.")}
@@ -177,7 +235,7 @@ enum EXSNative {
         }
         guard !native.isEmpty else{throw MainStagePatch.Failure.invalid("EXS has no playable native zones.")}
         instrument["Layers"]=native;instrument["voice count"]=64;state["Instrument"]=instrument;state["file-references"]=references;state["gain"]=0;state["name"]=source.deletingPathExtension().lastPathComponent
-        let program=NativeSamplerProgram(groups:rules,notes:notes.sorted(),compactGroups:true)
+        let program=NativeSamplerProgram(groups:rules,notes:notes.sorted(),compactGroups:true,conversionVersion:2,amplitudeEnvelope:amplitude)
         guard program.valid else{throw MainStagePatch.Failure.invalid("EXS native group plan is invalid.")}
         state["StageKeys.NativeSampler"]=try JSONEncoder().encode(program)
         try PropertyListSerialization.data(fromPropertyList:state,format:.xml,options:0).write(to:output,options:.atomic)

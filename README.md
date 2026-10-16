@@ -1,3 +1,7 @@
+## Version 0.28
+
+Native EXS imports now translate amplitude decay/sustain/release instead of using a flat fallback; a backed-up upgrade repairs earlier generated samplers while preserving samples, maps and user effects. MainStage Compressor and manual stereo-delay controls have native translations, reversed macros retain their MIDI behavior, and processing previews show actual values. Library filter columns persist and Note Range is visible by default. Full proprietary DSP/MIDI parity remains incomplete. [Scope and verification](Docs/NATIVE-EXS-PLAYBACK.md).
+
 ## Version 0.27
 
 Modern EXS instruments can fall back to direct native sample-map translation, including active velocity/controller-selected groups and portable native group metadata. Referenced MainStage samplers can be imported without launching MainStage; supported source EQ/Gain/Chorus, linear macros and MIDI settings can be previewed and applied to a sound draft. Real Steinway import preserves the original CAF hash and renders native audio. Full channel-strip/DSP parity and physical iPad performance remain unfinished. [Scope and verification](Docs/NATIVE-EXS-PLAYBACK.md).

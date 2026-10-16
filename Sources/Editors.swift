@@ -82,7 +82,20 @@ struct SoundEditor: View {
                                     Text("Supported MainStage Processing").font(.headline)
                                     Text("This appends supported effects and macros, and applies the source key range, transpose and sustain filter to the draft. It does not convert the complete patch.").font(.caption)
                                     ScrollView {VStack(alignment:.leading,spacing:8) {
-                                        ForEach(Array(preview.effects.enumerated()),id:\.offset){_,effect in Text(effect.title)}
+                                        ForEach(Array(preview.effects.enumerated()),id:\.offset){index,effect in
+                                            VStack(alignment:.leading,spacing:4) {
+                                                Text("\(index+1). \(effect.title)").font(.subheadline.bold())
+                                                Text(preview.sourceNames.indices.contains(index) ? preview.sourceNames[index]:effect.title).font(.caption).foregroundStyle(.secondary)
+                                                ForEach(AudioEffectCatalog.descriptors(for:effect.kind)){parameter in
+                                                    let value=effect.values[parameter.index]*(parameter.unit == "%" ? 100:1)
+                                                    Text("\(parameter.name): \(value,specifier: "%.2f") \(parameter.unit)").font(.caption).monospacedDigit()
+                                                }
+                                                if let delay=effect.importedDelay {Text("Left \(delay.left,specifier: "%.3f") s · Right \(delay.right,specifier: "%.3f") s").font(.caption)}
+                                            }.frame(maxWidth:.infinity,alignment:.leading).padding(10).background(StageTheme.panel,in:RoundedRectangle(cornerRadius:6))
+                                        }
+                                        if let low=preview.low,let high=preview.high {Text("Note Range: \(low)–\(high)").font(.caption)}
+                                        if let transpose=preview.transpose {Text("MIDI Transpose: \(transpose)").font(.caption)}
+                                        ForEach(preview.macros){macro in Text(macro.name+(macro.midiCC.map{" · CC\($0)"} ?? "")).font(.caption)}
                                         ForEach(Array(preview.issues.enumerated()),id:\.offset){_,issue in Text(issue).font(.caption).foregroundStyle(.secondary)}
                                     }}
                                     Button("Apply Supported Processing") {
@@ -94,7 +107,7 @@ struct SoundEditor: View {
                                             processingPreview=nil
                                         }
                                         catch{processingIssue=error.localizedDescription;processingPreview=nil}
-                                    }.buttonStyle(StageButtonStyle()).disabled(preview.effects.isEmpty)
+                                    }.buttonStyle(StageButtonStyle()).disabled(!preview.hasChanges)
                                 }.padding(20).frame(width:480,height:360)
                             }
                             if let processingIssue {Text(processingIssue).font(.caption).foregroundStyle(.secondary)}

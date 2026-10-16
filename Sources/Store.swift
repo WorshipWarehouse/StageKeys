@@ -737,6 +737,37 @@ final class PerformanceStore: ObservableObject {
             return try installLibrarySound(url,sampleRoot:sampleRoot)
         }catch{message=error.localizedDescription;return nil}
     }
+    func updateSamplerEnvelopes() {
+        guard !libraryImportBusy else{return}
+        let root=saveURL.deletingLastPathComponent()
+        do {
+            // Keep both library metadata and user patches recoverable.
+            let backup=root.appendingPathComponent("Sampler Backups/"+UUID().uuidString,isDirectory:true)
+            try FileManager.default.createDirectory(at:backup,withIntermediateDirectories:true)
+            for file in ["sound-library.json","setlist.json"] {
+                let source=root.appendingPathComponent(file)
+                if FileManager.default.fileExists(atPath:source.path){try FileManager.default.copyItem(at:source,to:backup.appendingPathComponent(file))}
+            }
+            var entries=librarySounds,updates:[String:ExternalSound]=[:],failures:[String]=[]
+            for entry in entries {
+                guard let sound=entry.sound,let program=sound.nativeSampler,(program.conversionVersion ?? 1)<2,let original=entry.originalInstrument,let file=sound.fileName,updates[file]==nil else{continue}
+                do{updates[file]=try StageKeysSampler.updateEnvelope(sound,original:original,library:root)}
+                catch{failures.append(entry.name+": "+error.localizedDescription)}
+            }
+            guard !updates.isEmpty else{libraryImportProgress="No sampler envelopes were changed. "+failures.joined(separator:"; ");return}
+            for i in entries.indices {
+                if let file=entries[i].sound?.fileName,let updated=updates[file]{entries[i].sound?.nativeSampler=updated.nativeSampler;entries[i].conversionNotes=updated.nativeSampler?.notes}
+                if let file=entries[i].layer?.external?.fileName,let updated=updates[file]{entries[i].layer?.external?.nativeSampler=updated.nativeSampler}
+            }
+            try SoundLibrary(url:root.appendingPathComponent("sound-library.json")).write(entries);librarySounds=entries
+            panic()
+            for p in setlist.patches.indices {for l in setlist.patches[p].layers.indices {
+                if let file=setlist.patches[p].layers[l].external?.fileName,let updated=updates[file]{setlist.patches[p].layers[l].external?.nativeSampler=updated.nativeSampler}
+            }}
+            applyPatch();save()
+            libraryImportProgress="Updated \(updates.count) sampler envelopes. Original samples, rack effects and patch settings are preserved. "+failures.joined(separator:"; ")
+        }catch{libraryImportProgress=error.localizedDescription}
+    }
     func mainStageProcessing(_ channel:Int)throws->MainStageProcessing.Draft {
         guard let report=mainStageImportReport,let id=report.sourceArchiveID,UUID(uuidString:id) != nil,report.channels.indices.contains(channel) else{throw MainStagePatch.Failure.invalid("Import the MainStage source patch again to preview its processing.")}
         let root=saveURL.deletingLastPathComponent().appendingPathComponent("MainStage Sources/"+id+"/Source.patch",isDirectory:true)

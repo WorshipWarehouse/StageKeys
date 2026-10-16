@@ -42,6 +42,21 @@ struct ImportedRackControls: View {
     private func delayBinding(_ index:Int,_ path:WritableKeyPath<ImportedDelay,Double>)->Binding<Float> {
         Binding(get:{Float(layer.importedRack?.effects[index].importedDelay?[keyPath:path] ?? 0.25)},set:{value in layer.importedRack?.effects[index].importedDelay?[keyPath:path]=Double(value)})
     }
+    private func channelBinding(_ index:Int,_ right:Bool,_ path:WritableKeyPath<ImportedDelay.Channel,Float>)->Binding<Float> {
+        Binding(get:{
+            let delay=layer.importedRack?.effects[index].importedDelay
+            return (right ? delay?.rightChannel:delay?.leftChannel)?[keyPath:path] ?? 0
+        },set:{value in
+            guard var delay=layer.importedRack?.effects[index].importedDelay,var channel=right ? delay.rightChannel:delay.leftChannel else{return}
+            channel[keyPath:path]=value
+            if path == \.feedback {channel.feedback=min(channel.feedback,0.95-channel.crossFeedback)}
+            if path == \.crossFeedback {channel.crossFeedback=min(channel.crossFeedback,0.95-channel.feedback)}
+            if path == \.lowCut {channel.lowCut=min(channel.lowCut,channel.highCut)}
+            if path == \.highCut {channel.highCut=max(channel.highCut,channel.lowCut)}
+            if right {delay.rightChannel=channel}else{delay.leftChannel=channel}
+            layer.importedRack?.effects[index].importedDelay=delay
+        })
+    }
     @ViewBuilder private func delayControls(_ index:Int)->some View {
         if let delay=layer.importedRack?.effects[index].importedDelay {
             VStack {
@@ -52,9 +67,20 @@ struct ImportedRackControls: View {
                 Toggle("Right Tempo Sync",isOn:Binding(get:{layer.importedRack?.effects[index].importedDelay?.rightSynced ?? true},set:{layer.importedRack?.effects[index].importedDelay?.rightSynced=$0}))
                 EffectKnob(descriptor:.init(index:25,name:"Right Time",minimum:0.001,maximum:5.334,defaultValue:0.25,unit:delay.rightSynced ? "beats":"sec"),value:delayBinding(index,\.right))
             }
-            Toggle("Ping Pong",isOn:Binding(get:{layer.importedRack?.effects[index].importedDelay?.pingPong ?? false},set:{layer.importedRack?.effects[index].importedDelay?.pingPong=$0}))
-            EffectKnob(descriptor:.init(index:26,name:"Low Cut",minimum:20,maximum:delay.highCut,defaultValue:20,unit:"Hz"),value:Binding(get:{layer.importedRack?.effects[index].importedDelay?.lowCut ?? 20},set:{layer.importedRack?.effects[index].importedDelay?.lowCut=$0}))
-            EffectKnob(descriptor:.init(index:27,name:"High Cut",minimum:delay.lowCut,maximum:20000,defaultValue:20000,unit:"Hz"),value:Binding(get:{layer.importedRack?.effects[index].importedDelay?.highCut ?? 20000},set:{layer.importedRack?.effects[index].importedDelay?.highCut=$0}))
+            if delay.leftChannel != nil {
+                ForEach([false,true],id:\.self){right in
+                    let side=right ? "Right":"Left"
+                    EffectKnob(descriptor:.init(index:0,name:side+" Feedback",minimum:0,maximum:0.95,defaultValue:0.3,unit:"%"),value:channelBinding(index,right,\.feedback))
+                    EffectKnob(descriptor:.init(index:1,name:side+" Cross Feedback",minimum:0,maximum:0.95,defaultValue:0,unit:"%"),value:channelBinding(index,right,\.crossFeedback))
+                    EffectKnob(descriptor:.init(index:2,name:side+" Mix",minimum:0,maximum:1,defaultValue:0.3,unit:"%"),value:channelBinding(index,right,\.mix))
+                    EffectKnob(descriptor:.init(index:3,name:side+" Low Cut",minimum:20,maximum:20000,defaultValue:20,unit:"Hz"),value:channelBinding(index,right,\.lowCut))
+                    EffectKnob(descriptor:.init(index:4,name:side+" High Cut",minimum:20,maximum:20000,defaultValue:20000,unit:"Hz"),value:channelBinding(index,right,\.highCut))
+                }
+            }else{
+                Toggle("Ping Pong",isOn:Binding(get:{layer.importedRack?.effects[index].importedDelay?.pingPong ?? false},set:{layer.importedRack?.effects[index].importedDelay?.pingPong=$0}))
+                EffectKnob(descriptor:.init(index:26,name:"Low Cut",minimum:20,maximum:delay.highCut,defaultValue:20,unit:"Hz"),value:Binding(get:{layer.importedRack?.effects[index].importedDelay?.lowCut ?? 20},set:{layer.importedRack?.effects[index].importedDelay?.lowCut=$0}))
+                EffectKnob(descriptor:.init(index:27,name:"High Cut",minimum:delay.lowCut,maximum:20000,defaultValue:20000,unit:"Hz"),value:Binding(get:{layer.importedRack?.effects[index].importedDelay?.highCut ?? 20000},set:{layer.importedRack?.effects[index].importedDelay?.highCut=$0}))
+            }
         }
     }
     var body: some View {
@@ -73,7 +99,7 @@ struct ImportedRackControls: View {
                         Toggle("Enabled",isOn:Binding(get:{layer.importedRack?.effects[index].enabled ?? false},set:{layer.importedRack?.effects[index].enabled=$0}))
                         LazyVGrid(columns:[GridItem(.adaptive(minimum:140))],spacing:8) {
                             if effect.importedDelay != nil { delayControls(index) }
-                            ForEach(AudioEffectCatalog.descriptors(for:effect.kind).filter{effect.importedDelay == nil || ![1,2].contains($0.index)}) { parameter in
+                            ForEach(AudioEffectCatalog.descriptors(for:effect.kind).filter{effect.importedDelay == nil || effect.importedDelay?.leftChannel == nil && ![1,2].contains($0.index)}) { parameter in
                                 EffectKnob(descriptor:parameter,value:Binding(get:{layer.importedRack?.effects[index].values[parameter.index] ?? parameter.defaultValue},set:{value in guard var imported=layer.importedRack else{return};var values=imported.effects[index].values;values[parameter.index]=value;imported.effects[index].parameters=values;layer.importedRack=imported}))
                             }
                         }
@@ -172,6 +198,11 @@ struct StageKeysSamplerControls:View {
             HStack {Image(systemName:"pianokeys");Text("StageKeys Sampler").font(StageTheme.font(16,weight:.semibold));Spacer();Text("Native playback").font(.caption).foregroundStyle(.secondary)}
             if let map {
                 Text("\(map.sampleCount) samples · \(map.layerCount) layers · \(map.zones.count) zones").font(.caption)
+                if let envelope=map.amplitudeEnvelope {
+                    Text("Amplitude Envelope").font(StageTheme.font(14,weight:.semibold))
+                    Text("Attack \(envelope.attack,specifier: "%.3f") s · Decay \(envelope.decay,specifier: "%.3f") s · Sustain \(envelope.sustain*100,specifier: "%.0f")% · Release \(envelope.release,specifier: "%.3f") s").font(.caption).monospacedDigit()
+                    Text("Source base values; group release offsets are added during playback.").font(.caption).foregroundStyle(.secondary)
+                }
                 DisclosureGroup("Sample Map") {
                     ScrollView {
                         LazyVStack(alignment:.leading,spacing:8) {

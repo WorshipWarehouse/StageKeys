@@ -1,4 +1,22 @@
-# Native EXS playback and MainStage processing — 0.27
+# Native EXS playback and MainStage processing — 0.28
+
+## v0.28 envelope and processing update
+
+The native EXS translator now reads the bounded global parameter table and translates the amplitude ADSR controls. Envelope time is `10 * (value / 127)^4` seconds. The real Steinway reference has decay 127 (10 seconds), sustain 0 and release 46 (about 172 ms); v0.27 discarded those values in favor of a flat sustain and a 100 ms base release. Existing group release offsets are added to the source base release. Velocity-dependent attack, envelope curvature, nonzero group attack/decay/sustain offsets, global filter/modulation and exact consolidated-region transitions are still not verified identical.
+
+Import Sounds → **Update Converted Sampler Envelopes** upgrades earlier generated EXS presets using their retained, hash-verified original. It backs up presets/library/setlist, verifies that the generated envelope has not been edited, and changes only the envelope and conversion metadata. Zones, loops, original audio references, rack effects and user patch controls remain intact. Hand-edited envelopes are skipped with an explanation. The previous preset remains in Sampler Backups. This does not rebuild the instrument or render replacement samples.
+
+MainStage processing preview additionally translates Compressor threshold, ratio, attack/release, manual makeup and mix. Native compressor circuit, knee, automatic makeup/release, sidechain and limiter response remain different/unmapped. Stereo Delay **manual-time** presets translate per-channel milliseconds, feedback, cross-feedback, output mix and low/high cuts; the native renderer retains separate channel state. Feedback sums must stay below 0.95. Tempo-sync/note-deviation modes are explicitly unsupported rather than being converted with guessed timings. SilverVerb and ClipDist remain unsupported. Existing supported EQ/Gain/Chorus and processing order remain intact.
+
+Reversed linear Smart Controls now retain reversed ranges and MIDI CC/channel routing. Conflicting saved macro positions remain reported. Processing preview shows effect parameters and source names; MIDI-only key-range/transpose/sustain changes can be applied without an audio effect. Sampler settings display the source envelope values. Library columns now default to Note Range / Type / Timbre / Articulation and retain the user's chosen columns when reopening; active filter choices reset as observed in Sunday Keys. This is incremental UI/DSP parity, not a claim of a complete replica.
+
+Validation adds a generated, looped audio fixture that measures decay to zero sustain and finite release to silence, independent of private samples. Real-source tests verify Steinway decay and exact sample hashes, legacy upgrade backups/map retention and edited-envelope protection. Native delay impulse tests verify independent timing and asymmetric cross-feedback/mix. Existing library/MIDI/rack tests remain in the regression suite.
+
+Mac UI verification: the installed earlier Steinway was upgraded successfully through Import Sounds with its original CAF hash unchanged. Its channel still had the user's SolaVerb. Sampler settings showed 10.000 s decay, 0% sustain and 0.172 s base release. The final processing preview displayed 30% chorus depth, 10% chorus mix and 100% compressor mix correctly. Library column changes survived closing/reopening; Note Range was restored afterward. The ten default suites, three real-source checks, expanded upgrade-preservation test, native delay impulse checks, universal Mac build and mobile simulator build passed. Subjective comparison against MainStage and physical iPad runtime remain unverified.
+
+The EXS parameter identities/time curve were cross-checked against the public [ConvertWithMoss format reference](https://github.com/git-moss/ConvertWithMoss/blob/main/src/main/java/de/mossgrabers/convertwithmoss/format/exs/EXS24Parameters.java) and its [timing calibration notes](https://github.com/git-moss/ConvertWithMoss/blob/main/src/main/java/de/mossgrabers/convertwithmoss/format/exs/EXS24Detector.java). StageKeys implements its own bounded Swift reader; no reference implementation is bundled.
+
+## Native EXS playback
 
 ## What now plays
 
@@ -10,7 +28,7 @@ The installed modern Steinway Grand Piano 2 fixture that failed the system EXS l
 
 ## Explicit EXS limitations
 
-Global EXS parameter decoding remains incomplete. The native translation uses an unfiltered amplitude envelope and disables unrelated template vibrato. Group release offsets use a millisecond approximation. Consolidated attack/loop-tail extents are combined into a continuous native region; the source split-region transition algorithm is not verified identical. Saved endpoints beyond the original audio length are bounded and reported. These differences are saved in Import Notes, and the unmodified original EXS is retained.
+Global EXS parameter decoding remains incomplete. The native translation uses the supported source amplitude ADSR values with an unfiltered signal and disables unrelated template vibrato. Embedded channel-strip overrides of instrument defaults still require separate translation. Group release offsets use a millisecond approximation. Consolidated attack/loop-tail extents are combined into a continuous native region; the source split-region transition algorithm is not verified identical. Saved endpoints beyond the original audio length are bounded and reported. These differences are saved in Import Notes, and the unmodified original EXS is retained.
 
 Unsupported reverse, one-shot/unpitched zones, loop crossfades/tuning/release-to-end behavior, alternate loop direction, output routing, round robin, release-trigger groups, crossfades and unsupported selection modes are rejected rather than silently flattened. Native import limits and selected-root confinement apply.
 

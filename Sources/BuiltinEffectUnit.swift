@@ -49,13 +49,16 @@ final class BuiltinEffectUnit: AUAudioUnit {
     }
     private func apply(_ slot:Int){
         let setting=settings[slot]
-        for pointer in [left,right].compactMap({$0}) {
+        for (side,pointer) in [left,right].enumerated() {
+            guard let pointer else{continue}
             sk_effect(pointer,0,Int32(slot),setting.enabled ? Int32(setting.kind):0,1)
             sk_clock(pointer,setting.tempo,0)
             let delay=setting.delay
             let leftSeconds=delay.map{$0.seconds($0.left,synced:$0.leftSynced,tempo:setting.tempo)} ?? 0.001
             let rightSeconds=delay.map{$0.seconds($0.right,synced:$0.rightSynced,tempo:setting.tempo)} ?? 0.001
-            sk_imported_delay(pointer,Int32(slot),delay != nil && setting.enabled ? 1:0,leftSeconds,rightSeconds,delay?.pingPong == true ? 1:0,delay?.lowCut ?? 20,delay?.highCut ?? 20000)
+            let channel=side==0 ? delay?.leftChannel:delay?.rightChannel
+            sk_imported_delay_channel(pointer,Int32(slot),channel != nil ? 1:0,channel?.feedback ?? 0,channel?.crossFeedback ?? 0,channel?.mix ?? 0)
+            sk_imported_delay(pointer,Int32(slot),delay != nil && setting.enabled ? 1:0,leftSeconds,rightSeconds,delay?.pingPong == true ? 1:0,channel?.lowCut ?? delay?.lowCut ?? 20,channel?.highCut ?? delay?.highCut ?? 20000)
             if setting.enabled {for (index,value) in setting.values.enumerated(){sk_effect_parameter(pointer,0,Int32(slot),Int32(index),value)}}
         }
     }

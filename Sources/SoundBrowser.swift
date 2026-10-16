@@ -6,7 +6,8 @@ struct SoundBrowser: View {
     let index:Int
     @State private var collection="All Sounds"
     @State private var query=LibraryQuery()
-    @State private var facets:[LibraryFacet]=[.category,.type,.timbre,.articulation]
+    @AppStorage("library.filterColumns") private var savedFacets="Note Range|Type|Timbre|Articulation"
+    @State private var facets:[LibraryFacet]=[.noteRange,.type,.timbre,.articulation]
     @State private var selectedID:String?
     @State private var importHub=false
     @State private var showingImportNotes=false
@@ -63,6 +64,11 @@ struct SoundBrowser: View {
             }
             footer
         }.sheet(isPresented:$importHub){SoundImportView().environmentObject(store)}
+        .onAppear {
+            let restored=savedFacets.split(separator:"|").compactMap{LibraryFacet(rawValue:String($0))}
+            if restored.count==4 && Set(restored).count==4 {facets=restored}
+        }
+        .onChange(of:facets){savedFacets=$0.map(\.rawValue).joined(separator:"|")}
         .onDisappear {store.endAudition(auditionToken);store.previewLibraryRange(index,nil)}
         .onChange(of:selectedID){_ in previewRange();if auditionToken != nil {auditionSelection()}}
         .onChange(of:collection){_ in selectedID=nil;query.filters=[:]}

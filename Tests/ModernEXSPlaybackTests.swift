@@ -8,6 +8,8 @@ import AVFoundation
         defer{try? FileManager.default.removeItem(at:scratch)}
         let preset=scratch.appendingPathComponent("Native.aupreset")
         let program=try EXSNative.convert(URL(fileURLWithPath:path),sampleRoot:URL(fileURLWithPath:rootPath),to:preset)
+        assert(program.amplitudeEnvelope?.decay==10 && program.amplitudeEnvelope?.sustain==0)
+        assert(abs(program.amplitudeEnvelope!.release-0.1721096878)<0.0001)
         assert(program.groups.count==20 && program.groups.contains{$0.controller==64 && $0.controllerLow==64})
         var state=try PropertyListSerialization.propertyList(from:Data(contentsOf:preset),options:[],format:nil) as! [String:Any]
         var instrument=state["Instrument"] as! [String:Any];let layers=instrument["Layers"] as! [[String:Any]]
@@ -26,6 +28,14 @@ import AVFoundation
         var energy:Float=0
         for _ in 0..<48 {_ = try engine.renderOffline(512,to:buffer);for i in 0..<Int(buffer.frameLength) {let v=buffer.floatChannelData![0][i];assert(v.isFinite);energy+=abs(v)}}
         assert(energy>0.1,"Modern consolidated sample region did not render")
+        var secondEnergy:[Double]=[]
+        for _ in 0..<11 {
+            var sum=0.0
+            for _ in 0..<94 {_ = try engine.renderOffline(512,to:buffer);for i in 0..<Int(buffer.frameLength){let v=buffer.floatChannelData![0][i];assert(v.isFinite);sum+=Double(v*v)}}
+            secondEnergy.append(sum)
+        }
+        assert(secondEnergy[0]>0 && secondEnergy.last!<secondEnergy[0]*0.000001,"Steinway source decay must finish at zero sustain")
+        print("PASS: Steinway source 10-second decay, zero sustain, 172 ms base release; late energy \(secondEnergy.last!)")
         engine.stop()
         print("PASS: real modern EXS translated 224 consolidated regions and 20 controller/velocity groups; isolated original-sample audio energy \(energy), no resampling")
     }

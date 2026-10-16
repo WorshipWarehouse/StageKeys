@@ -6,10 +6,20 @@ struct ImportedDelay: Codable, Equatable {
     var leftSynced: Bool
     var rightSynced: Bool
     var pingPong: Bool = false
+    struct Channel:Codable,Equatable {
+        var feedback:Float
+        var crossFeedback:Float
+        var mix:Float
+        var lowCut:Float=20
+        var highCut:Float=20000
+        var valid:Bool {feedback.isFinite && crossFeedback.isFinite && (0...0.95).contains(feedback) && (0...0.95).contains(crossFeedback) && feedback+crossFeedback<=0.95 && mix.isFinite && (0...1).contains(mix) && lowCut.isFinite && highCut.isFinite && (20...20000).contains(lowCut) && (lowCut...20000).contains(highCut)}
+    }
+    var leftChannel:Channel?
+    var rightChannel:Channel?
     var lowCut: Float = 20
     var highCut: Float = 20000
     func validate() -> Bool {
-        left.isFinite && right.isFinite && (0.001...5.334).contains(left) && (0.001...5.334).contains(right) && lowCut.isFinite && highCut.isFinite && (20...20000).contains(lowCut) && (lowCut...20000).contains(highCut)
+        (leftChannel?.valid ?? true) && (rightChannel?.valid ?? true) && (leftChannel == nil) == (rightChannel == nil) && !(leftChannel != nil && pingPong) && left.isFinite && right.isFinite && (0.001...5.334).contains(left) && (0.001...5.334).contains(right) && lowCut.isFinite && highCut.isFinite && (20...20000).contains(lowCut) && (lowCut...20000).contains(highCut)
     }
     func seconds(_ value:Double,synced:Bool,tempo:Float)->Float {Float(min(16,max(0.001,synced ? value*60/Double(tempo) : value)))}
 }

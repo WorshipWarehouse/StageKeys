@@ -1,3 +1,7 @@
+## 0.28 source envelopes and more processing
+
+EXS amplitude ADSR, protected legacy sampler envelope upgrades, native Compressor parameters, manual Stereo Delay channel feedback/cross-feedback/mix/filters, reversed linear CC macros and detailed preview controls are implemented. Library filter columns persist and default to Note Range. Source Steinway envelope timing and no-resampling sample retention are verified in private fixture tests. Exact envelope shapes/velocity-dependent attack, source synths, ClipDist/SilverVerb, synced Stereo Delay and complete MIDI/routing/bypass parity remain unfinished. [Details](NATIVE-EXS-PLAYBACK.md).
+
 ## 0.27 active native EXS and processing
 
 Added direct EXS fallback, original consolidated sample playback, active controller/velocity groups, portable preset group metadata, referenced-sampler import and supported MainStage processing preview/apply. Linear effect macros and CC/channel routing affect native audio. Real EXS import and original CAF hashes are verified; group/processing audio regressions pass. Global EXS parameters, exact split-region/loop behavior, complete effect/bypass/MIDI/script/routing parity and physical iPad performance remain incomplete. [Details](NATIVE-EXS-PLAYBACK.md).

@@ -18,6 +18,7 @@ enum StageKeysSampler {
         var sampleCount:Int
         var zones:[Zone]
         var layerCount:Int
+        var amplitudeEnvelope:EXSNative.Envelope?
     }
     static func map(_ sound:ExternalSound,library:URL)throws->Map {
         guard sound.kind == .samplerPreset,let name=sound.fileName,name==URL(fileURLWithPath:name).lastPathComponent else{throw ExternalInstrumentError.unsupportedFormat}
@@ -41,7 +42,45 @@ enum StageKeysSampler {
                                   looped:(zone["loop enabled"] as? Bool ?? false)))
             }
         }
-        return Map(sampleCount:Set(references.values).count,zones:zones,layerCount:layers.count)
+        let program=(state["StageKeys.NativeSampler"] as? Data).flatMap{try? JSONDecoder().decode(NativeSamplerProgram.self,from:$0)}
+        return Map(sampleCount:Set(references.values).count,zones:zones,layerCount:layers.count,amplitudeEnvelope:program?.amplitudeEnvelope)
+    }
+    /// Upgrade only our untouched v1 envelope reconstruction. Audio, zones,
+    /// routing and user rack processing are never rebuilt or replaced.
+    static func updateEnvelope(_ sound:ExternalSound,original:Original,library:URL)throws->ExternalSound {
+        guard var program=sound.nativeSampler,(program.conversionVersion ?? 1)<2,
+              let name=sound.fileName,name==URL(fileURLWithPath:name).lastPathComponent,
+              original.sha256.count==64,original.sha256.allSatisfy({$0.isHexDigit}),
+              original.file=="Original Instruments/"+original.sha256+".exs" else{throw ExternalInstrumentError.unsupportedFormat}
+        let sourceURL=library.appendingPathComponent(original.file)
+        guard let sourceSize=try sourceURL.resourceValues(forKeys:[.fileSizeKey]).fileSize,sourceSize<=16_000_000 else{throw ExternalInstrumentError.unsupportedFormat}
+        let source=try Data(contentsOf:sourceURL)
+        guard MainStagePatch.digest(source)==original.sha256 else{throw CocoaError(.fileReadCorruptFile)}
+        let chunks=try EXSNative.chunks(source)
+        guard let envelope=try EXSNative.envelope(chunks) else{throw MainStagePatch.Failure.invalid("The retained EXS amplitude envelope is not yet supported.")}
+        let preset=library.appendingPathComponent("Imported Sounds/"+name),bytes=try Data(contentsOf:preset)
+        guard bytes.count<=16_000_000,var state=try PropertyListSerialization.propertyList(from:bytes,options:[],format:nil) as? [String:Any],
+              let metadata=state["StageKeys.NativeSampler"] as? Data,try JSONDecoder().decode(NativeSamplerProgram.self,from:metadata)==program,
+              var instrument=state["Instrument"] as? [String:Any],var layers=instrument["Layers"] as? [[String:Any]],layers.count==program.groups.count else{throw ExternalInstrumentError.unsupportedFormat}
+        for rule in program.groups {
+            guard layers.indices.contains(rule.layer),let group=chunks.first(where:{$0.kind==2 && $0.name==rule.name}),group.body.count>=92 else{throw ExternalInstrumentError.unsupportedFormat}
+            var expected=layers[rule.layer];EXSNative.applyEnvelope(nil,group:group.body,to:&expected)
+            // A hand-edited envelope must not be overwritten by an upgrade.
+            guard let old=layers[rule.layer]["Envelopes"] as? NSArray,let generated=expected["Envelopes"] as? NSArray,old==generated else{throw MainStagePatch.Failure.invalid("This sampler's envelope was edited; import the original EXS again to keep those edits separate.")}
+            EXSNative.applyEnvelope(envelope,group:group.body,to:&layers[rule.layer])
+        }
+        instrument["Layers"]=layers;state["Instrument"]=instrument
+        program.conversionVersion=2;program.amplitudeEnvelope=envelope
+        program.notes.removeAll{$0.contains("Global filter/modulation and envelope mappings") || $0.contains("group envelope release offset")}
+        program.notes.append("EXS amplitude attack, decay, sustain and release now use the source time curve. Velocity-dependent attack, envelope shape and global filter/modulation remain approximate/unmapped.")
+        guard program.valid else{throw ExternalInstrumentError.unsupportedFormat}
+        state["StageKeys.NativeSampler"]=try JSONEncoder().encode(program)
+        let backup=library.appendingPathComponent("Sampler Backups",isDirectory:true)
+        try FileManager.default.createDirectory(at:backup,withIntermediateDirectories:true)
+        let retained=backup.appendingPathComponent(MainStagePatch.digest(bytes)+".aupreset")
+        if !FileManager.default.fileExists(atPath:retained.path){try bytes.write(to:retained,options:.atomic)}
+        try PropertyListSerialization.data(fromPropertyList:state,format:.xml,options:0).write(to:preset,options:.atomic)
+        var updated=sound;updated.nativeSampler=program;return updated
     }
     struct Original:Codable,Equatable {
         var file:String
