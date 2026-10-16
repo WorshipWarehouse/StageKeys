@@ -1,3 +1,7 @@
+## 0.31 imported attack handling
+
+Added playback-only, per-sound Attack Smoothing and an automatic 40 ms minimum for the converted Steinway's hard onset. Original presets/samples, source region/loop maps, decay/release and saved effects/levels are preserved. Private upper-octave onset and asset-hash checks pass; a representative twelve-waveform audit matches other imported native attacks after accounting for host-graph timing. This is targeted transient softening, not exact original attack-curve parity; user listening confirmation remains pending. [Evidence](SAMPLER-ATTACK.md).
+
 ## 0.30 tonic patch recall and cleaner effect processing
 
 Tonic now separates power from key selection and captures recall settings per patch, following the documented Patch Lock behavior. Unlocked patch changes preserve the pad; Brightness is a rotary tone control and the modulation wheel shows its current 0–127 position. Native reverb feedback no longer soft-clips transients; Silver uses delayed all-pass diffusion, and ClipDist corrects input gain placement, 6 dB/octave filters and antialiasing. Steinway chord/sustain, original tonic continuity, processing and import regressions pass, as do Mac/mobile simulator release builds. Exact Apple DSP, original fade/pan behavior and live confirmation of the reported Steinway attack remain outstanding. [Evidence and limits](SOURCE-EFFECTS-AND-TONIC.md).

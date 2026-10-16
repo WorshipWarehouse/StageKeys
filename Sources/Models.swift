@@ -207,6 +207,12 @@ struct Layer: Codable, Identifiable, Equatable {
     var octaveEffect = false
     var effects = [AudioEffect(), AudioEffect(), AudioEffect()]
     var channelSettings = ChannelSettings()
+    var samplerAttackMinimum:Float {
+        if let explicit=channelSettings.samplerAttackMinimum {return explicit}
+        // The converted Steinway's very fast upper-register sampled strike needs
+        // a playback-only onset adjustment. Other instruments keep their attack.
+        return external?.nativeSampler?.groups.contains(where:{$0.name.localizedCaseInsensitiveContains("Steinway")}) == true ? 0.04:0
+    }
     var external: ExternalSound?
     var importedRack: ImportedRack?
     var pluginState: Data?

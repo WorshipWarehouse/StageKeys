@@ -1,5 +1,6 @@
 import Foundation
 import CryptoKit
+import AVFoundation
 
 /// The StageKeys instrument UI and asset model; playback uses the system sampler,
 /// never a MainStage process or its private Sampler plug-in.
@@ -101,5 +102,41 @@ enum StageKeysSampler {
             guard try Data(contentsOf:target)==bytes else{throw CocoaError(.fileReadCorruptFile)}
         } else {try bytes.write(to:target,options:.atomic)}
         return Original(file:"Original Instruments/"+filename,sha256:digest)
+    }
+}
+
+/// Playback-only amplitude attack adjustment. Never edits presets or samples on disk.
+enum SamplerAttack {
+    static func prepare(_ original:[String:Any],minimum:Float)->[String:Any] {
+        guard minimum.isFinite,minimum>0,minimum<=0.1,
+              var instrument=original["Instrument"] as? [String:Any],var layers=instrument["Layers"] as? [[String:Any]] else{return original}
+        for i in layers.indices {
+            let layerID=layers[i]["ID"] as? Int ?? i
+            let connections=layers[i]["Connections"] as? [[String:Any]] ?? []
+            guard var envelopes=layers[i]["Envelopes"] as? [[String:Any]] else{continue}
+            for j in envelopes.indices {
+                let envelopeID=envelopes[j]["ID"] as? Int ?? j
+                let source=0x20000000+layerID*256+envelopeID
+                // Leave filter/pitch envelopes and disabled/non-amplitude routes alone.
+                guard envelopes[j]["enabled"] as? Bool != false,connections.contains(where:{($0["source"] as? Int)==source && (($0["destination"] as? Int ?? 0)&0xfff00000)==0x50100000 && $0["enabled"] as? Bool != false}),
+                      var stages=envelopes[j]["Stages"] as? [[String:Any]] else{continue}
+                for k in stages.indices where (stages[k]["stage"] as? NSNumber)?.doubleValue == 1 {
+                    guard let time=stages[k]["time"] as? Double,time.isFinite,time>=0 else{continue}
+                    stages[k]["time"]=max(time,Double(minimum))
+                }
+                envelopes[j]["Stages"]=stages
+            }
+            layers[i]["Envelopes"]=envelopes
+        }
+        instrument["Layers"]=layers;var state=original;state["Instrument"]=instrument;return state
+    }
+    static func load(_ sampler:AVAudioUnitSampler,file:URL,minimum:Float)throws {
+        guard minimum>0 else{try sampler.loadInstrument(at:file);return}
+        let bytes=try Data(contentsOf:file)
+        guard bytes.count<=16_000_000,let original=try PropertyListSerialization.propertyList(from:bytes,options:[],format:nil) as? [String:Any] else{throw ExternalInstrumentError.unsupportedFormat}
+        let prepared=prepare(original,minimum:minimum),temporary=FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString+".aupreset")
+        defer{try? FileManager.default.removeItem(at:temporary)}
+        try PropertyListSerialization.data(fromPropertyList:prepared,format:.xml,options:0).write(to:temporary)
+        try sampler.loadInstrument(at:temporary)
     }
 }

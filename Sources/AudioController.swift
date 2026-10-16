@@ -17,6 +17,7 @@ final class AudioController {
     lazy var externalRack: ExternalInstrumentRack? = try? ExternalInstrumentRack(engine: engine)
     private var externalSounds: [Int: ExternalSound] = [:]
     private var externalStates: [Int: Data] = [:]
+    private var samplerAttacks:[Int:Float]=[:]
     private var levels: [Int: Float] = [:]
     var onError: ((String) -> Void)?
     var offline: Bool { engine.isInManualRenderingMode }
@@ -110,12 +111,13 @@ final class AudioController {
     }
     func configure(_ index: Int, _ layer: Layer) {
         pans[index] = layer.pan
-        if externalSounds[index] != layer.external || externalStates[index] != layer.pluginState {
+        if externalSounds[index] != layer.external || externalStates[index] != layer.pluginState || samplerAttacks[index] != layer.samplerAttackMinimum {
+            samplerAttacks[index]=layer.samplerAttackMinimum
             externalStates[index] = layer.pluginState
             if let sound = layer.external {
                 do { try externalRack?.remove(index) } catch { onError?(error.localizedDescription) }
                 externalSounds[index] = sound
-                externalRack?.load(sound, channel: index) { [weak self] result in
+                externalRack?.load(sound, channel: index,attackMinimum:layer.samplerAttackMinimum) { [weak self] result in
                     guard let self else { return }
                     switch result {
                     case .success:

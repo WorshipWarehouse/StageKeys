@@ -29,6 +29,9 @@ struct SoundSettingsControls: View {
             if layer.midiDestinationID == nil {
                 VStack(spacing:8) {
                     EffectKnob(descriptor:.init(index:0,name:"Sampler Vol",minimum:-60,maximum:12.0412,defaultValue:0,unit:"dB"),value:samplerDB).background(StageTheme.panel,in:RoundedRectangle(cornerRadius:8))
+                    if layer.external?.kind == .samplerPreset {
+                        EffectKnob(descriptor:.init(index:2,name:"Attack Smoothing",minimum:0,maximum:100,defaultValue:0,unit:"ms"),value:Binding(get:{layer.samplerAttackMinimum*1000},set:{layer.channelSettings.samplerAttackMinimum=$0/1000})).background(StageTheme.panel,in:RoundedRectangle(cornerRadius:8))
+                    }
                     EffectKnob(descriptor:.init(index:1,name:"Audio Output · Pan",minimum:-1,maximum:1,defaultValue:0,unit:""),value:$layer.pan).background(StageTheme.panel,in:RoundedRectangle(cornerRadius:8))
                 }.frame(width:165)
             }
