@@ -27,6 +27,12 @@ Smart Control archives are decoded as bounded property-list data without instant
 
 Incoming non-learned CC events now reach imported instruments. Recognized imported macros update active native processing, including nested racks. MIDI learn, source/channel acceptance and host assignments remain in place. Arbitrary MIDI scripts, source arpeggiators/sequencers, bus routing, private synthesizers and the complete channel-strip state remain unfinished.
 
+## Mac UI verification, October 16, 2026
+
+The v0.27 packaged app was verified after unlocking the Mac. Import Sounds archived the real Two Pianos source and imported its referenced Steinway into MainStage Samplers using the native folder chooser. The library displayed one playable Steinway with accessible conversion notes. The imported preset referenced one CAF whose SHA-256 matched the original audio exactly.
+
+Sound Settings exposed both retained source channels. The first channel's preview displayed Equalizer and Chorus plus the unsupported-processing warnings in a scrollable popover. Applying supported processing added both effects to the editor draft; Discard restored the existing sound. Cancelling the library added no module. The saved setlist JSON remained semantically identical to its backup throughout this walkthrough. This validates the UI workflow, not subjective sonic parity or physical iPad performance.
+
 ## iPad architecture and verification
 
 The installed Sunday Keys Mac binary imports AVAudioUnitSampler, AVAudioEngine and AVAudioFile. Its downloaded native catalog refers to sampler AUPRESET instruments and audio files. Sunday Sounds documents a separate locally downloaded library for its standalone iPad/Mac app. Its precise iPad binary implementation, cache/streaming policy and full memory behavior were not inspected or proven.
