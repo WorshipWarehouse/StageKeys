@@ -1,3 +1,7 @@
+## 0.27 active native EXS and processing
+
+Added direct EXS fallback, original consolidated sample playback, active controller/velocity groups, portable preset group metadata, referenced-sampler import and supported MainStage processing preview/apply. Linear effect macros and CC/channel routing affect native audio. Real EXS import and original CAF hashes are verified; group/processing audio regressions pass. Global EXS parameters, exact split-region/loop behavior, complete effect/bypass/MIDI/script/routing parity and physical iPad performance remain incomplete. [Details](NATIVE-EXS-PLAYBACK.md).
+
 ## 0.26 native sampler and MainStage preflight
 
 Added StageKeys Sampler sample-map UI, exact original instrument retention, bounded legacy channel-strip inspection, lossless source archives and persistent compatibility reports. This does not complete native MainStage patch playback: private synthesizers, modern EXS variants and proprietary effects/macro/MIDI state still require translation. No unsupported patch is presented as a faithful playable conversion. [Details](MAINSTAGE-NATIVE.md).

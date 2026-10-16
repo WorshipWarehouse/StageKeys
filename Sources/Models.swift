@@ -65,6 +65,8 @@ struct ImportedMacro: Codable, Equatable, Identifiable {
     var name: String
     var value: Float
     var bindings: [ImportedMacroBinding]
+    var midiCC:Int?
+    var midiChannel:Int?
     var id: Int { index }
 }
 struct ImportedBranch: Codable, Equatable {
@@ -73,6 +75,7 @@ struct ImportedBranch: Codable, Equatable {
     var rack: ImportedRack
     var midi: MIDIProgram?
     var midiEnabled: Bool?
+    var controllerGate:SamplerControllerGate?
     var low = 0
     var high = 127
     var velocityLow = 1
@@ -127,18 +130,27 @@ struct ImportedRack: Codable, Equatable {
             let indices=branches.flatMap(\.sampleLayers)
             guard Set(indices).count==indices.count,indices.count<=64 else{return false}
             for branch in branches {
+                guard branch.controllerGate?.valid ?? true else{return false}
                 if let children=branch.rack.branches,Set(children.flatMap(\.sampleLayers)) != Set(branch.sampleLayers) {return false}
                 guard branch.name.count<=200,!branch.sampleLayers.isEmpty,branch.sampleLayers.allSatisfy({(0..<64).contains($0)}),branch.rack.validate(depth:depth+1),branch.midi.map({$0==$0.validated}) ?? true,(0...127).contains(branch.low),(branch.low...127).contains(branch.high),(1...127).contains(branch.velocityLow),(branch.velocityLow...127).contains(branch.velocityHigh),branch.pan.isFinite,(-1...1).contains(branch.pan),branch.gain.map({$0.isFinite && (0...4).contains($0)}) ?? true else{return false}}
         }
         guard effects.count <= 12, effects.allSatisfy({$0.validate()}), macros.count <= 128,
               Set(macros.map(\.index)).count == macros.count else { return false }
         return macros.allSatisfy { m in
-            (0..<128).contains(m.index) && m.name.count <= 200 && m.value.isFinite && (0...127).contains(m.value) && m.bindings.count <= 128 && m.bindings.allSatisfy { b in
+            (m.midiCC.map{(0...127).contains($0)} ?? true) && (m.midiChannel.map{(0...15).contains($0)} ?? true) && (0..<128).contains(m.index) && m.name.count <= 200 && m.value.isFinite && (0...127).contains(m.value) && m.bindings.count <= 128 && m.bindings.allSatisfy { b in
                 guard let rack=targetRack(b.branchPath ?? [],audioPath:b.audioPath ?? []),rack.effects.indices.contains(b.effect), b.minimum.isFinite, b.maximum.isFinite,
                       let p = AudioEffectCatalog.descriptors(for:rack.effects[b.effect].kind).first(where:{$0.index == b.parameter}) else { return false }
                 return (p.minimum...p.maximum).contains(b.minimum) && (p.minimum...p.maximum).contains(b.maximum) && (!b.logarithmic || (b.minimum > 0 && b.maximum > 0))
             }
         }
+    }
+    mutating func applyMIDI(controller:Int,value:Float,channel:Int)->Bool {
+        let matches=macros.filter{$0.midiCC==controller && ($0.midiChannel==nil || $0.midiChannel==channel)}.map(\.index)
+        for index in matches {setMacro(index,value:value)}
+        var changed = !matches.isEmpty
+        if branches != nil {for i in branches!.indices {if branches![i].rack.applyMIDI(controller:controller,value:value,channel:channel){changed=true}}}
+        if audioRacks != nil {for stage in audioRacks!.indices {for branch in audioRacks![stage].branches.indices {if audioRacks![stage].branches[branch].rack.applyMIDI(controller:controller,value:value,channel:channel){changed=true}}}}
+        return changed
     }
     mutating func setMacro(_ index: Int, value: Float) {
         guard let i = macros.firstIndex(where:{$0.index == index}), value.isFinite else { return }
@@ -309,6 +321,7 @@ struct Setlist: Codable {
             for l in p.layers {
                 if let m = l.midiProgram { guard m == m.validated else { throw SetlistError.invalid } }
                 if let e = l.external {
+                    guard e.nativeSampler.map({$0.valid}) ?? true else{throw SetlistError.invalid}
                     guard e.name.count <= 200, e.program < 128, e.bankMSB < 128, e.bankLSB < 128 else { throw SetlistError.invalid }
                     if e.kind == .audioUnit { guard e.component?.type == 0x61756d75, (e.component?.name.count ?? 201) <= 200 else { throw SetlistError.invalid } }
                     else { guard let f = e.fileName, f == URL(fileURLWithPath: f).lastPathComponent, !f.isEmpty, f.count <= 200 else { throw SetlistError.invalid } }

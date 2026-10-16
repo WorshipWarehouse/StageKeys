@@ -1,3 +1,5 @@
+> Version 0.27 adds active native EXS fallback and partial processing import; see [current scope](NATIVE-EXS-PLAYBACK.md). The 0.26 limitations below describe the earlier preflight-only implementation.
+
 # StageKeys Sampler and MainStage documents — 0.26
 
 StageKeys Sampler is an in-app instrument interface using Apple's system AVAudioUnitSampler, not MainStage's private Sampler plug-in. It exposes the imported sample map: sample/layer/zone counts, root keys, key ranges, velocity ranges and loop status. Existing sampler gain, channel pan and translated processing controls remain available. The map is read-only; this release does not claim a new sample-editing engine.

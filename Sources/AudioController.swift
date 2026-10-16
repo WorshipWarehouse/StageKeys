@@ -124,7 +124,7 @@ final class AudioController {
                         self.filter(index, layer, mod: self.modulationValues[index] ?? 1)
                         self.modulation(index, value: self.modulationValues[index] ?? 1)
                         self.configureEffects(index, layer.effects, force: true)
-                        self.configureImported(index,layer.importedRack)
+                        self.configureImported(index,layer.importedRack ?? layer.external?.nativeSampler?.rack)
                     case .failure(let error):
                         if let e = error as? ExternalInstrumentError, case .superseded = e { return }
                         try? self.externalRack?.remove(index)
@@ -145,11 +145,11 @@ final class AudioController {
         sk_pan(synth, Int32(index), layer.pan)
         sk_block_sustain(synth, Int32(index), layer.blockSustain ? 1 : 0)
         configureEffects(index, layer.effects)
-        configureImported(index,layer.importedRack)
+        configureImported(index,layer.importedRack ?? layer.external?.nativeSampler?.rack)
     }
     private func configureImported(_ index:Int,_ rack:ImportedRack?) {
         if let rack { importedRacks[index]=rack } else {importedRacks[index]=nil}
-        do {try externalRack?.configureParallel(channel:index,branches:rack?.branches,tempo:tempo);try externalRack?.configureImported(channel:index,rack:rack,tempo:tempo)}
+        do {try externalRack?.configureParallel(channel:index,branches:rack?.branches ?? externalSounds[index]?.nativeSampler?.rack.branches,tempo:tempo);try externalRack?.configureImported(channel:index,rack:rack,tempo:tempo)}
         catch {onError?(error.localizedDescription)}
     }
     func audition(_ index: Int, _ layer: Layer) {

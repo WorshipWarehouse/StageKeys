@@ -33,6 +33,7 @@ private final class ImportedBranchVoice {
     let midi=MIDIFXProcessor()
     var plan:ImportedBranch
     var pitches:[Int:UInt8]=[:]
+    var controllers:[Int:Int]=[:]
     init(_ plan:ImportedBranch){self.plan=plan}
     func configure(_ plan:ImportedBranch,tempo:Float) {
         self.plan=plan;output.pan=plan.pan;output.outputVolume=plan.enabled != false ? (plan.gain ?? 1):0
@@ -44,7 +45,7 @@ private final class ImportedBranchVoice {
     }
     func noteOn(_ key:Int,_ pitch:Int,_ velocity:Float,_ source:Int32?) {
         let v=Int((velocity*127).rounded())
-        guard (plan.low...plan.high).contains(pitch),(plan.velocityLow...plan.velocityHigh).contains(v) else{return}
+        guard plan.enabled != false,plan.controllerGate?.accepts(controllers) ?? true,(plan.low...plan.high).contains(pitch),(plan.velocityLow...plan.velocityHigh).contains(v) else{return}
         midi.noteOn(channel:0,key:key,pitch:pitch,velocity:velocity,sourceID:source)
     }
     func sendNote(_ key:Int,_ pitch:Int,_ velocity:Float,_ source:Int32?) {
@@ -55,17 +56,18 @@ private final class ImportedBranchVoice {
         if let note=pitches.removeValue(forKey:key){sampler?.stopNote(note,onChannel:0)}
         for child in children{child.midi.noteOff(channel:0,key:key,force:force)}
     }
-    func control(_ controller:UInt8,_ value:UInt8){sampler?.sendController(controller,withValue:value,onChannel:0);children.forEach{$0.control(controller,value)}}
+    func control(_ controller:UInt8,_ value:UInt8){controllers[Int(controller)]=Int(value);sampler?.sendController(controller,withValue:value,onChannel:0);children.forEach{$0.control(controller,value)}}
     func releaseSource(_ source:Int32){midi.releaseSource(source);children.forEach{$0.releaseSource(source)}}
     func advance(_ time:Double){midi.advance(to:time);children.forEach{$0.advance(time)}}
     func prepareOffline()throws {if let sampler{try SamplerRendering.configure(sampler,offline:true)};for child in children{try child.prepareOffline()}}
-    func panic(){midi.panic();children.forEach{$0.panic()};sampler?.sendController(64,withValue:0,onChannel:0);sampler?.sendController(120,withValue:0,onChannel:0);pitches.removeAll();audioGraph?.reset()}
+    func panic(){controllers[64]=0;midi.panic();children.forEach{$0.panic()};sampler?.sendController(64,withValue:0,onChannel:0);sampler?.sendController(120,withValue:0,onChannel:0);pitches.removeAll();audioGraph?.reset()}
 }
 
 /// All methods run on the main thread, never in a render callback. Owns no engine.
 /// The host must silence held notes before a graph edit and surface thrown errors.
 final class ExternalInstrumentRack {
     private let engine: AVAudioEngine
+    private var controllerValues:[Int:[Int:Int]]=[:]
     let libraryURL: URL
     private struct Voice {
         var unit: AVAudioUnit
@@ -164,6 +166,7 @@ final class ExternalInstrumentRack {
                 do {for plan in branches ?? [] {parallel.append(try makeBranch(plan,state:state,format:voice.filter.inputFormat(forBus:0),tempo:tempo,nodes:&nodes))}}
                 catch {for node in nodes.reversed(){engine.disconnectNodeOutput(node);engine.detach(node)};throw error}
                 voice.parallel.forEach{$0.panic()}
+                for (controller,value) in controllerValues[channel] ?? [:] {parallel.forEach{$0.control(UInt8(controller),UInt8(value))}}
                 for node in voice.parallelNodes.reversed(){engine.disconnectNodeOutput(node);engine.detach(node)}
                 engine.disconnectNodeOutput(voice.unit)
                 if parallel.isEmpty {engine.connect(voice.unit,to:voice.filter,format:nil)}
@@ -273,7 +276,14 @@ final class ExternalInstrumentRack {
             if sampleAccess { sampleRoot.stopAccessingSecurityScopedResource() }
         }
         return try EXSCaptureCompatibility.withCompatiblePreset(url,sampleRoot:sampleRoot) { compatible,root in
-            var sound=try importCompatibleEXS(compatible,sampleRoot:root)
+            var sound:ExternalSound
+            do {sound=try importCompatibleEXS(compatible,sampleRoot:root)}
+            catch {
+                let temporary=FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString+".aupreset")
+                defer{try? FileManager.default.removeItem(at:temporary)}
+                let program=try EXSNative.convert(compatible,sampleRoot:root,to:temporary)
+                sound=try importPreset(temporary,sampleRoot:root);sound.nativeSampler=program
+            }
             sound.name=url.deletingPathExtension().lastPathComponent
             return sound
         }
@@ -326,6 +336,11 @@ final class ExternalInstrumentRack {
               (state["subtype"] as? NSNumber)?.uint32Value == kAudioUnitSubType_Sampler,
               (state["manufacturer"] as? NSNumber)?.uint32Value == kAudioUnitManufacturer_Apple else {
             throw ExternalInstrumentError.unsupportedFormat
+        }
+        var nativeProgram:NativeSamplerProgram?
+        if let metadata=state["StageKeys.NativeSampler"] as? Data {
+            guard metadata.count<=2_000_000,let decoded=try? JSONDecoder().decode(NativeSamplerProgram.self,from:metadata),decoded.valid else{throw ExternalInstrumentError.unsupportedFormat}
+            nativeProgram=decoded
         }
         let references = state["file-references"] as? [String: String] ?? [:]
         guard references.count <= 4096 else { throw ExternalInstrumentError.unsupportedFormat }
@@ -381,7 +396,7 @@ final class ExternalInstrumentRack {
             }
             state["file-references"] = rewritten
             try PropertyListSerialization.data(fromPropertyList: state, format: .xml, options: 0).write(to: preset, options: .atomic)
-            return ExternalSound(kind: .samplerPreset, name: url.deletingPathExtension().lastPathComponent, fileName: preset.lastPathComponent)
+            return ExternalSound(kind: .samplerPreset, name: url.deletingPathExtension().lastPathComponent, fileName: preset.lastPathComponent,nativeSampler:nativeProgram)
         } catch {
             try? FileManager.default.removeItem(at: preset)
             try? FileManager.default.removeItem(at: assets)
@@ -608,8 +623,8 @@ final class ExternalInstrumentRack {
             if let note = voices[channel]?.pitches.removeValue(forKey: key) { midi(channel, 0x80, note, 0) }
         }
     }
-    func control(channel: Int, controller: UInt8, value: UInt8) { precondition(Thread.isMainThread); guard controller < 128, value < 128 else { return };voices[channel]?.parallel.forEach{$0.control(controller,value)}; midi(channel, 0xB0, controller, value) }
-    func sustain(channel: Int, on: Bool) { precondition(Thread.isMainThread); voices[channel]?.parallel.forEach{$0.control(64,on ? 127:0)};midi(channel, 0xB0, 64, on ? 127 : 0) }
+    func control(channel: Int, controller: UInt8, value: UInt8) { precondition(Thread.isMainThread); guard controller < 128, value < 128 else { return };controllerValues[channel,default:[:]][Int(controller)]=Int(value);voices[channel]?.parallel.forEach{$0.control(controller,value)}; midi(channel, 0xB0, controller, value) }
+    func sustain(channel: Int, on: Bool) { precondition(Thread.isMainThread);controllerValues[channel,default:[:]][64]=on ? 127:0; voices[channel]?.parallel.forEach{$0.control(64,on ? 127:0)};midi(channel, 0xB0, 64, on ? 127 : 0) }
     func volume(channel: Int, gain: Float, pan: Float) {
         precondition(Thread.isMainThread)
         voices[channel]?.mixer.outputVolume = max(0, min(4, gain))
@@ -654,6 +669,7 @@ final class ExternalInstrumentRack {
     func panic(_ channel: Int? = nil) {
         precondition(Thread.isMainThread)
         for index in channel.map({ [$0] }) ?? Array(voices.keys) {
+            controllerValues[index,default:[:]][64]=0
             voices[index]?.parallel.forEach{$0.panic()}
             midi(index, 0xB0, 64, 0)
             for note in voices[index]?.pitches.values ?? Dictionary<Int, UInt8>().values { midi(index, 0x80, note, 0) }

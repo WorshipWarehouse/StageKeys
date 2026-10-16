@@ -45,6 +45,8 @@ struct SoundEditor: View {
     @State private var tab = "FX A: Equalizer"
     @State private var plugin = false
     @State private var editingName = false
+    @State private var processingPreview:MainStageProcessing.Draft?
+    @State private var processingIssue:String?
     @State private var auditionToken: UUID?
     init(index: Int, initial: Layer) { self.index = index; _draft = State(initialValue: initial); if initial.midiDestinationID != nil { _tab = State(initialValue: "Settings") } }
     private var tabs: [String] { draft.midiDestinationID != nil ? ["Settings"] : ["FX A: Equalizer", "FX B: Compressor", "Settings"] }
@@ -70,6 +72,33 @@ struct SoundEditor: View {
                     VStack(spacing:12) {
                         ScrollView(.horizontal,showsIndicators:false) { SoundSettingsControls(layer:$draft).frame(minWidth:700) }
                         if draft.external?.kind == .samplerPreset {StageKeysSamplerControls(sound:draft.external!)}
+                        if let report=store.mainStageImportReport {
+                            Menu("Preview MainStage Processing") {
+                                ForEach(Array(report.channels.enumerated()),id:\.offset) {position,channel in
+                                    Button(channel.name) {do{processingPreview=try store.mainStageProcessing(position);processingIssue=nil}catch{processingIssue=error.localizedDescription}}
+                                }
+                            }.buttonStyle(StageButtonStyle()).popover(item:$processingPreview) {preview in
+                                VStack(alignment:.leading,spacing:12) {
+                                    Text("Supported MainStage Processing").font(.headline)
+                                    Text("This appends supported effects and macros, and applies the source key range, transpose and sustain filter to the draft. It does not convert the complete patch.").font(.caption)
+                                    ScrollView {VStack(alignment:.leading,spacing:8) {
+                                        ForEach(Array(preview.effects.enumerated()),id:\.offset){_,effect in Text(effect.title)}
+                                        ForEach(Array(preview.issues.enumerated()),id:\.offset){_,issue in Text(issue).font(.caption).foregroundStyle(.secondary)}
+                                    }}
+                                    Button("Apply Supported Processing") {
+                                        do {
+                                            draft.importedRack=try preview.appending(to:draft.importedRack ?? draft.external?.nativeSampler?.rack)
+                                            if let low=preview.low,let high=preview.high {draft.low=low;draft.high=high}
+                                            if let transpose=preview.transpose {draft.transpose=transpose}
+                                            if let block=preview.blockSustain {draft.blockSustain=block}
+                                            processingPreview=nil
+                                        }
+                                        catch{processingIssue=error.localizedDescription;processingPreview=nil}
+                                    }.buttonStyle(StageButtonStyle()).disabled(preview.effects.isEmpty)
+                                }.padding(20).frame(width:480,height:360)
+                            }
+                            if let processingIssue {Text(processingIssue).font(.caption).foregroundStyle(.secondary)}
+                        }
                         if draft.importedRack != nil { ImportedRackControls(layer:$draft) }
                         if draft.name.hasPrefix("SK App Felt Piano") || draft.name == "SK Felt Piano | Room" {
                             Button("Use Felt Piano | Room Voicing") {

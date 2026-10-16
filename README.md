@@ -1,3 +1,7 @@
+## Version 0.27
+
+Modern EXS instruments can fall back to direct native sample-map translation, including active velocity/controller-selected groups and portable native group metadata. Referenced MainStage samplers can be imported without launching MainStage; supported source EQ/Gain/Chorus, linear macros and MIDI settings can be previewed and applied to a sound draft. Real Steinway import preserves the original CAF hash and renders native audio. Full channel-strip/DSP parity and physical iPad performance remain unfinished. [Scope and verification](Docs/NATIVE-EXS-PLAYBACK.md).
+
 ## Version 0.26
 
 StageKeys Sampler now shows imported sample maps and retains original EXS/AUPRESET instruments. MainStage patch import archives source documents unchanged and reports instrument/effects/macro/MIDI compatibility without opening MainStage or resampling. Full playable `.cst` conversion is **not yet implemented**; unsupported processing blocks conversion instead of being silently dropped. [Native import scope and limitations](Docs/MAINSTAGE-NATIVE.md).

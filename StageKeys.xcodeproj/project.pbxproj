@@ -28,6 +28,7 @@
 		1BEBCECF4552A195F45BD1C1 /* Airwindows-MIT.txt in Resources */ = {isa = PBXBuildFile; fileRef = D4B91BEF3486CE615B3CCBF7 /* Airwindows-MIT.txt */; };
 		1EEF2ACBE84AA7387495491E /* SessionSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA769779A45E704F134E0AB4 /* SessionSettings.swift */; };
 		237DC2123ABFA6DD9920D15B /* Store.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE199D254288342CC8E4434F /* Store.swift */; };
+		29478AEDD7FCDFBF9FD1E7E5 /* EXSNative.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF7EC5A09FDE6710F6A75BDB /* EXSNative.swift */; };
 		29A0434794956478ED9DF52F /* IBMPlexSans-SemiBold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = C5A92EE64D708FD2F3756A43 /* IBMPlexSans-SemiBold.ttf */; };
 		2F7A8513730BD516735B542C /* PluginInterface.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C67BD4C25A3354E8DE3CFFF /* PluginInterface.swift */; };
 		3BE6A59ECF59A9B12069F2EE /* MIDIFXProcessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E2E4B0335A0CF004B70F310 /* MIDIFXProcessor.swift */; };
@@ -50,6 +51,7 @@
 		5B101BD32A02729CC503E34B /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC0938544D22DFEF7A932295 /* Models.swift */; };
 		5FC121D86AE7721D0C6436FF /* IBMPlexSans-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 6A40448B54801085C9ABFA93 /* IBMPlexSans-Regular.ttf */; };
 		5FEA052420C2CE54C897C87D /* EQBandwidth.swift in Sources */ = {isa = PBXBuildFile; fileRef = EDB66D62EF57AEA9A6308A9B /* EQBandwidth.swift */; };
+		62E6379C6EF8630C450EFBCB /* EXS-Parser-MIT.md in Resources */ = {isa = PBXBuildFile; fileRef = CFB410416D53204E71F7C3D6 /* EXS-Parser-MIT.md */; };
 		63A8C34816236B73E74A5E6A /* ExternalInstruments.swift in Sources */ = {isa = PBXBuildFile; fileRef = 08168477F8D489D51C2417D1 /* ExternalInstruments.swift */; };
 		6B50034CD5A5AA38F981D2D2 /* StageKeysApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7829D37C585858D39206C231 /* StageKeysApp.swift */; };
 		6C6F06EC02A7401D2B821922 /* ImportedAudioGraph.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D0BBC46040EB3A625B8C95C /* ImportedAudioGraph.swift */; };
@@ -60,6 +62,7 @@
 		76C87F6B5D92807C0339F08B /* SoundLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30834EBBB61FCB1DBCCC76DA /* SoundLibrary.swift */; };
 		77202719BCBF2C224DD70B16 /* SoundBrowser.swift in Sources */ = {isa = PBXBuildFile; fileRef = D518EAD59E323D92284C88FE /* SoundBrowser.swift */; };
 		78737E1EAAFD7CF229FE3B25 /* MIDIControlTarget.swift in Sources */ = {isa = PBXBuildFile; fileRef = C00F1F02C3CF4226328A4FA9 /* MIDIControlTarget.swift */; };
+		789B8CDE6788D56C6313A863 /* MainStageProcessing.swift in Sources */ = {isa = PBXBuildFile; fileRef = 962F0837772F2E48134446E8 /* MainStageProcessing.swift */; };
 		7A0124DBF0F2638F5E9DDBFC /* StageKeysSampler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 270A555B44B7489CF5811D96 /* StageKeysSampler.swift */; };
 		7A23F029FF9E9753095632A8 /* SessionSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA769779A45E704F134E0AB4 /* SessionSettings.swift */; };
 		7A595F13A1C14CD67615364C /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 63009DD940871D3C58C024DD /* AVFoundation.framework */; };
@@ -75,6 +78,7 @@
 		991E4305E1B6D5C513D6885C /* ExternalSound.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96C75668AD30F778CBF195C1 /* ExternalSound.swift */; };
 		A2681279A4C623A78586EF44 /* SamplerInterchange.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3A3010041D10648ABE486A3 /* SamplerInterchange.swift */; };
 		A6204948C1A623AC25E571A4 /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 63009DD940871D3C58C024DD /* AVFoundation.framework */; };
+		A65CF74F62BA2486A7B514DB /* MainStageProcessing.swift in Sources */ = {isa = PBXBuildFile; fileRef = 962F0837772F2E48134446E8 /* MainStageProcessing.swift */; };
 		A6ED9CB9388F59D4333D10D0 /* ExternalInstruments.swift in Sources */ = {isa = PBXBuildFile; fileRef = 08168477F8D489D51C2417D1 /* ExternalInstruments.swift */; };
 		A7343547A2AE81B52709813A /* MIDIControlLearnView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A18F515EF20650FB9ED6539 /* MIDIControlLearnView.swift */; };
 		AA65A10A28FC2F20B9835B55 /* EXSCaptureCompatibility.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06CB1E47D8766D6FCE38E05D /* EXSCaptureCompatibility.swift */; };
@@ -98,6 +102,7 @@
 		D61AE6EB00FD1BAC44B161D7 /* CreamCoat.c in Sources */ = {isa = PBXBuildFile; fileRef = C5F13CB955DB56C7E098A4C8 /* CreamCoat.c */; };
 		D6EA0F579BC15B2637C6E13C /* LibraryBrowserModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8540F9651B0A97E3C0F205F /* LibraryBrowserModel.swift */; };
 		DB8277B90A78F628B5E93B7E /* libz.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = EFA6073004859909EFFC68D0 /* libz.tbd */; };
+		DC7AC271AD9F1F8770BBD4DD /* EXSNative.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF7EC5A09FDE6710F6A75BDB /* EXSNative.swift */; };
 		DC860CA2E82E9022119BDDBE /* SnapshotMorph.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CC60EE6D79434D00675DEA5 /* SnapshotMorph.swift */; };
 		DDD1EB7AE02409868D8DB436 /* AbletonArchive.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88BB0E7A8D36998B1926024F /* AbletonArchive.swift */; };
 		E1B12E49145BDC1B081B3E00 /* AbletonImport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9EB566A0205BD367E7BCCFA6 /* AbletonImport.swift */; };
@@ -106,6 +111,7 @@
 		F23391F333EF05E0C864E0D5 /* BuiltinEffectUnit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 432055172FE18739B39F45A4 /* BuiltinEffectUnit.swift */; };
 		F8F66DB7421CBFA480A2B92C /* MIDIControlTarget.swift in Sources */ = {isa = PBXBuildFile; fileRef = C00F1F02C3CF4226328A4FA9 /* MIDIControlTarget.swift */; };
 		FA2418D1812AE56E768C4CB3 /* EqualizerEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED265E8EFF001037EAF7DA64 /* EqualizerEditor.swift */; };
+		FACD85820BEFDE0E65386E3A /* EXS-Parser-MIT.md in Resources */ = {isa = PBXBuildFile; fileRef = CFB410416D53204E71F7C3D6 /* EXS-Parser-MIT.md */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -138,11 +144,13 @@
 		7EDCEE28BAED5A4C8502D9CA /* Bridge.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = Bridge.h; sourceTree = "<group>"; };
 		84D7BB117F100F6E2DF5A944 /* StageKeysMobile.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = StageKeysMobile.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		88BB0E7A8D36998B1926024F /* AbletonArchive.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AbletonArchive.swift; sourceTree = "<group>"; };
+		962F0837772F2E48134446E8 /* MainStageProcessing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainStageProcessing.swift; sourceTree = "<group>"; };
 		96C75668AD30F778CBF195C1 /* ExternalSound.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExternalSound.swift; sourceTree = "<group>"; };
 		9E2E4B0335A0CF004B70F310 /* MIDIFXProcessor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MIDIFXProcessor.swift; sourceTree = "<group>"; };
 		9EB566A0205BD367E7BCCFA6 /* AbletonImport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AbletonImport.swift; sourceTree = "<group>"; };
 		A1A45EC813D367F33C720602 /* IBMPlexSans-Bold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "IBMPlexSans-Bold.ttf"; sourceTree = "<group>"; };
 		A5AC6701C177B156C5256CD0 /* AudioController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioController.swift; sourceTree = "<group>"; };
+		AF7EC5A09FDE6710F6A75BDB /* EXSNative.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EXSNative.swift; sourceTree = "<group>"; };
 		B9E6554DAEB5DF850E413F36 /* AudioEffectParameters.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioEffectParameters.swift; sourceTree = "<group>"; };
 		BA769779A45E704F134E0AB4 /* SessionSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionSettings.swift; sourceTree = "<group>"; };
 		BF19AE10AF935A93F773287B /* MainStagePatch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainStagePatch.swift; sourceTree = "<group>"; };
@@ -152,6 +160,7 @@
 		C5F13CB955DB56C7E098A4C8 /* CreamCoat.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = CreamCoat.c; sourceTree = "<group>"; };
 		C77E58B7DF2BC246493953B0 /* StageKeys.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; path = StageKeys.icns; sourceTree = "<group>"; };
 		CA27432EBE775B734A1C07E5 /* SetlistLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetlistLibrary.swift; sourceTree = "<group>"; };
+		CFB410416D53204E71F7C3D6 /* EXS-Parser-MIT.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = "EXS-Parser-MIT.md"; sourceTree = "<group>"; };
 		D4B91BEF3486CE615B3CCBF7 /* Airwindows-MIT.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = "Airwindows-MIT.txt"; sourceTree = "<group>"; };
 		D4F3A33EDFC20447010E3E7E /* Editors.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Editors.swift; sourceTree = "<group>"; };
 		D518EAD59E323D92284C88FE /* SoundBrowser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SoundBrowser.swift; sourceTree = "<group>"; };
@@ -202,6 +211,7 @@
 			isa = PBXGroup;
 			children = (
 				D4B91BEF3486CE615B3CCBF7 /* Airwindows-MIT.txt */,
+				CFB410416D53204E71F7C3D6 /* EXS-Parser-MIT.md */,
 			);
 			path = Licenses;
 			sourceTree = "<group>";
@@ -266,12 +276,14 @@
 				EDB66D62EF57AEA9A6308A9B /* EQBandwidth.swift */,
 				ED265E8EFF001037EAF7DA64 /* EqualizerEditor.swift */,
 				06CB1E47D8766D6FCE38E05D /* EXSCaptureCompatibility.swift */,
+				AF7EC5A09FDE6710F6A75BDB /* EXSNative.swift */,
 				08168477F8D489D51C2417D1 /* ExternalInstruments.swift */,
 				59EF39ACFF279A3358FB357E /* ExternalMIDIOutput.swift */,
 				96C75668AD30F778CBF195C1 /* ExternalSound.swift */,
 				0D0BBC46040EB3A625B8C95C /* ImportedAudioGraph.swift */,
 				E8540F9651B0A97E3C0F205F /* LibraryBrowserModel.swift */,
 				BF19AE10AF935A93F773287B /* MainStagePatch.swift */,
+				962F0837772F2E48134446E8 /* MainStageProcessing.swift */,
 				4A18F515EF20650FB9ED6539 /* MIDIControlLearnView.swift */,
 				C00F1F02C3CF4226328A4FA9 /* MIDIControlTarget.swift */,
 				9E2E4B0335A0CF004B70F310 /* MIDIFXProcessor.swift */,
@@ -378,6 +390,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				1BEBCECF4552A195F45BD1C1 /* Airwindows-MIT.txt in Resources */,
+				FACD85820BEFDE0E65386E3A /* EXS-Parser-MIT.md in Resources */,
 				43BEEAD5F32858CBE1D15390 /* IBMPlexSans-Bold.ttf in Resources */,
 				9390F437E14C43D331CE990B /* IBMPlexSans-Regular.ttf in Resources */,
 				29A0434794956478ED9DF52F /* IBMPlexSans-SemiBold.ttf in Resources */,
@@ -391,6 +404,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				C676D610CDA685ABB7E711AC /* Airwindows-MIT.txt in Resources */,
+				62E6379C6EF8630C450EFBCB /* EXS-Parser-MIT.md in Resources */,
 				B1D2C0303B3EBD357A3237FD /* IBMPlexSans-Bold.ttf in Resources */,
 				5FC121D86AE7721D0C6436FF /* IBMPlexSans-Regular.ttf in Resources */,
 				5880ACCB6A3F70B1F11D9C6F /* IBMPlexSans-SemiBold.ttf in Resources */,
@@ -415,6 +429,7 @@
 				14BF372C190E5C655A0C5B32 /* CreamCoat.c in Sources */,
 				7CE395179776D7033F1C371C /* EQBandwidth.swift in Sources */,
 				AA65A10A28FC2F20B9835B55 /* EXSCaptureCompatibility.swift in Sources */,
+				29478AEDD7FCDFBF9FD1E7E5 /* EXSNative.swift in Sources */,
 				B8416DBF27959203D9B4BF44 /* Editors.swift in Sources */,
 				FA2418D1812AE56E768C4CB3 /* EqualizerEditor.swift in Sources */,
 				63A8C34816236B73E74A5E6A /* ExternalInstruments.swift in Sources */,
@@ -428,6 +443,7 @@
 				085A3A95E7337305564BF6F4 /* MIDIInput.swift in Sources */,
 				BD5C35B6C4653F9D14F7828C /* MIDIPrograms.swift in Sources */,
 				AE7C2C135DCBDDF5E103EA55 /* MainStagePatch.swift in Sources */,
+				789B8CDE6788D56C6313A863 /* MainStageProcessing.swift in Sources */,
 				9298D4E48695EABF6381E98D /* Models.swift in Sources */,
 				AD43F530C2349718EBE26E3B /* PatchWorkflowViews.swift in Sources */,
 				AF0E00294717C4949C53AEFC /* PerformanceControls.swift in Sources */,
@@ -463,6 +479,7 @@
 				D61AE6EB00FD1BAC44B161D7 /* CreamCoat.c in Sources */,
 				5FEA052420C2CE54C897C87D /* EQBandwidth.swift in Sources */,
 				1628164B90370C3CF4A9CAA0 /* EXSCaptureCompatibility.swift in Sources */,
+				DC7AC271AD9F1F8770BBD4DD /* EXSNative.swift in Sources */,
 				CF11F15C55378A75465EDE95 /* Editors.swift in Sources */,
 				7FE02C50E0737C924562FDCE /* EqualizerEditor.swift in Sources */,
 				A6ED9CB9388F59D4333D10D0 /* ExternalInstruments.swift in Sources */,
@@ -476,6 +493,7 @@
 				B5BB778F702D378AEDE8E666 /* MIDIInput.swift in Sources */,
 				0AE3EF986C8F8C67E7E699E7 /* MIDIPrograms.swift in Sources */,
 				8B02C35130C5B97BE58EFC51 /* MainStagePatch.swift in Sources */,
+				A65CF74F62BA2486A7B514DB /* MainStageProcessing.swift in Sources */,
 				5B101BD32A02729CC503E34B /* Models.swift in Sources */,
 				07872334804148E557BB8C0A /* PatchWorkflowViews.swift in Sources */,
 				B77DD85A27B1B75F27570671 /* PerformanceControls.swift in Sources */,
@@ -576,7 +594,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 26;
+				CURRENT_PROJECT_VERSION = 27;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
@@ -602,7 +620,7 @@
 					"IBMPlexSans-SemiBold.ttf",
 					"IBMPlexSans-Bold.ttf",
 				);
-				MARKETING_VERSION = 0.26.0;
+				MARKETING_VERSION = 0.27.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
@@ -690,7 +708,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 26;
+				CURRENT_PROJECT_VERSION = 27;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -710,7 +728,7 @@
 					"IBMPlexSans-SemiBold.ttf",
 					"IBMPlexSans-Bold.ttf",
 				);
-				MARKETING_VERSION = 0.26.0;
+				MARKETING_VERSION = 0.27.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";

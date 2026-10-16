@@ -21,6 +21,7 @@ enum MainStagePatch {
     }
     struct Report:Codable,Equatable {
         var version=1
+        var sourceArchiveID:String?
         var name:String
         var channels:[Channel]
         var blockers:[String]
@@ -73,6 +74,21 @@ enum MainStagePatch {
             start=range.upperBound
         }
         return Array(Set(names)).sorted()
+    }
+    static func findSamplerInstruments(_ names:Set<String>,in folder:URL)throws->[URL] {
+        guard !names.isEmpty,names.count<=64 else{throw Failure.invalid("Invalid instrument reference list.")}
+        guard let files=FileManager.default.enumerator(at:folder,includingPropertiesForKeys:[.isRegularFileKey,.isSymbolicLinkKey]) else{throw Failure.invalid("Could not read the selected instrument folder.")}
+        var result:[URL]=[],visited=0
+        for case let file as URL in files {
+            visited+=1;guard visited<=100_000 else{throw Failure.invalid("The selected folder contains too many files; choose a narrower instrument/sample folder.")}
+            if files.level>24{files.skipDescendants();continue}
+            let attributes=try file.resourceValues(forKeys:[.isRegularFileKey,.isSymbolicLinkKey])
+            if attributes.isSymbolicLink==true{files.skipDescendants();continue}
+            if attributes.isRegularFile==true,file.pathExtension.lowercased()=="exs",names.contains(file.lastPathComponent) {
+                result.append(file);guard result.count<=128 else{throw Failure.invalid("Too many duplicate instrument references.")}
+            }
+        }
+        return result
     }
     static func inspect(_ patch:URL)throws->Report {
         guard patch.pathExtension.lowercased()=="patch",(try patch.resourceValues(forKeys:[.isDirectoryKey,.isSymbolicLinkKey])).isDirectory==true,

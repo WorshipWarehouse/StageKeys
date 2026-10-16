@@ -16,6 +16,7 @@ sources=(
     "$repo/Sources/MIDIPrograms.swift"
     "$repo/Sources/MIDIFXProcessor.swift"
     "$repo/Sources/MIDIInput.swift"
+    "$repo/Sources/EXSNative.swift"
     "$repo/Sources/ExternalSound.swift"
     "$repo/Sources/EXSCaptureCompatibility.swift"
     "$repo/Sources/BuiltinEffectUnit.swift"
@@ -29,12 +30,13 @@ sources=(
     "$repo/Sources/SundayFactoryVoicing.swift"
     "$repo/Sources/StageKeysSampler.swift"
     "$repo/Sources/MainStagePatch.swift"
+    "$repo/Sources/MainStageProcessing.swift"
     "$repo/Sources/SoundLibrary.swift"
     "$repo/Sources/LibraryBrowserModel.swift"
     "$repo/Sources/SnapshotMorph.swift"
     "$repo/Sources/Store.swift"
 )
-if (( $# )); then tests=("$@"); else tests=(LibraryBrowserTests SoundRatingTests LibraryNoteRangeTests SoundLibraryTests ImportedSoundRetentionTests MainStagePatchTests StageKeysSamplerTests); fi
+if (( $# )); then tests=("$@"); else tests=(LibraryBrowserTests SoundRatingTests LibraryNoteRangeTests SoundLibraryTests ImportedSoundRetentionTests MainStagePatchTests StageKeysSamplerTests MainStageProcessingTests NativeSamplerGroupTests); fi
 for test in "${tests[@]}"; do
     xcrun swiftc -DDEBUG -import-objc-header "$repo/Sources/Bridge.h" \
         -module-cache-path "$build/modules" "${sources[@]}" "$repo/Tests/$test.swift" \

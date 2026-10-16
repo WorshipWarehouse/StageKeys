@@ -583,6 +583,18 @@ final class PerformanceStore: ObservableObject {
         lastTaps.append(now); lastTaps = Array(lastTaps.suffix(5))
         if lastTaps.count >= 2 { let interval = now.timeIntervalSince(lastTaps[0]) / Double(lastTaps.count - 1); updateTempo(min(300, max(20, (60 / interval).rounded()))) }
     }
+    func applyImportedController(_ controller:Int,value:UInt8,channel:Int) {
+        guard (0...127).contains(controller),(0...15).contains(channel),![120,123].contains(controller) else{return}
+        for index in patch.layers.indices where patch.layers[index].loaded {
+            let layer=patch.layers[index]
+            if controller==64 && layer.blockSustain {continue}
+            audio.externalRack?.control(channel:index,controller:UInt8(controller),value:value)
+            if var rack=layer.importedRack,rack.applyMIDI(controller:controller,value:Float(value),channel:channel) {
+                setlist.patches[selected].layers[index].importedRack=rack
+                audio.configure(index,setlist.patches[selected].layers[index])
+            }
+        }
+    }
     private func handleMIDI(_ status: UInt8, _ a: UInt8, _ b: UInt8, source: Int32) {
         midiActivity.toggle()
         midiLog.insert((midiSources.first(where: { $0.id == source })?.name ?? "MIDI") + String(format: " · Ch %02d · %02X · %d · %d", Int(status & 15) + 1, status & 0xf0, a, b), at: 0)
@@ -594,6 +606,7 @@ final class PerformanceStore: ObservableObject {
         case 0x90: if b == 0 { hardwareOff(source: source, channel: Int(status & 15), note: Int(a)) } else { hardwareOn(source: source, channel: Int(status & 15), note: Int(a), velocity: Float(velocityMinimum) / 127 + Float(b)/127 * Float(velocityMaximum-velocityMinimum)/127) }
         case 0x80: hardwareOff(source: source, channel: Int(status & 15), note: Int(a))
         case 0xb0:
+            if learningTarget == nil && learning == nil {applyImportedController(Int(a),value:b,channel:channel)}
             if a == 1 { modWheel = Float(b)/127 }
             else if a == 64 { let pedal = PedalSource(source: source, channel: Int(status & 15)); if b >= 64 { pedalSources.insert(pedal) } else { pedalSources.remove(pedal) }; applySustain() }
             else if a == 120 || a == 123 { panic() }
@@ -691,7 +704,11 @@ final class PerformanceStore: ObservableObject {
             var layer=Layer(name:sound.name,instrument:-1,gain:0.5);layer.external=sound;layer.importedRack=conversion.rack;layer.midiProgram=conversion.midi
             return (sound,conversion.warnings,layer)
         }
-        if let root=sampleRoot {return (try url.pathExtension.lowercased()=="exs" ? rack.importEXS(url,sampleRoot:root) : rack.importPreset(url,sampleRoot:root),nil,nil)}
+        if let root=sampleRoot {
+            let sound=try url.pathExtension.lowercased()=="exs" ? rack.importEXS(url,sampleRoot:root) : rack.importPreset(url,sampleRoot:root)
+            if let program=sound.nativeSampler {var layer=Layer(name:sound.name,instrument:-1,gain:0.5);layer.external=sound;layer.importedRack=program.rack;return (sound,program.notes,layer)}
+            return (sound,nil,nil)
+        }
         return (try rack.importSound(url),nil,nil)
     }
     private func installLibrarySound(_ url:URL,sampleRoot:URL?,id:String?=nil)throws->ExternalSound {
@@ -720,12 +737,55 @@ final class PerformanceStore: ObservableObject {
             return try installLibrarySound(url,sampleRoot:sampleRoot)
         }catch{message=error.localizedDescription;return nil}
     }
+    func mainStageProcessing(_ channel:Int)throws->MainStageProcessing.Draft {
+        guard let report=mainStageImportReport,let id=report.sourceArchiveID,UUID(uuidString:id) != nil,report.channels.indices.contains(channel) else{throw MainStagePatch.Failure.invalid("Import the MainStage source patch again to preview its processing.")}
+        let root=saveURL.deletingLastPathComponent().appendingPathComponent("MainStage Sources/"+id+"/Source.patch",isDirectory:true)
+        let document=try PropertyListSerialization.propertyList(from:MainStagePatch.read(root.appendingPathComponent("data.plist"),in:root),options:[],format:nil) as? [String:Any]
+        let channels=document?["channels"] as? [[String:Any]]
+        let source=channels?.first(where:{$0["Filename"] as? String==report.channels[channel].file})
+        var draft=try MainStageProcessing.translate(MainStagePatch.read(root.appendingPathComponent(report.channels[channel].file),in:root),channelID:source?["Channel_instID"] as? Int)
+        draft.blockSustain=source?["Channel_filterSustainPedal"] as? Bool
+        return draft
+    }
+    func importMainStageSamplers(_ folder:URL) {
+        guard !libraryImportBusy,let report=mainStageImportReport else{return}
+        let names=Set(report.channels.flatMap(\.instruments))
+        guard !names.isEmpty,names.count<=64 else{libraryImportProgress="No supported EXS references were found in this source patch.";return}
+        libraryImportBusy=true
+        Task { @MainActor in
+            let access=folder.startAccessingSecurityScopedResource()
+            defer{libraryImportBusy=false;if access{folder.stopAccessingSecurityScopedResource()}}
+            do {
+                let files=try MainStagePatch.findSamplerInstruments(names,in:folder)
+                var imported=0,skipped=0,failures:[String]=[]
+                for name in names.sorted() {
+                    let matches=files.filter{$0.lastPathComponent==name}
+                    guard matches.count==1 else{failures.append(name+": "+(matches.isEmpty ? "instrument not found in the selected folder":"multiple matches; choose a narrower folder"));continue}
+                    let file=matches[0]
+                    libraryImportProgress="Importing original sampler instrument: "+name
+                    await Task.yield()
+                    do {
+                        let id="mainstage-instrument-"+(try AbletonArchive.sha256(file))
+                        if librarySounds.contains(where:{$0.id==id}){skipped+=1;continue}
+                        _ = try installLibrarySound(file,sampleRoot:folder,id:id)
+                        if let index=librarySounds.firstIndex(where:{$0.id==id}) {
+                            var entries=librarySounds;entries[index].collection="MainStage Samplers"
+                            try SoundLibrary(url:saveURL.deletingLastPathComponent().appendingPathComponent("sound-library.json")).write(entries);librarySounds=entries
+                        }
+                        imported+=1
+                    }catch{failures.append(name+": "+error.localizedDescription)}
+                }
+                libraryImportProgress="Imported \(imported) original sampler instruments; \(skipped) already present. Channel-strip effects are separate: preview supported processing in Sound Settings. "+failures.joined(separator:"; ")
+            }catch{libraryImportProgress=error.localizedDescription}
+        }
+    }
     func importMainStagePatch(_ url:URL) {
         guard !libraryImportBusy else{return}
         let access=url.startAccessingSecurityScopedResource();defer{if access{url.stopAccessingSecurityScopedResource()}}
         do {
             let directory=saveURL.deletingLastPathComponent().appendingPathComponent("MainStage Sources",isDirectory:true).appendingPathComponent(UUID().uuidString,isDirectory:true)
-            let report=try MainStagePatch.retain(url,to:directory)
+            var report=try MainStagePatch.retain(url,to:directory)
+            report.sourceArchiveID=directory.lastPathComponent
             let encoder=JSONEncoder();encoder.outputFormatting=[.prettyPrinted,.sortedKeys]
             try encoder.encode(report).write(to:saveURL.deletingLastPathComponent().appendingPathComponent("mainstage-import-report.json"),options:.atomic)
             mainStageImportReport=report
@@ -834,7 +894,7 @@ final class PerformanceStore: ObservableObject {
     }
     func addExternal(_ sound: ExternalSound, index: Int) {
         var l = Layer(name: sound.name, instrument: -1, gain: 0.65)
-        l.id = patch.layers[index].id; l.external = sound; commitLayer(index, l)
+        l.id = patch.layers[index].id; l.external = sound;l.importedRack=sound.nativeSampler?.rack; commitLayer(index, l)
     }
     #if os(macOS)
     func openHostPatch(index: Int) {

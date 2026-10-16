@@ -64,7 +64,7 @@ struct ImportedRackControls: View {
                 if !rack.macros.isEmpty {
                     LazyVGrid(columns:[GridItem(.adaptive(minimum:140))],spacing:8) {
                         ForEach(rack.macros) { macro in
-                            EffectKnob(descriptor:.init(index:macro.index,name:macro.name,minimum:0,maximum:127,defaultValue:macro.value,unit:""),value:Binding(get:{layer.importedRack?.macros.first(where:{$0.index==macro.index})?.value ?? macro.value},set:{layer.importedRack?.setMacro(macro.index,value:$0)}))
+                            EffectKnob(descriptor:.init(index:macro.index,name:macro.name+(macro.midiCC.map{" · CC\($0)"} ?? ""),minimum:0,maximum:127,defaultValue:macro.value,unit:""),value:Binding(get:{layer.importedRack?.macros.first(where:{$0.index==macro.index})?.value ?? macro.value},set:{layer.importedRack?.setMacro(macro.index,value:$0)}))
                         }
                     }
                 }

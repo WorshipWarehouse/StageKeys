@@ -20,6 +20,7 @@ struct ExternalSound: Codable, Hashable {
     var program: UInt8 = 0
     var bankMSB: UInt8 = 121
     var bankLSB: UInt8 = 0
+    var nativeSampler:NativeSamplerProgram?
 }
 
 
