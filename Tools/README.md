@@ -1,3 +1,16 @@
+# Native MainStage source inspection
+
+The current no-resampling path is documented in [MAINSTAGE-NATIVE.md](../Docs/MAINSTAGE-NATIVE.md). Compile the read-only inspector with:
+
+```sh
+xcrun swiftc Sources/MainStagePatch.swift Tools/InspectMainStage.swift -o /tmp/InspectMainStage
+/tmp/InspectMainStage /path/to/selected/patch-or-library /path/to/private/report.json
+```
+
+This inspects source data without loading plug-ins or opening MainStage. The app's import panel retains source bundles and reports unsupported processing. It does not yet publish a fully translated playable MainStage patch. Reports and source assets remain personal and must not be committed.
+
+The capture instructions below are historical tooling; they are not used by the native import workflow.
+
 # MainStage capture conversion
 
 MainStage `.patch` bundles contain channel-strip `.cst` instrument/effect settings, not standalone sample audio. StageKeys cannot load ES2, Retro Synth, Sculpture or other MainStage-only instruments directly. This tool converts **Auto Sampler captures** of those patches into managed Apple AUSampler `.aupreset` instruments with their audio copied into StageKeys. MainStage is needed to create the capture, but not to play the converted sound.

@@ -3,24 +3,36 @@ import UniformTypeIdentifiers
 
 struct SoundImportView:View {
     @EnvironmentObject private var store:PerformanceStore
-    private enum ImportChoice { case file, library, samples }
+    private enum ImportChoice { case file, library, samples, mainStage }
     @State private var choosing=false
     @State private var choice:ImportChoice = .file
     @State private var pending:URL?
     @State private var status:String?
     var body:some View {
-        EditorFrame(title:"Import Sounds",width:650,height:480) {
+        EditorFrame(title:"Import Sounds",width:650,height:640) {
             VStack(alignment:.leading,spacing:20) {
                 Text("Add sounds to your library").font(StageTheme.font(21,weight:.bold))
                 Text("Imported sounds appear in My Sounds and can be added to any patch.").foregroundStyle(.secondary)
-                Button{choice = .file;choosing=true}label:{HStack{Image(systemName:"plus.circle.fill").font(.title);VStack(alignment:.leading,spacing:4){Text("Choose a Sound File").font(.headline);Text("WAV · AIFF · CAF · SF2 · DLS · EXS · AUPRESET · ADG · ALP").font(.caption)};Spacer();Image(systemName:"chevron.right")}.padding(20).frame(maxWidth:.infinity,alignment:.leading)}.buttonStyle(.plain).background(StageTheme.panel,in:RoundedRectangle(cornerRadius:10))
+                Button{choice = .file;choosing=true}label:{HStack{Image(systemName:"plus.circle.fill").font(.title);VStack(alignment:.leading,spacing:4){Text("Choose a Sound File").font(.headline);Text("StageKeys Sampler · EXS · AUPRESET · audio · sound banks · ADG · ALP").font(.caption)};Spacer();Image(systemName:"chevron.right")}.padding(20).frame(maxWidth:.infinity,alignment:.leading)}.buttonStyle(.plain).background(StageTheme.panel,in:RoundedRectangle(cornerRadius:10))
                 Button{choice = .library;choosing=true}label:{HStack{Image(systemName:"folder.badge.plus").font(.title);VStack(alignment:.leading,spacing:4){Text("Import a Sampler Library Folder").font(.headline);Text("Add EXS, AUPRESET or Ableton ADG instruments and their samples").font(.caption)};Spacer();Image(systemName:"chevron.right")}.padding(20).frame(maxWidth:.infinity,alignment:.leading)}.buttonStyle(.plain).background(StageTheme.panel,in:RoundedRectangle(cornerRadius:10))
+                Button{choice = .mainStage;choosing=true}label:{HStack{Image(systemName:"pianokeys").font(.title);VStack(alignment:.leading,spacing:4){Text("Import a MainStage Patch").font(.headline);Text("Preserve the source and check instruments, effects, macros and MIDI compatibility").font(.caption)};Spacer();Image(systemName:"chevron.right")}.padding(20).frame(maxWidth:.infinity,alignment:.leading)}.buttonStyle(.plain).background(StageTheme.panel,in:RoundedRectangle(cornerRadius:10))
+                if let report=store.mainStageImportReport {
+                    DisclosureGroup("Conversion Report · \(report.name)") {
+                        ScrollView {VStack(alignment:.leading,spacing:6) {
+                            ForEach(Array(report.channels.enumerated()),id:\.offset) {_,channel in
+                                Text(channel.name+": "+channel.devices.map(\.name).joined(separator:", ")).font(.caption)
+                                if !channel.instruments.isEmpty {Text(channel.instruments.joined(separator:", ")).font(.caption).foregroundStyle(.secondary)}
+                            }
+                            ForEach(Array(report.blockers.enumerated()),id:\.offset){_,message in Text(message).font(.caption).foregroundStyle(.secondary)}
+                        }.frame(maxWidth:.infinity,alignment:.leading)}.frame(maxHeight:130)
+                    }
+                }
                 if store.libraryImportBusy {ProgressView().progressViewStyle(.linear)}
                 if let progress=store.libraryImportProgress {Text(progress).font(.callout).textSelection(.enabled)}
                 if let status {Text(status).font(.callout).textSelection(.enabled)}
                 Spacer()
             }.padding(28).disabled(store.libraryImportBusy)
-        }.fileImporter(isPresented:$choosing,allowedContentTypes:choice == .file ? [.audio,.data] : [.folder]) {result in
+        }.fileImporter(isPresented:$choosing,allowedContentTypes:choice == .file ? [.audio,.data] : choice == .mainStage ? [.package,.folder] : [.folder]) {result in
             switch result {
             case .success(let url):
                 switch choice {
@@ -34,6 +46,8 @@ struct SoundImportView:View {
                 case .samples:
                     if let pending {importFile(pending,samples:url)}
                     pending=nil
+                case .mainStage:
+                    store.importMainStagePatch(url);status=nil
                 case .library:
                     store.importSamplerLibrary(url);status=store.message;store.message=nil
                 }

@@ -27,15 +27,21 @@ sources=(
     "$repo/Sources/AbletonImport.swift"
     "$repo/Sources/AbletonArchive.swift"
     "$repo/Sources/SundayFactoryVoicing.swift"
+    "$repo/Sources/StageKeysSampler.swift"
+    "$repo/Sources/MainStagePatch.swift"
     "$repo/Sources/SoundLibrary.swift"
     "$repo/Sources/LibraryBrowserModel.swift"
     "$repo/Sources/SnapshotMorph.swift"
     "$repo/Sources/Store.swift"
 )
-if (( $# )); then tests=("$@"); else tests=(LibraryBrowserTests SoundRatingTests LibraryNoteRangeTests SoundLibraryTests ImportedSoundRetentionTests); fi
+if (( $# )); then tests=("$@"); else tests=(LibraryBrowserTests SoundRatingTests LibraryNoteRangeTests SoundLibraryTests ImportedSoundRetentionTests MainStagePatchTests StageKeysSamplerTests); fi
 for test in "${tests[@]}"; do
     xcrun swiftc -DDEBUG -import-objc-header "$repo/Sources/Bridge.h" \
         -module-cache-path "$build/modules" "${sources[@]}" "$repo/Tests/$test.swift" \
         "$build/Synth.o" "$build/CreamCoat.o" -framework CoreMIDI -lz -o "$build/$test"
-    STAGEKEYS_DATA_DIR="$build/data-$test" "$build/$test"
+    if [[ "$test" == EXSImportTests && -n "${STAGEKEYS_EXS_FIXTURE:-}" && -n "${STAGEKEYS_EXS_ROOT:-}" ]]; then
+        STAGEKEYS_DATA_DIR="$build/data-$test" "$build/$test" "$build/exs-scratch" "$STAGEKEYS_EXS_FIXTURE" "$STAGEKEYS_EXS_ROOT"
+    else
+        STAGEKEYS_DATA_DIR="$build/data-$test" "$build/$test"
+    fi
 done

@@ -191,6 +191,7 @@ final class PerformanceStore: ObservableObject {
         catch {message="Could not save Note Range tags: \(error.localizedDescription)"}
     }
     func previewLibraryRange(_ index:Int,_ layer:Layer?) {libraryRangePreviewIndex=layer == nil ? nil:index;libraryRangePreview=layer}
+    @Published var mainStageImportReport:MainStagePatch.Report?
     @Published var libraryImportBusy=false
     @Published var libraryImportProgress:String?
     @Published var savedSetlists: [SetlistLibraryDescriptor] = []
@@ -208,6 +209,9 @@ final class PerformanceStore: ObservableObject {
         saveURL = base.appendingPathComponent("setlist.json")
         soundRatings=SoundRatingArchive.load(base.appendingPathComponent("sound-ratings.json"))
         effectPresets=EffectPresetArchive.load(base.appendingPathComponent("effect-presets.json"))
+        if let data=try? Data(contentsOf:base.appendingPathComponent("mainstage-import-report.json")),data.count<=2_000_000 {
+            mainStageImportReport=try? JSONDecoder().decode(MainStagePatch.Report.self,from:data)
+        }
         do { librarySounds = try SoundLibrary(url: base.appendingPathComponent("sound-library.json")).read() }
         catch { message = "Could not read sound library: \(error.localizedDescription)" }
         if FileManager.default.fileExists(atPath: saveURL.path) {
@@ -694,7 +698,12 @@ final class PerformanceStore: ObservableObject {
         let (sound,notes,layer)=try prepareLibrarySound(url,sampleRoot:sampleRoot)
         let library=SoundLibrary(url:saveURL.deletingLastPathComponent().appendingPathComponent("sound-library.json"))
         var entries=try library.read()
-        entries.append(LibrarySound(id:id ?? UUID().uuidString,name:sound.name,collection:"My Sounds",sound:sound,layer:layer,conversionNotes:notes))
+        var entry=LibrarySound(id:id ?? UUID().uuidString,name:sound.name,collection:"My Sounds",sound:sound,layer:layer,conversionNotes:notes)
+        if ["exs","aupreset"].contains(url.pathExtension.lowercased()) {
+            let access=url.startAccessingSecurityScopedResource();defer{if access{url.stopAccessingSecurityScopedResource()}}
+            entry.originalInstrument=try StageKeysSampler.retainOriginal(url,library:saveURL.deletingLastPathComponent())
+        }
+        entries.append(entry)
         try library.write(entries);librarySounds=try library.read()
         return librarySounds.last(where:{$0.sound?.fileName==sound.fileName})?.sound ?? sound
     }
@@ -710,6 +719,18 @@ final class PerformanceStore: ObservableObject {
             }
             return try installLibrarySound(url,sampleRoot:sampleRoot)
         }catch{message=error.localizedDescription;return nil}
+    }
+    func importMainStagePatch(_ url:URL) {
+        guard !libraryImportBusy else{return}
+        let access=url.startAccessingSecurityScopedResource();defer{if access{url.stopAccessingSecurityScopedResource()}}
+        do {
+            let directory=saveURL.deletingLastPathComponent().appendingPathComponent("MainStage Sources",isDirectory:true).appendingPathComponent(UUID().uuidString,isDirectory:true)
+            let report=try MainStagePatch.retain(url,to:directory)
+            let encoder=JSONEncoder();encoder.outputFormatting=[.prettyPrinted,.sortedKeys]
+            try encoder.encode(report).write(to:saveURL.deletingLastPathComponent().appendingPathComponent("mainstage-import-report.json"),options:.atomic)
+            mainStageImportReport=report
+            libraryImportProgress="Preserved \(report.channels.count) channel strips and their original effects, macros and MIDI data. Playback conversion requires \(report.blockers.count) unsupported settings to be translated. No incomplete sound was added."
+        }catch{mainStageImportReport=nil;libraryImportProgress=error.localizedDescription}
     }
     func importAbletonPack(_ url:URL) {
         guard !libraryImportBusy else{return}

@@ -1,3 +1,7 @@
+## 0.26 native sampler and MainStage preflight
+
+Added StageKeys Sampler sample-map UI, exact original instrument retention, bounded legacy channel-strip inspection, lossless source archives and persistent compatibility reports. This does not complete native MainStage patch playback: private synthesizers, modern EXS variants and proprietary effects/macro/MIDI state still require translation. No unsupported patch is presented as a faithful playable conversion. [Details](MAINSTAGE-NATIVE.md).
+
 ## 0.25 library curation and processing retention
 
 Recommended sorting, editable recommendation flags, name cleanup, inferred free-import Note Range tags, optional private authored metadata, recursive rack summaries and direct-import processing retention are implemented. Original source taxonomy is not available for every free preset; inferred tags are labeled. Raw native instruments still need full factory channel reconstruction, and DSP/UI parity remains incomplete. See [scope and limitations](LIBRARY-CURATION.md).

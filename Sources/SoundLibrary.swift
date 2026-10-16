@@ -13,6 +13,7 @@ struct LibrarySound: Codable, Identifiable, Equatable {
     var previousImportedRack: ImportedRack?
     var originalName:String?
     var sourceTagsApplied:Bool?
+    var originalInstrument:StageKeysSampler.Original?
 }
 
 /// User-owned sounds stay outside the application bundle and survive upgrades.
@@ -105,6 +106,11 @@ struct SoundLibrary {
         guard entries.count <= 4096, Set(entries.map(\.id)).count == entries.count else { throw SetlistError.invalid }
         for entry in entries {
             guard !entry.id.isEmpty, entry.id.count <= 256, !entry.name.isEmpty, entry.name.count <= 200, entry.collection.count <= 200 else { throw SetlistError.invalid }
+            if let original=entry.originalInstrument {
+                guard original.sha256.count==64,original.sha256.allSatisfy({$0.isHexDigit && !$0.isUppercase}),
+                      ["exs","aupreset"].contains(URL(fileURLWithPath:original.file).pathExtension),
+                      original.file=="Original Instruments/"+original.sha256+"."+URL(fileURLWithPath:original.file).pathExtension else{throw SetlistError.invalid}
+            }
             if let previous=entry.previousImportedRack, !previous.validate() {throw SetlistError.invalid}
             if let notes=entry.conversionNotes {guard notes.count<=128,notes.allSatisfy({$0.count<=2000}) else{throw SetlistError.invalid}}
             if let tags=entry.tags {

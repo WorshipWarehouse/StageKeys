@@ -1,3 +1,7 @@
+## Version 0.26
+
+StageKeys Sampler now shows imported sample maps and retains original EXS/AUPRESET instruments. MainStage patch import archives source documents unchanged and reports instrument/effects/macro/MIDI compatibility without opening MainStage or resampling. Full playable `.cst` conversion is **not yet implemented**; unsupported processing blocks conversion instead of being silently dropped. [Native import scope and limitations](Docs/MAINSTAGE-NATIVE.md).
+
 ## Version 0.25
 
 Recommended ordering now uses curated flags with alphabetical grouping. Free imports have cleaner display names, suggested Note Range tags and better pluck/guitar classification. Direct channel imports retain their complete translated rack and MIDI settings; Rack FX links make nested processing visible. Personal authored metadata can enrich exact matching processed presets without bundling source assets. [Details and remaining differences](Docs/LIBRARY-CURATION.md).

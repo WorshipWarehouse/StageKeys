@@ -161,3 +161,34 @@ struct ChannelCompressorControls:View {
         }.disabled(!settings.compressorEnabled)
     }
 }
+
+struct StageKeysSamplerControls:View {
+    @EnvironmentObject private var store:PerformanceStore
+    let sound:ExternalSound
+    @State private var map:StageKeysSampler.Map?
+    @State private var failure:String?
+    var body:some View {
+        VStack(alignment:.leading,spacing:12) {
+            HStack {Image(systemName:"pianokeys");Text("StageKeys Sampler").font(StageTheme.font(16,weight:.semibold));Spacer();Text("Native playback").font(.caption).foregroundStyle(.secondary)}
+            if let map {
+                Text("\(map.sampleCount) samples · \(map.layerCount) layers · \(map.zones.count) zones").font(.caption)
+                DisclosureGroup("Sample Map") {
+                    ScrollView {
+                        LazyVStack(alignment:.leading,spacing:8) {
+                            ForEach(map.zones) {zone in
+                                HStack {
+                                    Text(zone.sample).lineLimit(1).frame(maxWidth:.infinity,alignment:.leading)
+                                    Text("Keys \(zone.low)–\(zone.high) · Root \(zone.root) · Velocity \(zone.velocityLow)–\(zone.velocityHigh)"+(zone.looped ? " · Loop":"")).monospacedDigit()
+                                }.font(.caption)
+                            }
+                        }
+                    }.frame(maxHeight:180)
+                }
+            } else if let failure {Text(failure).font(.caption).foregroundStyle(.secondary)}
+        }.padding(16).background(StageTheme.panel,in:RoundedRectangle(cornerRadius:8))
+        .task(id:sound.fileName) {
+            do {guard let root=store.audio.externalRack?.libraryURL else{return};map=try StageKeysSampler.map(sound,library:root);failure=nil}
+            catch{map=nil;failure="Sample map is unavailable: "+error.localizedDescription}
+        }
+    }
+}

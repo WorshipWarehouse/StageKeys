@@ -69,6 +69,7 @@ struct SoundEditor: View {
                 } else {
                     VStack(spacing:12) {
                         ScrollView(.horizontal,showsIndicators:false) { SoundSettingsControls(layer:$draft).frame(minWidth:700) }
+                        if draft.external?.kind == .samplerPreset {StageKeysSamplerControls(sound:draft.external!)}
                         if draft.importedRack != nil { ImportedRackControls(layer:$draft) }
                         if draft.name.hasPrefix("SK App Felt Piano") || draft.name == "SK Felt Piano | Room" {
                             Button("Use Felt Piano | Room Voicing") {
