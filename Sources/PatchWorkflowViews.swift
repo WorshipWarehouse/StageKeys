@@ -63,7 +63,7 @@ struct TonicSettingsEditor:View {
                     EffectKnob(descriptor:.init(index:1,name:"Shimmer",minimum:0,maximum:1,defaultValue:0,unit:"%"),value:$store.tonicShimmer)
                     EffectKnob(descriptor:.init(index:2,name:"Volume",minimum:-60,maximum:0,defaultValue:-10,unit:"dB"),value:Binding(get:{store.tonicGain>0 ? max(-60,20*log10(store.tonicGain)):-60},set:{store.tonicGain=$0 <= -60 ? 0:pow(10,$0/20)}))
                 }
-                Toggle("Lock Tonic Pad Against Snapshot Changes",isOn:$store.tonicLocked)
+                Toggle("Patch Lock — recall these settings when this patch is selected",isOn:Binding(get:{store.tonicLocked},set:{_ in store.toggleTonicPatchLock()}))
                 Text("Brightness filters the pad. Shimmer adds pitch-shifted reverb without restarting its held note. Power remembers the last key. Changes are heard immediately.").font(.caption).foregroundStyle(.secondary)
             }.padding(28)}
         }.onDisappear{store.save()}

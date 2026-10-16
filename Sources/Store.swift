@@ -34,7 +34,20 @@ final class PerformanceStore: ObservableObject {
     @Published var tonicTimbre=0 {didSet{if oldValue != tonicTimbre {restartTonic()}}}
     @Published var tonicSound:ExternalSound? {didSet{if oldValue != tonicSound {restartTonic()}}}
     @Published var tonicVelocitySelector=false
-    @Published var tonicLocked=false
+    var tonicLocked:Bool {patch.tonicState != nil}
+    func toggleTonicPatchLock() {
+        if tonicLocked {setlist.patches[selected].tonicState=nil}
+        else {setlist.patches[selected].tonicState=TonicPatchState(enabled:tonic != nil,root:tonicLastRoot,timbre:tonicTimbre,sound:tonicSound,velocitySelector:tonicVelocitySelector,gain:tonicGain,brightness:tonicBrightness,shimmer:tonicShimmer)}
+        save()
+    }
+    private func recallTonicPatch() {
+        guard let state=patch.tonicState,state.valid else{return}
+        tonicVelocitySelector=state.velocitySelector;tonicTimbre=state.timbre;tonicSound=state.sound
+        tonicGain=state.gain;tonicBrightness=state.brightness;tonicShimmer=state.shimmer
+        tonicLastRoot=state.root
+        if state.enabled {if let previous=tonic,previous != state.root {stopTonicNotes(previous)};if tonic != state.root {tonic=state.root;playTonicNotes(state.root)}}
+        else if let previous=tonic {stopTonicNotes(previous);tonic=nil}
+    }
     var tonicNames:[String] {tonicVelocitySelector ? ["Warm","Bright","Dark","Choir","Organ","Guitar","Strings","Pure","Evolving","Rev Piano","Simple","Classic"]:[tonicSound?.name ?? "Warm"]}
     var tonicLabel:String {"\(tonicTimbre+1). \(tonicNames[min(max(0,tonicTimbre),tonicNames.count-1)])"}
 
@@ -77,7 +90,7 @@ final class PerformanceStore: ObservableObject {
     private func configureTonic() {
         var layer=Layer(name:"Tonic Pad",instrument:tonicSound == nil ? 1:-1,gain:tonicGain)
         layer.external=tonicSound
-        var tone=AudioEffect();tone.kind=1;tone.parameters=[20*pow(1000,max(0,min(1,tonicBrightness))),0.707,1]
+        var tone=AudioEffect();tone.kind=1;tone.parameters=[200*pow(100,max(0,min(1,tonicBrightness))),0.707,1]
         var shimmer=AudioEffect();shimmer.kind=10
         var values=AudioEffectCatalog.defaults(for:10);values[0]=1;values[7]=1;values[8]=max(0,min(1,tonicShimmer))*0.5;shimmer.parameters=values;shimmer.enabled=tonicShimmer>0
         layer.effects=[tone,shimmer,AudioEffect()]
@@ -101,7 +114,7 @@ final class PerformanceStore: ObservableObject {
     func selectTonicRoot(_ root:Int) {
         guard (0..<12).contains(root),started else{return}
         tonicLastRoot=root
-        if tonic==root{return}
+        guard tonic != nil,tonic != root else{return}
         if let previous=tonic {stopTonicNotes(previous)}
         tonic=root;playTonicNotes(root)
     }
@@ -288,7 +301,7 @@ final class PerformanceStore: ObservableObject {
             velocityMinimum = settings.velocityMinimum ?? 0; velocityMaximum = settings.velocityMaximum ?? 127
             midiSourceNames = settings.sourceNames ?? [:]
             disableSilent = settings.disableSilent; showRanges = settings.showRanges
-            tonicVelocitySelector=settings.tonicVelocitySelector ?? false;tonicTimbre=settings.tonicTimbre ?? 0;tonicLastRoot=settings.tonicLastRoot ?? 0;tonicLocked=settings.tonicLocked ?? false;tonicSound=settings.tonicSound
+            tonicVelocitySelector=settings.tonicVelocitySelector ?? false;tonicTimbre=settings.tonicTimbre ?? 0;tonicLastRoot=settings.tonicLastRoot ?? 0;tonicSound=settings.tonicSound
             tonicGain = settings.tonicGain; tonicBrightness = settings.tonicBrightness; tonicShimmer = settings.tonicShimmer
         }
         audio.onError = { [weak self] in self?.message = $0 }
@@ -352,7 +365,7 @@ final class PerformanceStore: ObservableObject {
                 restoredAudioOutput = true
                 if let uid = preferredAudioOutputUID { try? audio.deviceController.select(uid: uid) }
             }
-            try audio.start(); audio.master(master);audio.space(reverb); started = true; applyPatch(); audio.clock(patch.tempo,metronome); refreshAudioDevices() }
+            try audio.start(); audio.master(master);audio.space(reverb); started = true; applyPatch(); recallTonicPatch(); audio.clock(patch.tempo,metronome); refreshAudioDevices() }
         catch { started = false; message = "Audio could not start: \(error.localizedDescription)" }
     }
     func refreshAudioDevices() {
@@ -419,15 +432,15 @@ final class PerformanceStore: ObservableObject {
     func setSustain(_ value: Bool) { screenSustain = value; applySustain() }
     private func applySustain() { let value = screenSustain || !pedalSources.isEmpty || !mappedPedals.isEmpty; sustain = value; audio.sustain(value, layers: patch.layers.indices.map(playbackLayer))
         for l in patch.layers.indices.map(playbackLayer) { if let d = l.midiDestinationID { sendMIDI(d, 0xb0 | UInt8(l.midiOutputChannel), 64, value && !l.blockSustain ? 127 : 0) } } }
-    func panic() { hardwareNotes.removeAll(); pedalSources.removeAll(); mappedPedals.removeAll(); screenSustain = false; midiFX.panic();
+    func panic(preserveTonic:Bool=false) { hardwareNotes.removeAll(); pedalSources.removeAll(); mappedPedals.removeAll(); screenSustain = false; midiFX.panic();
         for l in patch.layers { if let d = l.midiDestinationID { for cc: UInt8 in [64,123,120] { sendMIDI(d, 0xb0 | UInt8(l.midiOutputChannel), cc, 0) } } }
-        outputNotes.removeAll(); held.removeAll(); sustain = false; tonic = nil; metronome = false; audio.panic() }
+        outputNotes.removeAll(); held.removeAll(); sustain = false; metronome = false; if preserveTonic {audio.sustain(false,layers:patch.layers);for channel in 0..<15 {audio.panic(channel:channel)}} else {tonic = nil;audio.panic()} }
     func choose(_ index: Int) {
         guard !patchLock, setlist.patches.indices.contains(index) else { return }
-        cancelAudition(); cancelTransition(); panic(); capturePluginStates(); selected = index; activeSnapshot = nil
-        if patch.silencePrevious { panic() }
+        cancelAudition(); cancelTransition(); panic(preserveTonic:true); capturePluginStates(); selected = index; activeSnapshot = nil
+        if patch.silencePrevious { panic(preserveTonic:true) }
         if patch.visualMode != 0 { notesMode = patch.visualMode == 2 }
-        applyPatch(); audio.clock(patch.tempo, metronome)
+        applyPatch(); recallTonicPatch(); audio.clock(patch.tempo, metronome)
     }
     private func applyPatch() {
         for i in patch.layers.indices {
@@ -538,11 +551,12 @@ final class PerformanceStore: ObservableObject {
                 configureMIDI(i,patch.layers[i]); audio.configure(i,patch.layers[i])
             }
         }
-        if !tonicLocked,let shimmer=snapshot.tonicShimmer { tonicShimmer=shimmer }
-        if !tonicLocked,let timbre=snapshot.tonicTimbre {tonicTimbre=min(timbre,tonicNames.count-1)}
-        if !tonicLocked,let enabled=snapshot.tonicEnabled {
-            if enabled, let root=snapshot.tonicRoot { if tonic != root { toggleTonic(root) } }
-            else if let tonic { toggleTonic(tonic) }
+        if let shimmer=snapshot.tonicShimmer { tonicShimmer=shimmer }
+        if let timbre=snapshot.tonicTimbre {tonicTimbre=min(timbre,tonicNames.count-1)}
+        if let root=snapshot.tonicRoot {selectTonicRoot(root)}
+        if let enabled=snapshot.tonicEnabled {
+            if enabled,tonic == nil {toggleTonic(tonicLastRoot)}
+            else if !enabled,let root=tonic {toggleTonic(root)}
         }
         let initial = patch.layers.map { $0.muted ? 0 : $0.gain }
         for i in self.patch.layers.indices { setlist.patches[selected].layers[i].muted = false; audio.gain(i, snapshot.gains[i], seconds: snapshotDuration(snapshot)) }
@@ -552,8 +566,8 @@ final class PerformanceStore: ObservableObject {
             let fraction = min(1, Date().timeIntervalSince(began) / max(0.01, duration))
             for i in self.patch.layers.indices { self.setlist.patches[self.selected].layers[i].gain = initial[i] + Float(fraction) * (snapshot.gains[i] - initial[i]); if self.patch.layers[i].external != nil { self.audio.gain(i, self.patch.layers[i].gain) }; if let d = self.patch.layers[i].midiDestinationID { self.sendMIDI(d, 0xb0 | UInt8(self.patch.layers[i].midiOutputChannel), 7, UInt8(max(0,min(127,Int(self.patch.layers[i].gain*127))))) } }
             if let target = snapshot.modulation { self.modWheel = SnapshotMorph.interpolateFloat(from: initialWheel, to: target, fraction: Float(fraction)) }
-            if !self.tonicLocked,let target = snapshot.tonicLevel { self.tonicGain = SnapshotMorph.interpolateFloat(from: initialTonicGain, to: target, fraction: Float(fraction)) }
-            if !self.tonicLocked,let target = snapshot.tonicBrightness { self.tonicBrightness = SnapshotMorph.interpolateFloat(from: initialBrightness, to: target, fraction: Float(fraction)) }
+            if let target = snapshot.tonicLevel { self.tonicGain = SnapshotMorph.interpolateFloat(from: initialTonicGain, to: target, fraction: Float(fraction)) }
+            if let target = snapshot.tonicBrightness { self.tonicBrightness = SnapshotMorph.interpolateFloat(from: initialBrightness, to: target, fraction: Float(fraction)) }
             if let states = snapshot.sounds {
                 for (i, target) in states.enumerated() {
                     let previous = self.patch.layers[i]
@@ -613,7 +627,7 @@ final class PerformanceStore: ObservableObject {
             setlist.patches[selected].snapshots[snapshotIndex].sounds = patch.layers.map(SnapshotSoundState.init)
             setlist.patches[selected].snapshots[snapshotIndex].modulation = modWheel
             setlist.patches[selected].snapshots[snapshotIndex].tonicEnabled = tonic != nil
-            setlist.patches[selected].snapshots[snapshotIndex].tonicRoot = tonic
+            setlist.patches[selected].snapshots[snapshotIndex].tonicRoot = tonicLastRoot
             setlist.patches[selected].snapshots[snapshotIndex].tonicLevel = tonicGain
             setlist.patches[selected].snapshots[snapshotIndex].tonicBrightness = tonicBrightness
             setlist.patches[selected].snapshots[snapshotIndex].tonicShimmer = tonicShimmer
@@ -630,9 +644,10 @@ final class PerformanceStore: ObservableObject {
         for (i, l) in patch.layers.enumerated() { audio.gain(i, l.muted ? 0 : l.gain) }
     }
     func toggleTonic(_ root: Int) {
-        guard (0..<12).contains(root) else{return}
+        guard started,(0..<12).contains(root) else{return}
         if tonic==root {stopTonicNotes(root);tonicLastRoot=root;tonic=nil;return}
-        selectTonicRoot(root)
+        if let previous=tonic {stopTonicNotes(previous)}
+        tonicLastRoot=root;tonic=root;playTonicNotes(root)
     }
     func tapTempo() {
         let now = Date()
@@ -1050,7 +1065,7 @@ final class PerformanceStore: ObservableObject {
             try data.write(to: saveURL, options: .atomic)
             currentSetlistID = try localSetlistLibrary().save(setlist,id:currentSetlistID).id
             refreshSetlists()
-            let settings = SessionSettings(selectedPatchID:patch.id,activeSnapshotID:activeSnapshot,notesMode:notesMode,modWheel:modWheel,master: master, reverb: reverb, transition: transition, midiChannel: midiChannel, primarySourceID: primarySourceID, secondarySourceID: secondarySourceID, secondaryChannel: secondaryChannel, velocityMinimum: velocityMinimum, velocityMaximum: velocityMaximum, sourceNames: midiSourceNames, disableSilent: disableSilent, showRanges: showRanges, tonicGain: tonicGain, tonicBrightness: tonicBrightness, tonicShimmer: tonicShimmer, audioOutputUID: preferredAudioOutputUID, activeSetlistID: currentSetlistID,tonicSound:tonicSound,tonicVelocitySelector:tonicVelocitySelector,tonicTimbre:tonicTimbre,tonicLastRoot:tonicLastRoot,tonicLocked:tonicLocked)
+            let settings = SessionSettings(selectedPatchID:patch.id,activeSnapshotID:activeSnapshot,notesMode:notesMode,modWheel:modWheel,master: master, reverb: reverb, transition: transition, midiChannel: midiChannel, primarySourceID: primarySourceID, secondarySourceID: secondarySourceID, secondaryChannel: secondaryChannel, velocityMinimum: velocityMinimum, velocityMaximum: velocityMaximum, sourceNames: midiSourceNames, disableSilent: disableSilent, showRanges: showRanges, tonicGain: tonicGain, tonicBrightness: tonicBrightness, tonicShimmer: tonicShimmer, audioOutputUID: preferredAudioOutputUID, activeSetlistID: currentSetlistID,tonicSound:tonicSound,tonicVelocitySelector:tonicVelocitySelector,tonicTimbre:tonicTimbre,tonicLastRoot:tonicLastRoot)
             guard settings.validate() else { throw SetlistError.invalid }
             try encoder.encode(settings).write(to: saveURL.deletingLastPathComponent().appendingPathComponent("settings.json"), options: .atomic) }
         catch { message = "Could not save: \(error.localizedDescription)" }
@@ -1074,7 +1089,7 @@ final class PerformanceStore: ObservableObject {
             let loaded = try localSetlistLibrary().load(id:id)
             try preserveCurrentSetlist()
             panic(); cancelTransition(); setlist = loaded; currentSetlistID = id; selected = 0; activeSnapshot = nil
-            applyPatch(); audio.clock(patch.tempo,metronome); save()
+            applyPatch(); recallTonicPatch(); audio.clock(patch.tempo,metronome); save()
         } catch { message = error.localizedDescription }
     }
     func createLocalSetlist() {
@@ -1084,7 +1099,7 @@ final class PerformanceStore: ObservableObject {
             var fresh = Setlist(); fresh.name = "New Setlist"; fresh.patches = [Patch(name:"New Patch",layers:(0..<15).map { _ in Layer.empty() },snapshots:[])]
             let id = try localSetlistLibrary().save(fresh).id
             panic(); cancelTransition(); setlist = fresh; currentSetlistID = id; selected = 0; activeSnapshot = nil
-            applyPatch(); audio.clock(patch.tempo,metronome); save()
+            applyPatch(); recallTonicPatch(); audio.clock(patch.tempo,metronome); save()
         } catch { message = error.localizedDescription }
     }
     func renameLocalSetlist(_ id: UUID, name: String) {

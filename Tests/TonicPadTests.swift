@@ -5,7 +5,7 @@ import Foundation
         try store.audio.prepareOffline();store.start();assert(store.started,store.message ?? "Audio failed")
         for i in store.patch.layers.indices {store.setGain(i,0)}
         store.master=0.3;store.reverb=0;store.tonicGain=0.3
-        store.selectTonicRoot(7);assert(store.tonic==7 && store.tonicLastRoot==7)
+        store.selectTonicRoot(7);assert(store.tonic==nil && store.tonicLastRoot==7,"Key selection must not engage bypassed pad");store.toggleTonic(7);assert(store.tonic==7)
         store.selectTonicRoot(7);assert(store.tonic==7,"Repeated root selection must not stop the pad")
         var energy:Double=0
         for _ in 0..<100 {let buffer=try store.audio.offlineBlock();for i in 0..<Int(buffer.frameLength){let v=buffer.floatChannelData![0][i];assert(v.isFinite);energy+=Double(v*v)}}
@@ -14,7 +14,18 @@ import Foundation
         for _ in 0..<50 {let buffer=try store.audio.offlineBlock();for i in 0..<Int(buffer.frameLength){assert(buffer.floatChannelData![0][i].isFinite)}}
         store.toggleTonic(7);assert(store.tonic==nil && store.tonicLastRoot==7)
         store.toggleTonic(store.tonicLastRoot);assert(store.tonic==7)
-        store.tonicLocked=true;store.save()
+        store.toggleTonicPatchLock();assert(store.tonicLocked)
+        let saved=store.patch.tonicState!
+        store.tonicBrightness=0.2;store.selectTonicRoot(2)
+        let first=store.selected;let next=(first+1)%store.setlist.patches.count
+        store.choose(next);assert(store.tonic==2,"Unlocked patch must let the pad continue")
+        store.choose(first);assert(store.tonic==7 && store.tonicBrightness==saved.brightness,"Patch Lock must recall its saved state")
+        let decodedPatch=try JSONDecoder().decode(Patch.self,from:JSONEncoder().encode(store.patch));assert(decodedPatch.tonicState==saved)
+        store.toggleTonicPatchLock();assert(!store.tonicLocked)
+        store.toggleTonic(7);store.selectTonicRoot(5);store.toggleTonicPatchLock()
+        store.choose(next);store.toggleTonic(2);store.choose(first)
+        assert(store.tonic==nil && store.tonicLastRoot==5,"Patch recall must restore selected key and bypass independently")
+        store.toggleTonicPatchLock();store.toggleTonic(7)
         let settings=SessionSettings(tonicTimbre:11,tonicLastRoot:7,tonicLocked:true)
         assert(settings.validate());let restored=try JSONDecoder().decode(SessionSettings.self,from:JSONEncoder().encode(settings));assert(restored.tonicTimbre==11 && restored.tonicLastRoot==7 && restored.tonicLocked==true)
         if let source=ProcessInfo.processInfo.environment["STAGEKEYS_TONIC_FIXTURE"],let samples=ProcessInfo.processInfo.environment["STAGEKEYS_TONIC_ROOT"] {
@@ -28,6 +39,10 @@ import Foundation
                 for _ in 0..<100 {let buffer=try store.audio.offlineBlock();for i in 0..<Int(buffer.frameLength){let v=buffer.floatChannelData![0][i];assert(v.isFinite);energy+=Double(v*v)}}
                 assert(energy>0.00000001,"Native tonic timbre \(timbre+1) must select its original zone")
             }
+            store.choose(next);for i in store.patch.layers.indices {store.setGain(i,0)}
+            var continued:Double=0
+            for _ in 0..<100 {let buffer=try store.audio.offlineBlock();for i in 0..<Int(buffer.frameLength){let v=buffer.floatChannelData![0][i];continued+=Double(v*v)}}
+            assert(continued>0.00000001,"Imported tonic must still produce audio after selecting an unlocked patch")
             print("PASS: all twelve original tonic velocity-selected timbres render through production Store routing")
         }
         store.panic();assert(store.tonic==nil)

@@ -266,6 +266,17 @@ struct Snapshot: Codable, Identifiable {
     var beats: Float?
     var noteText: String { note ?? "" }
 }
+struct TonicPatchState: Codable, Equatable {
+    var enabled:Bool
+    var root:Int
+    var timbre:Int
+    var sound:ExternalSound?
+    var velocitySelector:Bool
+    var gain:Float
+    var brightness:Float
+    var shimmer:Float
+    var valid:Bool {(0..<12).contains(root) && (0..<12).contains(timbre) && [gain,brightness,shimmer].allSatisfy{$0.isFinite && (0...1).contains($0)} && (sound == nil || sound?.kind == .samplerPreset)}
+}
 struct Patch: Codable, Identifiable {
     var id = UUID()
     var name: String
@@ -279,8 +290,9 @@ struct Patch: Codable, Identifiable {
     var volumeDB: Float = 0
     var programChangeEnabled: Bool?
     var programChangeNumber: Int?
+    var tonicState:TonicPatchState?
     var silencePrevious = false
-    enum CodingKeys: String, CodingKey { case id,name,tempo,transpose,playIn,hearIn,layers,snapshots,visualMode,silencePrevious,volumeDB,programChangeEnabled,programChangeNumber }
+    enum CodingKeys: String, CodingKey { case id,name,tempo,transpose,playIn,hearIn,layers,snapshots,visualMode,silencePrevious,volumeDB,programChangeEnabled,programChangeNumber,tonicState }
     init(name: String, layers: [Layer], snapshots: [Snapshot]) { self.name = name; self.layers = layers; self.snapshots = snapshots }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -294,6 +306,7 @@ struct Patch: Codable, Identifiable {
         volumeDB = try c.decodeIfPresent(Float.self,forKey:.volumeDB) ?? 0
         programChangeEnabled = try c.decodeIfPresent(Bool.self,forKey:.programChangeEnabled)
         programChangeNumber = try c.decodeIfPresent(Int.self,forKey:.programChangeNumber)
+        tonicState = try c.decodeIfPresent(TonicPatchState.self,forKey:.tonicState)
         silencePrevious = try c.decodeIfPresent(Bool.self, forKey: .silencePrevious) ?? false
     }
     static func make(_ name: String = "New Patch", gains: [Float] = [0.72, 0.35, 0]) -> Patch {
@@ -331,6 +344,7 @@ struct Setlist: Codable {
         guard (1...4).contains(version), !patches.isEmpty, patches.count <= 128, name.count <= 200 else { throw SetlistError.invalid }
         guard Set(patches.map(\.id)).count == patches.count else { throw SetlistError.invalid }
         for p in patches {
+            guard p.tonicState?.valid ?? true else{throw SetlistError.invalid}
             guard p.volumeDB.isFinite,(-24...12).contains(p.volumeDB),p.programChangeNumber == nil || (0...127).contains(p.programChangeNumber!), !p.name.isEmpty, p.name.count <= 200, p.tempo.isFinite, (20...300).contains(p.tempo), (-24...24).contains(p.transpose), (0...11).contains(p.playIn), (0...11).contains(p.hearIn), (1...15).contains(p.layers.count), p.snapshots.count <= 16, (0...2).contains(p.visualMode), Set(p.layers.map(\.id)).count == p.layers.count, Set(p.snapshots.map(\.id)).count == p.snapshots.count else { throw SetlistError.invalid }
             for l in p.layers {
                 if let m = l.midiProgram { guard m == m.validated else { throw SetlistError.invalid } }

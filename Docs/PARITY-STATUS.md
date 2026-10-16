@@ -1,3 +1,7 @@
+## 0.30 tonic patch recall and cleaner effect processing
+
+Tonic now separates power from key selection and captures recall settings per patch, following the documented Patch Lock behavior. Unlocked patch changes preserve the pad; Brightness is a rotary tone control and the modulation wheel shows its current 0–127 position. Native reverb feedback no longer soft-clips transients; Silver uses delayed all-pass diffusion, and ClipDist corrects input gain placement, 6 dB/octave filters and antialiasing. Steinway chord/sustain, original tonic continuity, processing and import regressions pass, as do Mac/mobile simulator release builds. Exact Apple DSP, original fade/pan behavior and live confirmation of the reported Steinway attack remain outstanding. [Evidence and limits](SOURCE-EFFECTS-AND-TONIC.md).
+
 ## 0.29 source processors, tonic and optional library
 
 Synced MainStage delay timing/routing/polarity, native SilverVerb/ClipDist parameter processing and supported macros are implemented. Tonic adds imported sampler timbres, pitch-shifted reverb shimmer, power key memory and snapshot lock. The application and private sound backup are separate repos, with an optional pack installer and no-sample distribution checks. Exact proprietary DSP, source bypass flags, v2 tonic mapping and complete Sunday Keys settings/crossfade parity remain unfinished. [Details](SOURCE-EFFECTS-AND-TONIC.md).

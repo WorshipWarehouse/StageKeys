@@ -60,7 +60,7 @@ assert(reducedEnergy / referenceEnergy > 0.11 && reducedEnergy / referenceEnergy
 rack.panic()
 assert(!ExternalInstrumentRack.supportsEffect(kind: 18))
 do {
- try rack.configureEffect(channel: 0, slot: 0, kind: 16, enabled: true, parameters: [Float]())
+ try rack.configureEffect(channel: 0, slot: 0, kind: 18, enabled: true, parameters: [Float]())
  assertionFailure("Unsupported effects must report an error")
 } catch ExternalInstrumentError.unsupportedEffect {}
 print("PASS three serial gain slots: energy ratio \(reducedEnergy / referenceEnergy); unsupported effect rejected")

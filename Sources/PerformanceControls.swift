@@ -47,8 +47,8 @@ struct RotaryControl: View {
     @State private var initial: Float?
     var body: some View {
         HStack(spacing: 7) {
-            Circle().fill(LinearGradient(colors: [StageTheme.raised, StageTheme.panel], startPoint: .topLeading, endPoint: .bottomTrailing)).frame(width: 34, height: 34)
-                .overlay { Circle().trim(from: 0.13, to: 0.87).stroke(StageTheme.selected.opacity(0.5), lineWidth: 2).rotationEffect(.degrees(90)) }
+            Circle().fill(LinearGradient(colors: [StageTheme.raised, StageTheme.panel], startPoint: .topLeading, endPoint: .bottomTrailing)).frame(width: 39, height: 39)
+                .overlay { Circle().trim(from: 0.13, to: 0.13+0.74*CGFloat(value)).stroke(StageTheme.selected.opacity(0.8), lineWidth: 2).rotationEffect(.degrees(90)) }
                 .overlay { Rectangle().fill(StageTheme.selected).frame(width: 2, height: 10).offset(y: -8).rotationEffect(.degrees(-135 + Double(value) * 270)) }
                 .gesture(DragGesture(minimumDistance: 0).onChanged { v in if initial == nil { initial = value }; value = min(1, max(0, initial! - Float(v.translation.height) / 120)) }.onEnded { _ in initial = nil })
                 .accessibilityElement().accessibilityLabel(title).accessibilityValue("\(Int(value*100)) percent")
@@ -63,17 +63,22 @@ struct TonicPanel: View {
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
             VStack(spacing: 4) {
-                HStack(spacing: 8) {
-                    Button { store.toggleTonic(store.tonic ?? store.tonicLastRoot) } label: { Image(systemName: "power") }.buttonStyle(.plain).foregroundStyle(store.tonic == nil ? .secondary : StageTheme.selected).accessibilityLabel("Tonic Pad power")
-                    Button(action:onSettings) { VStack(alignment: .leading, spacing: 2) { Text("Tonic Pad").font(.caption2); Text(store.tonicLabel).font(.system(size: 10)).foregroundStyle(.secondary) } }.buttonStyle(.plain).accessibilityLabel("Tonic Pad Settings")
-                    Spacer(minLength: 0)
-                    Button {store.tonicLocked.toggle();store.save()}label:{Image(systemName:store.tonicLocked ? "lock.fill":"lock.open")}.buttonStyle(.plain).accessibilityLabel("Tonic Pad snapshot lock")
-                }.padding(7).background(StageTheme.raised.opacity(0.5), in: RoundedRectangle(cornerRadius: 5))
+                HStack(spacing: 4) {
+                    Button { store.toggleTonic(store.tonicLastRoot) } label: {
+                        Image(systemName:"power").frame(width:38,height:46)
+                    }.buttonStyle(.plain).background(store.tonic == nil ? StageTheme.raised.opacity(0.5):StageTheme.selected.opacity(0.7),in:RoundedRectangle(cornerRadius:5)).accessibilityLabel("Tonic Pad power").accessibilityValue(store.tonic == nil ? "Off":"On")
+                    Button(action:onSettings) {
+                        VStack(alignment:.leading,spacing:3) {Text("Tonic Pad").font(.system(size:9)).foregroundStyle(.secondary);Text(store.tonicLabel).font(StageTheme.font(12,weight:.semibold)).lineLimit(1)}.frame(maxWidth:.infinity,alignment:.leading).frame(height:46).padding(.horizontal,6)
+                    }.buttonStyle(.plain).background(StageTheme.raised.opacity(0.5),in:RoundedRectangle(cornerRadius:5)).accessibilityLabel("Tonic Pad Settings, \(store.tonicLabel)")
+                    Button {store.toggleTonicPatchLock()}label:{
+                        Group {if store.tonicLocked {Image(systemName:"lock.fill")} else {Text("Patch\nLock").font(.system(size:10,weight:.semibold))}}.frame(width:40,height:46)
+                    }.buttonStyle(.plain).background(store.tonicLocked ? StageTheme.selected:StageTheme.raised.opacity(0.5),in:RoundedRectangle(cornerRadius:5)).foregroundStyle(store.tonicLocked ? StageTheme.base:.primary).accessibilityLabel("Tonic Pad Patch Lock").accessibilityValue(store.tonicLocked ? "Saved":"Not saved")
+                }
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 4), count: 4), spacing: 4) {
                     ForEach(0..<12) { root in
                         Button { store.selectTonicRoot(root) } label: { Text(StageTheme.notes[root]).font(.system(size: 14, weight: .semibold)).frame(maxWidth: .infinity).frame(height: 49) }
-                            .buttonStyle(.plain).background(store.tonic == root ? StageTheme.selected : StageTheme.raised.opacity(0.5), in: RoundedRectangle(cornerRadius: 5))
-                            .foregroundStyle(store.tonic == root ? StageTheme.base : .white).accessibilityLabel("Tonic \(StageTheme.notes[root])")
+                            .buttonStyle(.plain).background(store.tonicLastRoot == root ? StageTheme.selected : StageTheme.raised.opacity(0.5), in: RoundedRectangle(cornerRadius: 5))
+                            .foregroundStyle(store.tonicLastRoot == root ? StageTheme.base : .white).accessibilityLabel("Tonic \(StageTheme.notes[root])")
                     }
                 }.disabled(!store.started)
                 Spacer(minLength: 0)
@@ -190,6 +195,9 @@ struct ModulationWheel: View {
                     }
                     LinearGradient(stops: [.init(color: .black.opacity(0.85), location: 0), .init(color: .clear, location: 0.28), .init(color: .clear, location: 0.7), .init(color: .black.opacity(0.8), location: 1)], startPoint: .top, endPoint: .bottom)
                 }.frame(width: 20).clipShape(RoundedRectangle(cornerRadius: 4)).padding(.vertical, 4)
+                RoundedRectangle(cornerRadius:2).fill(StageTheme.selected).frame(width:16,height:3)
+                    .shadow(color:StageTheme.selected.opacity(0.7),radius:4)
+                    .offset(y:(height-12)*(0.5-CGFloat(position)))
                 VStack(spacing: 0) {
                     ForEach(0..<23) { _ in
                         HStack { Rectangle().frame(width: 6, height: 1); Spacer(); Rectangle().frame(width: 6, height: 1) }
@@ -219,7 +227,12 @@ struct KeyboardWorkspace: View {
     @EnvironmentObject var store: PerformanceStore
     var body: some View {
         HStack(spacing: 30) {
-            ModulationWheel(value: $store.modWheel).frame(width: 44)
+            VStack(spacing:3) {
+                Text("HIGH").font(.system(size:7)).foregroundStyle(.secondary)
+                ModulationWheel(value:$store.modWheel)
+                Text("\(Int((store.modWheel*127).rounded()))").font(.system(size:9,weight:.semibold)).monospacedDigit().foregroundStyle(StageTheme.selected)
+                Text("LOW").font(.system(size:7)).foregroundStyle(.secondary)
+            }.frame(width:44)
             VStack(spacing: 5) {
                 if store.showRanges {
                     VStack(spacing: 2) {

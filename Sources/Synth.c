@@ -187,7 +187,11 @@ static void effectCoefficients(EffectState*e,int kind,double rate){
  if(kind==11){e->coef[0]=1-exp(-TAU*p[1]/rate);e->coef[1]=1-exp(-TAU*p[2]/rate);e->coef[2]=pow(10,p[4]/20);}
  if(kind==3)e->coef[0]=1-exp(-TAU*p[2]/rate);
  if(kind==16){e->coef[0]=1-exp(-TAU*p[4]/rate);e->coef[1]=1-exp(-TAU*p[5]/rate);}
- if(kind==17){e->coef[0]=pow(10,(p[0]+p[8])/20);e->coef[1]=1-exp(-TAU*p[1]/rate);e->coef[2]=1-exp(-TAU*p[4]/rate);e->coef[3]=1-exp(-TAU*p[5]/rate);e->coef[4]=pow(10,p[9]/20);equalizer(&e->eq[0],rate,6,p[7],p[6],.707f);}
+ if(kind==17){
+  e->coef[0]=pow(10,p[0]/20);e->coef[5]=pow(10,p[8]/20);e->coef[4]=pow(10,p[9]/20);
+  for(int i=1;i<=3;i++){float f=p[i==1?1:i==2?4:5],g=tanf(TAU*.5f*fminf(f,rate*.45f)/rate);e->coef[i]=g/(1+g);}
+  equalizer(&e->eq[0],rate,6,p[7],p[6],.707f);
+ }
  if(kind==12)e->coef[0]=pow(2,p[0]/12);
  if(kind==10||kind==13||kind==15){int low=kind==10?5:3,tone=kind==10?6:4;e->coef[0]=1-exp(-TAU*p[low]/rate);e->coef[1]=1-exp(-TAU*p[tone]/rate);}
  if(kind==14){e->coef[0]=pow(10,p[5]/20);e->coef[1]=1-exp(-1/(rate*p[3]));}
@@ -246,7 +250,7 @@ static float effectProcess(SKSynth*s,int l,int k,float x){
   float input=predelay>0?tap_capacity(s->predelay[l][k],prepos,rate*predelay*.001f,s->predelayLength):x;
   s->predelay[l][k][prepos]=x;s->predelayPosition[l][k]=(prepos+1)%s->predelayLength;
   // A single bounded feedback tank with four decorrelated taps. Independent algorithm.
-  buffer[pos]=tanhf(input+wet*feedback*.94f);
+  buffer[pos]=input+wet*feedback*.94f;
   int di=kind==10?7:kind==13?7:8,wi=di+1;y=x*p[di]+wet*p[wi];s->fxPhase[l][k]=fmod(phase+TAU*hz/rate,TAU);break;}
  case 11:{e->z[0]+=e->coef[0]*(x-e->z[0]);float v=x-e->z[0],drive=1+p[0]*30;v=tanhf(v*drive)/tanhf(drive);e->z[1]+=e->coef[1]*(v-e->z[1]);y=(x*(1-p[3])+e->z[1]*p[3])*e->coef[2];break;}
  case 12:buffer[pos]=x;y=p[0]==0?x:x*(1-p[1])+shifted(s,e,buffer,pos,e->coef[0],rate)*p[1];break;
@@ -254,7 +258,7 @@ static float effectProcess(SKSynth*s,int l,int k,float x){
   int prepos=s->predelayPosition[l][k];
   float input=p[0]>0?tap_capacity(s->predelay[l][k],prepos,rate*p[0]*.001f,s->predelayLength):x;
   s->predelay[l][k][prepos]=x;s->predelayPosition[l][k]=(prepos+1)%s->predelayLength;
-  int capacity=s->delayLength/4,index=pos%capacity;float wet=0;
+  int capacity=s->delayLength/8,index=pos%capacity;float wet=0;
   const float spacing[4]={.73f,.89f,1.07f,1.19f};
   float room=.025f+p[2]*.0003f,decay=.2f+p[3]*8+p[1]*4;
   float angle=phase+s->stereoSide*p[8]*TAU/360;
@@ -263,18 +267,34 @@ static float effectProcess(SKSynth*s,int l,int k,float x){
    offset+=sinf(angle+line)*p[7]*rate*.0015f;
    float tail=tap_capacity(buffer+line*capacity,index,offset,capacity);
    float feedback=fminf(.985f,powf(.001f,seconds/decay));
-   buffer[line*capacity+index]=tanhf(input*.35f+tail*feedback);wet+=tail*.25f;
+   buffer[line*capacity+index]=input*.35f+tail*feedback;wet+=tail*.25f;
   }
   float diffusion=.15f+.55f*p[3];
-  for(int stage=2;stage<4;stage++){float ap=-diffusion*wet+e->z[stage];e->z[stage]=wet+diffusion*ap;wet=ap;}
+  for(int stage=0;stage<2;stage++){
+   float*line=buffer+(4+stage)*capacity;
+   float delayed=tap_capacity(line,index,rate*(stage==0?.0053f:.0017f),capacity);
+   float ap=delayed-diffusion*wet;line[index]=wet+diffusion*ap;wet=ap;
+  }
   e->z[0]+=e->coef[0]*(wet-e->z[0]);wet-=e->z[0];e->z[1]+=e->coef[1]*(wet-e->z[1]);wet=e->z[1];
   y=x*p[9]+wet*p[10];s->fxPhase[l][k]=fmod(phase+TAU*p[6]/rate,TAU);break;
  }
  case 17:{
-  float amplified=x*e->coef[0];e->z[0]+=e->coef[1]*(amplified-e->z[0]);
-  float bias=p[2]*.01f,clipped=tanhf(amplified-e->z[0]+bias)-tanhf(bias);
-  e->z[1]+=e->coef[2]*(clipped-e->z[1]);float mixed=x*(1-p[3])+e->z[1]*p[3];
-  e->z[2]+=e->coef[3]*(mixed-e->z[2]);y=process(&e->eq[0],e->z[2])*e->coef[4];break;
+  float input=x*e->coef[5],amplified=input*e->coef[0];
+  float v=(amplified-e->z[0])*e->coef[1],low=v+e->z[0];e->z[0]=low+v;
+  float bias=p[2]*.01f,signal=amplified-low;
+  // Antiderivative antialiasing of the independent soft clipper. The divided
+  // difference integrates the transfer curve between samples without resampling.
+  float previous=e->z[3],difference=signal-previous,clipped;
+  if(fabsf(difference)<.0001f)clipped=tanhf((signal+previous)*.5f+bias)-tanhf(bias);
+  else {float a=signal+bias,b=previous+bias;
+   double fa=fabs((double)a)+log1p(exp(-2*fabs((double)a))),fb=fabs((double)b)+log1p(exp(-2*fabs((double)b)));
+   clipped=(fa-fb)/difference-tanhf(bias);
+  }
+  e->z[3]=signal;
+  v=(clipped-e->z[1])*e->coef[2];low=v+e->z[1];e->z[1]=low+v;
+  float mixed=input*(1-p[3])+low*p[3];
+  v=(mixed-e->z[2])*e->coef[3];low=v+e->z[2];e->z[2]=low+v;
+  y=process(&e->eq[0],low)*e->coef[4];break;
  }
  case 14:{float target=p[0]<.5f?0:p[0]<1.5f?p[1]/60:p[2]/60;e->z[0]+=(target-e->z[0])*e->coef[1];s->fxPhase[l][k]=fmod(phase+TAU*e->z[0]/rate,TAU);float doppler=rate*(.002f+.0015f*(p[7]/100)*sinf(phase));buffer[pos]=x;float body=tap(buffer,pos,doppler);float driven=tanhf(body*(1+p[4]*12));float ambience=tap(buffer,pos,rate*(.02f+.15f*p[9]));float amp=.72f+.28f*cosf(phase)*(1-p[6]*.5f);y=(driven*amp+ambience*p[11]*.4f)*e->coef[0];e->stereo=sinf(phase)*fminf(1,p[8]/200)*p[10];break;}
  default:break;
