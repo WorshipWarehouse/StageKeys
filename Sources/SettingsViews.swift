@@ -26,6 +26,8 @@ struct SettingsEditor: View {
                             Text(store.audioStatus?.name ?? "System Output")
                             #endif
                             Toggle("Audio Running",isOn:Binding(get:{store.started},set:{if $0 {store.start()} else {store.panic();store.audio.stop();store.started=false}}))
+                            Toggle("Bypass Master Limiter (Temporary)",isOn:$store.masterLimiterBypassed)
+                            Text("For listening comparisons. The limiter returns on when StageKeys restarts; output headroom stays unchanged.").font(.caption).foregroundStyle(.secondary)
                             if let status=store.audioStatus {
                                 Text("Sample Rate: \(Int(status.sampleRate)) Hz")
                                 Text("Buffer: \(status.bufferFrames) samples · \(status.bufferMilliseconds,specifier:"%.1f") ms")

@@ -15,6 +15,7 @@ final class PerformanceStore: ObservableObject {
     @Published var audioStatus: AudioDeviceStatus?
     @Published var message: String?
     @Published private(set) var audioCheckRecording=false
+    @Published var masterLimiterBypassed=false {didSet{audio.bypassMasterLimiter(masterLimiterBypassed)}}
     func startAudioCheck() {
         do {
             let folder=saveURL.deletingLastPathComponent().appendingPathComponent("Audio Checks",isDirectory:true)

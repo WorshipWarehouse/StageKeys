@@ -9,3 +9,7 @@ Disk writes run on a separate serial queue. The pending-buffer limit prevents an
 For attack diagnosis, play a few isolated notes with the pedal released, then repeat with sustain. Compare the resulting file with the sound heard live, at the same output level. A similar offline/reference clip alone cannot certify that a live attack problem is fixed.
 
 `AudioDiagnosticRecorderTests` checks stereo sample order, sample preservation, exact frame limits, validation and repeated stop behavior. No private sound fixture is needed for that test.
+
+## Temporary master limiter comparison
+
+Audio Settings → Audio → **Bypass Master Limiter (Temporary)** toggles only the output limiter’s bypass property. The graph, master/channel levels, effects and 1 dB output headroom remain unchanged. Re-strike notes after toggling for the attack comparison. This switch is not stored in settings or setlists; the limiter is active again after restarting StageKeys. Audio checks capture whichever limiter state is currently selected.

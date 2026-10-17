@@ -31,6 +31,9 @@ final class AudioController {
         protectedOutput.installTap(onBus:0,bufferSize:512,format:format) { [weak recorder] buffer,_ in recorder?.append(buffer) }
     }
     func stopAudioCheck(){diagnosticRecorder?.finish()}
+    // Session-only diagnostic switch. Keep the graph and 1 dB output headroom
+    // unchanged so the limiter is the only processor toggled for comparison.
+    func bypassMasterLimiter(_ bypassed:Bool){outputLimiter.bypass=bypassed}
     var onError: ((String) -> Void)?
     var offline: Bool { engine.isInManualRenderingMode }
     #if DEBUG
