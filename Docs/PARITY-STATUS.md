@@ -1,6 +1,12 @@
+## 0.32 live audio investigation
+
+Added a Mac Help-menu audio check that captures up to 30 seconds of the actual stereo output after effects and limiting, without microphone access or modifying library assets. File writes use a bounded background queue. Recorder tests verify exact duration, stereo sample preservation and clean repeated stops.
+
+The user hears similar attacks in matched MainStage and complete StageKeys offline diagnostic clips, while reporting a live StageKeys difference. Bypassing MainStage’s source filter did not reproduce the click. No further attack compensation was applied on that evidence: the live effect/pedal/device path still needs capture and verification. This release is diagnostic progress, not a confirmed click fix. [Details](AUDIO-CHECKS.md), [comparison evidence](SAMPLER-ATTACK.md).
+
 ## 0.31 imported attack handling
 
-Added playback-only, per-sound Attack Smoothing and an automatic 40 ms minimum for the converted Steinway's hard onset. Original presets/samples, source region/loop maps, decay/release and saved effects/levels are preserved. Private upper-octave onset and asset-hash checks pass; a representative twelve-waveform audit matches other imported native attacks after accounting for host-graph timing. This is targeted transient softening, not exact original attack-curve parity; user listening confirmation remains pending. [Evidence](SAMPLER-ATTACK.md).
+Added playback-only, per-sound Attack Smoothing and an automatic 40 ms minimum for the converted Steinway's hard onset. Original presets/samples, source region/loop maps, decay/release and saved effects/levels are preserved. Private upper-octave onset and asset-hash checks pass; a representative twelve-waveform audit matches other imported native attacks after accounting for host-graph timing. This is targeted transient softening, not exact original attack-curve parity; the user reports only partial improvement and a remaining live click. [Evidence](SAMPLER-ATTACK.md).
 
 ## 0.30 tonic patch recall and cleaner effect processing
 

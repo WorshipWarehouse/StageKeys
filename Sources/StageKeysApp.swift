@@ -21,6 +21,13 @@ struct StageKeysApp: App {
         }
         #if os(macOS)
         .defaultSize(width: 1194, height: 866)
+        .commands {
+            CommandGroup(after:.help) {
+                Divider()
+                Button(store.audioCheckRecording ? "Recording Audio Check…":"Record 30-Second Audio Check") {store.startAudioCheck()}.disabled(store.audioCheckRecording)
+                Button("Stop Audio Check") {store.stopAudioCheck()}.disabled(!store.audioCheckRecording)
+            }
+        }
         #endif
     }
 }

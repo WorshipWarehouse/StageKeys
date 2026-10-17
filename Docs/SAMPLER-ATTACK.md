@@ -1,6 +1,6 @@
-# Imported sample attacks — v0.31
+# Imported sample attacks — investigation through v0.32
 
-The reported Steinway problem persists on isolated notes, mouse-played notes and with SolaVerb bypassed, and is most apparent in the upper register. This identifies the sampled instrument onset rather than reverb, MIDI hardware or output clipping as the area to adjust. Live resident and streamed tests produced the same Steinway waveform. Original consolidated CAF regions were inspected without modifying them; the native conversion retains their start/root/loop mappings. The source/converted amplitude attack is very fast (0/1 ms), and velocity-dependent attack translation is still incomplete.
+The reported Steinway problem persists on isolated notes, mouse-played notes and with SolaVerb bypassed, and is most apparent in the upper register. These observations narrow the investigation but do not establish that the recorded sample transient is the cause. Live resident and streamed tests produced the same Steinway waveform. Original consolidated CAF regions were inspected without modifying them; the native conversion retains their start/root/loop mappings. The source/converted amplitude attack is very fast (0/1 ms), and velocity-dependent attack translation is still incomplete.
 
 ## Playback-only adjustment
 
@@ -17,3 +17,11 @@ Private Steinway fixture checks at MIDI 60, 84 and 96 compare the unmodified and
 The wider audit inspects 224 installed sampler preset states and compares twelve middle/upper-register waveforms across Felt Piano, Una Corda, Glockenspiel, Touchstone, Airy EP and Sunrise Pad with direct playback of their original native presets. The host graph adds a small fractional-sample delay; the test aligns that timing separately from waveform error and checks early attack steps independently. Aligned residuals are below 0.0001; no added onset discontinuity was found in that selection. This is a representative audio audit, not a listening certification of every library sound.
 
 The updated Mac app is open for the user's listening check. Automated onset reduction does not by itself establish that the perceived click is completely gone. Original MainStage attack curves and velocity-dependent attack still need further translation for exact fidelity.
+
+## v0.32 listening comparison and live capture
+
+The user reports that the matching legacy Steinway is smooth in MainStage, including with its instrument filter bypassed. The filter was restored afterward. A short MainStage diagnostic take played MIDI 60/84/96 at velocities 50/83/127. Its expected velocity layers correlate closely with the unmodified consolidated source. The loudest reference notes clipped at the user’s +6 dB channel setting; those are not a reliable reference for peak or distortion measurements. Listening clips instead used velocity 83 at matching sustained levels.
+
+The user heard similar attacks in those MainStage and complete StageKeys offline output clips. The tested StageKeys path includes controller-gated branches, bypassed channel processing and the output limiter. Its 40 ms setting already reduces the first 10 ms relative to the reference. This does **not** verify the live application's current effects, sustained voices, pedal-selected bank or device path, and does not establish a fix. No additional attack/filter compensation was applied on this evidence.
+
+[Audio checks](AUDIO-CHECKS.md) capture the live application output after limiting, with its actual mix and pedal behavior. Captures are local diagnostics, excluded from source control and sound packs. Original presets and samples remain unchanged.

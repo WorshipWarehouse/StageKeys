@@ -19,6 +19,18 @@ final class AudioController {
     private var externalStates: [Int: Data] = [:]
     private var samplerAttacks:[Int:Float]=[:]
     private var levels: [Int: Float] = [:]
+    private var diagnosticRecorder:AudioDiagnosticRecorder?
+    func startAudioCheck(at url:URL,completion:@escaping(Result<AudioDiagnosticRecorder.Summary,Error>)->Void)throws {
+        guard engine.isRunning,diagnosticRecorder==nil else{throw NSError(domain:"StageKeysAudioCheck",code:2,userInfo:[NSLocalizedDescriptionKey:"Start audio playback and stop any existing audio check first."])}
+        let format=protectedOutput.outputFormat(forBus:0)
+        let recorder=try AudioDiagnosticRecorder(url:url,format:format) { [weak self] result in
+            self?.protectedOutput.removeTap(onBus:0);self?.diagnosticRecorder=nil
+            completion(result)
+        }
+        diagnosticRecorder=recorder
+        protectedOutput.installTap(onBus:0,bufferSize:512,format:format) { [weak recorder] buffer,_ in recorder?.append(buffer) }
+    }
+    func stopAudioCheck(){diagnosticRecorder?.finish()}
     var onError: ((String) -> Void)?
     var offline: Bool { engine.isInManualRenderingMode }
     #if DEBUG
@@ -73,7 +85,7 @@ final class AudioController {
         #endif
         if !engine.isRunning { engine.prepare(); try engine.start() }
     }
-    func stop() { sk_panic(synth); engine.stop() }
+    func stop() { stopAudioCheck();sk_panic(synth); engine.stop() }
     func noteOn(key: Int, pitch: Int, instrument: Int, layer: Int, velocity: Float,sourceID:Int32? = nil) {
         if externalSounds[layer] != nil { externalRack?.noteOn(channel: layer, key: key, pitch: pitch, velocity: velocity,sourceID:sourceID) }
         else if instrument >= 0 { sk_note_on(synth, Int32(key), Int32(pitch), Int32(instrument), Int32(layer), velocity) }

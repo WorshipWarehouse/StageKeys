@@ -14,6 +14,23 @@ final class PerformanceStore: ObservableObject {
     @Published var audioOutputs: [AudioOutputDevice] = []
     @Published var audioStatus: AudioDeviceStatus?
     @Published var message: String?
+    @Published private(set) var audioCheckRecording=false
+    func startAudioCheck() {
+        do {
+            let folder=saveURL.deletingLastPathComponent().appendingPathComponent("Audio Checks",isDirectory:true)
+            try FileManager.default.createDirectory(at:folder,withIntermediateDirectories:true)
+            let url=folder.appendingPathComponent("StageKeys-"+UUID().uuidString+".wav")
+            try audio.startAudioCheck(at:url) { [weak self] result in
+                self?.audioCheckRecording=false
+                switch result {
+                case .success(let summary):self?.message=String(format:"Audio check saved (%.1f seconds):\n%@",Double(summary.frames)/summary.sampleRate,summary.url.path)
+                case .failure(let error):self?.message="Audio check failed: "+error.localizedDescription
+                }
+            }
+            audioCheckRecording=true
+        }catch{message=error.localizedDescription}
+    }
+    func stopAudioCheck(){audio.stopAudioCheck()}
     @Published var deviceCount = 0
     @Published var midiSources: [MIDIInputSource] = []
     @Published var midiDevices: [MIDIKnownDevice] = []
