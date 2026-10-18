@@ -24,14 +24,15 @@ struct ExternalSound: Codable, Hashable {
 }
 
 
-/// Resident samples are essential for deterministic faster-than-real-time tests.
-/// Live playback retains the sampler's streaming default to bound library memory.
+/// Converted instruments use resident samples on Mac: the streamed multi-bank
+/// graph can introduce discontinuities absent from offline/resident playback.
+/// Only active instruments are loaded; original sample files remain untouched.
 enum SamplerRendering {
-    static func configure(_ sampler:AVAudioUnitSampler,offline:Bool)throws {
-        guard offline else{return}
-        var properties:[(AudioUnitPropertyID,UInt32)]=[(kAudioUnitProperty_OfflineRender,1)]
+    static func configure(_ sampler:AVAudioUnitSampler,offline:Bool,resident:Bool=false)throws {
+        var properties:[(AudioUnitPropertyID,UInt32)]=[]
+        if offline {properties.append((kAudioUnitProperty_OfflineRender,UInt32(1)))}
         #if os(macOS)
-        properties.insert((kMusicDeviceProperty_StreamFromDisk,0),at:0)
+        if offline || resident {properties.insert((kMusicDeviceProperty_StreamFromDisk,0),at:0)}
         #endif
         for (property,value) in properties {
             var setting=value

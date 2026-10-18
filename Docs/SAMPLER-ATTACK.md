@@ -1,6 +1,6 @@
-# Imported sample attacks — investigation through v0.32
+# Imported sample attacks — investigation through v0.33
 
-The reported Steinway problem persists on isolated notes, mouse-played notes and with SolaVerb bypassed, and is most apparent in the upper register. These observations narrow the investigation but do not establish that the recorded sample transient is the cause. Live resident and streamed tests produced the same Steinway waveform. Original consolidated CAF regions were inspected without modifying them; the native conversion retains their start/root/loop mappings. The source/converted amplitude attack is very fast (0/1 ms), and velocity-dependent attack translation is still incomplete.
+The reported Steinway problem persists on isolated notes, mouse-played notes and with SolaVerb bypassed, and is most apparent in the upper register. These observations narrow the investigation but do not establish that the recorded sample transient is the cause. Earlier limited resident/streamed comparisons did not isolate the defect; the later multi-instrument production-path test below does reproduce a difference. Original consolidated CAF regions were inspected without modifying them; the native conversion retains their start/root/loop mappings. The source/converted amplitude attack is very fast (0/1 ms), and velocity-dependent attack translation is still incomplete.
 
 ## Playback-only adjustment
 
@@ -25,3 +25,13 @@ The user reports that the matching legacy Steinway is smooth in MainStage, inclu
 The user heard similar attacks in those MainStage and complete StageKeys offline output clips. The tested StageKeys path includes controller-gated branches, bypassed channel processing and the output limiter. Its 40 ms setting already reduces the first 10 ms relative to the reference. This does **not** verify the live application's current effects, sustained voices, pedal-selected bank or device path, and does not establish a fix. No additional attack/filter compensation was applied on this evidence.
 
 [Audio checks](AUDIO-CHECKS.md) capture the live application output after limiting, with its actual mix and pedal behavior. Captures are local diagnostics, excluded from source control and sound packs. Original presets and samples remain unchanged.
+
+## v0.33 real-time streaming correction
+
+The user's live Audio Check contains sharp jumps concentrated at render-buffer boundaries, particularly on repeated upper notes. Its peak is about 0.505 full scale, and bypassing the output limiter did not change the audible click. An offline-render comparison had missed this fault.
+
+A real-time production-path sequence now reproduces it: MIDI 84/96/100/108 at velocity 102, repeated with note releases, a second converted instrument loading mid-take, and sustain enabled for the second half. The released streaming path produces extra abrupt boundary steps (maximum about 0.100 in this take). Keeping the original samples resident removes those extra boundary impulses; the corresponding maximum is about 0.066, occurring within the normal pitched waveform. Retaining authored preset dictionaries alone did not remove the fault and was not included as a fix.
+
+Mac converted native instruments and their nested sample branches now explicitly disable AUSampler disk streaming before loading. Offline rendering remains resident. Ordinary SF2/plain samples and external plug-ins retain their existing playback policy. iOS retains its existing system loading policy; this Mac finding does not establish an iPad defect. Resident playback increases RAM used by active converted sounds; it does not preload the entire library. Samples, region offsets, loops, envelope settings and original instrument files are unchanged. The existing 40 ms Steinway adjustment is retained to isolate this correction from a timbre change.
+
+`RealtimePianoTests` compares repeated upper-note live output against the same instrument's offline maximum sample step, with sustain and a second instrument's graph reload. It requires `STAGEKEYS_PIANO_PRESET` and an available Core Audio output; recordings remain temporary. The general attack, native-group and piano-fidelity checks also run. Automated reproduction and removal of the extra impulses is evidence for this fix; final confirmation still requires the user's live listening check.

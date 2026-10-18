@@ -46,7 +46,7 @@ The right reverb tank uses different delay lengths so mono sources no longer pro
 
 The managed SK App Felt Piano instrument preserves the original native Instrument dictionary and all 222 referenced sample hashes. With resident samples, original and managed instrument renders matched with zero relative squared error at note/velocity pairs 48/40, 60/100 and 72/120, including note-off and release. This verifies the sampler instrument, not the whole Sunday Keys channel or patch.
 
-Faster-than-real-time tests previously ran with disk streaming enabled. That can introduce reader gaps despite successful render status. Mac offline tests now disable disk streaming and set the documented offline-render flag. Real-time playback keeps streaming enabled to avoid loading large libraries into memory. Synthetic 220 Hz and 880 Hz samples verify actual source content rather than merely nonzero output.
+Faster-than-real-time tests previously ran with disk streaming enabled. That can introduce reader gaps despite successful render status. Mac offline tests now disable disk streaming and set the documented offline-render flag. Mac converted instruments now use resident original samples after the live attack investigation; see [SAMPLER-ATTACK.md](SAMPLER-ATTACK.md). Other live instrument types retain their existing streaming policy. Synthetic 220 Hz and 880 Hz samples verify actual source content rather than merely nonzero output.
 
 ## Restored voicing
 

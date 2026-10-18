@@ -140,7 +140,7 @@ final class ExternalInstrumentRack {
         if let children=plan.rack.branches {
             for (bus,child) in children.enumerated() {let nested=try makeBranch(child,state:state,format:format,tempo:tempo,nodes:&nodes);voice.children.append(nested);engine.connect(nested.output,to:voice.sum,fromBus:0,toBus:AVAudioNodeBus(bus),format:format)}
         } else {
-            let sampler=AVAudioUnitSampler();try SamplerRendering.configure(sampler,offline:engine.isInManualRenderingMode);engine.attach(sampler);nodes.append(sampler);voice.sampler=sampler
+            let sampler=AVAudioUnitSampler();try SamplerRendering.configure(sampler,offline:engine.isInManualRenderingMode,resident:state["StageKeys.NativeSampler"] != nil);engine.attach(sampler);nodes.append(sampler);voice.sampler=sampler
             let temporary=FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString+".aupreset")
             defer{try? FileManager.default.removeItem(at:temporary)}
             try PropertyListSerialization.data(fromPropertyList:Self.branchState(state,indices:plan.sampleLayers),format:.xml,options:0).write(to:temporary)
@@ -458,7 +458,7 @@ final class ExternalInstrumentRack {
                 let file = libraryURL.appendingPathComponent(name)
                 guard FileManager.default.fileExists(atPath: file.path) else { throw ExternalInstrumentError.missingFile }
                 let sampler = AVAudioUnitSampler()
-                try SamplerRendering.configure(sampler,offline:engine.isInManualRenderingMode)
+                try SamplerRendering.configure(sampler,offline:engine.isInManualRenderingMode,resident:sound.nativeSampler != nil)
                 if sound.kind == .soundBank {
                     try sampler.loadSoundBankInstrument(at: file, program: sound.program, bankMSB: sound.bankMSB, bankLSB: sound.bankLSB)
                 } else if sound.kind == .samplerPreset {
