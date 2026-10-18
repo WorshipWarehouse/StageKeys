@@ -23,12 +23,19 @@ import AVFoundation
         // Reconstruct a v0.27 preset to exercise an actual installed-library
         // upgrade, including its untouched-envelope guard and exact map retention.
         var legacy=sound,program=sound.nativeSampler!
-        program.conversionVersion=nil;program.amplitudeEnvelope=nil;legacy.nativeSampler=program
+        let convertedControls=program.voiceControls
+        program.conversionVersion=nil;program.amplitudeEnvelope=nil;program.voiceControls=nil;legacy.nativeSampler=program
         var oldState=state,oldInstrument=state["Instrument"] as! [String:Any],oldLayers=(state["Instrument"] as! [String:Any])["Layers"] as! [[String:Any]]
         let parts=try EXSNative.chunks(Data(contentsOf:source))
         for rule in program.groups {
             let group=parts.first{$0.kind==2 && $0.name==rule.name}!
             EXSNative.applyEnvelope(nil,group:group.body,to:&oldLayers[rule.layer])
+            oldLayers[rule.layer]["Filters"]=["ID":0,"enabled":false,"cutoff":20000.0,"resonance":0.0]
+            oldLayers[rule.layer]["Connections"]=(oldLayers[rule.layer]["Connections"] as? [[String:Any]] ?? []).filter{$0["name"] as? String != "StageKeys EXS synthesis"}
+            if var zones=oldLayers[rule.layer]["Zones"] as? [[String:Any]] {for i in zones.indices {
+                zones[i]["gain"]=((zones[i]["gain"] as? NSNumber)?.doubleValue ?? 0)-(convertedControls?.gain ?? 0)
+                zones[i]["fine tune"]=((zones[i]["fine tune"] as? NSNumber)?.doubleValue ?? 0)-(convertedControls?.tuning ?? 0)
+            };oldLayers[rule.layer]["Zones"]=zones}
         }
         oldInstrument["Layers"]=oldLayers;oldState["Instrument"]=oldInstrument;oldState["StageKeys.NativeSampler"]=try JSONEncoder().encode(program)
         let file=rack.libraryURL.appendingPathComponent(sound.fileName!)
@@ -52,6 +59,14 @@ import AVFoundation
         let editedBytes=try PropertyListSerialization.data(fromPropertyList:edited,format:.xml,options:0);try editedBytes.write(to:file)
         do{_ = try StageKeysSampler.updateEnvelope(legacy,original:retained,library:scratch);assertionFailure("Edited envelope overwritten")}catch{}
         let preservedEdit=try Data(contentsOf:file);assert(preservedEdit==editedBytes)
+        // Multi-step upgrade rollback: an edited filter must also leave the
+        // earlier v1 envelope document unchanged if synthesis upgrade is refused.
+        var refused=oldState,refusedInst=oldInstrument,refusedLayers=oldLayers
+        refusedLayers[0]["Filters"]=["ID":0,"enabled":true,"cutoff":2345.0,"resonance":0.0]
+        refusedInst["Layers"]=refusedLayers;refused["Instrument"]=refusedInst
+        let refusedBytes=try PropertyListSerialization.data(fromPropertyList:refused,format:.xml,options:0);try refusedBytes.write(to:file)
+        do{_ = try StageKeysSampler.updatePlayback(legacy,original:retained,library:scratch);assertionFailure("Edited filter overwritten by multi-step upgrade")}catch{}
+        let rolledBack=try Data(contentsOf:file);assert(rolledBack==refusedBytes,"Failed upgrade must restore the complete v1 document")
         // Exercise Store migration with user-edited names/levels/rack settings.
         try legacyBytes.write(to:file)
         setenv("STAGEKEYS_DATA_DIR",scratch.path,1)
@@ -67,7 +82,7 @@ import AVFoundation
         store.updateSamplerEnvelopes()
         let actual=store.setlist.patches[0].layers[0]
         assert(actual.name==user.name && actual.id==user.id && actual.gain==user.gain && actual.pan==user.pan && actual.blockSustain==user.blockSustain && actual.importedRack==user.importedRack)
-        assert(actual.external?.name==named.name && actual.external?.bankMSB==13 && actual.external?.nativeSampler?.conversionVersion==2)
+        assert(actual.external?.name==named.name && actual.external?.bankMSB==13 && actual.external?.nativeSampler?.conversionVersion==3)
         assert(store.librarySounds[0].name==entry.name && store.librarySounds[0].sound?.name==named.name && store.librarySounds[0].layer?.importedRack==userRack)
         assert(store.libraryImportProgress?.contains("Updated 1")==true,store.libraryImportProgress ?? "No upgrade status")
         print("PASS: existing native EXS envelope upgrade, original preset backup, exact zone/routing/sample retention and edited-envelope protection")

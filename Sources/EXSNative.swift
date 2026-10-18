@@ -19,8 +19,9 @@ struct NativeSamplerProgram:Codable,Hashable {
     var compactGroups:Bool?
     var conversionVersion:Int?
     var amplitudeEnvelope:EXSNative.Envelope?
+    var voiceControls:EXSNative.VoiceControls?
     var valid:Bool {
-        (conversionVersion.map{(1...2).contains($0)} ?? true) && (amplitudeEnvelope?.valid ?? true) && !groups.isEmpty && groups.count<=64 && notes.count<=32 && notes.allSatisfy{$0.count<=2000} && groups.allSatisfy {group in
+        (conversionVersion.map{(1...3).contains($0)} ?? true) && (amplitudeEnvelope?.valid ?? true) && (voiceControls?.valid ?? true) && !groups.isEmpty && groups.count<=64 && notes.count<=32 && notes.allSatisfy{$0.count<=2000} && groups.allSatisfy {group in
             group.name.count<=200 && (0..<64).contains(group.layer) && (0...127).contains(group.low) && (group.low...127).contains(group.high) && (0...127).contains(group.velocityLow) && (group.velocityLow...127).contains(group.velocityHigh) && (group.controller.map{(0...127).contains($0)} ?? true) && (0...127).contains(group.controllerLow) && (group.controllerLow...127).contains(group.controllerHigh)
         } && rack.validate()
     }
@@ -113,6 +114,100 @@ enum EXSNative {
         envelopes[0]["Stages"]=stages;layer["Envelopes"]=envelopes
     }
 
+    /// Supported source-wide synthesis controls. No patch-name special cases.
+    struct VoiceControls:Codable,Hashable {
+        struct Route:Codable,Hashable {
+            var source:Int
+            var amount:Double
+            var inverted:Bool
+        }
+        struct Filter:Codable,Hashable {
+            var cutoff:Double
+            var resonance:Double
+            var routes:[Route]
+        }
+        var gain:Double
+        var tuning:Double
+        var filter:Filter?
+        var valid:Bool {
+            gain.isFinite && (-96...24).contains(gain) && tuning.isFinite && (-4800...4800).contains(tuning) &&
+            (filter.map { f in f.cutoff.isFinite && (0...1).contains(f.cutoff) && f.resonance.isFinite && (0...1).contains(f.resonance) && f.routes.count<=12 && f.routes.allSatisfy { [-4,-3].contains($0.source) || (0...127).contains($0.source) } && f.routes.allSatisfy{$0.amount.isFinite && (-1...1).contains($0.amount)} } ?? true)
+        }
+    }
+    static func voiceControls(_ parts:[Chunk],notes:inout Set<String>)throws->VoiceControls? {
+        guard let chunk=parts.first(where:{$0.kind==4}) else{return nil}
+        let values=try parameters(chunk.body)
+        var filter:VoiceControls.Filter?
+        if values[0x2c] == 1 {
+            // The supported EXS low-pass family loads as LP 12dB Lush in the
+            // current MainStage Sampler. Other circuits remain explicitly reported.
+            if (chunk.modern && values[0xf3] == 0 || !chunk.modern && values[0xf3] == 2),values[0x4b,default:0]==0,values[0x174,default:0]==0,
+               let cutoff=values[0x1e],(0...1000).contains(cutoff),let resonance=values[0x1d],(0...1000).contains(resonance) {
+                var routes:[VoiceControls.Route]=[]
+                if let key=values[0x2e],key != 0 {routes.append(.init(source:-4,amount:Double(key)/1000,inverted:false))}
+                for i in 0..<10 {
+                    let offset=i*6,source=values[0xae+offset,default:-1],destination=values[0xad+offset,default:0]
+                    guard source != -1,destination != 0,values[0xf4+i,default:0]==0 else{continue}
+                    guard destination==8,values[0xaf+offset,default:-1] == -1,source == -3 || source == -4 || (0...127).contains(source),
+                          let amount=values[0xb0+offset],(-1000...1000).contains(amount) else {
+                        notes.insert("EXS modulation route \(i+1) is retained in the original instrument but its source/target/via combination is not translated.");continue
+                    }
+                    if source == -4,values[0x2e] != nil {continue}
+                    routes.append(.init(source:source,amount:Double(amount)/1000,inverted:values[0xe9+i,default:0] != 0))
+                }
+                filter = .init(cutoff:Double(cutoff)/1000,resonance:Double(resonance)/1000,routes:routes)
+                notes.insert("EXS low-pass cutoff, resonance, group offsets and supported velocity/key/CC routes are active per sampler voice. The Lush circuit and cutoff calibration remain an approximation.")
+            } else {notes.insert("This EXS filter circuit, drive or second-filter configuration is not translated; the original instrument is retained.")}
+        }
+        if values[0x08,default:0] != 0 || values[0x160,default:0] != 0 {notes.insert("EXS global amplitude key scaling/pan requires further translation.")}
+        if values[0x05,default:64] != 64 {notes.insert("EXS source polyphony is retained in the original instrument; native playback currently uses 64 voices.")}
+        notes.insert("EXS pitch-bend asymmetry, amplitude velocity curve and advanced modulation/envelope shapes remain approximate or untranslated.")
+        let result=VoiceControls(gain:Double(values[0x07,default:0]),tuning:Double(values[0x0f,default:0])+100*Double(values[0x0e,default:0]+values[0x2d,default:0]),filter:filter)
+        guard result.valid else{throw MainStagePatch.Failure.invalid("EXS synthesis controls exceed supported ranges.")}
+        return result
+    }
+    static let cutoffDestination=0x41500000
+    static let cutoffSpan=1200*log2(1000.0)
+    static func applyVoiceControls(_ controls:VoiceControls?,envelope:Envelope?,group:[UInt8],to layer:inout [String:Any]) {
+        guard let controls else{return}
+        let id=layer["ID"] as? Int ?? 0
+        if var zones=layer["Zones"] as? [[String:Any]] {
+            for i in zones.indices {
+                zones[i]["gain"]=((zones[i]["gain"] as? NSNumber)?.doubleValue ?? 0)+controls.gain
+                zones[i]["fine tune"]=((zones[i]["fine tune"] as? NSNumber)?.doubleValue ?? 0)+controls.tuning
+            }
+            layer["Zones"]=zones
+        }
+        var connections=layer["Connections"] as? [[String:Any]] ?? []
+        func route(_ source:Int,_ destination:Int,_ minimum:Double,_ maximum:Double,_ inverse:Bool=false) {
+            connections.append(["name":"StageKeys EXS synthesis","ID":(connections.compactMap{$0["ID"] as? Int}.max() ?? 0)+1,"enabled":true,"source":source,"destination":destination+id*256,"control":0,"transform":1,"inverse":inverse,"min value":minimum,"max value":maximum])
+        }
+        if let filter=controls.filter {
+            let offset=Double(Int8(bitPattern:group[41]))/100
+            let resonance=Double(Int8(bitPattern:group[43]))/100
+            layer["Filters"]=["ID":0,"enabled":true,"cutoff":20.0,"resonance":-3+20*min(1,max(0,filter.resonance+resonance))]
+            let constant=(filter.cutoff+offset)*cutoffSpan
+            route(301,cutoffDestination,constant,constant)
+            for r in filter.routes {
+                if r.source == -4 {
+                    // Key source is MIDI key / 128; center the musical tracking at C3 (60).
+                    route(300,cutoffDestination,-6000*r.amount,6800*r.amount,r.inverted)
+                } else {
+                    route(r.source == -3 ? 301:r.source,cutoffDestination,0,r.amount*cutoffSpan*128/127,r.inverted)
+                }
+            }
+        }
+        if let envelope,abs(envelope.lowVelocityAttack-envelope.attack)>0.000001,
+           var envelopes=layer["Envelopes"] as? [[String:Any]],!envelopes.isEmpty,var stages=envelopes[0]["Stages"] as? [[String:Any]] {
+            let offset=Double(UInt32(group[56]) | UInt32(group[57])<<8 | UInt32(group[58])<<16 | UInt32(group[59])<<24)/1000
+            let low=max(0.00001,envelope.lowVelocityAttack+offset),high=max(0.00001,envelope.attack+offset),base=max(low,high)
+            for i in stages.indices where stages[i]["stage"] as? Int == 1 {stages[i]["time"]=base}
+            envelopes[0]["Stages"]=stages;layer["Envelopes"]=envelopes
+            route(301,0x23e00000,low/base,(low+(high-low)*128/127)/base)
+        }
+        layer["Connections"]=connections
+    }
+
     struct Chunk {var kind:Int;var modern:Bool;var index:Int;var name:String;var body:[UInt8]}
     static func chunks(_ data:Data)throws->[Chunk] {
         guard data.count>=84,data.count<=16_000_000 else{throw MainStagePatch.Failure.invalid("Invalid EXS document size.")}
@@ -164,8 +259,9 @@ enum EXSNative {
         var native:[[String:Any]]=[],rules:[NativeSamplerProgram.Group]=[]
         var notes=Set<String>()
         let amplitude=try envelope(parts)
+        let controls=try voiceControls(parts,notes:&notes)
         if amplitude != nil {
-            notes.insert("EXS amplitude attack, decay, sustain and release are translated using the source time curve. Velocity-dependent attack, envelope shape and group offset interaction remain approximate; global filter/modulation remain unmapped.")
+            notes.insert("EXS amplitude attack, decay, sustain and release are translated using the source time curve. Velocity-dependent attack uses the source endpoints. Envelope shape and group offset interaction remain approximate; see the separate filter/modulation notes.")
         } else if parts.contains(where:{$0.kind==4}) {notes.insert("Original EXS global parameter data is retained. The amplitude envelope layout is unsupported; a fallback envelope is used. Global filter/modulation remain unmapped.")}
         let ungrouped=zones.contains{$0.body.count>=92 && u32($0.body,88)==0xffffffff}
         var activeGroups=groups
@@ -227,6 +323,7 @@ enum EXSNative {
             }
             guard [56,60,64].allSatisfy({u32(b,$0)==0}),u32(b,68)<=30000 else{throw MainStagePatch.Failure.invalid("EXS group envelope offsets require further translation.")}
             applyEnvelope(amplitude,group:b,to:&layer)
+            applyVoiceControls(controls,envelope:amplitude,group:b,to:&layer)
             if [56,60,64,68].contains(where:{u32(b,$0)>0}) {notes.insert("EXS group release offsets are applied to the native envelope. Their interaction with the original global envelope remains approximate.")}
             let keyRange=b[3]&1 != 0
             let rule=NativeSamplerProgram.Group(name:group.name,layer:index,low:keyRange ? Int(b[88]):0,high:keyRange ? Int(b[89]):127,velocityLow:Int(b[5]),velocityHigh:group.index==0xffffffff ? 127:Int(b[6]),controller:kind==3 ? Int(b[85]):nil,controllerLow:Int(b[86]),controllerHigh:Int(b[87]),enabled:b[3]&16==0)
@@ -235,7 +332,7 @@ enum EXSNative {
         }
         guard !native.isEmpty else{throw MainStagePatch.Failure.invalid("EXS has no playable native zones.")}
         instrument["Layers"]=native;instrument["voice count"]=64;state["Instrument"]=instrument;state["file-references"]=references;state["gain"]=0;state["name"]=source.deletingPathExtension().lastPathComponent
-        let program=NativeSamplerProgram(groups:rules,notes:notes.sorted(),compactGroups:true,conversionVersion:2,amplitudeEnvelope:amplitude)
+        let program=NativeSamplerProgram(groups:rules,notes:notes.sorted(),compactGroups:true,conversionVersion:3,amplitudeEnvelope:amplitude,voiceControls:controls)
         guard program.valid else{throw MainStagePatch.Failure.invalid("EXS native group plan is invalid.")}
         state["StageKeys.NativeSampler"]=try JSONEncoder().encode(program)
         try PropertyListSerialization.data(fromPropertyList:state,format:.xml,options:0).write(to:output,options:.atomic)

@@ -1,5 +1,7 @@
 # Native EXS playback and MainStage processing — 0.28
 
+Version 0.34 adds supported source filter/velocity/key/CC routes, group filter offsets, source level/tuning and velocity-dependent attack to independent EXS conversion. New imports use conversion v3; existing source-backed maps have a protected playback update. See [EXS-SYNTHESIS.md](EXS-SYNTHESIS.md) for active behavior, measured tests and remaining circuit/control-curve limitations. The earlier v2 investigation below describes previous limitations, some of which this update addresses.
+
 ## v0.28 envelope and processing update
 
 The native EXS translator now reads the bounded global parameter table and translates the amplitude ADSR controls. Envelope time is `10 * (value / 127)^4` seconds. The real Steinway reference has decay 127 (10 seconds), sustain 0 and release 46 (about 172 ms); v0.27 discarded those values in favor of a flat sustain and a 100 ms base release. Existing group release offsets are added to the source base release. Velocity-dependent attack, envelope curvature, nonzero group attack/decay/sustain offsets, global filter/modulation and exact consolidated-region transitions are still not verified identical.

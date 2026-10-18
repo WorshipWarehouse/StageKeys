@@ -530,6 +530,14 @@ final class ExternalInstrumentRack {
             try PropertyListSerialization.data(fromPropertyList:state,format:.xml,options:0).write(to:file)
             try sampler.loadInstrument(at:file)
         }
+        // Instrument reloads reset AU controller state. Restore the held pedal
+        // and filter/level CCs after every sampler in the graph has reloaded.
+        for (channel,voice) in voices where voice.unit is AVAudioUnitSampler {
+            for (controller,value) in (controllerValues[channel] ?? [:]).sorted(by:{$0.key<$1.key}) where controller<120 {
+                (voice.unit as? AVAudioUnitSampler)?.sendController(UInt8(controller),withValue:UInt8(value),onChannel:0)
+                voice.parallel.forEach{$0.control(UInt8(controller),UInt8(value))}
+            }
+        }
     }
     private func editGraph(_ operation: () throws -> Void) throws {
         let mixerSnapshot = mixerState()

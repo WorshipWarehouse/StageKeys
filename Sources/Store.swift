@@ -873,11 +873,11 @@ final class PerformanceStore: ObservableObject {
             }
             var entries=librarySounds,updates:[String:ExternalSound]=[:],failures:[String]=[]
             for entry in entries {
-                guard let sound=entry.sound,let program=sound.nativeSampler,(program.conversionVersion ?? 1)<2,let original=entry.originalInstrument,let file=sound.fileName,updates[file]==nil else{continue}
-                do{updates[file]=try StageKeysSampler.updateEnvelope(sound,original:original,library:root)}
+                guard let sound=entry.sound,let program=sound.nativeSampler,(program.conversionVersion ?? 1)<3,let original=entry.originalInstrument,let file=sound.fileName,updates[file]==nil else{continue}
+                do {updates[file]=try StageKeysSampler.updatePlayback(sound,original:original,library:root)}
                 catch{failures.append(entry.name+": "+error.localizedDescription)}
             }
-            guard !updates.isEmpty else{libraryImportProgress="No sampler envelopes were changed. "+failures.joined(separator:"; ");return}
+            guard !updates.isEmpty else{libraryImportProgress="No sampler playback settings were changed. "+failures.joined(separator:"; ");return}
             for i in entries.indices {
                 if let file=entries[i].sound?.fileName,let updated=updates[file]{entries[i].sound?.nativeSampler=updated.nativeSampler;entries[i].conversionNotes=updated.nativeSampler?.notes}
                 if let file=entries[i].layer?.external?.fileName,let updated=updates[file]{entries[i].layer?.external?.nativeSampler=updated.nativeSampler}
@@ -888,7 +888,7 @@ final class PerformanceStore: ObservableObject {
                 if let file=setlist.patches[p].layers[l].external?.fileName,let updated=updates[file]{setlist.patches[p].layers[l].external?.nativeSampler=updated.nativeSampler}
             }}
             applyPatch();save()
-            libraryImportProgress="Updated \(updates.count) sampler envelopes. Original samples, rack effects and patch settings are preserved. "+failures.joined(separator:"; ")
+            libraryImportProgress="Updated \(updates.count) sampler instruments. Original samples, rack effects and patch settings are preserved. "+failures.joined(separator:"; ")
         }catch{libraryImportProgress=error.localizedDescription}
     }
     func mainStageProcessing(_ channel:Int)throws->MainStageProcessing.Draft {

@@ -16,7 +16,7 @@ import AVFoundation
         for i in 0..<2 {
             var layer=template;layer["ID"]=i
             var zones=layer["Zones"] as! [[String:Any]]
-            for z in zones.indices{zones[z]["min key"]=0;zones[z]["max key"]=127;zones[z]["root key"]=i==0 ? 60:48}
+            for z in zones.indices{zones[z]["min key"]=0;zones[z]["max key"]=127;zones[z]["root key"]=i==0 ? 60:48;zones[z]["loop enabled"]=true;zones[z]["loop start"]=0;zones[z]["loop end"]=47999}
             layer["Zones"]=zones
             if var connections=layer["Connections"] as? [[String:Any]] {for j in connections.indices{for key in ["source","destination","control"]{if let value=connections[j][key] as? Int,value>=0x10000000{connections[j][key]=value+i*256}}};layer["Connections"]=connections}
             layers.append(layer)
@@ -64,5 +64,26 @@ import AVFoundation
         assert(loud/quiet>3.5 && loud/quiet<4.5,"Translated gain macro must change actual native audio")
         print("PASS: active native gain macro audio ratio \(loud/quiet)")
         print("PASS: active native sampler CC64 group selection, exclusive audible pitch and panic reset; dry \(dry), pedal \(pedal)")
+        func tailEnergy()throws->Double {
+            var energy=0.0
+            for block in 0..<30 {let b=try audio.offlineBlock();if block>20 {for i in 0..<Int(b.frameLength) {let x=b.floatChannelData![0][i];energy+=Double(x*x)}}}
+            return energy
+        }
+        audio.panic();audio.externalRack!.control(channel:0,controller:7,value:20)
+        audio.noteOn(key:60,pitch:60,instrument:-1,layer:0,velocity:0.8)
+        let quietBefore=try tailEnergy()
+        audio.panic();audio.configure(1,layer);audio.gain(1,0)
+        audio.noteOn(key:60,pitch:60,instrument:-1,layer:0,velocity:0.8)
+        let quietAfter=try tailEnergy()
+        assert(quietBefore>0.00000001 && (0.8...1.25).contains(quietAfter/quietBefore),"Instrument graph reload lost the cached CC level")
+        audio.panic();audio.externalRack!.control(channel:0,controller:7,value:127);audio.sustain(true,layers:[layer])
+        audio.configure(2,layer);audio.gain(2,0)
+        audio.noteOn(key:60,pitch:60,instrument:-1,layer:0,velocity:0.8)
+        let held=try tailEnergy();audio.noteOff(key:60,channel:0)
+        let sustained=try tailEnergy()
+        assert(sustained>held*0.5,"Graph reload lost the held sustain pedal")
+        audio.sustain(false,layers:[layer]);_ = try tailEnergy();let released=try tailEnergy()
+        assert(released<sustained*0.01,"Restored pedal must still release normally")
+        print("PASS: native filter/level controller cache and held sustain survive another instrument loading")
     }
 }

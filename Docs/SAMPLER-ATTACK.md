@@ -43,3 +43,7 @@ The user reports that the click is no longer apparent with resident playback, bu
 The real-time upper-register/sustain/second-instrument regression now uses the default unsmoothed attack. It passes: live maximum sample step approximately 0.07456 versus offline source reference 0.07499. This checks that removing the workaround does not reintroduce the measured streaming impulses. It is not a measurement of complete physical-key-to-speaker latency; audio-device buffers and MIDI delivery still contribute.
 
 Tone remains a separate parity issue. The imported legacy EXS currently omits its global filter/modulation, and a full MainStage channel strip can include additional EQ, compression and sends. The user confirmed that the current “Grand Piano and Pad” channel has been changed to the matching Steinway Grand Piano 2 sampler preset. Its channel-strip name is not the instrument name; compare that instrument and the surrounding processing before applying compensation.
+
+## v0.34 source synthesis
+
+The source Steinway's saved soft/hard attack endpoints now drive a per-voice native attack factor. This replaces the former incomplete velocity-attack translation without restoring an automatic smoothing floor. Explicit user smoothing still has priority. Resident playback and the zero default attack minimum remain in place. The source-based filter/gain/tuning changes and protected existing-library update are described in [EXS-SYNTHESIS.md](EXS-SYNTHESIS.md).

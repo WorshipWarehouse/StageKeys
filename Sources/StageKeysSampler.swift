@@ -83,6 +83,62 @@ enum StageKeysSampler {
         try PropertyListSerialization.data(fromPropertyList:state,format:.xml,options:0).write(to:preset,options:.atomic)
         var updated=sound;updated.nativeSampler=program;return updated
     }
+    static func updatePlayback(_ sound:ExternalSound,original:Original,library:URL)throws->ExternalSound {
+        guard let name=sound.fileName,name==URL(fileURLWithPath:name).lastPathComponent else{throw ExternalInstrumentError.unsupportedFormat}
+        let file=library.appendingPathComponent("Imported Sounds/"+name)
+        guard let size=try file.resourceValues(forKeys:[.fileSizeKey]).fileSize,size<=16_000_000 else{throw ExternalInstrumentError.unsupportedFormat}
+        let previous=try Data(contentsOf:file)
+        do {
+            var updated=sound
+            if (updated.nativeSampler?.conversionVersion ?? 1)<2 {updated=try updateEnvelope(updated,original:original,library:library)}
+            return try updateVoiceControls(updated,original:original,library:library)
+        } catch {
+            // A v1→v2 envelope step must not leave disk/metadata out of sync if
+            // the following synthesis step rejects a hand-edited filter.
+            try previous.write(to:file,options:.atomic)
+            throw error
+        }
+    }
+    /// Add supported source synthesis to an existing generated map, retaining
+    /// every zone boundary, sample reference, user rack and existing envelope edit.
+    static func updateVoiceControls(_ sound:ExternalSound,original:Original,library:URL)throws->ExternalSound {
+        guard var program=sound.nativeSampler,(program.conversionVersion ?? 1)==2,program.voiceControls==nil,
+              let name=sound.fileName,name==URL(fileURLWithPath:name).lastPathComponent,
+              original.sha256.count==64,original.sha256.allSatisfy({$0.isHexDigit}),
+              original.file=="Original Instruments/"+original.sha256+".exs" else{throw ExternalInstrumentError.unsupportedFormat}
+        let sourceURL=library.appendingPathComponent(original.file)
+        guard let size=try sourceURL.resourceValues(forKeys:[.fileSizeKey]).fileSize,size<=16_000_000 else{throw ExternalInstrumentError.unsupportedFormat}
+        let source=try Data(contentsOf:sourceURL)
+        guard MainStagePatch.digest(source)==original.sha256 else{throw CocoaError(.fileReadCorruptFile)}
+        let chunks=try EXSNative.chunks(source),envelope=try EXSNative.envelope(chunks)
+        var notes=Set(program.notes.filter{!$0.contains("global filter/modulation remain unmapped") && !$0.contains("global filter/modulation remain approximate/unmapped") && !$0.contains("Velocity-dependent attack, envelope shape and global filter/modulation")})
+        let controls=try EXSNative.voiceControls(chunks,notes:&notes)
+        let preset=library.appendingPathComponent("Imported Sounds/"+name),bytes=try Data(contentsOf:preset)
+        guard bytes.count<=16_000_000,var state=try PropertyListSerialization.propertyList(from:bytes,options:[],format:nil) as? [String:Any],
+              let metadata=state["StageKeys.NativeSampler"] as? Data,try JSONDecoder().decode(NativeSamplerProgram.self,from:metadata)==program,
+              var instrument=state["Instrument"] as? [String:Any],var layers=instrument["Layers"] as? [[String:Any]],layers.count==program.groups.count else{throw ExternalInstrumentError.unsupportedFormat}
+        for rule in program.groups {
+            guard layers.indices.contains(rule.layer),let group=chunks.first(where:{$0.kind==2 && $0.name==rule.name}),group.body.count>=92,
+                  let filter=layers[rule.layer]["Filters"] as? [String:Any],filter["enabled"] as? Bool==false,
+                  !(layers[rule.layer]["Connections"] as? [[String:Any]] ?? []).contains(where:{ (($0["destination"] as? Int ?? 0)&0xffff00ff)==EXSNative.cutoffDestination }) else {
+                throw MainStagePatch.Failure.invalid("The sampler filter was edited; import the original EXS separately to keep those edits.")
+            }
+            var expected=layers[rule.layer];EXSNative.applyEnvelope(envelope,group:group.body,to:&expected)
+            let unchanged=NSArray(array:expected["Envelopes"] as? [[String:Any]] ?? [])==NSArray(array:layers[rule.layer]["Envelopes"] as? [[String:Any]] ?? [])
+            if !unchanged {notes.insert("An edited amplitude envelope was preserved; velocity-dependent attack was not applied to that layer.")}
+            EXSNative.applyVoiceControls(controls,envelope:unchanged ? envelope:nil,group:group.body,to:&layers[rule.layer])
+        }
+        instrument["Layers"]=layers;state["Instrument"]=instrument
+        program.voiceControls=controls;program.conversionVersion=3;program.notes=notes.sorted()
+        guard program.valid else{throw ExternalInstrumentError.unsupportedFormat}
+        state["StageKeys.NativeSampler"]=try JSONEncoder().encode(program)
+        let backup=library.appendingPathComponent("Sampler Backups",isDirectory:true)
+        try FileManager.default.createDirectory(at:backup,withIntermediateDirectories:true)
+        let retained=backup.appendingPathComponent(MainStagePatch.digest(bytes)+".aupreset")
+        if !FileManager.default.fileExists(atPath:retained.path){try bytes.write(to:retained,options:.atomic)}
+        try PropertyListSerialization.data(fromPropertyList:state,format:.xml,options:0).write(to:preset,options:.atomic)
+        var updated=sound;updated.nativeSampler=program;return updated
+    }
     struct Original:Codable,Equatable {
         var file:String
         var sha256:String
@@ -112,7 +168,7 @@ enum SamplerAttack {
               var instrument=original["Instrument"] as? [String:Any],var layers=instrument["Layers"] as? [[String:Any]] else{return original}
         for i in layers.indices {
             let layerID=layers[i]["ID"] as? Int ?? i
-            let connections=layers[i]["Connections"] as? [[String:Any]] ?? []
+            var connections=layers[i]["Connections"] as? [[String:Any]] ?? []
             guard var envelopes=layers[i]["Envelopes"] as? [[String:Any]] else{continue}
             for j in envelopes.indices {
                 let envelopeID=envelopes[j]["ID"] as? Int ?? j
@@ -125,7 +181,12 @@ enum SamplerAttack {
                     stages[k]["time"]=max(time,Double(minimum))
                 }
                 envelopes[j]["Stages"]=stages
+                // An explicit smoothing minimum overrides the generated velocity
+                // factor; otherwise hard notes could scale the minimum back to zero.
+                let factor=0x23e00000+layerID*256+envelopeID
+                connections.removeAll{($0["source"] as? Int)==301 && ($0["destination"] as? Int)==factor}
             }
+            layers[i]["Connections"]=connections
             layers[i]["Envelopes"]=envelopes
         }
         instrument["Layers"]=layers;var state=original;state["Instrument"]=instrument;return state
