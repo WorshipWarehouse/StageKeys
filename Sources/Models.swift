@@ -209,9 +209,9 @@ struct Layer: Codable, Identifiable, Equatable {
     var channelSettings = ChannelSettings()
     var samplerAttackMinimum:Float {
         if let explicit=channelSettings.samplerAttackMinimum {return explicit}
-        // The converted Steinway's very fast upper-register sampled strike needs
-        // a playback-only onset adjustment. Other instruments keep their attack.
-        return external?.nativeSampler?.groups.contains(where:{$0.name.localizedCaseInsensitiveContains("Steinway")}) == true ? 0.04:0
+        // Preserve the authored attack. The former Steinway smoothing masked a
+        // disk-streaming fault and added noticeable onset latency.
+        return 0
     }
     var external: ExternalSound?
     var importedRack: ImportedRack?

@@ -1,4 +1,4 @@
-# Imported sample attacks — investigation through v0.33
+# Imported sample attacks — investigation through v0.33.1
 
 The reported Steinway problem persists on isolated notes, mouse-played notes and with SolaVerb bypassed, and is most apparent in the upper register. These observations narrow the investigation but do not establish that the recorded sample transient is the cause. Earlier limited resident/streamed comparisons did not isolate the defect; the later multi-instrument production-path test below does reproduce a difference. Original consolidated CAF regions were inspected without modifying them; the native conversion retains their start/root/loop mappings. The source/converted amplitude attack is very fast (0/1 ms), and velocity-dependent attack translation is still incomplete.
 
@@ -35,3 +35,11 @@ A real-time production-path sequence now reproduces it: MIDI 84/96/100/108 at ve
 Mac converted native instruments and their nested sample branches now explicitly disable AUSampler disk streaming before loading. Offline rendering remains resident. Ordinary SF2/plain samples and external plug-ins retain their existing playback policy. iOS retains its existing system loading policy; this Mac finding does not establish an iPad defect. Resident playback increases RAM used by active converted sounds; it does not preload the entire library. Samples, region offsets, loops, envelope settings and original instrument files are unchanged. The existing 40 ms Steinway adjustment is retained to isolate this correction from a timbre change.
 
 `RealtimePianoTests` compares repeated upper-note live output against the same instrument's offline maximum sample step, with sustain and a second instrument's graph reload. It requires `STAGEKEYS_PIANO_PRESET` and an available Core Audio output; recordings remain temporary. The general attack, native-group and piano-fidelity checks also run. Automated reproduction and removal of the extra impulses is evidence for this fix; final confirmation still requires the user's live listening check.
+
+## v0.33.1 original attack restored
+
+The user reports that the click is no longer apparent with resident playback, but that StageKeys responds later than MainStage. The former automatic 40 ms Steinway attack fade was still active. It is now removed: all converted instruments default to their authored attack unless the user explicitly sets Attack Smoothing. Existing explicit smoothing settings remain respected. No sample, stored preset, filter, effect or device-buffer setting is changed by this correction.
+
+The real-time upper-register/sustain/second-instrument regression now uses the default unsmoothed attack. It passes: live maximum sample step approximately 0.07456 versus offline source reference 0.07499. This checks that removing the workaround does not reintroduce the measured streaming impulses. It is not a measurement of complete physical-key-to-speaker latency; audio-device buffers and MIDI delivery still contribute.
+
+Tone remains a separate parity issue. The imported legacy EXS currently omits its global filter/modulation, and a full MainStage channel strip can include additional EQ, compression and sends. The user confirmed that the current “Grand Piano and Pad” channel has been changed to the matching Steinway Grand Piano 2 sampler preset. Its channel-strip name is not the instrument name; compare that instrument and the surrounding processing before applying compensation.

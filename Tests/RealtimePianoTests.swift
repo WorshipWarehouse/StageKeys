@@ -15,7 +15,7 @@ import AVFoundation
         try bytes.write(to:destination.appendingPathComponent(file.lastPathComponent))
         var layer=Layer(name:"Realtime piano fixture",instrument:-1,gain:1)
         layer.external=ExternalSound(kind:.samplerPreset,name:layer.name,fileName:file.lastPathComponent,nativeSampler:program)
-        layer.channelSettings.samplerAttackMinimum=0.04
+        assert(layer.samplerAttackMinimum==0,"Native playback must not add the former 40 ms onset smoothing")
         func maximumStep(_ samples:[Float])->Float {
             assert(samples.allSatisfy(\.isFinite))
             return zip(samples.dropFirst(),samples).reduce(Float(0)){max($0,abs($1.0-$1.1))}
