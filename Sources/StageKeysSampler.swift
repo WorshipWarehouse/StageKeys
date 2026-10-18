@@ -118,7 +118,8 @@ enum StageKeysSampler {
               let metadata=state["StageKeys.NativeSampler"] as? Data,try JSONDecoder().decode(NativeSamplerProgram.self,from:metadata)==program,
               var instrument=state["Instrument"] as? [String:Any],var layers=instrument["Layers"] as? [[String:Any]],layers.count==program.groups.count else{throw ExternalInstrumentError.unsupportedFormat}
         for rule in program.groups {
-            guard layers.indices.contains(rule.layer),let group=chunks.first(where:{$0.kind==2 && $0.name==rule.name}),group.body.count>=92,
+            guard layers.indices.contains(rule.layer),chunks.filter({$0.kind==2 && $0.name==rule.name}).count==1,
+                  let group=chunks.first(where:{$0.kind==2 && $0.name==rule.name}),group.body.count>=92,
                   let filter=layers[rule.layer]["Filters"] as? [String:Any],filter["enabled"] as? Bool==false,
                   !(layers[rule.layer]["Connections"] as? [[String:Any]] ?? []).contains(where:{ (($0["destination"] as? Int ?? 0)&0xffff00ff)==EXSNative.cutoffDestination }) else {
                 throw MainStagePatch.Failure.invalid("The sampler filter was edited; import the original EXS separately to keep those edits.")

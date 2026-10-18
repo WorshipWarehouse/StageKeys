@@ -40,6 +40,22 @@ import Foundation
   let editBytes=try PropertyListSerialization.data(fromPropertyList:edited,format:.xml,options:0);try editBytes.write(to:preset)
   do{_ = try StageKeysSampler.updateVoiceControls(sound,original:original,library:root);assertionFailure("Edited filter overwritten")}catch{}
   let kept=try Data(contentsOf:preset);assert(kept==editBytes)
+  // V2 maps did not retain source group IDs. Never guess if source names are ambiguous.
+  let sourceBytes=try Data(contentsOf:URL(fileURLWithPath:source));var offset=0,duplicate=Data()
+  while offset+84<=sourceBytes.count {
+   let b=[UInt8](sourceBytes[offset..<offset+8]),signature=Int(b[0])|Int(b[1])<<8|Int(b[2])<<16|Int(b[3])<<24,size=Int(b[4])|Int(b[5])<<8|Int(b[6])<<16|Int(b[7])<<24
+   if (signature>>24)&63==2 {duplicate=sourceBytes[offset..<offset+84+size];break};offset+=84+size
+  }
+  assert(!duplicate.isEmpty)
+  let ambiguous=root.appendingPathComponent("ambiguous.exs");try (sourceBytes+duplicate).write(to:ambiguous)
+  let ambiguousOriginal=try StageKeysSampler.retainOriginal(ambiguous,library:root)
+  try bytes.write(to:preset)
+  do{_ = try StageKeysSampler.updateVoiceControls(sound,original:ambiguousOriginal,library:root);assertionFailure("Ambiguous source group matched by name")}catch{}
+  let untouched=try Data(contentsOf:preset);assert(untouched==bytes)
+  if let sampleRoot=ProcessInfo.processInfo.environment["STAGEKEYS_EXS_ROOT"] {
+   do{_ = try EXSNative.convert(ambiguous,sampleRoot:URL(fileURLWithPath:sampleRoot),to:root.appendingPathComponent("duplicate.aupreset"));assertionFailure("Duplicate group ID stacked its sample zones")}catch{}
+  }
+  print("PASS: ambiguous legacy group names and duplicate source group IDs are rejected")
   print("PASS: source-backed v2→v3 playback update, preset backup, edited-filter protection, exact sample/loop/key/velocity map and original hashes")
  }
 }

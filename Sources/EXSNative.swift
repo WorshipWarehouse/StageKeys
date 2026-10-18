@@ -231,7 +231,7 @@ enum EXSNative {
         let attributes=try source.resourceValues(forKeys:[.isRegularFileKey,.fileSizeKey])
         guard attributes.isRegularFile==true,(attributes.fileSize ?? Int.max)<=16_000_000 else{throw MainStagePatch.Failure.invalid("Invalid EXS document size.")}
         let parts=try chunks(Data(contentsOf:source)),groups=parts.filter{$0.kind==2},sampleParts=parts.filter{$0.kind==3},zones=parts.filter{$0.kind==1}
-        guard !sampleParts.isEmpty,sampleParts.count<=4096,!zones.isEmpty,zones.count<=16384,groups.count<=64 else{throw MainStagePatch.Failure.invalid("EXS map exceeds native limits or is empty.")}
+        guard !sampleParts.isEmpty,sampleParts.count<=4096,!zones.isEmpty,zones.count<=16384,groups.count<=64,Set(groups.map(\.index)).count==groups.count else{throw MainStagePatch.Failure.invalid("EXS map exceeds native limits or is empty.")}
         func u32(_ bytes:[UInt8],_ position:Int)->Int {(0..<4).reduce(0){$0 | Int(bytes[position+$1]) << ($1*8)}}
         func signed(_ byte:UInt8)->Int {Int(Int8(bitPattern:byte))}
         func string(_ bytes:[UInt8],_ position:Int,_ length:Int)throws->String {
