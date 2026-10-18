@@ -53,6 +53,18 @@ private struct EQCompactKnob: View {
     var logarithmic = false
     let color: Color
     @State private var origin: Float?
+    @State private var draft = ""
+    @FocusState private var editing: Bool
+    private func displayValue() -> String { String(format: unit == "Hz" ? "%.0f" : "%.2f", value) }
+    private func parsedValue() -> Float? {
+        let formatter = NumberFormatter(); formatter.numberStyle = .decimal
+        let result = Float(draft) ?? formatter.number(from: draft)?.floatValue
+        return result.flatMap { $0.isFinite ? $0 : nil }
+    }
+    private func commitValue() {
+        if let parsed = parsedValue() { value = min(range.upperBound, max(range.lowerBound, parsed)) }
+        draft = displayValue()
+    }
     private var position: Float {
         let raw = value.isFinite ? min(range.upperBound, max(range.lowerBound, value)) : range.lowerBound
         return logarithmic ? log(raw / range.lowerBound) / log(range.upperBound / range.lowerBound) : (raw-range.lowerBound)/(range.upperBound-range.lowerBound)
@@ -71,12 +83,21 @@ private struct EQCompactKnob: View {
                 Capsule().fill(color).frame(width: 2, height: 10).offset(y: -15).rotationEffect(.degrees(-133 + Double(position) * 266))
             }.frame(width: 54, height: 54).contentShape(Circle())
                 .gesture(DragGesture(minimumDistance: 0).onChanged { drag in
-                    if origin == nil { origin = position }; set((origin ?? position) - Float(drag.translation.height) / 160)
+                    if origin == nil { editing = false; origin = position }; set((origin ?? position) - Float(drag.translation.height) / 160)
                 }.onEnded { _ in origin = nil })
                 .accessibilityElement().accessibilityLabel(accessibilityTitle).accessibilityValue("\(value) \(unit)")
                 .accessibilityAdjustableAction { set(position + ($0 == .increment ? 0.02 : -0.02)) }
             HStack(spacing: 2) {
-                TextField(title, value: Binding(get: { value }, set: { if $0.isFinite { value = min(range.upperBound, max(range.lowerBound, $0)) } }), format: .number.precision(.fractionLength(unit == "Hz" ? 0 : 2)))
+                TextField(title, text: $draft)
+                    .focused($editing)
+                    .onAppear { draft = displayValue() }
+                    .onChange(of: editing) { active in if active { draft = displayValue() } else { commitValue() } }
+                    .onChange(of: draft) { _ in
+                        // Keep partial input ("-", "3.", "1860") stable while typing.
+                        if editing, let parsed = parsedValue(), range.contains(parsed) { value = parsed }
+                    }
+                    .onChange(of: value) { _ in if !editing { draft = displayValue() } }
+                    .onSubmit { commitValue(); editing = false }
                     .textFieldStyle(.plain).multilineTextAlignment(.center).font(StageTheme.font(11, weight: .semibold)).frame(width: 51).accessibilityLabel("\(accessibilityTitle) value")
                 Text(unit).font(StageTheme.font(8)).foregroundStyle(.secondary)
             }.padding(.vertical, 4).background(StageTheme.base.opacity(0.5), in: RoundedRectangle(cornerRadius: 4))
