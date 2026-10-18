@@ -143,7 +143,7 @@ final class ExternalInstrumentRack {
             let sampler=AVAudioUnitSampler();try SamplerRendering.configure(sampler,offline:engine.isInManualRenderingMode,resident:state["StageKeys.NativeSampler"] != nil);engine.attach(sampler);nodes.append(sampler);voice.sampler=sampler
             let temporary=FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString+".aupreset")
             defer{try? FileManager.default.removeItem(at:temporary)}
-            try PropertyListSerialization.data(fromPropertyList:Self.branchState(state,indices:plan.sampleLayers),format:.xml,options:0).write(to:temporary)
+            try PropertyListSerialization.data(fromPropertyList:SamplerSplitRegions.prepare(Self.branchState(state,indices:plan.sampleLayers)),format:.xml,options:0).write(to:temporary)
             try sampler.loadInstrument(at:temporary);rememberSampler(sampler);engine.connect(sampler,to:voice.sum,format:format)
         }
         let graph=ImportedAudioGraph(engine:engine,rack:plan.rack,format:format,tempo:tempo)
