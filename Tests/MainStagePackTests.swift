@@ -4,6 +4,20 @@ import AVFoundation
  static func main()throws {
   guard let path=ProcessInfo.processInfo.environment["STAGEKEYS_MAINSTAGE_PACK"] else{print("SKIP: private MainStage pack unset");return}
   let source=URL(fileURLWithPath:path),pack=try LibraryBackup.read(source)
+  for original in pack.sounds {
+   guard let archive=original.sourceArchiveID,let rack=original.layer?.importedRack else{continue}
+   let patch=source.appendingPathComponent("MainStage Sources/"+archive+"/Source.patch")
+   let hash=String(original.id.dropFirst("mainstage-channel-".count).prefix(64))
+   let files=try FileManager.default.contentsOfDirectory(at:patch,includingPropertiesForKeys:nil).filter{$0.pathExtension=="cst"}
+   guard let channel=try files.first(where:{try AssetDigest.sha256($0)==hash}) else{fatalError("Missing original channel")}
+   let document=try PropertyListSerialization.propertyList(from:Data(contentsOf:patch.appendingPathComponent("data.plist")),options:[],format:nil) as! [String:Any]
+   let channels=document["channels"] as? [[String:Any]] ?? []
+   let settings=channels.first{$0["Filename"] as? String==channel.lastPathComponent} ?? [:]
+   let translated=try MainStageProcessing.translate(Data(contentsOf:channel),channelID:settings["Channel_instID"] as? Int)
+   let expected=try translated.appending(to:original.sound?.nativeSampler?.rack)
+   assert(expected==rack,"Installed processing must match fresh source translation: \(original.name)")
+  }
+  print("PASS: all native pack racks match fresh translation of original MainStage channel settings")
   let store=PerformanceStore();try store.audio.prepareOffline();defer{store.audio.stop()}
   store.importLibraryBackup(source)
   let deadline=Date().addingTimeInterval(120)

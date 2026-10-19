@@ -60,6 +60,13 @@ struct ImportedRackControls: View {
             layer.importedRack?.effects[index].importedDelay=delay
         })
     }
+    private func effectValue(_ index:Int,_ parameter:AudioEffectParameterDescriptor)->Binding<Float> {
+        Binding(get:{layer.importedRack?.effects[index].values[parameter.index] ?? parameter.defaultValue},set:{value in
+            guard var rack=layer.importedRack else{return}
+            var values=rack.effects[index].values;values[parameter.index]=value; rack.effects[index].parameters=values
+            guard rack.validate() else{return};layer.importedRack=rack
+        })
+    }
     private func eqBands(_ index:Int)->Binding<[EQBand]> {
         Binding(get:{
             guard let effect=layer.importedRack?.effects[index] else{return EQBand.defaults}
@@ -127,9 +134,16 @@ struct ImportedRackControls: View {
                         } else {
                         LazyVGrid(columns:[GridItem(.adaptive(minimum:140))],spacing:8) {
                             if effect.importedDelay != nil { delayControls(index) }
-                            ForEach(AudioEffectCatalog.descriptors(for:effect.kind).filter{effect.importedDelay == nil || effect.importedDelay?.leftChannel == nil && ![1,2].contains($0.index)}) { parameter in
+                            ForEach(AudioEffectCatalog.descriptors(for:effect.kind).filter{!(effect.kind==16 && [9,10].contains($0.index)) && (effect.importedDelay == nil || effect.importedDelay?.leftChannel == nil && ![1,2].contains($0.index))}) { parameter in
                                 EffectKnob(descriptor:parameter,value:Binding(get:{layer.importedRack?.effects[index].values[parameter.index] ?? parameter.defaultValue},set:{value in guard var imported=layer.importedRack else{return};var values=imported.effects[index].values;values[parameter.index]=value;imported.effects[index].parameters=values;layer.importedRack=imported}))
                             }
+                        }
+                        if effect.kind==16 {
+                            HStack(spacing:24) {
+                                ForEach(AudioEffectCatalog.descriptors(for:16).filter{[9,10].contains($0.index)}) {parameter in
+                                    EffectKnob(descriptor:parameter,value:effectValue(index,parameter))
+                                }
+                            }.frame(maxWidth:.infinity)
                         }
                         }
                     }

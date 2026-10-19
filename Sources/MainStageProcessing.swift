@@ -106,6 +106,7 @@ enum MainStageProcessing {
     static func translate(_ data:Data,channelID:Int?=nil)throws->Draft {
         let devices=try MainStagePatch.devices(data)
         var draft=Draft(),targets:[Int:(effect:Int,name:String)]=[:]
+        var independentReverbSlots=Set<Int>()
         for (slot,device) in devices.enumerated() {
             let end=min(data.count,device.offset+device.byteCount)
             guard let range=data.range(of:Data("GAMETSPP".utf8),in:device.offset..<end),range.upperBound+8<=end else {
@@ -154,8 +155,16 @@ enum MainStageProcessing {
                 draft.issues.append("Stereo Delay note sync, percentage deviation, input routing, feedback/crossfeed polarity, mix and channel filters are translated. Delay changes are immediate; original smoothing, freeze mode and exact filter/sum response are not identical.")
             case "SilvVerb":
                 guard values.count>=10 else{draft.issues.append("Truncated SilverVerb parameters.");continue}
-                effect.kind=16;effect.parameters=[values[1],values[2]/100,values[3],values[6]/100,values[5],values[4],values[7],values[8],values[9],1-values[0]/100,values[0]/100]
-                draft.issues.append("SilverVerb named controls are translated into an independent four-comb/diffusion reverb with predelay, modulation and wet filtering. Apple's proprietary decay/density curve and extended Dry/Wet mode are not verified identical; legacy Mix is used.")
+                var dry=1-values[0]/100,wet=values[0]/100
+                if values.count>=13 {
+                    guard values[12]==0 || values[12]==1 else{draft.issues.append("SilverVerb has an unknown Dry/Wet mode; original processing remains archived.");continue}
+                    if values[12]==1 {
+                        guard values[10].isFinite,values[11].isFinite,(0...100).contains(values[10]),(0...100).contains(values[11]) else{draft.issues.append("SilverVerb has invalid independent Dry/Wet levels.");continue}
+                        dry=values[10]/100;wet=values[11]/100;independentReverbSlots.insert(slot)
+                    }
+                }
+                effect.kind=16;effect.parameters=[values[1],values[2]/100,values[3],values[6]/100,values[5],values[4],values[7],values[8],values[9],dry,wet]
+                draft.issues.append("SilverVerb predelay, modulation, filters and active legacy Mix or independent Dry/Wet levels are translated. The independent native reverb does not reproduce Apple's proprietary decay/density circuit exactly.")
             case "ClipDist":
                 guard values.count>=10 else{draft.issues.append("Truncated Clip Distortion parameters.");continue}
                 effect.kind=17;effect.parameters=Array(values.prefix(10));effect.parameters![3]/=100
@@ -206,7 +215,9 @@ enum MainStageProcessing {
                 let mapping:[Int:(Int,Float)]=[0:(4,1),1:(3,1),2:(1,1),3:(2,1),4:(6,1),24:(5,0.01)]
                 guard let mapped=mapping[sourceParameter] else{continue};parameter=mapped.0;scale=mapped.1
             case "SilvVerb":
-                let mapping:[Int:(Int,Float)]=[0:(10,0.01),1:(0,1),2:(1,0.01),3:(2,1),6:(3,0.01),5:(4,1),4:(5,1),7:(6,1),8:(7,1),9:(8,1)]
+                let independent=independentReverbSlots.contains(slot)
+                guard independent ? sourceParameter != 0 : ![10,11].contains(sourceParameter) else{draft.issues.append("A SilverVerb macro targets an inactive mix mode; its mapping remains archived.");continue}
+                let mapping:[Int:(Int,Float)]=[0:(10,0.01),1:(0,1),2:(1,0.01),3:(2,1),6:(3,0.01),5:(4,1),4:(5,1),7:(6,1),8:(7,1),9:(8,1),10:(9,0.01),11:(10,0.01)]
                 guard let mapped=mapping[sourceParameter] else{continue};parameter=mapped.0;scale=mapped.1
             case "ClipDist":guard (0..<10).contains(sourceParameter) else{continue};parameter=sourceParameter;scale=sourceParameter==3 ? 0.01:1
             case "Chorus":guard (0...2).contains(sourceParameter) else{continue};parameter=[1,4,0][sourceParameter];scale=sourceParameter==2 ? 1:0.01

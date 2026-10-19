@@ -16,6 +16,13 @@ int main(void){
  for(int i=0;i<n;i++)a[i]=b[i]=0;a[0]=.25f;b[0]=1;
  sk_process_effects(x,a,n);sk_process_effects(y,b,n);double proportional=0;
  for(int i=0;i<n;i++)proportional+=fabs(b[i]-4*a[i]);assert(proportional<.0001);
+ // Independent Dry/Wet preserves the direct piano attack regardless of wet level.
+ sk_panic(x);sk_panic(y);silver(x,17,.81f);silver(y,17,.81f);
+ sk_effect_parameter(x,0,0,9,1);sk_effect_parameter(x,0,0,10,.51f);
+ sk_effect_parameter(y,0,0,9,.56f);sk_effect_parameter(y,0,0,10,.44f);
+ for(int i=0;i<n;i++)a[i]=b[i]=0;a[0]=b[0]=.1f;
+ sk_process_effects(x,a,n);sk_process_effects(y,b,n);
+ assert(fabsf(a[0]-.1f)<.000001f && fabsf(b[0]-.056f)<.000001f);
  sk_panic(x);sk_panic(y);sk_effect(x,0,0,17,1);sk_effect(y,0,0,17,1);sk_effect_parameter(x,0,0,2,0);sk_effect_parameter(y,0,0,2,75);for(int i=0;i<n;i++)a[i]=b[i]=.1f*sinf(i*2*3.14159265f*220/48000);sk_process_effects(x,a,n);sk_process_effects(y,b,n);
  double difference=0;for(int i=0;i<n;i++){assert(isfinite(a[i])&&isfinite(b[i]));difference+=fabs(a[i]-b[i]);}assert(difference>1);
  // Input gain must also affect the dry branch before sum filtering.
