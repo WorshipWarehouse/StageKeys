@@ -240,7 +240,11 @@ enum EXSNative {
         var offset=0,result:[Chunk]=[]
         while offset<bytes.count {
             guard offset+84<=bytes.count else{throw MainStagePatch.Failure.invalid("Truncated EXS chunk.")}
-            let signature=u32(offset),size=u32(offset+4),tag=String(bytes:bytes[offset+16..<offset+20],encoding:.ascii)
+            let signature=u32(offset),storedSize=u32(offset+4)
+            // The 0x80 header family marks a 15-bit short size with bit 15.
+            // Preserve ordinary 32-bit chunk sizes in all other layouts.
+            let size=signature & 0x80000000 != 0 && storedSize<0x10000 ? storedSize & 0x7fff:storedSize
+            let tag=String(bytes:bytes[offset+16..<offset+20],encoding:.ascii)
             guard ["TBOS","JBOS","SOBT","SOBJ"].contains(tag ?? ""),signature & 0x00ffffff == 0x101,size<=bytes.count-offset-84,result.count<16384 else{throw MainStagePatch.Failure.invalid("Unsupported EXS chunk layout.")}
             guard !big else{throw MainStagePatch.Failure.invalid("Native EXS translation currently requires little-endian documents.")}
             let name=String(bytes:bytes[offset+20..<offset+84].prefix(while:{$0 != 0}),encoding:.utf8) ?? "EXS Object"
@@ -249,11 +253,29 @@ enum EXSNative {
         }
         return result
     }
+    /// Legacy EXS zone references address record order. Some factory files
+    /// leave every sample header ID zero and retain gaps in group header IDs.
+    /// Modern documents use explicit identities and must keep them intact.
+    static func referenceIdentities(_ original:[Chunk])throws->[Chunk] {
+        var result=original
+        for kind in [2,3] {
+            let positions=result.indices.filter{result[$0].kind==kind}
+            guard !positions.isEmpty,positions.allSatisfy({!result[$0].modern}),positions.enumerated().contains(where:{$0.offset != result[$0.element].index}) else{continue}
+            let field=kind==2 ? 88:92
+            for zone in result where zone.kind==1 {
+                guard zone.body.count>=field+4 else{throw MainStagePatch.Failure.invalid("Truncated EXS zone reference.")}
+                let value=(0..<4).reduce(0){$0 | Int(zone.body[field+$1]) << ($1*8)}
+                guard (kind==2 && value==0xffffffff) || positions.indices.contains(value) else{throw MainStagePatch.Failure.invalid("Legacy EXS reference is outside its record table.")}
+            }
+            for (ordinal,position) in positions.enumerated(){result[position].index=ordinal}
+        }
+        return result
+    }
     static func convert(_ source:URL,sampleRoot:URL,to output:URL)throws->NativeSamplerProgram {
         precondition(Thread.isMainThread)
         let attributes=try source.resourceValues(forKeys:[.isRegularFileKey,.fileSizeKey])
         guard attributes.isRegularFile==true,(attributes.fileSize ?? Int.max)<=16_000_000 else{throw MainStagePatch.Failure.invalid("Invalid EXS document size.")}
-        let parts=try chunks(Data(contentsOf:source)),groups=parts.filter{$0.kind==2},sampleParts=parts.filter{$0.kind==3},zones=parts.filter{$0.kind==1}
+        let parts=try referenceIdentities(chunks(Data(contentsOf:source))),groups=parts.filter{$0.kind==2},sampleParts=parts.filter{$0.kind==3},zones=parts.filter{$0.kind==1}
         guard !sampleParts.isEmpty,sampleParts.count<=4096,!zones.isEmpty,zones.count<=16384,groups.count<=64,Set(groups.map(\.index)).count==groups.count else{throw MainStagePatch.Failure.invalid("EXS map exceeds native limits or is empty.")}
         func u32(_ bytes:[UInt8],_ position:Int)->Int {(0..<4).reduce(0){$0 | Int(bytes[position+$1]) << ($1*8)}}
         func signed(_ byte:UInt8)->Int {Int(Int8(bitPattern:byte))}

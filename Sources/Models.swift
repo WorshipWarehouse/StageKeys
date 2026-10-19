@@ -125,6 +125,7 @@ struct ImportedAudioRack: Codable, Equatable {
 }
 struct ImportedRack: Codable, Equatable {
     /// Archived host amplitude response, not a MIDI/sample-zone velocity remap.
+    var mainStageUnityControllers:Bool?
     var mainStageAmplitudeVelocityCurve:Int?
     var audioRacks:[ImportedAudioRack]?
     var effectCount:Int {

@@ -647,6 +647,11 @@ final class ExternalInstrumentRack {
             if let note = voices[channel]?.pitches.removeValue(forKey: key) { midi(channel, 0x80, note, 0) }
         }
     }
+    func initializeMainStageControllers(channel:Int) {
+        for controller in [7,11] where controllerValues[channel]?[controller]==nil {
+            control(channel:channel,controller:UInt8(controller),value:127)
+        }
+    }
     func control(channel: Int, controller: UInt8, value: UInt8) { precondition(Thread.isMainThread); guard controller < 128, value < 128 else { return };controllerValues[channel,default:[:]][Int(controller)]=Int(value);voices[channel]?.parallel.forEach{$0.control(controller,value)}; midi(channel, 0xB0, controller, value) }
     func sustain(channel: Int, on: Bool) { precondition(Thread.isMainThread);controllerValues[channel,default:[:]][64]=on ? 127:0; voices[channel]?.parallel.forEach{$0.control(64,on ? 127:0)};midi(channel, 0xB0, 64, on ? 127 : 0) }
     func volume(channel: Int, gain: Float, pan: Float) {

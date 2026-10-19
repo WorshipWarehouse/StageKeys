@@ -31,6 +31,7 @@ enum MainStageProcessing {
         }
         func appending(to original:ImportedRack?)throws->ImportedRack {
             var rack=original ?? ImportedRack()
+            rack.mainStageUnityControllers=true
             if let amplitudeVelocityCurve {
                 guard rack.mainStageAmplitudeVelocityCurve == nil || rack.mainStageAmplitudeVelocityCurve==amplitudeVelocityCurve else{throw MainStagePatch.Failure.invalid("The destination already has a different source velocity curve.")}
                 rack.mainStageAmplitudeVelocityCurve=amplitudeVelocityCurve

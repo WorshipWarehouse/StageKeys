@@ -179,7 +179,14 @@ static void effectReset(EffectState *e){
 }
 static void effectCoefficients(EffectState*e,int kind,double rate){
  float *p=e->p;
- if(kind==10)rate/=(1 << (int)roundf((1-p[9])*5));
+ if(kind==10){
+  rate/=(1 << (int)roundf((1-p[9])*5));
+  // An octave-up read doubles input frequencies. Band-limit the wet pitch
+  // history first so high harmonics do not fold back as dissonant aliases.
+  float cutoff=fminf(p[6]*.5f,rate*.2f);
+  coefficients(&e->eq[0],rate,cutoff,.7071068f,0,0);
+  coefficients(&e->eq[1],rate,cutoff,.7071068f,0,0);
+ }
  if(kind==1)coefficients(&e->eq[0],rate,p[0],p[1],0,0);
  if(kind==7)for(int b=0;b<8;b++)equalizer(&e->eq[b],rate,b,p[b*3],p[b*3+1],p[b*3+2]);
  if(kind==6){e->coef[0]=exp(-1000/(rate*p[1]));e->coef[1]=exp(-1000/(rate*p[2]));e->coef[2]=pow(10,p[0]/20);e->coef[3]=pow(10,p[6]/20);}
@@ -260,7 +267,7 @@ static float effectProcess(SKSynth*s,int l,int k,float x){
    float delayed=tap_capacity(history,index,rate*(line==0?.0071f:.0113f)*(s->stereoSide?1.07f:1),capacity);
    float a=p[3]*.7f,out=delayed-a*wet;history[index]=wet+a*out;wet=out;
   }
-  int pp=s->predelayPosition[l][k];float*history=s->predelay[l][k];history[pp]=wet;
+  int pp=s->predelayPosition[l][k];float*history=s->predelay[l][k];history[pp]=process(&e->eq[1],process(&e->eq[0],wet));
   float window=fminf(s->predelayLength*.45f,rate*.06f),q=e->shiftPhase;
   q-=1/window;q-=floorf(q);e->shiftPhase=q;float q2=q+.5f;q2-=floorf(q2);
   float a=.5f-.5f*cosf(TAU*q);

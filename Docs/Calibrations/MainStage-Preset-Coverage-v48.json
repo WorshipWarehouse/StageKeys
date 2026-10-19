@@ -1,0 +1,14 @@
+{
+  "date": "2026-10-19",
+  "summary": {
+    "patches": 358,
+    "channels": 427,
+    "nativeChannelOccurrences": 12,
+    "completeChannelCoveragePatches": 4,
+    "blockedPatches": 1
+  },
+  "limitations": [
+    "Native-channel coverage means a retained playable channel, not verified full-patch audio, routing or effect parity.",
+    "Non-sampler instruments and missing source samples require further conversion; archived-only entries are not playable presets."
+  ]
+}

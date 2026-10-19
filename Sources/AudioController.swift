@@ -171,6 +171,7 @@ final class AudioController {
         if let rack { importedRacks[index]=rack } else {importedRacks[index]=nil}
         do {try externalRack?.configureParallel(channel:index,branches:rack?.branches ?? externalSounds[index]?.nativeSampler?.rack.branches,tempo:tempo);try externalRack?.configureImported(channel:index,rack:rack,tempo:tempo)}
         catch {onError?(error.localizedDescription)}
+        if rack?.mainStageUnityControllers==true {externalRack?.initializeMainStageControllers(channel:index)}
     }
     func audition(_ index: Int, _ layer: Layer) {
         var live = layer
