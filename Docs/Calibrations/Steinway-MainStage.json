@@ -1,0 +1,185 @@
+{
+  "date": "2026-10-19",
+  "exactParityVerified": false,
+  "samplesModified": false,
+  "velocityWindowSeconds": [
+    0.1,
+    0.3
+  ],
+  "levelSign": "positive means MainStage is louder",
+  "levels": [
+    {
+      "note": 60,
+      "velocity": 38,
+      "beforeDeltaDB": 7.368,
+      "sourceSensitivityDeltaDB": -2.302
+    },
+    {
+      "note": 74,
+      "velocity": 38,
+      "beforeDeltaDB": 6.253,
+      "sourceSensitivityDeltaDB": -3.416
+    },
+    {
+      "note": 86,
+      "velocity": 38,
+      "beforeDeltaDB": 5.919,
+      "sourceSensitivityDeltaDB": -3.75
+    },
+    {
+      "note": 60,
+      "velocity": 64,
+      "beforeDeltaDB": 3.949,
+      "sourceSensitivityDeltaDB": -1.57
+    },
+    {
+      "note": 74,
+      "velocity": 64,
+      "beforeDeltaDB": 3.541,
+      "sourceSensitivityDeltaDB": -1.978
+    },
+    {
+      "note": 86,
+      "velocity": 64,
+      "beforeDeltaDB": 2.897,
+      "sourceSensitivityDeltaDB": -2.621
+    },
+    {
+      "note": 60,
+      "velocity": 83,
+      "beforeDeltaDB": 3.163,
+      "sourceSensitivityDeltaDB": -0.286
+    },
+    {
+      "note": 74,
+      "velocity": 83,
+      "beforeDeltaDB": 2.981,
+      "sourceSensitivityDeltaDB": -0.468
+    },
+    {
+      "note": 86,
+      "velocity": 83,
+      "beforeDeltaDB": 2.607,
+      "sourceSensitivityDeltaDB": -0.843
+    },
+    {
+      "note": 60,
+      "velocity": 102,
+      "beforeDeltaDB": 2.641,
+      "sourceSensitivityDeltaDB": 0.833
+    },
+    {
+      "note": 74,
+      "velocity": 102,
+      "beforeDeltaDB": 2.409,
+      "sourceSensitivityDeltaDB": 0.601
+    },
+    {
+      "note": 86,
+      "velocity": 102,
+      "beforeDeltaDB": 2.299,
+      "sourceSensitivityDeltaDB": 0.491
+    }
+  ],
+  "meanAbsoluteDeltaDB": {
+    "before": 3.8355833333333327,
+    "sourceSensitivity": 1.596583333333333
+  },
+  "reverb": {
+    "roomSize": 160,
+    "reflectivity": 0.71,
+    "densityTime": 0.81,
+    "predelayMS": 17,
+    "lowCutHz": 760,
+    "highCutHz": 6800,
+    "fitWindowSeconds": [
+      3,
+      9
+    ],
+    "mainStageRT60Seconds": 8.661767209645044,
+    "stageKeysRT60Seconds": 9.05170300349159,
+    "tail": [
+      {
+        "second": 0,
+        "mainStageRMSdB": -38.94528738495269,
+        "stageKeysRMSdB": -47.46306610107422
+      },
+      {
+        "second": 1,
+        "mainStageRMSdB": -44.69543496599081,
+        "stageKeysRMSdB": -52.05870056152344
+      },
+      {
+        "second": 2,
+        "mainStageRMSdB": -53.134284917043416,
+        "stageKeysRMSdB": -58.56511688232422
+      },
+      {
+        "second": 3,
+        "mainStageRMSdB": -61.65067601644048,
+        "stageKeysRMSdB": -65.15460205078125
+      },
+      {
+        "second": 4,
+        "mainStageRMSdB": -69.24821642861356,
+        "stageKeysRMSdB": -71.78004455566406
+      },
+      {
+        "second": 5,
+        "mainStageRMSdB": -76.99641741495319,
+        "stageKeysRMSdB": -78.21695709228516
+      },
+      {
+        "second": 6,
+        "mainStageRMSdB": -83.64740667080646,
+        "stageKeysRMSdB": -85.2236328125
+      },
+      {
+        "second": 7,
+        "mainStageRMSdB": -90.52761437602918,
+        "stageKeysRMSdB": -91.8431396484375
+      },
+      {
+        "second": 8,
+        "mainStageRMSdB": -97.24794244782555,
+        "stageKeysRMSdB": -98.55961608886719
+      },
+      {
+        "second": 9,
+        "mainStageRMSdB": -103.12572679017116,
+        "stageKeysRMSdB": -104.62630462646484
+      },
+      {
+        "second": 10,
+        "mainStageRMSdB": -109.80219893378829,
+        "stageKeysRMSdB": -111.42524719238281
+      },
+      {
+        "second": 11,
+        "mainStageRMSdB": -114.88596618667037,
+        "stageKeysRMSdB": -117.8298568725586
+      },
+      {
+        "second": 12,
+        "mainStageRMSdB": -120.70340061190008,
+        "stageKeysRMSdB": -124.51607513427734
+      },
+      {
+        "second": 13,
+        "mainStageRMSdB": -126.61479245698636,
+        "stageKeysRMSdB": -131.1487274169922
+      },
+      {
+        "second": 14,
+        "mainStageRMSdB": -131.93442057876194,
+        "stageKeysRMSdB": -137.65017700195312
+      }
+    ]
+  },
+  "limitations": [
+    "Modern channel-strip velocity-curve override remains untranslated",
+    "Reference routing and MIDI controller state affect absolute level",
+    "Early reflections and Apple reverb circuit are not reproduced identically",
+    "One reverb setting cannot establish parity across all source patches"
+  ]
+}

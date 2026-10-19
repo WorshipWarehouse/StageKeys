@@ -126,11 +126,17 @@ enum EXSNative {
             var resonance:Double
             var routes:[Route]
         }
+        struct AmplitudeVelocity:Codable,Hashable {
+            var sensitivity:Double
+            var high:Double
+            var valid:Bool {sensitivity.isFinite && (-96...0).contains(sensitivity) && high.isFinite && (-96...24).contains(high)}
+        }
+        var amplitudeVelocity:AmplitudeVelocity?
         var gain:Double
         var tuning:Double
         var filter:Filter?
         var valid:Bool {
-            gain.isFinite && (-96...24).contains(gain) && tuning.isFinite && (-4800...4800).contains(tuning) &&
+            (amplitudeVelocity?.valid ?? true) && gain.isFinite && (-96...24).contains(gain) && tuning.isFinite && (-4800...4800).contains(tuning) &&
             (filter.map { f in f.cutoff.isFinite && (0...1).contains(f.cutoff) && f.resonance.isFinite && (0...1).contains(f.resonance) && f.routes.count<=12 && f.routes.allSatisfy { [-4,-3].contains($0.source) || (0...127).contains($0.source) } && f.routes.allSatisfy{$0.amount.isFinite && (-1...1).contains($0.amount)} } ?? true)
         }
     }
@@ -162,9 +168,25 @@ enum EXSNative {
         if values[0x08,default:0] != 0 || values[0x160,default:0] != 0 {notes.insert("EXS global amplitude key scaling/pan requires further translation.")}
         if values[0x05,default:64] != 64 {notes.insert("EXS source polyphony is retained in the original instrument; native playback currently uses 64 voices.")}
         notes.insert("EXS pitch-bend asymmetry, amplitude velocity curve and advanced modulation/envelope shapes remain approximate or untranslated.")
-        let result=VoiceControls(gain:Double(values[0x07,default:0]),tuning:Double(values[0x0f,default:0])+100*Double(values[0x0e,default:0]+values[0x2d,default:0]),filter:filter)
+        var result=VoiceControls(gain:Double(values[0x07,default:0]),tuning:Double(values[0x0f,default:0])+100*Double(values[0x0e,default:0]+values[0x2d,default:0]),filter:filter)
+        if let sensitivity=values[0x5a],let high=values[0x59] {
+            let amplitude=VoiceControls.AmplitudeVelocity(sensitivity:Double(sensitivity),high:Double(high))
+            if amplitude.valid {result.amplitudeVelocity=amplitude;notes.insert("EXS amplitude velocity sensitivity and high-velocity level are active. Modern host velocity-curve overrides remain approximate/untranslated.")}
+            else {notes.insert("EXS amplitude velocity endpoints exceed the supported range and remain archived.")}
+        }
         guard result.valid else{throw MainStagePatch.Failure.invalid("EXS synthesis controls exceed supported ranges.")}
         return result
+    }
+    static func applyAmplitudeVelocity(_ amplitude:VoiceControls.AmplitudeVelocity,to layer:inout [String:Any]) {
+        let destination=0x50100000+(layer["ID"] as? Int ?? 0)*256
+        var connections=layer["Connections"] as? [[String:Any]] ?? []
+        connections.removeAll{($0["source"] as? Int)==301 && ($0["destination"] as? Int)==destination}
+        connections.append(["name":"StageKeys EXS amplitude","ID":(connections.compactMap{$0["ID"] as? Int}.max() ?? 0)+1,"enabled":true,"source":301,"destination":destination,"control":0,"transform":2,"inverse":true,"scale":amplitude.sensitivity])
+        layer["Connections"]=connections
+        if amplitude.high != 0,var zones=layer["Zones"] as? [[String:Any]] {
+            for i in zones.indices {zones[i]["gain"]=((zones[i]["gain"] as? NSNumber)?.doubleValue ?? 0)+amplitude.high}
+            layer["Zones"]=zones
+        }
     }
     static let cutoffDestination=0x41500000
     static let cutoffSpan=1200*log2(1000.0)
@@ -178,6 +200,7 @@ enum EXSNative {
             }
             layer["Zones"]=zones
         }
+        if let amplitude=controls.amplitudeVelocity {applyAmplitudeVelocity(amplitude,to:&layer)}
         var connections=layer["Connections"] as? [[String:Any]] ?? []
         func route(_ source:Int,_ destination:Int,_ minimum:Double,_ maximum:Double,_ inverse:Bool=false) {
             connections.append(["name":"StageKeys EXS synthesis","ID":(connections.compactMap{$0["ID"] as? Int}.max() ?? 0)+1,"enabled":true,"source":source,"destination":destination+id*256,"control":0,"transform":1,"inverse":inverse,"min value":minimum,"max value":maximum])

@@ -864,13 +864,13 @@ final class PerformanceStore: ObservableObject {
             }
             var entries=librarySounds,updates:[String:ExternalSound]=[:],failures:[String]=[]
             for entry in entries {
-                guard let sound=entry.sound,let program=sound.nativeSampler,(program.conversionVersion ?? 1)<5,let original=entry.originalInstrument,let file=sound.fileName,updates[file]==nil else{continue}
+                guard let sound=entry.sound,let program=sound.nativeSampler,((program.conversionVersion ?? 1)<5 || program.voiceControls?.amplitudeVelocity==nil),let original=entry.originalInstrument,let file=sound.fileName,updates[file]==nil else{continue}
                 do {updates[file]=try StageKeysSampler.updatePlayback(sound,original:original,library:root)}
                 catch{failures.append(entry.name+": "+error.localizedDescription)}
             }
             guard !updates.isEmpty else{libraryImportProgress="No sampler playback settings were changed. "+failures.joined(separator:"; ");return}
             for i in entries.indices {
-                if let file=entries[i].sound?.fileName,let updated=updates[file]{entries[i].sound?.nativeSampler=updated.nativeSampler;entries[i].conversionNotes=updated.nativeSampler?.notes}
+                if let file=entries[i].sound?.fileName,let updated=updates[file]{entries[i].sound?.nativeSampler=updated.nativeSampler;entries[i].conversionNotes=Array(Set((entries[i].conversionNotes ?? [])+(updated.nativeSampler?.notes ?? []))).sorted()}
                 if let file=entries[i].layer?.external?.fileName,let updated=updates[file]{entries[i].layer?.external?.nativeSampler=updated.nativeSampler}
             }
             try SoundLibrary(url:root.appendingPathComponent("sound-library.json")).write(entries);librarySounds=entries

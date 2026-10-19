@@ -25,3 +25,13 @@ The archived Two Pianos Steinway channel was opened for reference in MainStage: 
 The private native pack received eight corrected reverb instances across seven sounds. The installed library templates were updated only when their racks still matched the prior templates; original samples and EXS are unchanged. The separate Steinway comparison patch's SolaVerb was bypassed after confirming the current MainStage piano routes directly to Output 1–2 (its reverb sends belong to the separate Sum channel). Its pre-change setlist was backed up. These fixes correct verified dry-path attenuation and routing, but do not establish exact sampler velocity/host level or proprietary reverb-decay parity.
 
 Validation covers independent versus legacy mode, wet-only MIDI macros, saved rack roundtrips, the full dry impulse level in DSP, source-to-pack rack equivalence and audible finite rendering of nine channels at four velocities. Reverb output controls are grouped side by side in the sound-processing UI.
+
+## 0.39 amplitude velocity and decay measurement
+
+Source EXS amplitude sensitivity (parameter 0x5a) and high-velocity level (0x59) now replace the native template's velocity-to-amplitude route. The current modern Steinway stores −52 dB sensitivity while the template uses −96 dB. This changes soft/hard balance rather than adding a master boost. The separate modern MainStage host velocity curve (the comparison channel stores −10 in its channel strip) remains untranslated; exact loudness parity is not claimed.
+
+The existing-import upgrade checks that the velocity route still has its generated −96 dB scale, inverse concave transform and enabled state. Edited routes are rejected and the preset bytes restored. Sample zones/references, envelopes, patch effects and channel settings are retained, and the optional native amplitude metadata is backward compatible. Library conversion notes are merged instead of losing effect compatibility warnings during a sampler update.
+
+A paired MainStage recording used a fixed-velocity sequence and an isolated wet SilverVerb capture. With Room Size 160, Reflectivity 71%, Density/Time 81%, predelay 17 ms and filters 760–6800 Hz, a 3–9 second tail fit measured MainStage RT60 ≈8.66 s and native StageKeys ≈9.05 s for the captured input. The original dry input was passed through the native reverb for comparison. No global decay factor was inferred from this one setting: the early-reflection response and proprietary circuit still differ. See Calibrations/Steinway-MainStage.json for numerical measurements; original samples are unchanged.
+
+Performance effect power buttons now expose On/Off state to accessibility, including Off for empty slots.

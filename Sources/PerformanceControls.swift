@@ -133,7 +133,7 @@ struct SoundModule: View {
         return HStack(spacing: 0) {
             Button { if hasEffect { store.toggleMIDIEffect(index) } else { open(.midi(index)) } } label: {
                 Image(systemName: "power").font(.system(size: 14)).frame(width: 34, height: 49).background(hasEffect && layer.midiEffectEnabled ? color.opacity(0.7) : Color.clear)
-            }.buttonStyle(.plain).accessibilityLabel("Sound \(index+1) MIDI effect bypass")
+            }.buttonStyle(.plain).accessibilityLabel("Sound \(index+1) MIDI effect bypass").accessibilityValue(hasEffect && layer.midiEffectEnabled ? "On":"Off")
             Button { open(.midi(index)) } label: {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Midi").font(StageTheme.font(9)).foregroundStyle(.secondary)
@@ -148,7 +148,7 @@ struct SoundModule: View {
             Button {
                 if effect.kind == 0 { open(.effect(index, slot)) }
                 else { var fx = effect; fx.enabled.toggle(); store.setEffect(index, slot, fx) }
-            } label: { Image(systemName: "power").font(.system(size: 14)).frame(width: 36, height: 49).background(effect.kind > 0 && effect.enabled ? color.opacity(0.7) : Color.clear) }.buttonStyle(.plain).accessibilityLabel("Sound \(index+1) effect \(slot+1) bypass")
+            } label: { Image(systemName: "power").font(.system(size: 14)).frame(width: 36, height: 49).background(effect.kind > 0 && effect.enabled ? color.opacity(0.7) : Color.clear) }.buttonStyle(.plain).accessibilityLabel("Sound \(index+1) effect \(slot+1) bypass").accessibilityValue(effect.kind > 0 && effect.enabled ? "On":"Off")
             Button { open(.effect(index, slot)) } label: { VStack(alignment: .leading, spacing: 3) { Text("Audio 0\(slot+1)").font(.system(size: 9)).foregroundStyle(.secondary); Text(effect.title).font(StageTheme.font(14, weight: .semibold)) }.frame(maxWidth: .infinity, alignment: .leading).padding(.leading, 5) }.buttonStyle(.plain).accessibilityLabel("Sound \(index+1) Audio \(slot+1) \(effect.title)")
         }.frame(height: 49).background(StageTheme.raised.opacity(0.55), in: RoundedRectangle(cornerRadius: 6)).clipShape(RoundedRectangle(cornerRadius: 6))
     }

@@ -93,13 +93,40 @@ enum StageKeysSampler {
             var updated=sound
             if (updated.nativeSampler?.conversionVersion ?? 1)<2 {updated=try updateEnvelope(updated,original:original,library:library)}
             if (updated.nativeSampler?.conversionVersion ?? 1)<3 {updated=try updateVoiceControls(updated,original:original,library:library)}
-            return try updateSplitRegions(updated,original:original,library:library)
+            if (updated.nativeSampler?.conversionVersion ?? 1)<5 {updated=try updateSplitRegions(updated,original:original,library:library)}
+            return try updateAmplitudeVelocity(updated,original:original,library:library)
         } catch {
             // A v1→v2 envelope step must not leave disk/metadata out of sync if
             // the following synthesis step rejects a hand-edited filter.
             try previous.write(to:file,options:.atomic)
             throw error
         }
+    }
+    static func updateAmplitudeVelocity(_ sound:ExternalSound,original:Original,library:URL)throws->ExternalSound {
+        guard var program=sound.nativeSampler,program.voiceControls?.amplitudeVelocity==nil else{return sound}
+        guard let name=sound.fileName,name==URL(fileURLWithPath:name).lastPathComponent,
+              original.sha256.count==64,original.sha256.allSatisfy({$0.isHexDigit}),original.file=="Original Instruments/"+original.sha256+".exs" else{throw ExternalInstrumentError.unsupportedFormat}
+        let source=try MainStagePatch.read(library.appendingPathComponent(original.file),in:library)
+        guard MainStagePatch.digest(source)==original.sha256 else{throw CocoaError(.fileReadCorruptFile)}
+        var notes=Set(program.notes)
+        guard let amplitude=try EXSNative.voiceControls(EXSNative.chunks(source),notes:&notes)?.amplitudeVelocity else{return sound}
+        let file=library.appendingPathComponent("Imported Sounds/"+name),bytes=try Data(contentsOf:file)
+        guard bytes.count<=16_000_000,var state=try PropertyListSerialization.propertyList(from:bytes,options:[],format:nil) as? [String:Any],
+              let metadata=state["StageKeys.NativeSampler"] as? Data,try JSONDecoder().decode(NativeSamplerProgram.self,from:metadata)==program,
+              var instrument=state["Instrument"] as? [String:Any],var layers=instrument["Layers"] as? [[String:Any]] else{throw ExternalInstrumentError.unsupportedFormat}
+        for i in layers.indices {
+            let destination=0x50100000+(layers[i]["ID"] as? Int ?? 0)*256
+            let routes=(layers[i]["Connections"] as? [[String:Any]] ?? []).filter{($0["source"] as? Int)==301 && ($0["destination"] as? Int)==destination}
+            guard routes.count==1,let route=routes.first,route["scale"] as? Double == -96,route["transform"] as? Int==2,route["inverse"] as? Bool==true,route["enabled"] as? Bool==true else{throw MainStagePatch.Failure.invalid("The sampler amplitude response was edited; import the original EXS separately to preserve those edits.")}
+            EXSNative.applyAmplitudeVelocity(amplitude,to:&layers[i])
+        }
+        instrument["Layers"]=layers;state["Instrument"]=instrument
+        program.voiceControls?.amplitudeVelocity=amplitude;program.notes=notes.sorted()
+        state["StageKeys.NativeSampler"]=try JSONEncoder().encode(program)
+        let backup=library.appendingPathComponent("Sampler Backups",isDirectory:true);try FileManager.default.createDirectory(at:backup,withIntermediateDirectories:true)
+        let retained=backup.appendingPathComponent(MainStagePatch.digest(bytes)+".aupreset");if !FileManager.default.fileExists(atPath:retained.path){try bytes.write(to:retained,options:.atomic)}
+        try PropertyListSerialization.data(fromPropertyList:state,format:.xml,options:0).write(to:file,options:.atomic)
+        var result=sound;result.nativeSampler=program;return result
     }
     /// Add supported source synthesis to an existing generated map, retaining
     /// every zone boundary, sample reference, user rack and existing envelope edit.
