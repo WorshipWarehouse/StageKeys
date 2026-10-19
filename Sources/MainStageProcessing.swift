@@ -13,7 +13,21 @@ enum MainStageProcessing {
         var high:Int?
         var transpose:Int?
         var blockSustain:Bool?
-        var hasChanges:Bool {!effects.isEmpty || !macros.isEmpty || low != nil || high != nil || transpose != nil || blockSustain != nil}
+        var gain:Float?
+        var pan:Float?
+        var muted:Bool?
+        var hasChanges:Bool {!effects.isEmpty || !macros.isEmpty || low != nil || high != nil || transpose != nil || blockSustain != nil || gain != nil || pan != nil || muted != nil}
+        func applying(to original:Layer)throws->Layer {
+            var layer=original
+            layer.importedRack=try appending(to:layer.importedRack ?? layer.external?.nativeSampler?.rack)
+            if let low,let high {layer.low=low;layer.high=high}
+            if let transpose {layer.transpose=transpose}
+            if let blockSustain {layer.blockSustain=blockSustain}
+            if let gain {layer.gain=gain}
+            if let pan {layer.pan=pan}
+            if let muted {layer.muted=muted}
+            return layer
+        }
         func appending(to original:ImportedRack?)throws->ImportedRack {
             var rack=original ?? ImportedRack()
             let offset=rack.effects.count;rack.effects += effects
@@ -26,6 +40,20 @@ enum MainStageProcessing {
             guard rack.validate() else{throw MainStagePatch.Failure.invalid("Combined processing exceeds the native rack limits.")}
             return rack
         }
+    }
+    static func channelSettings(_ source:[String:Any],to draft:inout Draft) {
+        draft.blockSustain=source["Channel_filterSustainPedal"] as? Bool
+        draft.muted=source["Channel_isMuted"] as? Bool
+        if let pan=source["Channel_pan"] as? NSNumber,pan.floatValue.isFinite,(-1...1).contains(pan.floatValue) {draft.pan=pan.floatValue}
+        if let volume=source["volume"] as? NSNumber {
+            if volume.int64Value==0 {draft.gain=0}
+            else if volume.int64Value==1509949440 {draft.gain=1}
+        }
+        if let volume=source["volume"] as? NSNumber,![Int64(0),1509949440].contains(volume.int64Value) {
+            draft.issues.append("The source channel fader is retained in the archived patch; its non-unity taper requires calibration. Native import uses unity gain instead of adding the previous automatic −6 dB attenuation.")
+        }
+        if let expression=source["Channel_expressionValue"] as? Int,expression != 127 {draft.issues.append("Source expression \(expression) is retained; channel expression response requires translation.")}
+        if let sends=source["Channel_sends"] as? [[String:Any]],sends.contains(where:{!$0.isEmpty}) {draft.issues.append("Source bus sends are retained in the patch archive; auxiliary routing is not flattened into insert effects.")}
     }
     static func archives(_ data:Data)throws->[[String:Any]] {
         var result:[[String:Any]]=[],position=0

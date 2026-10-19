@@ -106,10 +106,7 @@ struct SoundEditor: View {
                                     }}
                                     Button("Apply Supported Processing") {
                                         do {
-                                            draft.importedRack=try preview.appending(to:draft.importedRack ?? draft.external?.nativeSampler?.rack)
-                                            if let low=preview.low,let high=preview.high {draft.low=low;draft.high=high}
-                                            if let transpose=preview.transpose {draft.transpose=transpose}
-                                            if let block=preview.blockSustain {draft.blockSustain=block}
+                                            draft=try preview.applying(to:draft)
                                             processingPreview=nil
                                         }
                                         catch{processingIssue=error.localizedDescription;processingPreview=nil}

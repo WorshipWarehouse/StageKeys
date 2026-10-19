@@ -10,7 +10,7 @@ import Foundation
   let preset=library.appendingPathComponent(input.lastPathComponent);try bytes.write(to:preset)
   let original=try StageKeysSampler.retainOriginal(URL(fileURLWithPath:source),library:root)
   let sound=ExternalSound(kind:.samplerPreset,name:"My Name",fileName:input.lastPathComponent,nativeSampler:program)
-  let refs=before["file-references"] as! [String:String],hashes=try refs.mapValues{try AbletonArchive.sha256(URL(fileURLWithPath:$0))}
+  let refs=before["file-references"] as! [String:String],hashes=try refs.mapValues{try AssetDigest.sha256(URL(fileURLWithPath:$0))}
   let updated=try StageKeysSampler.updateVoiceControls(sound,original:original,library:root)
   if let sampleRoot=ProcessInfo.processInfo.environment["STAGEKEYS_EXS_ROOT"] {
    let fresh=try EXSNative.convert(URL(fileURLWithPath:source),sampleRoot:URL(fileURLWithPath:sampleRoot),to:root.appendingPathComponent("fresh.aupreset"))
@@ -50,7 +50,7 @@ import Foundation
   }
   assert(NSDictionary(dictionary:refs)==NSDictionary(dictionary:after["file-references"] as! [String:String]))
   let backup=try Data(contentsOf:root.appendingPathComponent("Sampler Backups/"+MainStagePatch.digest(bytes)+".aupreset"));assert(backup==bytes)
-  for (key,value) in refs {let hash=try AbletonArchive.sha256(URL(fileURLWithPath:value));assert(hash==hashes[key])}
+  for (key,value) in refs {let hash=try AssetDigest.sha256(URL(fileURLWithPath:value));assert(hash==hashes[key])}
   let retained=try Data(contentsOf:input);assert(retained==bytes)
   // An existing edited filter must not be overwritten.
   var edited=before,inst=edited["Instrument"] as! [String:Any],layers=inst["Layers"] as! [[String:Any]],filter=layers[0]["Filters"] as! [String:Any]

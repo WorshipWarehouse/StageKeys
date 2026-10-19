@@ -34,10 +34,14 @@ import AVFoundation
   zones[0]["loop enabled"]=true;zones[0]["loop start"]=48001;zones[0]["loop end"]=57600
   zones[0]["StageKeys EXS attack end"]=48000;zones[0]["StageKeys EXS tail start"]=96000;zones[0]["StageKeys EXS tail end"]=105600;layer["Zones"]=zones
   EXSNative.applyEnvelope(.init(attack:0,lowVelocityAttack:0,decay:10,sustain:1,release:0.1),group:Array(repeating:0,count:120),to:&layer)
+  var second=zones[0];second["ID"]=1;second["min key"]=61;second["max key"]=61;second["root key"]=61
+  layer["Zones"]=[zones[0],second]
   instrument["Layers"]=[layer];state["Instrument"]=instrument
   let prepared=try SamplerSplitRegions.prepare(state),unchanged=state["file-references"] as! [String:String]
   assert(unchanged.values.contains(source.path))
   let preparedZones=(((prepared["Instrument"] as! [String:Any])["Layers"] as! [[String:Any]])[0]["Zones"] as! [[String:Any]])
+  assert((prepared["file-references"] as! [String:String]).count==1,"Split zones must share one PCM file per source")
+  assert(preparedZones[0]["waveform"] as? Int==preparedZones[1]["waveform"] as? Int && preparedZones[1]["sample start"] as? Int==57600,"Compacted zone offsets must remain distinct")
   assert(preparedZones[0]["sample end"] as? Int==57599 && preparedZones[0]["loop start"] as? Int==48001)
   let preset=root.appendingPathComponent("prepared.aupreset");try PropertyListSerialization.data(fromPropertyList:prepared,format:.xml,options:0).write(to:preset)
   let engine=AVAudioEngine(),out=AVAudioFormat(standardFormatWithSampleRate:48000,channels:2)!

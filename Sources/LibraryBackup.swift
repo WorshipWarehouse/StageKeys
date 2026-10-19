@@ -20,7 +20,7 @@ enum LibraryBackup {
     static func asset(_ relative:String,in root:URL,manifest:Manifest)throws->URL {
         guard !relative.hasPrefix("/"),!relative.split(separator:"/").contains(".."),let expected=manifest.files[relative],expected.count==64,expected.allSatisfy({$0.isHexDigit}) else{throw MainStagePatch.Failure.invalid("Unsafe or unlisted library asset.")}
         let file=root.appendingPathComponent(relative).resolvingSymlinksInPath().standardizedFileURL
-        guard file.path.hasPrefix(root.path+"/"),try AbletonArchive.sha256(file)==expected else{throw MainStagePatch.Failure.invalid("Library asset is missing or changed: "+relative+". Download Git LFS assets before importing.")}
+        guard file.path.hasPrefix(root.path+"/"),try AssetDigest.sha256(file)==expected else{throw MainStagePatch.Failure.invalid("Library asset is missing or changed: "+relative+". Download Git LFS assets before importing.")}
         return file
     }
     static func preset(_ sound:ExternalSound,pack:Pack,to output:URL)throws {

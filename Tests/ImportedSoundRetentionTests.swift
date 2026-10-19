@@ -20,9 +20,10 @@ import AVFoundation
         layer.importedRack=ImportedRack(effects:[fx])
         var program=MIDIProgram();program.kind = .octaveUp
         layer.midiProgram=program
-        let entry=LibrarySound(id:"ableton-samples-"+(try AbletonArchive.sha256(adg)),name:layer.name,collection:"My Sounds",sound:sound,layer:layer)
+        let entry=LibrarySound(id:"ableton-samples-"+(try AssetDigest.sha256(adg)),name:layer.name,collection:"My Sounds",sound:sound,layer:layer)
         store.librarySounds.append(entry)
-        assert(store.importSound(adg,index:0))
+        assert(!store.importSound(adg,index:0),"Retired source formats must not be re-imported")
+        store.addLibrarySound(entry,index:0)
         assert(store.patch.layers[0].importedRack==layer.importedRack)
         assert(store.patch.layers[0].midiProgram==program && store.patch.layers[0].gain==0.27)
         store.setSoundRecommended(entry.id,true)
@@ -30,6 +31,6 @@ import AVFoundation
         assert(saved.tags!.recommended==true && saved.layer!.importedRack==layer.importedRack)
         assert(saved.layer!.midiProgram==program)
         try store.setlist.validate()
-        print("PASS: cached direct import preserves rack, bypass state, MIDI and level; recommendation writes preserve processing")
+        print("PASS: legacy saved sound preserves rack, bypass state, MIDI and level; recommendation writes preserve processing")
     }
 }

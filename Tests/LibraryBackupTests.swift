@@ -20,7 +20,7 @@ import AVFoundation
         let entry=LibrarySound(id:"pack-piano",name:"Pack Piano",collection:"My Pack",sound:sound,layer:layer,tags:.init(category:"Acoustic Piano & Keys",type:"Acoustic Piano",noteRanges:["Full Range"]))
         let catalog=root.appendingPathComponent("sound-library.json");try JSONEncoder().encode([entry]).write(to:catalog)
         var files:[String:String]=[:]
-        for file in [wave,preset,catalog]{files[String(file.path.dropFirst(root.path.count+1))]=try AbletonArchive.sha256(file)}
+        for file in [wave,preset,catalog]{files[String(file.path.dropFirst(root.path.count+1))]=try AssetDigest.sha256(file)}
         let manifest:[String:Any]=["format":"stagekeys-private-library","version":1,"files":files]
         try JSONSerialization.data(withJSONObject:manifest).write(to:root.appendingPathComponent("manifest.json"))
         let pack=try LibraryBackup.read(root);assert(pack.sounds.count==1)

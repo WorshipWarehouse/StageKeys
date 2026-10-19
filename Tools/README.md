@@ -1,3 +1,15 @@
+# Native MainStage conversion
+
+Import a MainStage `.patch` in StageKeys, then choose its original EXS/sample folder. Each supported sampler channel becomes a separate library sound with its supported effects, macros, MIDI range/transpose, pan and sustain settings attached. The saved library layer is the complete reusable sound; adding it to another patch retains those settings. Review conversion notes: private synthesizers, non-unity fader tapers, unrecognized MIDI processors and auxiliary buses still need work.
+
+`ConvertMainStageLibrary.swift` stages a whole source archive in a **new** data folder, never overwriting an installed library. Build with the non-UI source list and native object files used by `Tests/test-library.sh`, replacing its test main with this tool. Run:
+
+```
+ConvertMainStageLibrary patchFolder sampleRoot NEW-outputFolder report.json
+```
+
+The report distinguishes staged channels from unsupported instruments and missing assets. Staged channels are not a claim of exact audio parity. The tool retains original patches and EXS bytes and references/copies original audio without resampling. Source assets and reports belong in the separate private library workspace.
+
 # Native MainStage source inspection
 
 The current no-resampling path is documented in [MAINSTAGE-NATIVE.md](../Docs/MAINSTAGE-NATIVE.md). Compile the read-only inspector with:
@@ -59,26 +71,3 @@ An exported folder contains Instrument.aupreset and Samples. StageKeys' Import S
 `PlanFreeArchive.py catalog.json StageKeysDataDirectory captureFolder outputFolder` creates a resumable queue for the installed archive. It checks every source against its stable library identity, records original host instruments and flags rhythmic/layered sounds for separate behavior review. `volume-NN-ready.json` includes only captures that exist and have not yet been installed. Run the converter against these manifests after capture finishes; regenerate the plan after conversion. A capture-ready file is not playable until audible validation succeeds.
 
 Capture filenames include volume and archive identity to avoid collisions. Converter jobs may include `sourceArchiveID` and optional `tags`; verified conversions then appear as Playable under their original MainStage Archive entry. Source patches and native entries remain separate. This queue does not automate MainStage or recreate its private synthesizers. Tone sampling does not preserve editable synthesis, arbitrary modulation or rhythmic behavior.
-
-## Direct Ableton conversion
-
-The app can import `.alp` directly from Import Sounds. An `.adg` or `.adv` also needs its sample folder. Unzip the downloaded archive first and choose its `.alp` file. This preserves existing audio; it does not record a host instrument. Import Notes describe untranslated behavior.
-
-For a batch conversion with a detailed report, compile `ConvertAbletonLibrary.swift` using the same source list above, add `Sources/AbletonImport.swift Sources/AbletonArchive.swift`, replace `Tools/ConvertMainStageCapture.swift` with `Tools/ConvertAbletonLibrary.swift`, and link `-lz`. Run:
-
-```sh
-/tmp/ConvertAbletonLibrary /path/to/Volume.alp /path/to/isolated-library /path/to/report.json "Sunday Free Ableton · Volume N"
-```
-
-The CLI also accepts an extracted folder. Its report includes per-preset failure details, source sample hashes, mapped-zone counts and layer-isolated playback check counts. Successful entries are appended without replacing an existing library. Do not run two library writers at once. Pure MIDI presets, missing factory samples and saved rack settings with no active samples are reported separately from playable instruments. Live rack effects/macros/MIDI chains are not converted.
-
-`ExtractAbletonPack.py` is an optional standalone extraction/audit tool for the observed `pl-a` format. The app's native implementation has no Python dependency. Both implementations bound decompression/member sizes and reject unsafe paths and ambiguous duplicate filenames. Extracted sample bytes remain unchanged; unknown archive formats are rejected.
-
-
-## Fidelity repair tools (0.19)
-
-`UpgradeImportedBehavior library.json sourceFolderOrALP report.json baseline-library.json NEW-backup-directory` restores sampler filter, envelope, velocity and LFO controls as well as rack metadata. The optional backup directory enables native preset repair: source sample hashes and full zone arrays must match, each original preset is backed up, and audio files are never rewritten. Without that directory the operation updates rack metadata only. Customized rack entries are preserved. Close StageKeys before changing its installed library, and keep a copy of its JSON files.
-
-`RepairSamplerVoicing managed.aupreset source.adg sampleRoot NEW-backup.aupreset report.json` performs the same guarded source-control repair for one instrument.
-
-`ApplyFactoryVoicing StageKeysDataDirectory patchName NEW-backup.json report.json` applies the observed Felt Piano Room settings only to pristine native Felt Piano modules in the named patch. It preserves user levels, routing, custom channel settings and unrelated patches. The original setlist is backed up before writing. These tools reconstruct supported controls; see the fidelity document for remaining algorithm differences.

@@ -24,6 +24,19 @@ import Foundation
         assert(translated.effects[1].values[0]==79 && translated.effects[1].values[6]==265)
         assert(translated.issues.contains{$0.contains("Unmapped")})
         assert(translated.macros.count==1 && translated.macros[0].midiCC==71 && translated.macros[0].midiChannel==2)
+        var channelDraft=translated
+        channelDraft.low=36;channelDraft.high=96;channelDraft.transpose=12
+        MainStageProcessing.channelSettings(["volume":1509949440,"Channel_pan":-0.25,"Channel_isMuted":false,"Channel_filterSustainPedal":true],to:&channelDraft)
+        var originalLayer=Layer(name:"Authored patch",instrument:-1,gain:0.5)
+        originalLayer.importedRack=ImportedRack(effects:[])
+        let applied=try channelDraft.applying(to:originalLayer)
+        assert(applied.gain==1 && applied.pan == -0.25 && applied.blockSustain && applied.low==36 && applied.high==96 && applied.transpose==12)
+        let item=LibrarySound(id:"mainstage-channel-fixture",name:applied.name,collection:"MainStage Patches",layer:applied)
+        let retainedItem=try JSONDecoder().decode(LibrarySound.self,from:JSONEncoder().encode(item))
+        assert(retainedItem.layer?.importedRack==applied.importedRack && retainedItem.layer?.gain==1 && retainedItem.layer?.blockSustain==true,"Library persistence must retain authored processing and channel settings")
+        var silent=MainStageProcessing.Draft();MainStageProcessing.channelSettings(["volume":0],to:&silent)
+        let silentLayer=try silent.applying(to:originalLayer);assert(silentLayer.gain==0,"A source fader at silence must remain silent")
+        print("PASS: channel effects/macros, unity/silent faders, pan, sustain, ranges and transpose survive native library persistence")
         var old=AudioEffect();old.kind=5
         var rack=try translated.appending(to:ImportedRack(effects:[old]))
         assert(rack.effects.map(\.kind)==[5,9,7] && rack.macros[0].bindings[0].effect==1)

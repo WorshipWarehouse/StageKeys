@@ -1,5 +1,6 @@
 import Foundation
 import CryptoKit
+import Darwin
 import AVFoundation
 
 /// The StageKeys instrument UI and asset model; playback uses the system sampler,
@@ -248,13 +249,14 @@ enum SamplerAttack {
         }
         instrument["Layers"]=layers;var state=original;state["Instrument"]=instrument;return state
     }
-    static func load(_ sampler:AVAudioUnitSampler,file:URL,minimum:Float)throws {
+    @discardableResult static func load(_ sampler:AVAudioUnitSampler,file:URL,minimum:Float)throws->[String:Any] {
         let bytes=try Data(contentsOf:file)
         guard bytes.count<=16_000_000,let original=try PropertyListSerialization.propertyList(from:bytes,options:[],format:nil) as? [String:Any] else{throw ExternalInstrumentError.unsupportedFormat}
         let prepared=try SamplerSplitRegions.prepare(prepare(original,minimum:minimum)),temporary=FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString+".aupreset")
         defer{try? FileManager.default.removeItem(at:temporary)}
         try PropertyListSerialization.data(fromPropertyList:prepared,format:.xml,options:0).write(to:temporary)
         try sampler.loadInstrument(at:temporary)
+        return prepared
     }
 }
 
@@ -262,7 +264,19 @@ enum SamplerAttack {
 /// their bytes. Original files and saved preset references remain untouched.
 enum SamplerSplitRegions {
     private static var cache:[String:URL]=[:]
-    private static let directory=FileManager.default.temporaryDirectory.appendingPathComponent("StageKeys-Regions-"+UUID().uuidString,isDirectory:true)
+    private static let directory:URL = {
+        let manager=FileManager.default,base=manager.temporaryDirectory
+        // Only our PID-marked derived caches are eligible, never source audio.
+        for file in (try? manager.contentsOfDirectory(at:base,includingPropertiesForKeys:[.isDirectoryKey,.isSymbolicLinkKey])) ?? [] where file.lastPathComponent.hasPrefix("StageKeys-Regions-p") {
+            let suffix=file.lastPathComponent.dropFirst("StageKeys-Regions-p".count)
+            guard let pid=Int32(suffix.split(separator:"-").first ?? ""),pid>0,
+                  let values=try? file.resourceValues(forKeys:[.isDirectoryKey,.isSymbolicLinkKey]),values.isDirectory==true,values.isSymbolicLink != true else{continue}
+            if kill(pid,0) != 0 && errno==ESRCH {try? manager.removeItem(at:file)}
+        }
+        let folder=base.appendingPathComponent("StageKeys-Regions-p\(getpid())-"+UUID().uuidString,isDirectory:true)
+        atexit {try? FileManager.default.removeItem(at:SamplerSplitRegions.directory)}
+        return folder
+    }()
     static func assemble(_ source:URL,attack:Range<Int>,loop:Range<Int>)throws->URL {
         let info=try source.resourceValues(forKeys:[.fileSizeKey,.contentModificationDateKey,.isRegularFileKey])
         guard info.isRegularFile==true,let size=info.fileSize,size<=1_000_000_000,
@@ -298,9 +312,35 @@ enum SamplerSplitRegions {
         let file=directory.appendingPathComponent(UUID().uuidString+".caf")
         try output.write(to:file,options:.atomic);cache[key]=file;return file
     }
+    /// One PCM file per source keeps large maps from opening hundreds of files
+    /// or exhausting the sampler's waveform/file resources at harder velocities.
+    private static func combine(_ files:[URL])throws->URL {
+        let key="compound:"+files.map(\.path).joined(separator:"|")
+        if let file=cache[key] {return file}
+        guard !files.isEmpty else{throw ExternalInstrumentError.unsupportedFormat}
+        var total=0,header=Data()
+        for (index,file) in files.enumerated() {
+            let bytes=try Data(contentsOf:file,options:.mappedIfSafe)
+            guard bytes.count>=68 else{throw CocoaError(.fileReadCorruptFile)}
+            if index==0 {header=Data(Array(bytes.prefix(68)))}
+            else {guard bytes[8..<52]==header[8..<52] else{throw ExternalInstrumentError.unsupportedFormat}}
+            total+=bytes.count-68
+            guard total<=1_000_000_000 else{throw CocoaError(.fileReadTooLarge)}
+        }
+        let count=UInt64(total+4)
+        for i in 0..<8 {header[56+i]=UInt8(truncatingIfNeeded:count >> ((7-i)*8))}
+        let file=directory.appendingPathComponent(UUID().uuidString+".caf")
+        guard FileManager.default.createFile(atPath:file.path,contents:header) else{throw CocoaError(.fileWriteUnknown)}
+        let handle=try FileHandle(forWritingTo:file);defer{try? handle.close()}
+        try handle.seekToEnd()
+        for input in files {let bytes=try Data(contentsOf:input,options:.mappedIfSafe);try handle.write(contentsOf:bytes[68...])}
+        cache[key]=file;return file
+    }
     static func prepare(_ original:[String:Any])throws->[String:Any] {
         guard var instrument=original["Instrument"] as? [String:Any],var layers=instrument["Layers"] as? [[String:Any]],
               var references=original["file-references"] as? [String:String] else{return original}
+        struct Region {var layer:Int;var zone:Int;var file:URL;var count:Int;var loop:Int}
+        var batches:[String:[Region]]=[:]
         var next=(references.keys.compactMap{Int($0.replacingOccurrences(of:"Sample:",with:""))}.max() ?? 0x10000000)+1
         for l in layers.indices {
             guard var zones=layers[l]["Zones"] as? [[String:Any]] else{continue}
@@ -315,13 +355,27 @@ enum SamplerSplitRegions {
                       tailStart>=0,tailEnd>tailStart,tailEnd-tailStart==loopEnd-attackEnd else{throw MainStagePatch.Failure.invalid("Missing EXS separate tail mapping; update converted sampler playback.")}
                 let file=try assemble(URL(fileURLWithPath:path),attack:start..<attackEnd,loop:tailStart..<tailEnd)
                 let count=attackEnd-start,tail=tailEnd-tailStart
-                references["Sample:\(next)"]=file.path;zones[z]["waveform"]=next;next+=1
-                zones[z]["sample start"]=0;zones[z]["sample end"]=count+tail-1
-                zones[z]["loop start"]=count+loopStart-attackEnd;zones[z]["loop end"]=count+tail-1
+                batches[path,default:[]].append(Region(layer:l,zone:z,file:file,count:count+tail,loop:count+loopStart-attackEnd))
                 for key in ["StageKeys EXS attack end","StageKeys EXS tail start","StageKeys EXS tail end"] {zones[z].removeValue(forKey:key)}
             }
             layers[l]["Zones"]=zones
         }
+        guard !batches.isEmpty else{return original}
+        for path in batches.keys.sorted() {
+            let regions=batches[path]!,file=try combine(regions.map(\.file))
+            references["Sample:\(next)"]=file.path
+            var offset=0
+            for region in regions {
+                var zones=layers[region.layer]["Zones"] as! [[String:Any]]
+                zones[region.zone]["waveform"]=next;zones[region.zone]["sample start"]=offset
+                zones[region.zone]["sample end"]=offset+region.count-1
+                zones[region.zone]["loop start"]=offset+region.loop;zones[region.zone]["loop end"]=offset+region.count-1
+                layers[region.layer]["Zones"]=zones;offset+=region.count
+            }
+            next+=1
+        }
+        let used=Set(layers.flatMap{($0["Zones"] as? [[String:Any]] ?? []).compactMap{$0["waveform"] as? Int}})
+        references=references.filter{key,_ in !key.hasPrefix("Sample:") || used.contains(Int(key.dropFirst(7)) ?? -1)}
         instrument["Layers"]=layers;var state=original;state["Instrument"]=instrument;state["file-references"]=references;return state
     }
 }

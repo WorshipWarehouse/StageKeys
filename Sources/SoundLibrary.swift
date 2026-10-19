@@ -142,7 +142,7 @@ extension SoundLibrary {
             if files.level > 16 { files.skipDescendants(); continue }
             let values = try url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
             if values.isSymbolicLink == true { files.skipDescendants(); continue }
-            if values.isRegularFile == true && ["aupreset", "exs", "adg", "adv"].contains(url.pathExtension.lowercased()) {
+            if values.isRegularFile == true && ["aupreset", "exs"].contains(url.pathExtension.lowercased()) {
                 presets.append(url)
                 guard presets.count <= 256 else { throw CocoaError(.fileReadTooLarge) }
             }

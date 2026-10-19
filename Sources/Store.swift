@@ -783,20 +783,10 @@ final class PerformanceStore: ObservableObject {
     }
     private func prepareLibrarySound(_ url:URL,sampleRoot:URL?)throws->(ExternalSound,[String]?,Layer?) {
         guard let rack=audio.externalRack else{throw ExternalInstrumentError.missingFile}
-        if ["adg","adv"].contains(url.pathExtension.lowercased()) {
-            guard let root=sampleRoot else{throw AbletonImportError.invalid("Choose the sample folder.")}
-            let access=root.startAccessingSecurityScopedResource();defer{if access{root.stopAccessingSecurityScopedResource()}}
-            let temp=FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString+".aupreset")
-            defer{try? FileManager.default.removeItem(at:temp)}
-            let conversion=try AbletonImport.convert(url,sampleRoot:root,to:temp)
-            _ = try AbletonImport.validatePlayback(temp)
-            var sound=try rack.importPreset(temp,sampleRoot:root);sound.name=conversion.name
-            var layer=Layer(name:sound.name,instrument:-1,gain:0.5);layer.external=sound;layer.importedRack=conversion.rack;layer.midiProgram=conversion.midi
-            return (sound,conversion.warnings,layer)
-        }
+        guard !["adg","adv","alp"].contains(url.pathExtension.lowercased()) else{throw MainStagePatch.Failure.invalid("Import the original MainStage patch or EXS instrument instead.")}
         if let root=sampleRoot {
             let sound=try url.pathExtension.lowercased()=="exs" ? rack.importEXS(url,sampleRoot:root) : rack.importPreset(url,sampleRoot:root)
-            if let program=sound.nativeSampler {var layer=Layer(name:sound.name,instrument:-1,gain:0.5);layer.external=sound;layer.importedRack=program.rack;return (sound,program.notes,layer)}
+            if let program=sound.nativeSampler {var layer=Layer(name:sound.name,instrument:-1,gain:1);layer.external=sound;layer.importedRack=program.rack;return (sound,program.notes,layer)}
             return (sound,nil,nil)
         }
         return (try rack.importSound(url),nil,nil)
@@ -818,12 +808,6 @@ final class PerformanceStore: ObservableObject {
     func importLibrarySound(_ url:URL,sampleRoot:URL?=nil)->ExternalSound? {
         guard !libraryImportBusy else{message="A sound library import is already running.";return nil}
         do {
-            if ["adg","adv"].contains(url.pathExtension.lowercased()) {
-                let access=url.startAccessingSecurityScopedResource();defer{if access{url.stopAccessingSecurityScopedResource()}}
-                let id="ableton-samples-"+(try AbletonArchive.sha256(url))
-                if let existing=librarySounds.first(where:{$0.id==id})?.sound{return existing}
-                return try installLibrarySound(url,sampleRoot:sampleRoot,id:id)
-            }
             return try installLibrarySound(url,sampleRoot:sampleRoot)
         }catch{message=error.localizedDescription;return nil}
     }
@@ -836,6 +820,7 @@ final class PerformanceStore: ObservableObject {
             do {
                 let pack=try LibraryBackup.read(folder)
                 var entries=librarySounds,imported=0,skipped=0,failures:[String]=[]
+                var installedPresets:[String:ExternalSound]=[:]
                 guard let rack=audio.externalRack else{throw ExternalInstrumentError.unsupportedFormat}
                 for var entry in pack.sounds {
                     guard !entries.contains(where:{$0.id==entry.id}) else{skipped+=1;continue}
@@ -844,8 +829,14 @@ final class PerformanceStore: ObservableObject {
                     let temp=FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString+".aupreset")
                     defer{try? FileManager.default.removeItem(at:temp)}
                     do {
-                        try LibraryBackup.preset(sound,pack:pack,to:temp)
-                        var installed=try rack.importPreset(temp,sampleRoot:pack.root);installed.name=sound.name
+                        var installed:ExternalSound
+                        if let file=sound.fileName,let cached=installedPresets[file] {installed=cached}
+                        else {
+                            try LibraryBackup.preset(sound,pack:pack,to:temp)
+                            installed=try rack.importPreset(temp,sampleRoot:pack.root)
+                            if let file=sound.fileName {installedPresets[file]=installed}
+                        }
+                        installed.name=sound.name
                         entry.sound=installed;entry.hostPath=nil
                         if entry.layer != nil {entry.layer?.external=installed;entry.layer?.pluginState=nil}
                         if let original=entry.originalInstrument {
@@ -898,7 +889,7 @@ final class PerformanceStore: ObservableObject {
         let channels=document?["channels"] as? [[String:Any]]
         let source=channels?.first(where:{$0["Filename"] as? String==report.channels[channel].file})
         var draft=try MainStageProcessing.translate(MainStagePatch.read(root.appendingPathComponent(report.channels[channel].file),in:root),channelID:source?["Channel_instID"] as? Int)
-        draft.blockSustain=source?["Channel_filterSustainPedal"] as? Bool
+        if let source {MainStageProcessing.channelSettings(source,to:&draft)}
         return draft
     }
     func importMainStageSamplers(_ folder:URL) {
@@ -912,24 +903,29 @@ final class PerformanceStore: ObservableObject {
             do {
                 let files=try MainStagePatch.findSamplerInstruments(names,in:folder)
                 var imported=0,skipped=0,failures:[String]=[]
-                for name in names.sorted() {
+                for (channelIndex,channel) in report.channels.enumerated() where !channel.instruments.isEmpty {
+                    guard channel.instruments.count==1,let name=channel.instruments.first else{failures.append(channel.name+": layered sampler selection requires translation");continue}
                     let matches=files.filter{$0.lastPathComponent==name}
                     guard matches.count==1 else{failures.append(name+": "+(matches.isEmpty ? "instrument not found in the selected folder":"multiple matches; choose a narrower folder"));continue}
                     let file=matches[0]
-                    libraryImportProgress="Importing original sampler instrument: "+name
+                    libraryImportProgress="Importing MainStage channel: "+channel.name
                     await Task.yield()
                     do {
-                        let id="mainstage-instrument-"+(try AbletonArchive.sha256(file))
+                        let id="mainstage-channel-"+channel.sha256+"-"+(try AssetDigest.sha256(file))
                         if librarySounds.contains(where:{$0.id==id}){skipped+=1;continue}
-                        _ = try installLibrarySound(file,sampleRoot:folder,id:id)
-                        if let index=librarySounds.firstIndex(where:{$0.id==id}) {
-                            var entries=librarySounds;entries[index].collection="MainStage Samplers"
-                            try SoundLibrary(url:saveURL.deletingLastPathComponent().appendingPathComponent("sound-library.json")).write(entries);librarySounds=entries
-                        }
+                        let processing=try mainStageProcessing(channelIndex)
+                        let (sound,notes,template)=try prepareLibrarySound(file,sampleRoot:folder)
+                        var layer=template ?? Layer(name:channel.name,instrument:-1,gain:1)
+                        layer.name=channel.name;layer.external=sound
+                        layer=try processing.applying(to:layer)
+                        let original=try StageKeysSampler.retainOriginal(file,library:saveURL.deletingLastPathComponent())
+                        let entry=LibrarySound(id:id,name:channel.name,collection:"MainStage Patches",sound:sound,layer:layer,sourceArchiveID:report.sourceArchiveID,conversionNotes:(notes ?? [])+processing.issues,originalInstrument:original)
+                        var entries=librarySounds;entries.append(entry)
+                        try SoundLibrary(url:saveURL.deletingLastPathComponent().appendingPathComponent("sound-library.json")).write(entries);librarySounds=entries
                         imported+=1
-                    }catch{failures.append(name+": "+error.localizedDescription)}
+                    }catch{failures.append(channel.name+": "+error.localizedDescription)}
                 }
-                libraryImportProgress="Imported \(imported) original sampler instruments; \(skipped) already present. Channel-strip effects are separate: preview supported processing in Sound Settings. "+failures.joined(separator:"; ")
+                libraryImportProgress="Imported \(imported) MainStage channels with supported effects, macros and MIDI settings; \(skipped) already present. Review conversion notes for unsupported routing and processing. "+failures.joined(separator:"; ")
             }catch{libraryImportProgress=error.localizedDescription}
         }
     }
@@ -945,32 +941,6 @@ final class PerformanceStore: ObservableObject {
             mainStageImportReport=report
             libraryImportProgress="Preserved \(report.channels.count) channel strips and their original effects, macros and MIDI data. Playback conversion requires \(report.blockers.count) unsupported settings to be translated. No incomplete sound was added."
         }catch{mainStageImportReport=nil;libraryImportProgress=error.localizedDescription}
-    }
-    func importAbletonPack(_ url:URL) {
-        guard !libraryImportBusy else{return}
-        libraryImportBusy=true;libraryImportProgress="Extracting Ableton samples…"
-        Task { @MainActor in
-            defer{libraryImportBusy=false}
-            do {
-                let folder=try await Task.detached(priority:.userInitiated){try AbletonArchive.extract(url)}.value
-                defer{try? FileManager.default.removeItem(at:folder)}
-                let files=try SoundLibrary.samplerPresets(in:folder).filter{["adg","adv"].contains($0.pathExtension.lowercased())}
-                var imported=0,skipped=0,failures:[String]=[]
-                for (position,file) in files.enumerated() {
-                    libraryImportProgress="Importing \(position+1) of \(files.count): \(file.deletingPathExtension().lastPathComponent)"
-                    await Task.yield()
-                    do {
-                        let id="ableton-samples-"+(try AbletonArchive.sha256(file))
-                        if librarySounds.contains(where:{$0.id==id}){skipped+=1;continue}
-                        _ = try installLibrarySound(file,sampleRoot:folder,id:id);imported+=1
-                    } catch{failures.append(file.lastPathComponent+": "+error.localizedDescription)}
-                }
-                libraryImportProgress="Imported \(imported) sample maps; \(skipped) already present; \(failures.count) need attention. Translated rack effects, macros and MIDI settings are retained; see each sound’s conversion notes for approximations."
-                let report=saveURL.deletingLastPathComponent().appendingPathComponent("ableton-import-report.json")
-                let result:[String:Any]=["imported":imported,"skipped":skipped,"failures":failures,"source":url.lastPathComponent,"sampleMapOnly":false,"preservesTranslatedProcessing":true]
-                try JSONSerialization.data(withJSONObject:result,options:[.prettyPrinted,.sortedKeys]).write(to:report,options:.atomic)
-            } catch{libraryImportProgress=error.localizedDescription}
-        }
     }
     @discardableResult
     func importSound(_ url:URL,index:Int,sampleRoot:URL?=nil)->Bool {
@@ -993,7 +963,7 @@ final class PerformanceStore: ObservableObject {
                 do {
                     let bytes = try Data(contentsOf: url)
                     guard bytes.count <= 16_000_000 else { throw ExternalInstrumentError.unsupportedFormat }
-                    let id = (["adg","adv"].contains(url.pathExtension.lowercased()) ? "ableton-samples-" : "sampler-") + SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
+                    let id = "sampler-" + SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
                     if entries.contains(where: { $0.id == id }) { skipped += 1; continue }
                     let (sound,notes,layer)=try prepareLibrarySound(url,sampleRoot:folder)
                     entries.append(LibrarySound(id: id, name: sound.name, collection: "My Sounds", sound: sound,layer:layer,conversionNotes:notes))
@@ -1053,8 +1023,8 @@ final class PerformanceStore: ObservableObject {
     #if os(macOS)
     func openHostPatch(index: Int) {
         let panel = NSOpenPanel()
-        panel.title = "Open a MainStage or Ableton patch in its host"
-        panel.allowedContentTypes = [UTType(filenameExtension: "patch") ?? .package, UTType(filenameExtension: "adg") ?? .data, UTType(filenameExtension: "alp") ?? .data]
+        panel.title = "Open a MainStage patch in its host"
+        panel.allowedContentTypes = [UTType(filenameExtension: "patch") ?? .package]
         panel.canChooseDirectories = false; panel.allowsMultipleSelection = false
         panel.begin { [weak self] response in
             guard let self, response == .OK, let url = panel.url else { return }
@@ -1062,7 +1032,7 @@ final class PerformanceStore: ObservableObject {
                 let d = ExternalMIDIDestination(id: ExternalMIDIOutput.broadcastID, name: url.deletingPathExtension().lastPathComponent, endpoint: 0)
                 self.addMIDIDestination(d, index: index)
                 self.message = "In the host app, select ‘StageKeys to External App’ as the MIDI input and choose MIDI channel \(self.patch.layers[index].midiOutputChannel + 1). Configure audio in that host."
-            } else { self.message = "Install MainStage for .patch files or Ableton Live for .adg/.alp files. StageKeys cannot render their native instrument chains directly." }
+            } else { self.message = "Install MainStage to open this host patch. Use native patch import to translate supported instruments and processing." }
         }
     }
     #endif

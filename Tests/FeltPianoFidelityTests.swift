@@ -18,7 +18,7 @@ import Darwin
    let relative=path.range(of:"EXS Factory Samples/").map{String(path[$0.lowerBound...])} ?? path.trimmingCharacters(in:CharacterSet(charactersIn:"/"))
    let file=audioRoot.appendingPathComponent(relative)
    guard let copied=installedRefs[key] else{fatalError("Missing source reference")}
-   let sourceHash=try AbletonArchive.sha256(file),copiedHash=try AbletonArchive.sha256(URL(fileURLWithPath:copied));assert(sourceHash==copiedHash)
+   let sourceHash=try AssetDigest.sha256(file),copiedHash=try AssetDigest.sha256(URL(fileURLWithPath:copied));assert(sourceHash==copiedHash)
    refs[key]=file.path
   }
   original["file-references"]=refs

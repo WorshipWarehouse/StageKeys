@@ -143,8 +143,9 @@ final class ExternalInstrumentRack {
             let sampler=AVAudioUnitSampler();try SamplerRendering.configure(sampler,offline:engine.isInManualRenderingMode,resident:state["StageKeys.NativeSampler"] != nil);engine.attach(sampler);nodes.append(sampler);voice.sampler=sampler
             let temporary=FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString+".aupreset")
             defer{try? FileManager.default.removeItem(at:temporary)}
-            try PropertyListSerialization.data(fromPropertyList:SamplerSplitRegions.prepare(Self.branchState(state,indices:plan.sampleLayers)),format:.xml,options:0).write(to:temporary)
-            try sampler.loadInstrument(at:temporary);rememberSampler(sampler);engine.connect(sampler,to:voice.sum,format:format)
+            let document=try SamplerSplitRegions.prepare(Self.branchState(state,indices:plan.sampleLayers))
+            try PropertyListSerialization.data(fromPropertyList:document,format:.xml,options:0).write(to:temporary)
+            try sampler.loadInstrument(at:temporary);rememberSampler(sampler,document:document);engine.connect(sampler,to:voice.sum,format:format)
         }
         let graph=ImportedAudioGraph(engine:engine,rack:plan.rack,format:format,tempo:tempo)
         voice.audioGraph=graph;nodes += graph.nodes
@@ -462,7 +463,7 @@ final class ExternalInstrumentRack {
                 if sound.kind == .soundBank {
                     try sampler.loadSoundBankInstrument(at: file, program: sound.program, bankMSB: sound.bankMSB, bankLSB: sound.bankLSB)
                 } else if sound.kind == .samplerPreset {
-                    try install(sampler, channel: channel) { try SamplerAttack.load(sampler,file:file,minimum:attackMinimum) }
+                    try install(sampler, channel: channel) { let document=try SamplerAttack.load(sampler,file:file,minimum:attackMinimum);self.rememberSampler(sampler,document:document) }
                     voices[channel]?.nativePreset=file;voices[channel]?.attackMinimum=attackMinimum
                     completion(.success(()))
                     return
@@ -491,8 +492,16 @@ final class ExternalInstrumentRack {
     private final class SamplerHandle {weak var sampler:AVAudioUnitSampler?;init(_ sampler:AVAudioUnitSampler){self.sampler=sampler}}
     private var samplerHandles:[ObjectIdentifier:SamplerHandle] = [:]
     private var samplerDocuments:[ObjectIdentifier:[String:Any]] = [:]
-    private func rememberSampler(_ sampler:AVAudioUnitSampler) {
-        samplerHandles[ObjectIdentifier(sampler)]=SamplerHandle(sampler)
+    private func rememberSampler(_ sampler:AVAudioUnitSampler,document:[String:Any]?=nil) {
+        let identity=ObjectIdentifier(sampler)
+        if let document,document["StageKeys.NativeSampler"] != nil {
+            samplerHandles[identity]=SamplerHandle(sampler);samplerDocuments[identity]=document;return
+        }
+        // AUSampler's serialized state can omit authored EXS modulation routes.
+        // Preserve our exact loaded document across graph rebuilds. Tie it to
+        // the live object, not just its address, which may later be reused.
+        if samplerHandles[identity]?.sampler === sampler,samplerDocuments[identity]?["StageKeys.NativeSampler"] != nil {return}
+        samplerHandles[identity]=SamplerHandle(sampler)
         if var state=sampler.auAudioUnit.fullStateForDocument,
            let refs=state["file-references"] as? [String:Any],!refs.isEmpty {
             // AUSampler omits default full keyboard ranges when serializing. On

@@ -5,7 +5,7 @@ import AVFoundation
         guard let path=ProcessInfo.processInfo.environment["STAGEKEYS_EXS_FIXTURE"],let root=ProcessInfo.processInfo.environment["STAGEKEYS_EXS_ROOT"] else{print("SKIP: provide private EXS fixture and selected sample root");return}
         let scratch=FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString,isDirectory:true)
         defer{try? FileManager.default.removeItem(at:scratch)}
-        let source=URL(fileURLWithPath:path),original=try AbletonArchive.sha256(source)
+        let source=URL(fileURLWithPath:path),original=try AssetDigest.sha256(source)
         let rack=try ExternalInstrumentRack(engine:AVAudioEngine(),libraryURL:scratch.appendingPathComponent("Imported Sounds"))
         let sound=try rack.importEXS(source,sampleRoot:URL(fileURLWithPath:root))
         assert(sound.nativeSampler?.groups.count==20 && sound.nativeSampler?.rack.validate()==true && sound.nativeSampler?.rack.branches?.count==2)
@@ -15,9 +15,9 @@ import AVFoundation
         let refs=state["file-references"] as! [String:String]
         let sourceAudio=URL(fileURLWithPath:root).appendingPathComponent("EXS Factory Samples/01 Acoustic Pianos/Steinway Piano_consolidated.caf")
         let copiedAudio=URL(fileURLWithPath:refs.values.first!)
-        let sourceHash=try AbletonArchive.sha256(sourceAudio),copyHash=try AbletonArchive.sha256(copiedAudio)
+        let sourceHash=try AssetDigest.sha256(sourceAudio),copyHash=try AssetDigest.sha256(copiedAudio)
         assert(sourceHash==copyHash,"Import must preserve the complete original CAF byte-for-byte")
-        let after=try AbletonArchive.sha256(source);assert(after==original)
+        let after=try AssetDigest.sha256(source);assert(after==original)
         let retained=try StageKeysSampler.retainOriginal(source,library:scratch)
         assert(retained.sha256==original)
         // Reconstruct a v0.27 preset to exercise an actual installed-library

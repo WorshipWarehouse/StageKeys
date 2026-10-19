@@ -19,7 +19,7 @@ import AVFoundation
   if let fixture=ProcessInfo.processInfo.environment["STAGEKEYS_PIANO_PRESET"] {
    let file=URL(fileURLWithPath:fixture),bytes=try Data(contentsOf:file),state=try PropertyListSerialization.propertyList(from:bytes,options:[],format:nil) as! [String:Any]
    let program=try JSONDecoder().decode(NativeSamplerProgram.self,from:state["StageKeys.NativeSampler"] as! Data)
-   let refs=state["file-references"] as! [String:String],hashes=try refs.mapValues{try AbletonArchive.sha256(URL(fileURLWithPath:$0))}
+   let refs=state["file-references"] as! [String:String],hashes=try refs.mapValues{try AssetDigest.sha256(URL(fileURLWithPath:$0))}
    func render(_ minimum:Float,_ note:Int)throws->[Float] {
     let destination=URL(fileURLWithPath:ProcessInfo.processInfo.environment["STAGEKEYS_DATA_DIR"]!).appendingPathComponent(UUID().uuidString,isDirectory:true)
     try FileManager.default.createDirectory(at:destination,withIntermediateDirectories:true)
@@ -49,7 +49,7 @@ import AVFoundation
     print("PASS Steinway note",note,"early step",stepA,"→",stepB,"body ratio",tailB/tailA)
    }
    let retained=try Data(contentsOf:file);assert(retained==bytes)
-   for (key,path) in refs {let digest=try AbletonArchive.sha256(URL(fileURLWithPath:path));assert(digest==hashes[key])}
+   for (key,path) in refs {let digest=try AssetDigest.sha256(URL(fileURLWithPath:path));assert(digest==hashes[key])}
    print("PASS: original Steinway preset and CAF sample hashes unchanged")
   }
   print("PASS: attack-only playback state, bypass, long attacks, non-amplitude envelopes, boundaries and settings roundtrip")
