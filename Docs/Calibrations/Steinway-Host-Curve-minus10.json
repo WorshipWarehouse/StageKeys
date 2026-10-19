@@ -1,0 +1,111 @@
+{
+  "date": "2026-10-19",
+  "curve": -10,
+  "baselineCurve": 0,
+  "sampleRate": 48000,
+  "referencePitches": [
+    60,
+    74,
+    86
+  ],
+  "referenceVelocities": [
+    38,
+    64,
+    83,
+    102
+  ],
+  "referenceRestored": true,
+  "sampleAudioChanged": false,
+  "amplitudeOnlyAtTestedPoints": true,
+  "activatedInPlayback": false,
+  "limitations": [
+    "Only four velocities and one source sensitivity measured; no interpolation or arbitrary curve formula verified",
+    "Absolute sampler output level and endpoint controller resets remain separate calibration issues"
+  ],
+  "measurements": [
+    {
+      "note": 60,
+      "velocity": 38,
+      "changedToNeutralDB": 4.196233640854993,
+      "normalizedResidual": 8.641863704513884e-06,
+      "lagSamples": -28
+    },
+    {
+      "note": 74,
+      "velocity": 38,
+      "changedToNeutralDB": 4.196233255703399,
+      "normalizedResidual": 1.082466029661163e-05,
+      "lagSamples": 29
+    },
+    {
+      "note": 86,
+      "velocity": 38,
+      "changedToNeutralDB": 4.196233725839443,
+      "normalizedResidual": 2.5042126098481593e-05,
+      "lagSamples": 37
+    },
+    {
+      "note": 60,
+      "velocity": 64,
+      "changedToNeutralDB": 4.321725547313572,
+      "normalizedResidual": 2.5482183741158114e-06,
+      "lagSamples": 38
+    },
+    {
+      "note": 74,
+      "velocity": 64,
+      "changedToNeutralDB": 4.321725696964856,
+      "normalizedResidual": 2.5854909165868966e-06,
+      "lagSamples": 31
+    },
+    {
+      "note": 86,
+      "velocity": 64,
+      "changedToNeutralDB": 4.321725972513053,
+      "normalizedResidual": 2.9930283533543963e-06,
+      "lagSamples": 42
+    },
+    {
+      "note": 60,
+      "velocity": 83,
+      "changedToNeutralDB": 3.5602628577520807,
+      "normalizedResidual": 1.4489331656179643e-06,
+      "lagSamples": 31
+    },
+    {
+      "note": 74,
+      "velocity": 83,
+      "changedToNeutralDB": 3.5602625771247483,
+      "normalizedResidual": 1.4520334138646953e-06,
+      "lagSamples": 15
+    },
+    {
+      "note": 86,
+      "velocity": 83,
+      "changedToNeutralDB": 3.5602626403293547,
+      "normalizedResidual": 1.3703924378738507e-06,
+      "lagSamples": 5
+    },
+    {
+      "note": 60,
+      "velocity": 102,
+      "changedToNeutralDB": 2.2796898949244664,
+      "normalizedResidual": 7.313991149486905e-07,
+      "lagSamples": 16
+    },
+    {
+      "note": 74,
+      "velocity": 102,
+      "changedToNeutralDB": 2.2796897258250275,
+      "normalizedResidual": 6.71630692428166e-07,
+      "lagSamples": 250
+    },
+    {
+      "note": 86,
+      "velocity": 102,
+      "changedToNeutralDB": 2.279689625208837,
+      "normalizedResidual": 8.9692094937423e-07,
+      "lagSamples": 255
+    }
+  ]
+}
