@@ -199,7 +199,7 @@ final class AudioController {
                 for (p,value) in values.enumerated() { sk_effect_parameter(synth,Int32(index),Int32(slot),Int32(p),value) }
             }
             if externalSounds[index] != nil {
-                do { var values=fx.renderValues;if fx.kind==2,let beats=fx.syncBeats {values[1]=min(20,max(0.01,tempo/(60*beats)))};try externalRack?.configureEffect(channel:index,slot:slot,kind:fx.kind,enabled:fx.enabled,parameters:values,tempo:tempo) }
+                do { var values=fx.renderValues;if fx.kind==2,let beats=fx.syncBeats {values[1]=min(20,max(0.01,tempo/(60*beats)))};try externalRack?.configureEffect(channel:index,slot:slot,kind:fx.kind,enabled:fx.enabled,parameters:values,tempo:tempo,delay:fx.playbackDelay) }
                 catch { onError?(error.localizedDescription) }
             }
         }

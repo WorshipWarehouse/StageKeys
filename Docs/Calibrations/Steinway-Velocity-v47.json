@@ -1,0 +1,74 @@
+{
+  "date": "2026-10-19",
+  "appliedToPlayback": false,
+  "samplesChanged": false,
+  "reference": "v46 MainStage fixed-velocity capture, curve -10, controllers 7/11=127, sustain off; channel/output EQ retained",
+  "nativeCandidate": "Source sensitivity half-depth linear attenuation; source samples, filter and reference channel EQ retained; host gain applied analytically after render",
+  "measurements": [
+    {
+      "note": 60,
+      "velocity": 38,
+      "deltaDB": 4.157844443780202
+    },
+    {
+      "note": 74,
+      "velocity": 38,
+      "deltaDB": 3.317272789433801
+    },
+    {
+      "note": 86,
+      "velocity": 38,
+      "deltaDB": 3.0781759325581595
+    },
+    {
+      "note": 60,
+      "velocity": 64,
+      "deltaDB": 4.308361409268445
+    },
+    {
+      "note": 74,
+      "velocity": 64,
+      "deltaDB": 3.880838499015951
+    },
+    {
+      "note": 86,
+      "velocity": 64,
+      "deltaDB": 2.835744632206433
+    },
+    {
+      "note": 60,
+      "velocity": 83,
+      "deltaDB": 4.997910619444405
+    },
+    {
+      "note": 74,
+      "velocity": 83,
+      "deltaDB": 4.896273288555668
+    },
+    {
+      "note": 86,
+      "velocity": 83,
+      "deltaDB": 4.327263846971976
+    },
+    {
+      "note": 60,
+      "velocity": 102,
+      "deltaDB": 5.022495825756217
+    },
+    {
+      "note": 74,
+      "velocity": 102,
+      "deltaDB": 4.90335724879572
+    },
+    {
+      "note": 86,
+      "velocity": 102,
+      "deltaDB": 4.621314657286508
+    }
+  ],
+  "limitations": [
+    "Candidate remains quieter than reference and is not a shipped calibration.",
+    "No global boost or baseline amplitude-law replacement was applied.",
+    "Exact filter/EQ and host front-panel output level interpretation remain unresolved."
+  ]
+}

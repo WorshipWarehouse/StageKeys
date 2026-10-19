@@ -15,6 +15,10 @@ import Foundation
   var modern=legacy;modern.parameters=legacy.values;modern.parameters![9]=0.4
   let migrated=EffectPreset(name:"Soft Shimmer",effect:modern);try EffectPresetArchive.save([migrated],to:url)
   assert(EffectPresetArchive.load(url)==[migrated],"Shimmer quality must survive preset persistence")
+  let delay=AudioEffect.factoryDefault(kind:3);assert(delay.values[1]==0.75 && delay.values[0]==0.3 && delay.values[2]==1000 && delay.values[3]==0.5)
+  assert(delay.validate() && delay.playbackDelay?.pingPong==true && delay.playbackDelay?.leftSynced==true)
+  let dp=EffectPreset(name:"Stereo eighth",effect:delay);try EffectPresetArchive.save([dp],to:url);assert(EffectPresetArchive.load(url)==[dp])
+  var wrong=delay;wrong.kind=10;assert(!wrong.validate())
   print("PASS: effect preset settings/core round-trip, invalid saves preserve archive, corrupt archive rejected")
  }
 }

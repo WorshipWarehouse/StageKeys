@@ -239,7 +239,37 @@ static float effectProcess(SKSynth*s,int l,int k,float x){
  case 6:{float v=x*e->coef[2],level=fabsf(v),a=level>e->z[0]?e->coef[0]:e->coef[1];e->z[0]=a*e->z[0]+(1-a)*level;float db=20*log10f(fmaxf(1e-9,e->z[0]));float reduction=fmaxf(0,db-p[4])*(1-1/p[3]);y=(dry*(1-p[5])+v*powf(10,-reduction/20)*p[5])*e->coef[3];break;}
  case 7:for(int b=0;b<8;b++)y=process(&e->eq[b],y);break;
  case 9:y=x*e->coef[0];break;
- case 10:case 13:case 15:{
+ case 10:{
+  // Diffuse the room before octave shifting. The pitch history contains only
+  // the wet return, never the dry attack. All buffers are allocated off-thread.
+  int capacity=s->delayLength/6,index=pos%capacity;
+  float room=.035f+p[2]*.13f,decay=.4f+p[2]*7,wet=0;
+  const float spacing[4]={1,1.271f,1.617f,1.953f};
+  float pitch=e->z[6],recirculate=p[0]*p[1]*.65f;
+  for(int line=0;line<4;line++){
+   float seconds=room*spacing[line]*(s->stereoSide?1.031f:1);
+   float mod=sinf(phase+line*1.73f+s->stereoSide*.9f)*rate*.0007f*p[4];
+   float*history=buffer+line*capacity;
+   float delayed=tap_capacity(history,index,rate*seconds+mod,capacity);
+   float feedback=powf(.001f,seconds/decay);
+   history[index]=x+feedback*(delayed*(1-recirculate)+pitch*recirculate);
+   wet+=delayed*.25f;
+  }
+  for(int line=0;line<2;line++){
+   float*history=buffer+(4+line)*capacity;
+   float delayed=tap_capacity(history,index,rate*(line==0?.0071f:.0113f)*(s->stereoSide?1.07f:1),capacity);
+   float a=p[3]*.7f,out=delayed-a*wet;history[index]=wet+a*out;wet=out;
+  }
+  int pp=s->predelayPosition[l][k];float*history=s->predelay[l][k];history[pp]=wet;
+  float window=fminf(s->predelayLength*.45f,rate*.06f),q=e->shiftPhase;
+  q-=1/window;q-=floorf(q);e->shiftPhase=q;float q2=q+.5f;q2-=floorf(q2);
+  float a=.5f-.5f*cosf(TAU*q);
+  pitch=a*tap_capacity(history,pp,16+q*window,s->predelayLength)+(1-a)*tap_capacity(history,pp,16+q2*window,s->predelayLength);
+  s->predelayPosition[l][k]=(pp+1)%s->predelayLength;e->z[6]=pitch;
+  wet=wet*(1-p[0])+pitch*p[0];
+  e->z[0]+=e->coef[0]*(wet-e->z[0]);wet-=e->z[0];e->z[1]+=e->coef[1]*(wet-e->z[1]);wet=e->z[1];
+  e->z[5]=wet;y=dry*p[7]+wet*p[8];s->fxPhase[l][k]=fmod(phase+TAU*.3f/rate,TAU);break;}
+ case 13:case 15:{
   float size=kind==10?p[2]:kind==13?p[0]:p[1],feedback=kind==10?p[1]:p[2];float predelay=kind==13?p[1]:kind==15?p[0]:0;
   float modulation=kind==10?p[4]:kind==13?p[5]:p[6];float hz=kind==10?.3f:kind==13?p[6]:p[7];
   float base=rate*(.027f+size*.13f)*(kind==13 && s->stereoSide ? 1.037f:1),mod=sinf(phase)*rate*.001f*modulation;

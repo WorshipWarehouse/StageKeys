@@ -36,7 +36,7 @@ final class ImportedAudioGraph {
             if index<rack.effects.count {
                 let effect=BuiltinEffectUnit.make();attach(effect);effects.append(effect)
                 let fx=rack.effects[index]
-                (effect.auAudioUnit as? BuiltinEffectUnit)?.configure(slot:0,kind:fx.kind,enabled:fx.enabled,values:fx.renderValues,tempo:tempo,delay:fx.importedDelay)
+                (effect.auAudioUnit as? BuiltinEffectUnit)?.configure(slot:0,kind:fx.kind,enabled:fx.enabled,values:fx.renderValues,tempo:tempo,delay:fx.playbackDelay)
                 engine.connect(previous,to:effect,format:format);previous=effect
             }
         }
@@ -44,7 +44,7 @@ final class ImportedAudioGraph {
         configure(rack,tempo:tempo)
     }
     func configure(_ rack:ImportedRack,tempo:Float) {
-        for (i,unit) in effects.enumerated() where rack.effects.indices.contains(i) {let fx=rack.effects[i];(unit.auAudioUnit as? BuiltinEffectUnit)?.configure(slot:0,kind:fx.kind,enabled:fx.enabled,values:fx.renderValues,tempo:tempo,delay:fx.importedDelay)}
+        for (i,unit) in effects.enumerated() where rack.effects.indices.contains(i) {let fx=rack.effects[i];(unit.auAudioUnit as? BuiltinEffectUnit)?.configure(slot:0,kind:fx.kind,enabled:fx.enabled,values:fx.renderValues,tempo:tempo,delay:fx.playbackDelay)}
         for (i,split) in splits.enumerated() {
             guard let stages=rack.audioRacks,stages.indices.contains(i) else{continue}
             for (j,graph) in split.graphs.enumerated() where stages[i].branches.indices.contains(j) {

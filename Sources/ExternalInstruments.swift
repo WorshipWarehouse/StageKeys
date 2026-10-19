@@ -108,10 +108,10 @@ final class ExternalInstrumentRack {
         return Set(AudioEffectCatalog.descriptors(for: kind).filter { indices.contains($0.index) }.map { $0.name })
     }
     /// Descriptor-array adapter. Units match AudioEffectCatalog. Tempo is BPM.
-    func configureEffect(channel:Int,slot:Int,kind:Int,enabled:Bool,parameters:[Float],tempo:Float=120) throws {
+    func configureEffect(channel:Int,slot:Int,kind:Int,enabled:Bool,parameters:[Float],tempo:Float=120,delay:ImportedDelay?=nil) throws {
         guard Self.supportsEffect(kind:kind),(0..<3).contains(slot) else {throw ExternalInstrumentError.unsupportedEffect}
         guard let unit=voices[channel]?.builtin.auAudioUnit as? BuiltinEffectUnit else{return}
-        unit.configure(slot:slot,kind:kind,enabled:enabled,values:parameters,tempo:tempo)
+        unit.configure(slot:slot,kind:kind,enabled:enabled,values:parameters,tempo:tempo,delay:delay)
     }
     private func connectEffects(_ voice:Voice) {
         let format=voice.compressor.outputFormat(forBus:0)

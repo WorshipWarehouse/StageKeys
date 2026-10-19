@@ -249,6 +249,27 @@ struct EffectParameterFader:View {
         }.frame(maxWidth:.infinity)
     }
 }
+struct DelayEffectControls:View {
+    @Binding var effect:AudioEffect
+    var stereoAvailable:Bool
+    private func parameter(_ index:Int)->Binding<Float> {Binding(get:{effect.values[index]},set:{v in var values=effect.values;values[index]=v;effect.parameters=values})}
+    private func descriptor(_ index:Int)->AudioEffectParameterDescriptor {AudioEffectCatalog.descriptors(for:3)[index]}
+    var body:some View {
+        HStack(alignment:.top,spacing:5){
+            VStack(spacing:22){
+                Text("Settings").font(StageTheme.font(13,weight:.semibold)).frame(maxWidth:.infinity).padding(.vertical,12)
+                VStack(alignment:.leading,spacing:12){Text("Feedback");Slider(value:parameter(0),in:0...0.95);HStack{Text("0 %");Spacer();Text("\(effect.values[0]*100,specifier:"%.0f") %");Spacer();Text("95 %")}.font(StageTheme.font(11)).foregroundStyle(.secondary)}
+                VStack(alignment:.leading,spacing:12){Text("Subdivision");HStack(spacing:5){ForEach([Float(1),0.75,0.5,0.25,0.125],id:\.self){beats in
+                    Button([Float(1):"1/4",0.75:"1/8 ·",0.5:"1/8",0.25:"1/16",0.125:"1/32"][beats]!){parameter(1).wrappedValue=beats}.buttonStyle(StageButtonStyle(selected:effect.values[1]==beats))
+                }}}
+                Toggle("Ping-Pong mode",isOn:Binding(get:{effect.delayPingPong ?? false},set:{effect.delayPingPong=$0})).toggleStyle(.switch).disabled(!stereoAvailable)
+                    .help(stereoAvailable ? "Alternate echoes between the stereo channels":"Stereo ping-pong is available for imported instruments")
+                Spacer(minLength:10)
+            }.padding(16).frame(maxWidth:.infinity,minHeight:330).background(StageTheme.panel,in:RoundedRectangle(cornerRadius:8))
+            VStack(spacing:12){Text("Output").font(StageTheme.font(13,weight:.semibold));Divider();HStack(spacing:18){EffectParameterFader(descriptor:descriptor(2),value:parameter(2));EffectParameterFader(descriptor:descriptor(3),value:parameter(3))}.frame(height:280)}.padding(16).frame(width:180).background(StageTheme.panel,in:RoundedRectangle(cornerRadius:8))
+        }.padding(16)
+    }
+}
 struct EffectEditor: View {
     @EnvironmentObject var store: PerformanceStore
     @Environment(\.dismiss) var dismiss
@@ -274,7 +295,7 @@ struct EffectEditor: View {
         })
     }
     var body: some View {
-        EditorFrame(title: replacing ? "Select Effect" : "0\(slot+1) \(draft.title)", width:!replacing && [10,13,15,16].contains(draft.kind) ? 640:800,height:!replacing && [10,13,15,16].contains(draft.kind) ? 690:600,showsHeader:replacing) {
+        EditorFrame(title: replacing ? "Select Effect" : "0\(slot+1) \(draft.title)", width:!replacing && [3,10,13,15,16].contains(draft.kind) ? 640:800,height:!replacing && draft.kind==3 ? 590:!replacing && [10,13,15,16].contains(draft.kind) ? 690:600,showsHeader:replacing) {
             if !replacing {
                 HStack(spacing:5){Text(String(format:"%02d",slot+1)).font(StageTheme.font(10,weight:.bold)).padding(3).background(Color.purple,in:RoundedRectangle(cornerRadius:2));Text(draft.title).font(StageTheme.font(16,weight:.bold))}.frame(maxWidth:.infinity).padding(.top,20).padding(.bottom,16)
             }
@@ -305,13 +326,13 @@ struct EffectEditor: View {
                             HStack(alignment:.top,spacing:12){Image(systemName:"info.circle").font(.title2);VStack(alignment:.leading,spacing:4){Text("Changes to Effects").font(.headline);Text("Confirming changes to this effect slot updates existing patch snapshots.").font(.callout)}}.padding(20).frame(maxWidth:.infinity,alignment:.leading).overlay{RoundedRectangle(cornerRadius:10).stroke(.white.opacity(0.08))}
                             LazyVGrid(columns:Array(repeating:GridItem(.flexible(),spacing:18),count:4),spacing:14) {
                                 ForEach([4,7,11,15,5,8,12,1,6,9,13,2,3,10,14],id:\.self){kind in
-                                    Button { draft.kind=kind;draft.reverbCore=kind==13 ? "creamcoat":nil;draft.parameters=AudioEffectCatalog.defaults(for:kind);draft.enabled=true;draft.syncBeats=nil;replacing=false } label:{HStack{Text(AudioEffectCatalog.names[kind]).font(StageTheme.font(12,weight:.semibold));Spacer(minLength:4);Image(systemName:"arrow.right.circle").font(.system(size:20))}.padding(14).frame(maxWidth:.infinity,minHeight:58,alignment:.leading).background(StageTheme.panel,in:RoundedRectangle(cornerRadius:10))}.buttonStyle(.plain)
+                                    Button { draft=AudioEffect.factoryDefault(kind:kind);replacing=false } label:{HStack{Text(AudioEffectCatalog.names[kind]).font(StageTheme.font(12,weight:.semibold));Spacer(minLength:4);Image(systemName:"arrow.right.circle").font(.system(size:20))}.padding(14).frame(maxWidth:.infinity,minHeight:58,alignment:.leading).background(StageTheme.panel,in:RoundedRectangle(cornerRadius:10))}.buttonStyle(.plain)
                                 }
                             }
                             Button{draft=AudioEffect();replacing=false}label:{Label("No effect",systemImage:"nosign")}.buttonStyle(StageButtonStyle())
                         }.padding(28)
                     } else {
-                        if draft.kind==3 { subdivision }
+
                         if draft.kind==2 {
                             Picker("Frequency",selection:Binding(get:{draft.syncBeats != nil},set:{draft.syncBeats = $0 ? 0.5 : nil})) { Text("Hz").tag(false); Text("Tempo").tag(true) }.pickerStyle(.segmented).padding(.horizontal,20)
                             if draft.syncBeats != nil { subdivision }
@@ -319,7 +340,9 @@ struct EffectEditor: View {
                         if draft.kind==14 {
                             Picker("Rotor Speed",selection:Binding(get:{Int(draft.values[0])},set:{var values=draft.values;values[0]=Float($0);draft.parameters=values})) { Text("Brake").tag(0); Text("Slow").tag(1); Text("Fast").tag(2) }.pickerStyle(.segmented).padding(.horizontal,20)
                         }
-                        if draft.kind == 7 {
+                        if draft.kind == 3 {
+                            DelayEffectControls(effect:$draft,stereoAvailable:store.patch.layers[index].external != nil)
+                        } else if draft.kind == 7 {
                             ChannelEqualizerControls(bands:equalizerBands,enabled:$draft.enabled).padding(.top,12)
                         } else if draft.kind == 13 {
                             ScrollView(.horizontal,showsIndicators:false){PrimaVerbControls(sourceCore:draft.usesCreamCoat,values:Binding(get:{draft.values},set:{draft.parameters=$0})).frame(minWidth:600).padding(.horizontal,16).padding(.vertical,8)}
@@ -339,9 +362,7 @@ struct EffectEditor: View {
         }
     }
     private var defaultEffect:AudioEffect {
-        var effect=AudioEffect();effect.kind=draft.kind;effect.enabled=draft.enabled;effect.parameters=AudioEffectCatalog.defaults(for:draft.kind)
-        if effect.kind==13 {effect.reverbCore="creamcoat"}
-        return effect
+        var effect=AudioEffect.factoryDefault(kind:draft.kind);effect.enabled=draft.enabled;return effect
     }
     private func presetRow(_ title:String,id:String,effect:AudioEffect)->some View {
         HStack {Button{selectedPreset=id}label:{Text(title).frame(maxWidth:.infinity,alignment:.leading).padding(14)}.buttonStyle(.plain)

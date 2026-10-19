@@ -31,6 +31,7 @@ struct AudioEffect: Codable, Equatable {
     var amount: Float = 0.5
     var enabled = true
     var importedDelay: ImportedDelay?
+    var delayPingPong: Bool?
     var syncBeats: Float?
     var parameters: [Float]?
     /// Explicitly retained through edits; absent on legacy imported reverbs.
@@ -42,6 +43,17 @@ struct AudioEffect: Codable, Equatable {
         guard let p=parameters, p.count==9 || p.count==10 else{return false}
         let observed:[Float]=[0,18,0.33,776,2884,0,0,1,0.23]
         return zip(p.prefix(9),observed).enumerated().allSatisfy { i,pair in abs(pair.0-pair.1)<(i==6 ? 0.011:0.0001) } && (p.count==9 || p[9]==1)
+    }
+    static func factoryDefault(kind:Int)->AudioEffect {
+        var effect=AudioEffect();effect.kind=kind;effect.parameters=AudioEffectCatalog.defaults(for:kind)
+        if kind==13 {effect.reverbCore="creamcoat"}
+        if kind==3 {effect.parameters![1]=0.75;effect.delayPingPong=true}
+        return effect
+    }
+    var playbackDelay:ImportedDelay? {
+        if let importedDelay {return importedDelay}
+        guard kind==3,delayPingPong==true else{return nil}
+        return ImportedDelay(left:Double(values[1]),right:Double(values[1]),leftSynced:true,rightSynced:true,pingPong:true,highCut:values[2])
     }
     var renderValues:[Float] { kind == 13 ? values+[usesCreamCoat ? 1:0]:values }
     var title: String { AudioEffectCatalog.names.indices.contains(kind) ? AudioEffectCatalog.names[kind] : "No Effect" }
@@ -55,6 +67,7 @@ struct AudioEffect: Codable, Equatable {
     }
     func validate() -> Bool {
         guard reverbCore.map({kind == 13 && ["creamcoat","legacy"].contains($0)}) ?? true else{return false}
+        guard delayPingPong == nil || kind==3 else{return false}
         guard importedDelay.map({kind == 3 && $0.validate()}) ?? true else{return false}
         guard syncBeats.map({ $0.isFinite && (0.0625...4).contains($0) }) ?? true, (0...17).contains(kind), amount.isFinite, (0...1).contains(amount) else { return false }
         guard let parameters else { return true }
@@ -118,7 +131,7 @@ struct ImportedRack: Codable, Equatable {
         effects.filter{$0.kind != 0}.count + (branches ?? []).reduce(0){$0+$1.rack.effectCount} + (audioRacks ?? []).reduce(0){sum,stage in sum+stage.branches.reduce(0){$0+$1.rack.effectCount}}
     }
     var audioTopology:String {
-        effects.map{"\($0.kind):\($0.importedDelay != nil)"}.joined(separator:",") + (audioRacks ?? []).map{"@\($0.beforeEffect)["+$0.branches.map{$0.rack.audioTopology}.joined(separator:";")+"]"}.joined()
+        effects.map{"\($0.kind):\($0.playbackDelay != nil)"}.joined(separator:",") + (audioRacks ?? []).map{"@\($0.beforeEffect)["+$0.branches.map{$0.rack.audioTopology}.joined(separator:";")+"]"}.joined()
     }
     var branches: [ImportedBranch]?
     var translationVersion: Int?
