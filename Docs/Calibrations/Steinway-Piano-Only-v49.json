@@ -1,0 +1,112 @@
+{
+  "rate": 48000,
+  "peak": 0.48221707344055176,
+  "onsets": [
+    9.120000000000001,
+    10.33,
+    11.540000000000001,
+    12.75,
+    13.96,
+    15.17,
+    16.38,
+    17.59,
+    18.8,
+    20.01,
+    21.22,
+    22.43
+  ],
+  "rows": [
+    {
+      "note": 60,
+      "velocity": 38,
+      "mainstageMinusSavedNativeDB": -2.8931148543628558,
+      "mainstageRMS": 0.0071939826207302205
+    },
+    {
+      "note": 74,
+      "velocity": 38,
+      "mainstageMinusSavedNativeDB": -3.4280185949280524,
+      "mainstageRMS": 0.005645251182788634
+    },
+    {
+      "note": 86,
+      "velocity": 38,
+      "mainstageMinusSavedNativeDB": -2.3751718772688704,
+      "mainstageRMS": 0.001994745888919525
+    },
+    {
+      "note": 60,
+      "velocity": 64,
+      "mainstageMinusSavedNativeDB": -2.2184795139465416,
+      "mainstageRMS": 0.024670104529945436
+    },
+    {
+      "note": 74,
+      "velocity": 64,
+      "mainstageMinusSavedNativeDB": -2.38263728640607,
+      "mainstageRMS": 0.02351601353719239
+    },
+    {
+      "note": 86,
+      "velocity": 64,
+      "mainstageMinusSavedNativeDB": -2.2881701916911865,
+      "mainstageRMS": 0.015241712892227376
+    },
+    {
+      "note": 60,
+      "velocity": 83,
+      "mainstageMinusSavedNativeDB": 0.06169586240692665,
+      "mainstageRMS": 0.04062585480177127
+    },
+    {
+      "note": 74,
+      "velocity": 83,
+      "mainstageMinusSavedNativeDB": 0.05411562437151892,
+      "mainstageRMS": 0.03912861274167543
+    },
+    {
+      "note": 86,
+      "velocity": 83,
+      "mainstageMinusSavedNativeDB": 0.6612885038810667,
+      "mainstageRMS": 0.03145640327249537
+    },
+    {
+      "note": 60,
+      "velocity": 102,
+      "mainstageMinusSavedNativeDB": 2.006281951683973,
+      "mainstageRMS": 0.07201937340421294
+    },
+    {
+      "note": 74,
+      "velocity": 102,
+      "mainstageMinusSavedNativeDB": 2.090616976135533,
+      "mainstageRMS": 0.07686989594450837
+    },
+    {
+      "note": 86,
+      "velocity": 102,
+      "mainstageMinusSavedNativeDB": 2.9314031668221086,
+      "mainstageRMS": 0.04309133394677405
+    }
+  ],
+  "date": "2026-10-19",
+  "reference": "MainStage Grand Piano and Pad, piano only; 0.6s notes at velocities 38/64/83/102, pitches 60/74/86",
+  "referenceFadersDB": {
+    "piano": -0.2,
+    "output": -0.2,
+    "pad": "-infinity"
+  },
+  "comparison": "Saved v46 native dry render, unchanged sampler velocity implementation; RMS 100\u2013300 ms from onset",
+  "limitations": [
+    "Channel/output EQ not isolated; this is not a sampler null test.",
+    "Baseline is a saved native render, not a fresh live StageKeys capture.",
+    "No velocity/gain correction inferred from this capture alone."
+  ],
+  "mappedControllerIssue": "CC11=127 raised the reference pad fader; initial contaminated recording excluded. Accepted sequence sends sustain-off and notes, with no CC7/CC11 normalization.",
+  "restored": {
+    "piano": "-infinity",
+    "pad": "-infinity",
+    "output": "-infinity",
+    "recording": false
+  }
+}
