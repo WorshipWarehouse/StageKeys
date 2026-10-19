@@ -113,7 +113,7 @@ enum MainStageProcessing {
         var draft=Draft(),targets:[Int:(effect:Int,name:String)]=[:]
         draft.amplitudeVelocityCurve=try MainStagePatch.amplitudeVelocityCurve(data,devices:devices)
         if let curve=draft.amplitudeVelocityCurve,curve != 0 {
-            draft.issues.append("Sampler amplitude velocity curve \(curve) is preserved per channel. Its host response still requires calibration; MIDI velocity, sample selection and filter response are not remapped.")
+            draft.issues.append("Sampler amplitude velocity curve \(curve) is preserved per channel. Its amplitude-only response is active for native converted EXS instruments; MIDI velocity, sample selection and filter response are not remapped. The underlying sampler amplitude law remains approximate.")
         }
         var independentReverbSlots=Set<Int>()
         for (slot,device) in devices.enumerated() {

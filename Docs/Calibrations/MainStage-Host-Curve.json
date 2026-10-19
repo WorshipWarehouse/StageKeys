@@ -1,0 +1,274 @@
+{
+  "date": "2026-10-19",
+  "baselineCurve": 0,
+  "sampleRate": 48000,
+  "sourceAmplitudeSensitivity": -52,
+  "sourceDisplayedDepthDB": 26,
+  "formula": "x=velocity/127; a=abs(curve)/10; shaped=curve<0 ? (1+a)*x/(1+a*x) : x/(1+a*(1-x)); gainDB=(-sensitivity/2)*(shaped-x)",
+  "implementedAs": "relative per-velocity zone gain; incoming velocity and amplitude/filter/envelope routes unchanged",
+  "measurements": {
+    "-20": [
+      {
+        "note": 60,
+        "velocity": 38,
+        "changedToNeutralDB": 6.821459196855288,
+        "normalizedResidual": 8.093133610549408e-06,
+        "lagSamples": 166
+      },
+      {
+        "note": 74,
+        "velocity": 38,
+        "changedToNeutralDB": 6.82145830268855,
+        "normalizedResidual": 9.982434219567532e-06,
+        "lagSamples": 270
+      },
+      {
+        "note": 86,
+        "velocity": 38,
+        "changedToNeutralDB": 6.821457202196748,
+        "normalizedResidual": 2.2064636466452327e-05,
+        "lagSamples": -19
+      },
+      {
+        "note": 60,
+        "velocity": 64,
+        "changedToNeutralDB": 6.474113430652109,
+        "normalizedResidual": 2.3944442241461553e-06,
+        "lagSamples": 14
+      },
+      {
+        "note": 74,
+        "velocity": 64,
+        "changedToNeutralDB": 6.474113661822917,
+        "normalizedResidual": 2.336798552491231e-06,
+        "lagSamples": 4
+      },
+      {
+        "note": 86,
+        "velocity": 64,
+        "changedToNeutralDB": 6.474112896055535,
+        "normalizedResidual": 2.6627218082262813e-06,
+        "lagSamples": 24
+      },
+      {
+        "note": 60,
+        "velocity": 83,
+        "changedToNeutralDB": 5.103445360536209,
+        "normalizedResidual": 1.3654275034318972e-06,
+        "lagSamples": 10
+      },
+      {
+        "note": 74,
+        "velocity": 83,
+        "changedToNeutralDB": 5.103445817498344,
+        "normalizedResidual": 1.3384374277523324e-06,
+        "lagSamples": 8
+      },
+      {
+        "note": 86,
+        "velocity": 83,
+        "changedToNeutralDB": 5.103445545300042,
+        "normalizedResidual": 1.2377144329491712e-06,
+        "lagSamples": 13
+      },
+      {
+        "note": 60,
+        "velocity": 102,
+        "changedToNeutralDB": 3.1543712867048295,
+        "normalizedResidual": 6.975954698918266e-07,
+        "lagSamples": 8
+      },
+      {
+        "note": 74,
+        "velocity": 102,
+        "changedToNeutralDB": 3.1543713949264873,
+        "normalizedResidual": 6.241573691326858e-07,
+        "lagSamples": 5
+      },
+      {
+        "note": 86,
+        "velocity": 102,
+        "changedToNeutralDB": 3.154371407184395,
+        "normalizedResidual": 8.155679130096554e-07,
+        "lagSamples": -1
+      }
+    ],
+    "-10": [
+      {
+        "note": 60,
+        "velocity": 38,
+        "changedToNeutralDB": 4.196233640854993,
+        "normalizedResidual": 8.641863704513884e-06,
+        "lagSamples": -28
+      },
+      {
+        "note": 74,
+        "velocity": 38,
+        "changedToNeutralDB": 4.196233255703399,
+        "normalizedResidual": 1.082466029661163e-05,
+        "lagSamples": 29
+      },
+      {
+        "note": 86,
+        "velocity": 38,
+        "changedToNeutralDB": 4.196233725839443,
+        "normalizedResidual": 2.5042126098481593e-05,
+        "lagSamples": 37
+      },
+      {
+        "note": 60,
+        "velocity": 64,
+        "changedToNeutralDB": 4.321725547313572,
+        "normalizedResidual": 2.5482183741158114e-06,
+        "lagSamples": 38
+      },
+      {
+        "note": 74,
+        "velocity": 64,
+        "changedToNeutralDB": 4.321725696964856,
+        "normalizedResidual": 2.5854909165868966e-06,
+        "lagSamples": 31
+      },
+      {
+        "note": 86,
+        "velocity": 64,
+        "changedToNeutralDB": 4.321725972513053,
+        "normalizedResidual": 2.9930283533543963e-06,
+        "lagSamples": 42
+      },
+      {
+        "note": 60,
+        "velocity": 83,
+        "changedToNeutralDB": 3.5602628577520807,
+        "normalizedResidual": 1.4489331656179643e-06,
+        "lagSamples": 31
+      },
+      {
+        "note": 74,
+        "velocity": 83,
+        "changedToNeutralDB": 3.5602625771247483,
+        "normalizedResidual": 1.4520334138646953e-06,
+        "lagSamples": 15
+      },
+      {
+        "note": 86,
+        "velocity": 83,
+        "changedToNeutralDB": 3.5602626403293547,
+        "normalizedResidual": 1.3703924378738507e-06,
+        "lagSamples": 5
+      },
+      {
+        "note": 60,
+        "velocity": 102,
+        "changedToNeutralDB": 2.2796898949244664,
+        "normalizedResidual": 7.313991149486905e-07,
+        "lagSamples": 16
+      },
+      {
+        "note": 74,
+        "velocity": 102,
+        "changedToNeutralDB": 2.2796897258250275,
+        "normalizedResidual": 6.71630692428166e-07,
+        "lagSamples": 250
+      },
+      {
+        "note": 86,
+        "velocity": 102,
+        "changedToNeutralDB": 2.279689625208837,
+        "normalizedResidual": 8.9692094937423e-07,
+        "lagSamples": 255
+      }
+    ],
+    "10": [
+      {
+        "note": 60,
+        "velocity": 38,
+        "changedToNeutralDB": -3.205451748742073,
+        "normalizedResidual": 1.2953919130907965e-05,
+        "lagSamples": 122
+      },
+      {
+        "note": 74,
+        "velocity": 38,
+        "changedToNeutralDB": -3.2054528582995334,
+        "normalizedResidual": 1.5985613444119317e-05,
+        "lagSamples": 252
+      },
+      {
+        "note": 86,
+        "velocity": 38,
+        "changedToNeutralDB": -3.2054522630582083,
+        "normalizedResidual": 3.5249019868573753e-05,
+        "lagSamples": -32
+      },
+      {
+        "note": 60,
+        "velocity": 64,
+        "changedToNeutralDB": -4.344464329486286,
+        "normalizedResidual": 4.146219468478157e-06,
+        "lagSamples": -8
+      },
+      {
+        "note": 74,
+        "velocity": 64,
+        "changedToNeutralDB": -4.344463845684697,
+        "normalizedResidual": 4.104288282973842e-06,
+        "lagSamples": -17
+      },
+      {
+        "note": 86,
+        "velocity": 64,
+        "changedToNeutralDB": -4.344464045072977,
+        "normalizedResidual": 4.78511480310296e-06,
+        "lagSamples": -115
+      },
+      {
+        "note": 60,
+        "velocity": 83,
+        "changedToNeutralDB": -4.372236291813305,
+        "normalizedResidual": 2.3309583485673523e-06,
+        "lagSamples": -226
+      },
+      {
+        "note": 74,
+        "velocity": 83,
+        "changedToNeutralDB": -4.372235593446929,
+        "normalizedResidual": 2.3105809601450103e-06,
+        "lagSamples": -231
+      },
+      {
+        "note": 86,
+        "velocity": 83,
+        "changedToNeutralDB": -4.372236693818198,
+        "normalizedResidual": 2.173722720983791e-06,
+        "lagSamples": -228
+      },
+      {
+        "note": 60,
+        "velocity": 102,
+        "changedToNeutralDB": -3.4345126982712944,
+        "normalizedResidual": 1.0350832135475874e-06,
+        "lagSamples": -235
+      },
+      {
+        "note": 74,
+        "velocity": 102,
+        "changedToNeutralDB": -3.4345130083704847,
+        "normalizedResidual": 9.35670655726462e-07,
+        "lagSamples": -256
+      },
+      {
+        "note": 86,
+        "velocity": 102,
+        "changedToNeutralDB": -3.434513031292828,
+        "normalizedResidual": 1.2612226501533753e-06,
+        "lagSamples": -227
+      }
+    ]
+  },
+  "limitations": [
+    "Underlying native amplitude law and absolute MainStage gain remain approximate",
+    "Other source amplitude depths have not yet been measured against MainStage",
+    "An intermediate capture was excluded after the reference patch changed"
+  ]
+}

@@ -36,7 +36,7 @@ import Foundation
         assert(curveReload.importedRack?.mainStageAmplitudeVelocityCurve == -10)
         assert(curveReload.importedRack?.validate()==true)
         assert(curveReload.midiProgram == nil,"Amplitude response must not alter MIDI/sample-zone velocities")
-        assert(curveDraft.issues.contains{$0.contains("requires calibration")})
+        assert(curveDraft.issues.contains{$0.contains("amplitude-only response is active")})
         for values in [[-10,0],[21],[-21]] {
             do{_ = try MainStageProcessing.translate(sampler(values));assertionFailure("Unsafe curve accepted")}catch{}
         }

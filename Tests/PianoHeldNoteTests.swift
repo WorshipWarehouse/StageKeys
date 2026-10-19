@@ -12,6 +12,7 @@ import AVFoundation
   let audio=AudioController();try audio.prepareOffline();defer{audio.stop()}
   var layer=Layer(name:"Held Steinway",instrument:-1,gain:1)
   layer.external=ExternalSound(kind:.samplerPreset,name:layer.name,fileName:source.lastPathComponent,nativeSampler:program)
+        if let value=ProcessInfo.processInfo.environment["STAGEKEYS_HOST_CURVE"],let curve=Int(value) {var rack=program.rack;rack.mainStageAmplitudeVelocityCurve=curve;layer.importedRack=rack}
   audio.configure(0,layer);audio.master(1);audio.space(0)
   for note in [74,86] {
    audio.panic();audio.sustain(false,layers:[layer]);for _ in 0..<50 {_ = try audio.offlineBlock()}

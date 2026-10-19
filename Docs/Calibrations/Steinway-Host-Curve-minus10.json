@@ -17,10 +17,10 @@
   "referenceRestored": true,
   "sampleAudioChanged": false,
   "amplitudeOnlyAtTestedPoints": true,
-  "activatedInPlayback": false,
+  "activatedInPlayback": true,
   "limitations": [
-    "Only four velocities and one source sensitivity measured; no interpolation or arbitrary curve formula verified",
-    "Absolute sampler output level and endpoint controller resets remain separate calibration issues"
+    "Baseline sampler amplitude response and absolute output level remain approximate",
+    "Other source amplitude depths have not been measured against MainStage"
   ],
   "measurements": [
     {
@@ -107,5 +107,6 @@
       "normalizedResidual": 8.9692094937423e-07,
       "lagSamples": 255
     }
-  ]
+  ],
+  "activationScope": "Imported channels with retained nonzero host curve and untouched generated native amplitude route"
 }

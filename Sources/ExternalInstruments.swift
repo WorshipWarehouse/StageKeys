@@ -73,6 +73,7 @@ final class ExternalInstrumentRack {
         var unit: AVAudioUnit
         var nativePreset:URL? = nil
         var attackMinimum:Float=0
+        var hostVelocityCurve:Int?
         var mixer: AVAudioMixerNode
         var filter: AVAudioUnitEQ
         var eq: AVAudioUnitEQ
@@ -161,7 +162,7 @@ final class ExternalInstrumentRack {
         if topology != voice.parallelTopology {
             guard branches == nil || voice.unit is AVAudioUnitSampler else{throw ExternalInstrumentError.unsupportedFormat}
             let state: [String:Any]
-            if let file=voice.nativePreset {state=SamplerAttack.prepare(try PropertyListSerialization.propertyList(from:Data(contentsOf:file),options:[],format:nil) as? [String:Any] ?? [:],minimum:voice.attackMinimum)}
+            if let file=voice.nativePreset {state=try SamplerHostVelocity.prepare(SamplerSplitRegions.prepare(SamplerAttack.prepare(try PropertyListSerialization.propertyList(from:Data(contentsOf:file),options:[],format:nil) as? [String:Any] ?? [:],minimum:voice.attackMinimum)),curve:voice.hostVelocityCurve)}
             else {state=voice.unit.auAudioUnit.fullStateForDocument ?? [:]}
             try editGraph {
                 var nodes:[AVAudioNode]=[],parallel:[ImportedBranchVoice]=[]
@@ -429,7 +430,7 @@ final class ExternalInstrumentRack {
     func debugBuiltin(_ channel:Int)->AVAudioUnitEffect? {voices[channel]?.builtin}
     #endif
     func contains(_ channel: Int) -> Bool { voices[channel] != nil }
-    func load(_ sound: ExternalSound, channel: Int, attackMinimum:Float=0, completion: @escaping (Result<Void, Error>) -> Void) {
+    func load(_ sound: ExternalSound, channel: Int, attackMinimum:Float=0, hostVelocityCurve:Int?=nil, completion: @escaping (Result<Void, Error>) -> Void) {
         precondition(Thread.isMainThread)
         guard (0..<16).contains(channel) else { completion(.failure(ExternalInstrumentError.invalidChannel)); return }
         let generation = UUID()
@@ -463,8 +464,13 @@ final class ExternalInstrumentRack {
                 if sound.kind == .soundBank {
                     try sampler.loadSoundBankInstrument(at: file, program: sound.program, bankMSB: sound.bankMSB, bankLSB: sound.bankLSB)
                 } else if sound.kind == .samplerPreset {
-                    try install(sampler, channel: channel) { let document=try SamplerAttack.load(sampler,file:file,minimum:attackMinimum);self.rememberSampler(sampler,document:document) }
-                    voices[channel]?.nativePreset=file;voices[channel]?.attackMinimum=attackMinimum
+                    try install(sampler, channel: channel) { let document=try SamplerAttack.load(sampler,file:file,minimum:attackMinimum,curve:hostVelocityCurve);self.rememberSampler(sampler,document:document) }
+                    voices[channel]?.nativePreset=file;voices[channel]?.attackMinimum=attackMinimum;voices[channel]?.hostVelocityCurve=hostVelocityCurve
+                    if sound.nativeSampler != nil {
+                        // MainStage starts with unity volume/expression. Keep any
+                        // actual received values across instrument changes/reloads.
+                        for controller in [7,11] where controllerValues[channel]?[controller]==nil {control(channel:channel,controller:UInt8(controller),value:127)}
+                    }
                     completion(.success(()))
                     return
                 } else { try loadSample(sampler, url: file) }

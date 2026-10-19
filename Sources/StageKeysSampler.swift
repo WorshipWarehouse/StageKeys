@@ -246,6 +246,53 @@ enum StageKeysSampler {
     }
 }
 
+/// Apply the measured host curve as per-velocity zone gain, never as MIDI
+/// velocity remapping. Shared sample data, filter/envelope routes and original
+/// presets remain unchanged. Call after split-region PCM preparation.
+enum SamplerHostVelocity {
+    static func gainDB(velocity:Int,curve:Int,sensitivity:Double)->Double {
+        let x=Double(min(127,max(0,velocity)))/127,a=Double(abs(curve))/10
+        let shaped=curve<0 ? (1+a)*x/(1+a*x):x/(1+a*(1-x))
+        return -sensitivity * 0.5 * (shaped-x)
+    }
+    static func prepare(_ original:[String:Any],curve:Int?)throws->[String:Any] {
+        guard let curve,curve != 0 else{return original}
+        guard (-20...20).contains(curve) else{throw MainStagePatch.Failure.invalid("Unsupported sampler host velocity curve.")}
+        if let previous=original["StageKeys.HostVelocityCurve"] as? Int {
+            guard previous==curve else{throw MainStagePatch.Failure.invalid("Reload the original sampler before changing its host velocity curve.")}
+            return original
+        }
+        guard let bytes=original["StageKeys.NativeSampler"] as? Data,
+              let program=try? JSONDecoder().decode(NativeSamplerProgram.self,from:bytes),program.valid,
+              let amplitude=program.voiceControls?.amplitudeVelocity,amplitude.valid,
+              var instrument=original["Instrument"] as? [String:Any],var layers=instrument["Layers"] as? [[String:Any]] else{return original}
+        guard amplitude.sensitivity != 0 else{return original}
+        var total=0
+        for i in layers.indices {
+            let layerID=layers[i]["ID"] as? Int ?? i
+            guard (0..<64).contains(layerID) else{throw ExternalInstrumentError.unsupportedFormat}
+            let destination=0x50100000+layerID*256
+            let routes=(layers[i]["Connections"] as? [[String:Any]] ?? []).filter{($0["source"] as? Int)==301 && ($0["destination"] as? Int)==destination}
+            guard routes.count==1,let route=routes.first,route["enabled"] as? Bool==true,route["inverse"] as? Bool==true,route["transform"] as? Int==2,
+                  (route["scale"] as? NSNumber)?.doubleValue==amplitude.sensitivity else{throw MainStagePatch.Failure.invalid("The sampler amplitude route was edited; its host curve was not applied.")}
+            guard let zones=layers[i]["Zones"] as? [[String:Any]] else{continue}
+            var expanded:[[String:Any]]=[]
+            for zone in zones {
+                guard let low=zone["min vel"] as? Int,let high=zone["max vel"] as? Int,(0...127).contains(low),(low...127).contains(high),
+                      let gain=(zone["gain"] as? NSNumber)?.doubleValue,gain.isFinite else{throw ExternalInstrumentError.unsupportedFormat}
+                for velocity in low...high {
+                    total+=1;guard total<=65536 else{throw MainStagePatch.Failure.invalid("Host velocity expansion exceeds the native zone limit.")}
+                    var copy=zone;copy["ID"]=expanded.count;copy["min vel"]=velocity;copy["max vel"]=velocity
+                    copy["gain"]=gain+gainDB(velocity:velocity,curve:curve,sensitivity:amplitude.sensitivity)
+                    expanded.append(copy)
+                }
+            }
+            layers[i]["Zones"]=expanded
+        }
+        instrument["Layers"]=layers;var state=original;state["Instrument"]=instrument;state["StageKeys.HostVelocityCurve"]=curve;return state
+    }
+}
+
 /// Playback-only amplitude attack adjustment. Never edits presets or samples on disk.
 enum SamplerAttack {
     static func prepare(_ original:[String:Any],minimum:Float)->[String:Any] {
@@ -276,10 +323,10 @@ enum SamplerAttack {
         }
         instrument["Layers"]=layers;var state=original;state["Instrument"]=instrument;return state
     }
-    @discardableResult static func load(_ sampler:AVAudioUnitSampler,file:URL,minimum:Float)throws->[String:Any] {
+    @discardableResult static func load(_ sampler:AVAudioUnitSampler,file:URL,minimum:Float,curve:Int?=nil)throws->[String:Any] {
         let bytes=try Data(contentsOf:file)
         guard bytes.count<=16_000_000,let original=try PropertyListSerialization.propertyList(from:bytes,options:[],format:nil) as? [String:Any] else{throw ExternalInstrumentError.unsupportedFormat}
-        let prepared=try SamplerSplitRegions.prepare(prepare(original,minimum:minimum)),temporary=FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString+".aupreset")
+        let prepared=try SamplerHostVelocity.prepare(SamplerSplitRegions.prepare(prepare(original,minimum:minimum)),curve:curve),temporary=FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString+".aupreset")
         defer{try? FileManager.default.removeItem(at:temporary)}
         try PropertyListSerialization.data(fromPropertyList:prepared,format:.xml,options:0).write(to:temporary)
         try sampler.loadInstrument(at:temporary)

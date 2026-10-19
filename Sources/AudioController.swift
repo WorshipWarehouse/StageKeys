@@ -18,6 +18,7 @@ final class AudioController {
     private var externalSounds: [Int: ExternalSound] = [:]
     private var externalStates: [Int: Data] = [:]
     private var samplerAttacks:[Int:Float]=[:]
+    private var samplerHostCurves:[Int:Int]=[:]
     private var levels: [Int: Float] = [:]
     private var diagnosticRecorder:AudioDiagnosticRecorder?
     func startAudioCheck(at url:URL,completion:@escaping(Result<AudioDiagnosticRecorder.Summary,Error>)->Void)throws {
@@ -126,13 +127,15 @@ final class AudioController {
     }
     func configure(_ index: Int, _ layer: Layer) {
         pans[index] = layer.pan
-        if externalSounds[index] != layer.external || externalStates[index] != layer.pluginState || samplerAttacks[index] != layer.samplerAttackMinimum {
+        let hostCurve=layer.importedRack?.mainStageAmplitudeVelocityCurve ?? layer.external?.nativeSampler?.rack.mainStageAmplitudeVelocityCurve
+        if samplerHostCurves[index] != hostCurve || externalSounds[index] != layer.external || externalStates[index] != layer.pluginState || samplerAttacks[index] != layer.samplerAttackMinimum {
             samplerAttacks[index]=layer.samplerAttackMinimum
+            samplerHostCurves[index]=hostCurve
             externalStates[index] = layer.pluginState
             if let sound = layer.external {
                 do { try externalRack?.remove(index) } catch { onError?(error.localizedDescription) }
                 externalSounds[index] = sound
-                externalRack?.load(sound, channel: index,attackMinimum:layer.samplerAttackMinimum) { [weak self] result in
+                externalRack?.load(sound, channel: index,attackMinimum:layer.samplerAttackMinimum,hostVelocityCurve:hostCurve) { [weak self] result in
                     guard let self else { return }
                     switch result {
                     case .success:
