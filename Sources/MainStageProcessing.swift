@@ -92,6 +92,17 @@ enum MainStageProcessing {
         }
         return result
     }
+    // Newer channel strips retain longer display names in the same parameter records.
+    static func canonicalName(_ name:String)->String {
+        switch name {
+        case "Channel EQ":return "Chan EQ"
+        case "Compressor":return "Comp"
+        case "Stereo Delay":return "St-Delay"
+        case "SilverVerb", "Silver Verb":return "SilvVerb"
+        case "Clip Distort", "Clip Distortion":return "ClipDist"
+        default:return name
+        }
+    }
     static func translate(_ data:Data,channelID:Int?=nil)throws->Draft {
         let devices=try MainStagePatch.devices(data)
         var draft=Draft(),targets:[Int:(effect:Int,name:String)]=[:]
@@ -107,7 +118,8 @@ enum MainStageProcessing {
                 values.append(Float(bitPattern:bits))
             }
             var effect=AudioEffect()
-            switch device.name {
+            let nativeName=canonicalName(device.name)
+            switch nativeName {
             case "Chan EQ":
                 guard values.count>=32 else{draft.issues.append("Truncated Channel EQ parameters.");continue}
                 effect.kind=7;var parameters=AudioEffectCatalog.defaults(for:7)
@@ -154,12 +166,16 @@ enum MainStageProcessing {
                 draft.issues.append("Chorus rate, intensity and mix are translated into the native chorus. Its DSP is not Apple's original chorus.")
             default:draft.issues.append("\(device.name): original processing remains archived; no substitute effect was appended.");continue
             }
+            // Paired MainStage exports differ at this UInt32 only when host bypass changes.
+            // Keep the ordered slot, including bypassed effects, so macro indices stay stable.
+            if device.offset+152<=end {
+                let flag=(0..<4).reduce(UInt32(0)){$0 | UInt32(data[device.offset+148+$1]) << ($1*8)}
+                if flag<=1 {effect.enabled=flag==0}
+                else {draft.issues.append("\(device.name): unrecognized processor bypass flag; review its enabled state.")}
+            }
             guard effect.validate() else{draft.issues.append("\(device.name): parameters outside the native effect's supported range.");continue}
-            targets[slot]=(draft.effects.count,device.name);draft.effects.append(effect);draft.sourceNames.append(device.name)
+            targets[slot]=(draft.effects.count,nativeName);draft.effects.append(effect);draft.sourceNames.append(device.name)
         }
-        // Processor bypass flags have not been independently decoded. Preview
-        // makes this explicit and never auto-publishes a complete converted patch.
-        if !draft.effects.isEmpty {draft.issues.append("Translated processors are enabled in this preview. Original processor bypass flags are not yet decoded; review before applying.")}
         let decoded=try archives(data)
         var rows:[(Int,[String:Any])]=[]
         func visit(_ object:Any,_ owner:Int=0) {

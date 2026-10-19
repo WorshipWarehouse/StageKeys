@@ -60,6 +60,23 @@ struct ImportedRackControls: View {
             layer.importedRack?.effects[index].importedDelay=delay
         })
     }
+    private func eqBands(_ index:Int)->Binding<[EQBand]> {
+        Binding(get:{
+            guard let effect=layer.importedRack?.effects[index] else{return EQBand.defaults}
+            return stride(from:0,to:24,by:3).map {offset in
+                EQBand(frequency:effect.values[offset],gain:effect.values[offset+1],q:effect.values[offset+2])
+            }
+        },set:{bands in
+            guard bands.count==8,var rack=layer.importedRack else{return}
+            var values=rack.effects[index].values
+            for (band,value) in bands.enumerated() {
+                values[band*3]=value.frequency;values[band*3+1]=value.gain;values[band*3+2]=value.q
+            }
+            rack.effects[index].parameters=values
+            guard rack.validate() else{return}
+            layer.importedRack=rack
+        })
+    }
     @ViewBuilder private func delayControls(_ index:Int)->some View {
         if let delay=layer.importedRack?.effects[index].importedDelay {
             VStack {
@@ -93,7 +110,7 @@ struct ImportedRackControls: View {
     }
     var body: some View {
         VStack(alignment:.leading,spacing:12) {
-            Text("Imported Sound Controls").font(StageTheme.font(15,weight:.semibold))
+            Text("Sound Processing").font(StageTheme.font(15,weight:.semibold))
             if let rack=layer.importedRack {
                 if !rack.macros.isEmpty {
                     LazyVGrid(columns:[GridItem(.adaptive(minimum:140))],spacing:8) {
@@ -105,11 +122,15 @@ struct ImportedRackControls: View {
                 ForEach(Array(rack.effects.enumerated()),id:\.offset) { index,effect in
                     DisclosureGroup("\(index+1). \(effect.title)") {
                         Toggle("Enabled",isOn:Binding(get:{layer.importedRack?.effects[index].enabled ?? false},set:{layer.importedRack?.effects[index].enabled=$0}))
+                        if effect.kind == 7 {
+                            ChannelEqualizerControls(bands:eqBands(index),enabled:Binding(get:{layer.importedRack?.effects[index].enabled ?? false},set:{layer.importedRack?.effects[index].enabled=$0}))
+                        } else {
                         LazyVGrid(columns:[GridItem(.adaptive(minimum:140))],spacing:8) {
                             if effect.importedDelay != nil { delayControls(index) }
                             ForEach(AudioEffectCatalog.descriptors(for:effect.kind).filter{effect.importedDelay == nil || effect.importedDelay?.leftChannel == nil && ![1,2].contains($0.index)}) { parameter in
                                 EffectKnob(descriptor:parameter,value:Binding(get:{layer.importedRack?.effects[index].values[parameter.index] ?? parameter.defaultValue},set:{value in guard var imported=layer.importedRack else{return};var values=imported.effects[index].values;values[parameter.index]=value;imported.effects[index].parameters=values;layer.importedRack=imported}))
                             }
+                        }
                         }
                     }
                 }
