@@ -1,4 +1,15 @@
-# Separate EXS attack and loop regions
+# EXS logical loop positions and physical tail storage
+
+## Corrected in 0.36 / conversion version 5
+
+The user's live capture disproved the v4 repair described below. V4 copied logical loop positions directly from the consolidated CAF; those positions can point into a different note. The recorded D5 decay acquired a component near 830 Hz a few seconds after its ~588 Hz attack. Checking only for a new attack after ten seconds missed the defect.
+
+These factory EXS zones have separate physical tail start/end fields at zone-body offsets 116/120. The logical tail begins at the attack endpoint. Its length equals physicalTailEnd − physicalTailStart, and logicalLoopEnd − attackEnd. Playback now copies the entire physical tail after the attack, and maps the loop relative to that tail: nativeLoopStart = attackLength + logicalLoopStart − attackEnd. The physical tail can precede the attack in the CAF. All 275 affected modern Steinway zones and 220 legacy zones satisfy the length identity. Missing or inconsistent tail storage is rejected instead of inventing a region.
+
+No original audio bytes are changed or resampled. Existing v3/v4 generated presets receive backed-up tail metadata updates; filters, gain, tuning, effects and user settings remain intact. V5 also restores logical endpoints previously bounded against the physical file length; physical tail bounds are checked independently. The private D5 regression now measures the intended pitch against the foreign pitch during the 2.8–3.3 second tail, rather than relying only on late silence.
+
+## Historical v4 implementation and verification (superseded)
+
 
 Version 0.35 (native conversion version 4) repairs a consolidated-sample mapping defect. An EXS zone may have an attack endpoint before its loop start. The original converter extended the sample end to the loop end and played the intervening frames. In the factory Steinway Piano 2 consolidated CAF, those frames can contain neighboring notes. This can produce an unintended quiet attack during a held note.
 

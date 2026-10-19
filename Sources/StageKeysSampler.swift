@@ -143,7 +143,7 @@ enum StageKeysSampler {
     }
     /// Repair only generated split-region maps; preserve envelopes, filters and effects.
     static func updateSplitRegions(_ sound:ExternalSound,original:Original,library:URL)throws->ExternalSound {
-        guard var program=sound.nativeSampler,program.conversionVersion==3,
+        guard var program=sound.nativeSampler,[3,4].contains(program.conversionVersion ?? 0),
               let name=sound.fileName,name==URL(fileURLWithPath:name).lastPathComponent,
               original.sha256.count==64,original.sha256.allSatisfy({$0.isHexDigit}),
               original.file=="Original Instruments/"+original.sha256+".exs" else{throw ExternalInstrumentError.unsupportedFormat}
@@ -173,13 +173,18 @@ enum StageKeysSampler {
                     guard zones[i]["sample start"] as? Int==start,zones[i]["sample end"] as? Int==boundedEnd,
                           zones[i]["loop start"] as? Int==loopStart,zones[i]["loop end"] as? Int==boundedEnd,
                           zones[i]["loop enabled"] as? Bool==true else{throw MainStagePatch.Failure.invalid("The split sample region was edited; import the original EXS separately.")}
+                    guard z.count>=124 else{throw ExternalInstrumentError.unsupportedFormat}
+                    let tailStart=u32(z,116),tailEnd=u32(z,120)
+                    guard tailEnd>tailStart,tailEnd<=length,tailEnd-tailStart==loopEnd-end else{throw MainStagePatch.Failure.invalid("Invalid EXS separate tail storage.")}
                     zones[i]["StageKeys EXS attack end"]=end
+                    zones[i]["StageKeys EXS tail start"]=tailStart;zones[i]["StageKeys EXS tail end"]=tailEnd
+                    zones[i]["sample end"]=loopEnd;zones[i]["loop end"]=loopEnd
                 }
             }
             layers[rule.layer]["Zones"]=zones
         }
         instrument["Layers"]=layers;state["Instrument"]=instrument
-        program.conversionVersion=4
+        program.conversionVersion=5
         program.notes.removeAll{$0.contains("Consolidated attack and loop-tail extents")}
         program.notes.append("Separate EXS attack and loop regions use lossless PCM frame assembly at playback; intervening consolidated audio is excluded. Transition interpolation remains engine dependent.")
         guard program.valid else{throw ExternalInstrumentError.unsupportedFormat}
@@ -261,7 +266,7 @@ enum SamplerSplitRegions {
     static func assemble(_ source:URL,attack:Range<Int>,loop:Range<Int>)throws->URL {
         let info=try source.resourceValues(forKeys:[.fileSizeKey,.contentModificationDateKey,.isRegularFileKey])
         guard info.isRegularFile==true,let size=info.fileSize,size<=1_000_000_000,
-              attack.lowerBound>=0,!attack.isEmpty,!loop.isEmpty,loop.lowerBound>=attack.upperBound else{throw ExternalInstrumentError.unsupportedFormat}
+              attack.lowerBound>=0,!attack.isEmpty,!loop.isEmpty,loop.lowerBound>=0 else{throw ExternalInstrumentError.unsupportedFormat}
         let key="\(source.path):\(size):\(info.contentModificationDate?.timeIntervalSince1970 ?? 0):\(attack):\(loop)"
         if let existing=cache[key]{return existing}
         let bytes=try Data(contentsOf:source,options:.mappedIfSafe)
@@ -305,12 +310,15 @@ enum SamplerSplitRegions {
                       let loopEnd=zones[z]["loop end"] as? Int,let waveform=zones[z]["waveform"] as? Int,
                       let path=references["Sample:\(waveform)"],path.hasPrefix("/"),
                       start<attackEnd,attackEnd<loopStart,loopStart<loopEnd else{throw ExternalInstrumentError.unsupportedFormat}
-                let file=try assemble(URL(fileURLWithPath:path),attack:start..<attackEnd,loop:loopStart..<loopEnd)
-                let count=attackEnd-start,tail=loopEnd-loopStart
+                guard let tailStart=zones[z]["StageKeys EXS tail start"] as? Int,
+                      let tailEnd=zones[z]["StageKeys EXS tail end"] as? Int,
+                      tailStart>=0,tailEnd>tailStart,tailEnd-tailStart==loopEnd-attackEnd else{throw MainStagePatch.Failure.invalid("Missing EXS separate tail mapping; update converted sampler playback.")}
+                let file=try assemble(URL(fileURLWithPath:path),attack:start..<attackEnd,loop:tailStart..<tailEnd)
+                let count=attackEnd-start,tail=tailEnd-tailStart
                 references["Sample:\(next)"]=file.path;zones[z]["waveform"]=next;next+=1
                 zones[z]["sample start"]=0;zones[z]["sample end"]=count+tail-1
-                zones[z]["loop start"]=count;zones[z]["loop end"]=count+tail-1
-                zones[z].removeValue(forKey:"StageKeys EXS attack end")
+                zones[z]["loop start"]=count+loopStart-attackEnd;zones[z]["loop end"]=count+tail-1
+                for key in ["StageKeys EXS attack end","StageKeys EXS tail start","StageKeys EXS tail end"] {zones[z].removeValue(forKey:key)}
             }
             layers[l]["Zones"]=zones
         }

@@ -30,15 +30,15 @@ import AVFoundation
   let sampler=AVAudioUnitSampler();try sampler.loadAudioFiles(at:[source])
   var state=sampler.auAudioUnit.fullStateForDocument!,instrument=state["Instrument"] as! [String:Any]
   var layer=(instrument["Layers"] as! [[String:Any]])[0],zones=layer["Zones"] as! [[String:Any]]
-  zones[0]["min key"]=0;zones[0]["max key"]=127;zones[0]["root key"]=60;zones[0]["sample start"]=0;zones[0]["sample end"]=105600-1
-  zones[0]["loop enabled"]=true;zones[0]["loop start"]=96000;zones[0]["loop end"]=105600
-  zones[0]["StageKeys EXS attack end"]=48000;layer["Zones"]=zones
+  zones[0]["min key"]=0;zones[0]["max key"]=127;zones[0]["root key"]=60;zones[0]["sample start"]=0;zones[0]["sample end"]=57600
+  zones[0]["loop enabled"]=true;zones[0]["loop start"]=48001;zones[0]["loop end"]=57600
+  zones[0]["StageKeys EXS attack end"]=48000;zones[0]["StageKeys EXS tail start"]=96000;zones[0]["StageKeys EXS tail end"]=105600;layer["Zones"]=zones
   EXSNative.applyEnvelope(.init(attack:0,lowVelocityAttack:0,decay:10,sustain:1,release:0.1),group:Array(repeating:0,count:120),to:&layer)
   instrument["Layers"]=[layer];state["Instrument"]=instrument
   let prepared=try SamplerSplitRegions.prepare(state),unchanged=state["file-references"] as! [String:String]
   assert(unchanged.values.contains(source.path))
   let preparedZones=(((prepared["Instrument"] as! [String:Any])["Layers"] as! [[String:Any]])[0]["Zones"] as! [[String:Any]])
-  assert(preparedZones[0]["sample end"] as? Int==57599 && preparedZones[0]["loop start"] as? Int==48000)
+  assert(preparedZones[0]["sample end"] as? Int==57599 && preparedZones[0]["loop start"] as? Int==48001)
   let preset=root.appendingPathComponent("prepared.aupreset");try PropertyListSerialization.data(fromPropertyList:prepared,format:.xml,options:0).write(to:preset)
   let engine=AVAudioEngine(),out=AVAudioFormat(standardFormatWithSampleRate:48000,channels:2)!
   engine.attach(sampler);engine.connect(sampler,to:engine.mainMixerNode,format:out)

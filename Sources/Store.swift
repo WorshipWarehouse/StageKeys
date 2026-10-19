@@ -873,7 +873,7 @@ final class PerformanceStore: ObservableObject {
             }
             var entries=librarySounds,updates:[String:ExternalSound]=[:],failures:[String]=[]
             for entry in entries {
-                guard let sound=entry.sound,let program=sound.nativeSampler,(program.conversionVersion ?? 1)<4,let original=entry.originalInstrument,let file=sound.fileName,updates[file]==nil else{continue}
+                guard let sound=entry.sound,let program=sound.nativeSampler,(program.conversionVersion ?? 1)<5,let original=entry.originalInstrument,let file=sound.fileName,updates[file]==nil else{continue}
                 do {updates[file]=try StageKeysSampler.updatePlayback(sound,original:original,library:root)}
                 catch{failures.append(entry.name+": "+error.localizedDescription)}
             }

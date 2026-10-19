@@ -19,7 +19,7 @@ struct SoundImportView:View {
                 Button{choice = .mainStage;choosing=true}label:{HStack{Image(systemName:"pianokeys").font(.title);VStack(alignment:.leading,spacing:4){Text("Import a MainStage Patch").font(.headline);Text("Preserve the source and check instruments, effects, macros and MIDI compatibility").font(.caption)};Spacer();Image(systemName:"chevron.right")}.padding(20).frame(maxWidth:.infinity,alignment:.leading)}.buttonStyle(.plain).background(StageTheme.panel,in:RoundedRectangle(cornerRadius:10))
                 Button("Install a Separate Sound Library") {choice = .backup;choosing=true}.buttonStyle(StageButtonStyle())
                 Text("Choose a downloaded StageKeys-Library pack. Sounds and rack processing install separately; the app ships without sampled content.").font(.caption).foregroundStyle(.secondary)
-                if store.librarySounds.contains(where:{$0.originalInstrument?.file.hasSuffix(".exs")==true && $0.sound?.nativeSampler != nil && ($0.sound?.nativeSampler?.conversionVersion ?? 1)<4}) {
+                if store.librarySounds.contains(where:{$0.originalInstrument?.file.hasSuffix(".exs")==true && $0.sound?.nativeSampler != nil && ($0.sound?.nativeSampler?.conversionVersion ?? 1)<5}) {
                     Button("Update Converted Sampler Playback") {store.updateSamplerEnvelopes()}.buttonStyle(StageButtonStyle())
                     Text("Add supported source filters, velocity response, tuning, level and envelopes to earlier EXS imports. Presets and settings are backed up; edited filters and envelopes are protected.").font(.caption).foregroundStyle(.secondary)
                 }

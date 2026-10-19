@@ -14,21 +14,24 @@ import Foundation
   let updated=try StageKeysSampler.updateVoiceControls(sound,original:original,library:root)
   if let sampleRoot=ProcessInfo.processInfo.environment["STAGEKEYS_EXS_ROOT"] {
    let fresh=try EXSNative.convert(URL(fileURLWithPath:source),sampleRoot:URL(fileURLWithPath:sampleRoot),to:root.appendingPathComponent("fresh.aupreset"))
-   assert(fresh.conversionVersion==4 && fresh.voiceControls==updated.nativeSampler?.voiceControls,"Fresh imports must receive the same source controls as the existing-library upgrade")
+   assert(fresh.conversionVersion==5 && fresh.voiceControls==updated.nativeSampler?.voiceControls,"Fresh imports must receive the same source controls as the existing-library upgrade")
    print("PASS: newly imported MainStage EXS receives the same synthesis controls without patch-name matching")
   }
   assert(updated.name==sound.name && updated.nativeSampler?.conversionVersion==3 && updated.nativeSampler?.voiceControls?.filter != nil)
   if let output=ProcessInfo.processInfo.environment["STAGEKEYS_UPGRADE_OUTPUT"] {try Data(contentsOf:preset).write(to:URL(fileURLWithPath:output))}
   let after=try PropertyListSerialization.propertyList(from:Data(contentsOf:preset),options:[],format:nil) as! [String:Any]
   let repaired=try StageKeysSampler.updateSplitRegions(updated,original:original,library:root)
-  assert(repaired.nativeSampler?.conversionVersion==4)
+  assert(repaired.nativeSampler?.conversionVersion==5)
   let repairedState=try PropertyListSerialization.propertyList(from:Data(contentsOf:preset),options:[],format:nil) as! [String:Any]
   let originalLayers=(after["Instrument"] as! [String:Any])["Layers"] as! [[String:Any]],repairedLayers=(repairedState["Instrument"] as! [String:Any])["Layers"] as! [[String:Any]]
   var splitCount=0
   for i in originalLayers.indices {
    var repairedLayer=repairedLayers[i]
    var zones=repairedLayer["Zones"] as! [[String:Any]]
-   for j in zones.indices {if zones[j].removeValue(forKey:"StageKeys EXS attack end") != nil {splitCount+=1}}
+   for j in zones.indices {if zones[j].removeValue(forKey:"StageKeys EXS attack end") != nil {splitCount+=1}
+    zones[j].removeValue(forKey:"StageKeys EXS tail start");zones[j].removeValue(forKey:"StageKeys EXS tail end")
+    zones[j]["sample end"]=(originalLayers[i]["Zones"] as! [[String:Any]])[j]["sample end"]
+    zones[j]["loop end"]=(originalLayers[i]["Zones"] as! [[String:Any]])[j]["loop end"]}
    repairedLayer["Zones"]=zones
    assert(NSDictionary(dictionary:repairedLayer)==NSDictionary(dictionary:originalLayers[i]),"Split repair must preserve all other synthesis, effects and zone settings")
   }

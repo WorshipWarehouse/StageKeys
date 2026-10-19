@@ -21,7 +21,7 @@ struct NativeSamplerProgram:Codable,Hashable {
     var amplitudeEnvelope:EXSNative.Envelope?
     var voiceControls:EXSNative.VoiceControls?
     var valid:Bool {
-        (conversionVersion.map{(1...4).contains($0)} ?? true) && (amplitudeEnvelope?.valid ?? true) && (voiceControls?.valid ?? true) && !groups.isEmpty && groups.count<=64 && notes.count<=32 && notes.allSatisfy{$0.count<=2000} && groups.allSatisfy {group in
+        (conversionVersion.map{(1...5).contains($0)} ?? true) && (amplitudeEnvelope?.valid ?? true) && (voiceControls?.valid ?? true) && !groups.isEmpty && groups.count<=64 && notes.count<=32 && notes.allSatisfy{$0.count<=2000} && groups.allSatisfy {group in
             group.name.count<=200 && (0..<64).contains(group.layer) && (0...127).contains(group.low) && (group.low...127).contains(group.high) && (0...127).contains(group.velocityLow) && (group.velocityLow...127).contains(group.velocityHigh) && (group.controller.map{(0...127).contains($0)} ?? true) && (0...127).contains(group.controllerLow) && (group.controllerLow...127).contains(group.controllerHigh)
         } && rack.validate()
     }
@@ -290,15 +290,20 @@ enum EXSNative {
                 let start=u32(z,12),attackEnd=u32(z,16)
                 var end=u32(z,16),loopStart=u32(z,20),loopEnd=u32(z,24)
                 let looped=z[33] & 1 != 0
+                let split=looped && loopStart>attackEnd
+                let tailStart=z.count>=124 ? u32(z,116):0,tailEnd=z.count>=124 ? u32(z,120):0
+                if split {
+                    guard tailEnd>tailStart,tailEnd<=length,tailEnd-tailStart==loopEnd-attackEnd else{throw MainStagePatch.Failure.invalid("EXS separate tail storage is unsupported or invalid.")}
+                }
                 if looped && loopEnd>end {
                     end=loopEnd
                     notes.insert("Separate EXS attack and loop regions use lossless PCM frame assembly at playback; intervening consolidated audio is excluded. Transition interpolation remains engine dependent.")
                 }
-                if end>=length || looped && loopEnd>=length {
+                if !split && (end>=length || looped && loopEnd>=length) {
                     end=min(end,length-1);loopEnd=min(loopEnd,length-1)
                     notes.insert("Some saved EXS endpoints exceed the original audio length. Native endpoints are bounded to the original file; unmodified source values remain in the retained EXS.")
                 }
-                guard start>=0,end>start,end<length else{throw MainStagePatch.Failure.invalid("Invalid EXS sample-region bounds.")}
+                guard start>=0,end>start,(split ? attackEnd<length:end<length) else{throw MainStagePatch.Failure.invalid("Invalid EXS sample-region bounds.")}
                 guard !looped || (loopStart>=start && loopEnd>loopStart && loopEnd<=end) else{throw MainStagePatch.Failure.invalid("EXS loop leaves its consolidated sample region.")}
                 if z[33] & 4 != 0 {throw MainStagePatch.Failure.invalid("EXS loop release-to-end needs native translation.")}
                 guard z[1]<=127,z[6]<=z[7],z[7]<=127,z[9]<=127,z[10]<=127,(-64...64).contains(signed(z[3])) else{throw MainStagePatch.Failure.invalid("Invalid EXS zone ranges or pan.")}
@@ -307,7 +312,7 @@ enum EXSNative {
                 if low>high || velocityLow>velocityHigh {continue}
                 var item:[String:Any]=["ID":mapped.count,"name":zone.name,"enabled":true,"waveform":0x10000000+sample,"min key":low,"max key":high,"root key":Int(z[1]),"min vel":velocityLow,"max vel":velocityHigh,"gain":signed(z[4]),"fine tune":signed(z[2])+(z.count>80 ? signed(z[80])*100:0),"pan":Double(signed(z[3]))/64,"sample start":start,"sample end":end,"loop enabled":looped]
                 if looped {item["loop start"]=loopStart;item["loop end"]=loopEnd}
-                if looped && loopStart>attackEnd {item["StageKeys EXS attack end"]=attackEnd}
+                if split {item["StageKeys EXS attack end"]=attackEnd;item["StageKeys EXS tail start"]=tailStart;item["StageKeys EXS tail end"]=tailEnd}
                 mapped.append(item)
             }
             if mapped.isEmpty {continue}
@@ -333,7 +338,7 @@ enum EXSNative {
         }
         guard !native.isEmpty else{throw MainStagePatch.Failure.invalid("EXS has no playable native zones.")}
         instrument["Layers"]=native;instrument["voice count"]=64;state["Instrument"]=instrument;state["file-references"]=references;state["gain"]=0;state["name"]=source.deletingPathExtension().lastPathComponent
-        let program=NativeSamplerProgram(groups:rules,notes:notes.sorted(),compactGroups:true,conversionVersion:4,amplitudeEnvelope:amplitude,voiceControls:controls)
+        let program=NativeSamplerProgram(groups:rules,notes:notes.sorted(),compactGroups:true,conversionVersion:5,amplitudeEnvelope:amplitude,voiceControls:controls)
         guard program.valid else{throw MainStagePatch.Failure.invalid("EXS native group plan is invalid.")}
         state["StageKeys.NativeSampler"]=try JSONEncoder().encode(program)
         try PropertyListSerialization.data(fromPropertyList:state,format:.xml,options:0).write(to:output,options:.atomic)
