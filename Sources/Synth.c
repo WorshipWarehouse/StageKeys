@@ -211,13 +211,18 @@ static float shifted(SKSynth*s,EffectState*e,float *buffer,int pos,float ratio,d
  float a=.5f-.5f*cosf(TAU*phase),b=1-a;
  return a*tap(buffer,pos,16+phase*window)+b*tap(buffer,pos,16+phase2*window);
 }
+// Chorus belongs before the reverb tank; keep the direct signal untouched.
+static float cream_input(SKSynth*s,int l,int k,float input){
+ EffectState*e=&s->effect[l][k];float*p=e->p;
+ int pos=s->delayPosition[l][k];s->delay[l][k][pos]=input;
+ if(p[5]>0&&p[6]>0){float offset=s->rate*(.015f+.010f*(.5f+.5f*sinf(s->fxPhase[l][k])));float mod=tap(s->delay[l][k],pos,offset);input=input*(1-p[5])+mod*p[5];}
+ s->fxPhase[l][k]=fmod(s->fxPhase[l][k]+TAU*p[6]/s->rate,TAU);s->delayPosition[l][k]=(pos+1)%s->delayLength;
+ return input;
+}
 // Wet-only source core; the host retains independent additive Dry/Wet controls.
 static float cream_output(SKSynth*s,int l,int k,float dry,float wet){
  EffectState*e=&s->effect[l][k];float*p=e->p;
  e->z[0]+=e->coef[0]*(wet-e->z[0]);wet-=e->z[0];e->z[1]+=e->coef[1]*(wet-e->z[1]);wet=e->z[1];
- int pos=s->delayPosition[l][k];s->delay[l][k][pos]=wet;
- if(p[5]>0&&p[6]>0){float offset=s->rate*(.015f+.010f*(.5f+.5f*sinf(s->fxPhase[l][k])));float mod=tap(s->delay[l][k],pos,offset);wet=wet*(1-p[5])+mod*p[5];}
- s->fxPhase[l][k]=fmod(s->fxPhase[l][k]+TAU*p[6]/s->rate,TAU);s->delayPosition[l][k]=(pos+1)%s->delayLength;
  return dry*p[7]+wet*p[8];
 }
 static float effectProcess(SKSynth*s,int l,int k,float x){
@@ -230,7 +235,7 @@ static float effectProcess(SKSynth*s,int l,int k,float x){
   if(e->z[4]<divider)return dry*p[7]+e->z[5]*p[8];
   x=e->z[3]/e->z[4];e->z[3]=e->z[4]=0;rate/=divider;
  }
- if(kind==13&&p[10]>0){float a=x,b=x;SKCreamCoat*c=atomic_load_explicit(&s->cream[l][k],memory_order_acquire);if(!c)return x;sk_cream_frame(c,&a,&b);return cream_output(s,l,k,x,(a+b)*.5f);}
+ if(kind==13&&p[10]>0){float a=cream_input(s,l,k,x),b=a;SKCreamCoat*c=atomic_load_explicit(&s->cream[l][k],memory_order_acquire);if(!c)return x;sk_cream_frame(c,&a,&b);return cream_output(s,l,k,x,(a+b)*.5f);}
  if(!e->custom&&kind<=3){
   s->fxCurrent[l][k]+=(s->fxAmount[l][k]-s->fxCurrent[l][k])*.002f;float a=s->fxCurrent[l][k];
   if(kind==1){float c=.004f+a*a*.8f;s->tone[l][k]+=c*(x-s->tone[l][k]);return s->tone[l][k];}
@@ -425,7 +430,7 @@ void sk_process_effects_stereo(SKSynth*l,SKSynth*r,float*left,float*right,uint32
    EffectState*a=&l->effect[0][k],*b=&r->effect[0][k];
    if(l->fxKind[0][k]==13&&a->p[10]>0){
     SKCreamCoat*c=atomic_load_explicit(&l->cream[0][k],memory_order_acquire);
-    if(c){float wl=x,wr=y;sk_cream_frame(c,&wl,&wr);x=cream_output(l,0,k,x,wl);y=cream_output(r,0,k,y,wr);}
+    if(c){float wl=cream_input(l,0,k,x),wr=cream_input(r,0,k,y);sk_cream_frame(c,&wl,&wr);x=cream_output(l,0,k,x,wl);y=cream_output(r,0,k,y,wr);}
    }else if(l->fxKind[0][k]==3&&a->p[24]>0){
     int lp=l->delayPosition[0][k],rp=r->delayPosition[0][k];
     float dl=tap_capacity(l->delay[0][k],lp,a->p[25]*l->rate,l->delayLength),dr=tap_capacity(r->delay[0][k],rp,a->p[26]*r->rate,r->delayLength);
