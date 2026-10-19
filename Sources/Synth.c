@@ -117,7 +117,7 @@ static const float effectDefault[18][32]={
 {20,0,0.707,70,0,0.707,100,0,0.707,250,0,0.707,1000,0,0.707,2500,0,0.707,7500,0,0.707,20000,0,0.707},
 {0.2,0.5,0.8,0.5},
 {0},
-{0.75,0.66,0.9,0.75,0.5,100,10000,1,0.2},
+{0.75,0.66,0.9,0.75,0.5,100,10000,1,0.2,1},
 {0.96,402,4877,0.4,2},
 {12,0.2},
 {0.5,0,0.3,100,20000,0,1,0.8,0.4,1},
@@ -157,7 +157,7 @@ static const float effectMax[18][32]={
 {20000,24,10,20000,24,10,20000,24,10,20000,24,10,20000,24,10,20000,24,10,20000,24,10,20000,24,10},
 {10,1,0.95,1},
 {6},
-{1,0.95,1,1,1,2000,20000,1,1},
+{1,0.95,1,1,1,2000,20000,1,1,1},
 {1,800,20000,1,12},
 {24,1},
 {1,200,0.95,2000,20000,1,10,1,1,1,1},
@@ -166,7 +166,7 @@ static const float effectMax[18][32]={
 {200,1,1000,1,20000,20000,20,1,360,1,1},
 {100,20000,100,1,20000,20000,30,20000,60,60},
 };
-static const int effectCount[18]={0,3,4,4,3,5,7,24,4,1,9,5,2,11,12,10,11,10};
+static const int effectCount[18]={0,3,4,4,3,5,7,24,4,1,10,5,2,11,12,10,11,10};
 
 // Delay taps interpolate bounded preallocated memory. All state is render-owned.
 static float tap_capacity(const float *buffer,int pos,float offset,int capacity){
@@ -179,6 +179,7 @@ static void effectReset(EffectState *e){
 }
 static void effectCoefficients(EffectState*e,int kind,double rate){
  float *p=e->p;
+ if(kind==10)rate/=(1 << (int)roundf((1-p[9])*5));
  if(kind==1)coefficients(&e->eq[0],rate,p[0],p[1],0,0);
  if(kind==7)for(int b=0;b<8;b++)equalizer(&e->eq[b],rate,b,p[b*3],p[b*3+1],p[b*3+2]);
  if(kind==6){e->coef[0]=exp(-1000/(rate*p[1]));e->coef[1]=exp(-1000/(rate*p[2]));e->coef[2]=pow(10,p[0]/20);e->coef[3]=pow(10,p[6]/20);}
@@ -216,6 +217,12 @@ static float effectProcess(SKSynth*s,int l,int k,float x){
  int kind=s->fxKind[l][k];EffectState*e=&s->effect[l][k];float *p=e->p,*buffer=s->delay[l][k],dry=x,y=x;
  int pos=s->delayPosition[l][k];double rate=s->rate;float phase=s->fxPhase[l][k];
  e->stereo=0;
+ if(kind==10){
+  int divider=1 << (int)roundf((1-p[9])*5);
+  e->z[3]+=x;e->z[4]+=1;
+  if(e->z[4]<divider)return dry*p[7]+e->z[5]*p[8];
+  x=e->z[3]/e->z[4];e->z[3]=e->z[4]=0;rate/=divider;
+ }
  if(kind==13&&p[10]>0){float a=x,b=x;SKCreamCoat*c=atomic_load_explicit(&s->cream[l][k],memory_order_acquire);if(!c)return x;sk_cream_frame(c,&a,&b);return cream_output(s,l,k,x,(a+b)*.5f);}
  if(!e->custom&&kind<=3){
   s->fxCurrent[l][k]+=(s->fxAmount[l][k]-s->fxCurrent[l][k])*.002f;float a=s->fxCurrent[l][k];
@@ -251,7 +258,7 @@ static float effectProcess(SKSynth*s,int l,int k,float x){
   s->predelay[l][k][prepos]=x;s->predelayPosition[l][k]=(prepos+1)%s->predelayLength;
   // A single bounded feedback tank with four decorrelated taps. Independent algorithm.
   buffer[pos]=input+wet*feedback*.94f;
-  int di=kind==10?7:kind==13?7:8,wi=di+1;y=x*p[di]+wet*p[wi];s->fxPhase[l][k]=fmod(phase+TAU*hz/rate,TAU);break;}
+  int di=kind==10?7:kind==13?7:8,wi=di+1;if(kind==10)e->z[5]=wet;y=dry*p[di]+wet*p[wi];s->fxPhase[l][k]=fmod(phase+TAU*hz/rate,TAU);break;}
  case 11:{e->z[0]+=e->coef[0]*(x-e->z[0]);float v=x-e->z[0],drive=1+p[0]*30;v=tanhf(v*drive)/tanhf(drive);e->z[1]+=e->coef[1]*(v-e->z[1]);y=(x*(1-p[3])+e->z[1]*p[3])*e->coef[2];break;}
  case 12:buffer[pos]=x;y=p[0]==0?x:x*(1-p[1])+shifted(s,e,buffer,pos,e->coef[0],rate)*p[1];break;
  case 16:{
@@ -271,7 +278,7 @@ static float effectProcess(SKSynth*s,int l,int k,float x){
   }
   // Short reflection paths build the room response before the late tank fills.
   // Separate delay partitions keep their decay independent of the long tail.
-  float early=0,earlyDecay=fminf(decay*.4f,.6f+room*12+p[1]*1.2f);
+  float early=0,earlyDecay=decay*(.5f+.2f*p[3]+.1f*p[1]);
   for(int line=0;line<2;line++){
    float seconds=room*(line==0?.47f:.61f)*(s->stereoSide?1.017f:1);
    float*reflection=buffer+(6+line)*capacity;
@@ -279,7 +286,7 @@ static float effectProcess(SKSynth*s,int l,int k,float x){
    reflection[index]=input+delayed*powf(.001f,seconds/earlyDecay);
    early+=delayed*.5f;
   }
-  wet+=early*p[1];
+  wet+=early*p[1]*.8f;
   float diffusion=.15f+.55f*p[3];
   for(int stage=0;stage<2;stage++){
    float*line=buffer+(4+stage)*capacity;

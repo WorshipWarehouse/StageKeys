@@ -173,37 +173,24 @@ struct ModulationWheel: View {
         GeometryReader { geometry in
             let height = max(1, geometry.size.height)
             ZStack {
-                RoundedRectangle(cornerRadius: 5)
-                    .fill(Color.black.opacity(0.58))
-                    .frame(width: 31)
-                    .overlay { RoundedRectangle(cornerRadius: 5).stroke(.white.opacity(0.08), lineWidth: 1) }
-                ZStack {
-                    RoundedRectangle(cornerRadius: 4).fill(
-                        LinearGradient(colors: [Color(white: 0.09), Color(white: 0.23), Color(white: 0.12)], startPoint: .leading, endPoint: .trailing))
-                    // Ridges move beneath the fixed light/shadow mask to suggest
-                    // wheel rotation without presenting a slider thumb.
-                    Canvas { context, size in
-                        let spacing: CGFloat = 5
-                        let phase = CGFloat(position) * 30
-                        for row in -8...Int(size.height / spacing + 8) {
-                            let y = CGFloat(row) * spacing + phase.truncatingRemainder(dividingBy: spacing)
-                            var shadow = Path(); shadow.move(to: CGPoint(x: 2, y: y)); shadow.addLine(to: CGPoint(x: size.width-2, y: y))
-                            context.stroke(shadow, with: .color(.black.opacity(0.65)), lineWidth: 1)
-                            var light = Path(); light.move(to: CGPoint(x: 2, y: y+1)); light.addLine(to: CGPoint(x: size.width-2, y: y+1))
-                            context.stroke(light, with: .color(.white.opacity(0.10)), lineWidth: 0.6)
+                RoundedRectangle(cornerRadius:7).fill(LinearGradient(colors:[Color(white:0.06),Color(white:0.19),Color(white:0.07)],startPoint:.leading,endPoint:.trailing))
+                    .overlay{RoundedRectangle(cornerRadius:7).stroke(.black.opacity(0.8),lineWidth:2)}
+                RoundedRectangle(cornerRadius:5).fill(Color.black).padding(.horizontal,10).padding(.vertical,4)
+                Canvas {context,size in
+                    let spacing:CGFloat=7,rotation=CGFloat(position)*42
+                    for row in -8...Int(size.height/spacing+8) {
+                        let y=CGFloat(row)*spacing+rotation.truncatingRemainder(dividingBy:spacing)
+                        let visibility=Double(position)*0.8+0.05
+                        let width:CGFloat=5
+                        for x in [CGFloat(4),size.width-9] {
+                            let rect=CGRect(x:x,y:y,width:width,height:3)
+                            context.fill(Path(roundedRect:rect,cornerRadius:1),with:.color(StageTheme.selected.opacity(visibility)))
+                            context.fill(Path(CGRect(x:x,y:y+3,width:width,height:2)),with:.color(.black.opacity(0.8)))
                         }
                     }
-                    LinearGradient(stops: [.init(color: .black.opacity(0.85), location: 0), .init(color: .clear, location: 0.28), .init(color: .clear, location: 0.7), .init(color: .black.opacity(0.8), location: 1)], startPoint: .top, endPoint: .bottom)
-                }.frame(width: 20).clipShape(RoundedRectangle(cornerRadius: 4)).padding(.vertical, 4)
-                RoundedRectangle(cornerRadius:2).fill(StageTheme.selected).frame(width:16,height:3)
-                    .shadow(color:StageTheme.selected.opacity(0.7),radius:4)
-                    .offset(y:(height-12)*(0.5-CGFloat(position)))
-                VStack(spacing: 0) {
-                    ForEach(0..<23) { _ in
-                        HStack { Rectangle().frame(width: 6, height: 1); Spacer(); Rectangle().frame(width: 6, height: 1) }
-                        Spacer(minLength: 0)
-                    }
-                }.foregroundStyle(.black.opacity(0.5)).padding(.vertical, 5)
+                }.padding(.vertical,6)
+                RoundedRectangle(cornerRadius:5).fill(LinearGradient(stops:[.init(color:Color(white:0.07),location:0),.init(color:Color(white:0.16+Double(position)*0.12),location:0.2),.init(color:Color(white:0.09),location:0.6),.init(color:.black,location:1)],startPoint:.top,endPoint:.bottom)).padding(.horizontal,12).padding(.vertical,7)
+                RoundedRectangle(cornerRadius:7).stroke(.white.opacity(0.08),lineWidth:1)
             }.frame(maxWidth: .infinity, maxHeight: .infinity).contentShape(Rectangle())
                 .gesture(DragGesture(minimumDistance: 0).onChanged { drag in
                     if dragOrigin == nil { dragOrigin = position }
@@ -227,12 +214,7 @@ struct KeyboardWorkspace: View {
     @EnvironmentObject var store: PerformanceStore
     var body: some View {
         HStack(spacing: 30) {
-            VStack(spacing:3) {
-                Text("HIGH").font(.system(size:7)).foregroundStyle(.secondary)
-                ModulationWheel(value:$store.modWheel)
-                Text("\(Int((store.modWheel*127).rounded()))").font(.system(size:9,weight:.semibold)).monospacedDigit().foregroundStyle(StageTheme.selected)
-                Text("LOW").font(.system(size:7)).foregroundStyle(.secondary)
-            }.frame(width:44)
+            ModulationWheel(value:$store.modWheel).frame(width:44)
             VStack(spacing: 5) {
                 if store.showRanges {
                     VStack(spacing: 2) {

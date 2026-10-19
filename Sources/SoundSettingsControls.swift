@@ -141,6 +141,8 @@ struct ImportedRackControls: View {
                         Toggle("Enabled",isOn:Binding(get:{layer.importedRack?.effects[index].enabled ?? false},set:{layer.importedRack?.effects[index].enabled=$0}))
                         if effect.kind == 7 {
                             ChannelEqualizerControls(bands:eqBands(index),enabled:Binding(get:{layer.importedRack?.effects[index].enabled ?? false},set:{layer.importedRack?.effects[index].enabled=$0}))
+                        } else if [4,5,10,11,15,16].contains(effect.kind) {
+                            GroupedEffectControls(kind:effect.kind,values:Binding(get:{layer.importedRack?.effects[index].values ?? effect.values},set:{values in guard var imported=layer.importedRack else{return};imported.effects[index].parameters=values;guard imported.validate() else{return};layer.importedRack=imported}))
                         } else {
                         LazyVGrid(columns:[GridItem(.adaptive(minimum:140))],spacing:8) {
                             if effect.importedDelay != nil { delayControls(index) }

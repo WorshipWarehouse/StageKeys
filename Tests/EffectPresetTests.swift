@@ -10,6 +10,11 @@ import Foundation
   var bad=preset;bad.name=" ";do{try EffectPresetArchive.save([bad],to:url);fatalError("Invalid preset saved")}catch{}
   assert(EffectPresetArchive.load(url)==[preset],"Invalid save must preserve previous presets")
   try Data("corrupt".utf8).write(to:url);assert(EffectPresetArchive.load(url).isEmpty)
+  var legacy=AudioEffect();legacy.kind=10;legacy.parameters=[0.75,0.66,0.9,0.75,0.5,100,10000,1,0.2]
+  assert(legacy.validate() && legacy.values.count==10 && legacy.values[9]==1,"Legacy shimmer must keep full quality")
+  var modern=legacy;modern.parameters=legacy.values;modern.parameters![9]=0.4
+  let migrated=EffectPreset(name:"Soft Shimmer",effect:modern);try EffectPresetArchive.save([migrated],to:url)
+  assert(EffectPresetArchive.load(url)==[migrated],"Shimmer quality must survive preset persistence")
   print("PASS: effect preset settings/core round-trip, invalid saves preserve archive, corrupt archive rejected")
  }
 }

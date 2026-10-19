@@ -1,0 +1,146 @@
+{
+  "date": "2026-10-19",
+  "release": "0.42.0",
+  "exactParityVerified": false,
+  "samplesModified": false,
+  "reverb": {
+    "parameters": [
+      17,
+      0.71,
+      160,
+      0.81,
+      760,
+      6800,
+      1.2,
+      0.58,
+      0,
+      0,
+      1
+    ],
+    "comparison": "Saved MainStage wet capture versus native wet processing of the saved MainStage dry capture; independent onset trim; one-second stereo RMS windows.",
+    "mainstageRMSDB": [
+      -38.945287384951925,
+      -44.69543496598932,
+      -53.134284917039466,
+      -61.65067601642998,
+      -69.24821642858836,
+      -76.99641741489172,
+      -83.64740667067429,
+      -90.5276143757373,
+      -97.24794244719283,
+      -103.12572678892636
+    ],
+    "previousNativeRMSDB": [
+      -39.84,
+      -50.84,
+      -58.54,
+      -65.15,
+      -71.78,
+      -78.22,
+      -85.22,
+      -91.84,
+      -98.56,
+      -104.63
+    ],
+    "nativeRMSDB": [
+      -38.94416046142578,
+      -44.478424072265625,
+      -53.096309661865234,
+      -61.228599548339844,
+      -69.53704071044922,
+      -76.61256408691406,
+      -83.9785385131836,
+      -91.250732421875,
+      -98.25338745117188,
+      -104.38079071044922
+    ],
+    "meanAbsoluteEnvelopeErrorDB": 0.46656259645016435,
+    "previousMeanAbsoluteEnvelopeErrorDB": 2.540099258957846,
+    "mainstageRT60FitSeconds": 8.451536956783437,
+    "nativeRT60FitSeconds": 8.151193330981815
+  },
+  "loudness": {
+    "sampleRate": 48000,
+    "onsetsSeconds": [
+      7.57,
+      8.76,
+      9.97,
+      11.18,
+      12.39,
+      13.6,
+      14.81,
+      16.02,
+      17.23,
+      18.44,
+      19.650000000000002,
+      20.86
+    ],
+    "comparisons": [
+      {
+        "note": 60,
+        "velocity": 38,
+        "mainstageMinusStageKeysDB": -2.5269196965972225
+      },
+      {
+        "note": 74,
+        "velocity": 38,
+        "mainstageMinusStageKeysDB": -3.1707362289659002
+      },
+      {
+        "note": 86,
+        "velocity": 38,
+        "mainstageMinusStageKeysDB": -2.433997322497787
+      },
+      {
+        "note": 60,
+        "velocity": 64,
+        "mainstageMinusStageKeysDB": -1.8855927121351101
+      },
+      {
+        "note": 74,
+        "velocity": 64,
+        "mainstageMinusStageKeysDB": -2.175202392342605
+      },
+      {
+        "note": 86,
+        "velocity": 64,
+        "mainstageMinusStageKeysDB": -2.276056836540419
+      },
+      {
+        "note": 60,
+        "velocity": 83,
+        "mainstageMinusStageKeysDB": 0.39398580688837953
+      },
+      {
+        "note": 74,
+        "velocity": 83,
+        "mainstageMinusStageKeysDB": 0.32299191069067146
+      },
+      {
+        "note": 86,
+        "velocity": 83,
+        "mainstageMinusStageKeysDB": 0.6558279749971885
+      },
+      {
+        "note": 60,
+        "velocity": 102,
+        "mainstageMinusStageKeysDB": 2.3261083905260644
+      },
+      {
+        "note": 74,
+        "velocity": 102,
+        "mainstageMinusStageKeysDB": 2.351462409156343
+      },
+      {
+        "note": 86,
+        "velocity": 102,
+        "mainstageMinusStageKeysDB": 2.957535315158184
+      }
+    ]
+  },
+  "limitations": [
+    "Reverb comparison measures level envelope at one source setting, not identical spectrum or proprietary algorithm.",
+    "Fresh loudness reference includes MainStage channel/output EQ; native render bypasses user-added Halo Shimmer, compressor and SolaVerb. Its velocity-dependent difference is diagnostic, not an isolated sampler null test.",
+    "No blanket gain or amplitude-law replacement applied. Further controlled baseline velocity and channel-EQ measurements are required."
+  ]
+}

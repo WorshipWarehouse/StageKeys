@@ -193,10 +193,60 @@ struct EffectKnob: View {
                 .accessibilityElement().accessibilityLabel(descriptor.name).accessibilityValue("\(descriptor.unit == "%" ? value*100:value) \(descriptor.unit)")
                 .accessibilityAdjustableAction { set(position + ($0 == .increment ? 0.02 : -0.02)) }
             HStack(spacing:4) {
-                TextField(descriptor.name,value:Binding(get:{descriptor.unit == "%" ? value*100 : value},set:{ if $0.isFinite { let raw=descriptor.unit == "%" ? $0/100 : $0; value=min(descriptor.maximum,max(descriptor.minimum,raw)) } }),format:.number.precision(.fractionLength(2))).textFieldStyle(.roundedBorder).frame(width:75)
+                TextField(descriptor.name,value:Binding(get:{descriptor.unit == "%" ? value*100 : value},set:{ if $0.isFinite { let raw=descriptor.unit == "%" ? $0/100 : $0; value=min(descriptor.maximum,max(descriptor.minimum,raw)) } }),format:.number.precision(.fractionLength(0...2))).textFieldStyle(.plain).multilineTextAlignment(.center).frame(width:65)
                 Text(descriptor.unit).font(StageTheme.font(10)).foregroundStyle(.secondary)
             }
         }.frame(maxWidth:.infinity).padding(compact ? 6:10)
+    }
+}
+/// Shared settings/output organization for native and imported rack effects.
+struct GroupedEffectControls:View {
+    let kind:Int
+    @Binding var values:[Float]
+    private var groups:[(String,[Int])] {
+        switch kind {
+        case 10:return [("Shimmer",[0,1,2,3]),("Character",[4,9,5,6])]
+        case 15:return [("Space",[0,1,2]),("Character",[5,6,7,3,4])]
+        case 16:return [("Room",[0,1,2,3]),("Character",[6,7,8,4,5])]
+        case 5:return [("Chorus",[0,1,2,3])]
+        case 11:return [("Overdrive",[0,1,2,4])]
+        default:return [("Settings",[0,1])]
+        }
+    }
+    private var outputs:[Int] {switch kind {case 10:return [7,8];case 15:return [8,9];case 16:return [9,10];case 5:return [4];case 11:return [3];default:return [2]}}
+    private func parameter(_ index:Int)->Binding<Float> {
+        Binding(get:{index<values.count ? values[index]:AudioEffectCatalog.defaults(for:kind)[index]},set:{v in var next=values;if next.count != AudioEffectCatalog.defaults(for:kind).count {next=AudioEffectCatalog.defaults(for:kind)};next[index]=v;values=next})
+    }
+    private func descriptor(_ index:Int)->AudioEffectParameterDescriptor {AudioEffectCatalog.descriptors(for:kind).first{$0.index==index}!}
+    private func panel<Content:View>(_ title:String,@ViewBuilder content:()->Content)->some View {
+        VStack(spacing:0){Text(title).font(StageTheme.font(13,weight:.semibold)).frame(maxWidth:.infinity).padding(.vertical,12);Divider().opacity(0.4);content().padding(12)}.background(StageTheme.panel,in:RoundedRectangle(cornerRadius:8))
+    }
+    var body:some View {
+        HStack(alignment:.top,spacing:5){
+            VStack(spacing:5){ForEach(groups.indices,id:\.self){index in
+                panel(groups[index].0){LazyVGrid(columns:Array(repeating:GridItem(.flexible(),spacing:4),count:min(4,groups[index].1.count)),spacing:10){ForEach(groups[index].1,id:\.self){p in EffectKnob(compact:true,descriptor:descriptor(p),value:parameter(p))}}}
+            }}
+            panel("Output"){HStack(alignment:.top,spacing:12){ForEach(outputs,id:\.self){p in EffectParameterFader(descriptor:descriptor(p),value:parameter(p))}}.frame(height:groups.count>1 ? 330:200)}.frame(width:outputs.count>1 ? 170:100)
+        }.padding(.horizontal,16).padding(.vertical,8)
+    }
+}
+struct EffectParameterFader:View {
+    let descriptor:AudioEffectParameterDescriptor
+    @Binding var value:Float
+    private var logarithmic:Bool {descriptor.minimum>0 && descriptor.maximum/descriptor.minimum>100}
+    private var position:Float {let v=min(descriptor.maximum,max(descriptor.minimum,value));return logarithmic ? log(v/descriptor.minimum)/log(descriptor.maximum/descriptor.minimum):(v-descriptor.minimum)/(descriptor.maximum-descriptor.minimum)}
+    private func set(_ p:Float){let p=min(1,max(0,p));value=logarithmic ? descriptor.minimum*pow(descriptor.maximum/descriptor.minimum,p):descriptor.minimum+p*(descriptor.maximum-descriptor.minimum)}
+    var body:some View {
+        VStack(spacing:12){Text(descriptor.name).font(StageTheme.font(12)).foregroundStyle(.secondary)
+            GeometryReader {g in let travel=max(1,g.size.height-38)
+                ZStack {
+                    RoundedRectangle(cornerRadius:5).fill(StageTheme.raised).frame(width:17).overlay{RoundedRectangle(cornerRadius:5).stroke(.white.opacity(0.13))}
+                    Capsule().fill(StageTheme.selected.opacity(0.6)).frame(width:3).padding(.vertical,8)
+                    RoundedRectangle(cornerRadius:3).fill(LinearGradient(colors:[StageTheme.raised,Color(white:0.48),StageTheme.raised],startPoint:.top,endPoint:.bottom)).frame(width:31,height:38).shadow(color:.black.opacity(0.6),radius:3,y:3).overlay{Rectangle().fill(StageTheme.selected).frame(width:22,height:2)}.offset(y:travel*(0.5-CGFloat(position)))
+                }.frame(maxWidth:.infinity,maxHeight:.infinity).contentShape(Rectangle()).gesture(DragGesture(minimumDistance:0).onChanged{set(Float(1-($0.location.y-19)/travel))})
+            }.accessibilityElement().accessibilityLabel(descriptor.name).accessibilityValue("\(descriptor.unit == "%" ? value*100:value) \(descriptor.unit)").accessibilityAdjustableAction{set(position+($0 == .increment ? 0.01 : -0.01))}
+            Text("\(descriptor.unit == "%" ? value*100:value,specifier:"%.0f") \(descriptor.unit)").font(StageTheme.font(12,weight:.semibold)).monospacedDigit().foregroundStyle(StageTheme.selected)
+        }.frame(maxWidth:.infinity)
     }
 }
 struct EffectEditor: View {
@@ -224,8 +274,8 @@ struct EffectEditor: View {
         })
     }
     var body: some View {
-        EditorFrame(title: replacing ? "Select Effect" : "0\(slot+1) \(draft.title)", width:draft.kind==13 && !replacing ? 640:800,height:draft.kind==13 && !replacing ? 660:600,showsHeader:draft.kind != 13 || replacing) {
-            if draft.kind==13 && !replacing {
+        EditorFrame(title: replacing ? "Select Effect" : "0\(slot+1) \(draft.title)", width:!replacing && [10,13,15,16].contains(draft.kind) ? 640:800,height:!replacing && [10,13,15,16].contains(draft.kind) ? 690:600,showsHeader:replacing) {
+            if !replacing {
                 HStack(spacing:5){Text(String(format:"%02d",slot+1)).font(StageTheme.font(10,weight:.bold)).padding(3).background(Color.purple,in:RoundedRectangle(cornerRadius:2));Text(draft.title).font(StageTheme.font(16,weight:.bold))}.frame(maxWidth:.infinity).padding(.top,20).padding(.bottom,16)
             }
             if store.patch.layers[index].midiDestinationID != nil {
@@ -244,9 +294,9 @@ struct EffectEditor: View {
                         }.frame(width:284).background(StageTheme.panel)
                     }
                     Spacer()
-                    if draft.kind==13 && !replacing {
+                    if !replacing {
                         Text(draft.enabled ? "Effect ON":"Effect OFF").font(.caption).foregroundStyle(.secondary)
-                        Button{draft.enabled.toggle()}label:{Image(systemName:"power").frame(width:22,height:22)}.buttonStyle(StageButtonStyle(selected:draft.enabled)).accessibilityLabel("PrimaVerb power").accessibilityValue(draft.enabled ? "On":"Off")
+                        Button{draft.enabled.toggle()}label:{Image(systemName:"power").frame(width:22,height:22)}.buttonStyle(StageButtonStyle(selected:draft.enabled)).accessibilityLabel("Effect power").accessibilityValue(draft.enabled ? "On":"Off")
                     } else {Toggle("Effect ON",isOn:$draft.enabled).toggleStyle(.switch)}
                 }.padding(.horizontal,20).padding(.bottom,12)
                 ScrollView {
@@ -273,6 +323,8 @@ struct EffectEditor: View {
                             ChannelEqualizerControls(bands:equalizerBands,enabled:$draft.enabled).padding(.top,12)
                         } else if draft.kind == 13 {
                             ScrollView(.horizontal,showsIndicators:false){PrimaVerbControls(sourceCore:draft.usesCreamCoat,values:Binding(get:{draft.values},set:{draft.parameters=$0})).frame(minWidth:600).padding(.horizontal,16).padding(.vertical,8)}
+                        } else if [4,5,10,11,15,16].contains(draft.kind) {
+                            GroupedEffectControls(kind:draft.kind,values:Binding(get:{draft.values},set:{draft.parameters=$0}))
                         } else { LazyVGrid(columns:Array(repeating:GridItem(.flexible(),spacing:10),count:3),spacing:15) {
                             ForEach(controls.filter { !(draft.kind==3 && $0.index==1) && !(draft.kind==2 && draft.syncBeats != nil && $0.index==1) && !(draft.kind==14 && $0.index==0) }) { descriptor in
                                 EffectKnob(descriptor:descriptor,value:parameter(descriptor))

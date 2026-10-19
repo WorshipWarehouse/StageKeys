@@ -86,7 +86,7 @@ enum AudioEffectCatalog {
             .init(index: 0, name: "Gain", minimum: -96, maximum: 6, defaultValue: 0, unit: "dB"),
         ]
         case 10: return [
-            .init(index: 0, name: "Shimmer", minimum: 0, maximum: 1, defaultValue: 0.75, unit: "%"),
+            .init(index: 0, name: "Amount", minimum: 0, maximum: 1, defaultValue: 0.75, unit: "%"),
             .init(index: 1, name: "Feedback", minimum: 0, maximum: 0.95, defaultValue: 0.66, unit: "%"),
             .init(index: 2, name: "Size", minimum: 0, maximum: 1, defaultValue: 0.9, unit: "%"),
             .init(index: 3, name: "Diffusion", minimum: 0, maximum: 1, defaultValue: 0.75, unit: "%"),
@@ -95,6 +95,7 @@ enum AudioEffectCatalog {
             .init(index: 6, name: "Tone", minimum: 200, maximum: 20000, defaultValue: 10000, unit: "Hz"),
             .init(index: 7, name: "Dry", minimum: 0, maximum: 1, defaultValue: 1, unit: "%"),
             .init(index: 8, name: "Wet", minimum: 0, maximum: 1, defaultValue: 0.2, unit: "%"),
+            .init(index: 9, name: "Quality", minimum: 0, maximum: 1, defaultValue: 1, unit: "%"),
         ]
         case 11: return [
             .init(index: 0, name: "Drive", minimum: 0, maximum: 1, defaultValue: 0.96, unit: "%"),
