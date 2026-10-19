@@ -181,5 +181,18 @@
     "Reference routing and MIDI controller state affect absolute level",
     "Early reflections and Apple reverb circuit are not reproduced identically",
     "One reverb setting cannot establish parity across all source patches"
-  ]
+  ],
+  "earlyReflectionUpdate": {
+    "referenceFirstSecondRMSDB": -38.95,
+    "beforeFirstSecondRMSDB": -47.46,
+    "afterFirstSecondRMSDB": -39.84,
+    "lateTailChangeDBLessThan": 0.01,
+    "fullParityVerified": false,
+    "hostCurveActivated": false,
+    "limitations": [
+      "Second-second envelope and spectral differences remain",
+      "Host curve A/B capture still required",
+      "Recordings independently onset-trimmed; absolute onset delay not established"
+    ]
+  }
 }

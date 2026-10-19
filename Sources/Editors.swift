@@ -100,6 +100,7 @@ struct SoundEditor: View {
                                             }.frame(maxWidth:.infinity,alignment:.leading).padding(10).background(StageTheme.panel,in:RoundedRectangle(cornerRadius:6))
                                         }
                                         if let low=preview.low,let high=preview.high {Text("Note Range: \(low)–\(high)").font(.caption)}
+                                        if let curve=preview.amplitudeVelocityCurve {Text("Source amplitude velocity curve: \(curve)").font(.caption)}
                                         if let transpose=preview.transpose {Text("MIDI Transpose: \(transpose)").font(.caption)}
                                         ForEach(preview.macros){macro in Text(macro.name+(macro.midiCC.map{" · CC\($0)"} ?? "")).font(.caption)}
                                         ForEach(Array(preview.issues.enumerated()),id:\.offset){_,issue in Text(issue).font(.caption).foregroundStyle(.secondary)}
@@ -125,6 +126,9 @@ struct SoundEditor: View {
                         }
                         DisclosureGroup("More Sound Controls") {
                             VStack(spacing:10) {
+                                if draft.external?.kind == .samplerPreset {
+                                    ChannelSlider(title:"Attack Smoothing",value:Binding(get:{draft.samplerAttackMinimum*1000},set:{draft.channelSettings.samplerAttackMinimum=$0/1000}),range:0...100,suffix:"ms")
+                                }
                                 if draft.external?.kind == .audioUnit { Button("Open Instrument Interface") { plugin=true }.buttonStyle(StageButtonStyle()) }
                                 if draft.external == nil && draft.midiDestinationID == nil {
                                     ChannelSlider(title:"Attack",value:$draft.channelSettings.attack,range:0.001...10,suffix:"sec")

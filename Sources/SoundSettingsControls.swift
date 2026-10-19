@@ -9,15 +9,24 @@ struct SoundSettingsControls: View {
             Spacer(minLength: 8); content()
         }.padding(16).frame(minHeight:76).background(StageTheme.panel, in: RoundedRectangle(cornerRadius:8))
     }
+    private func numberControl(_ title:String,value:Binding<Int>,range:ClosedRange<Int>)->some View {
+        HStack(spacing:0) {
+            Button {value.wrappedValue=max(range.lowerBound,value.wrappedValue-1)} label:{Image(systemName:"minus").frame(width:36,height:42)}.disabled(value.wrappedValue<=range.lowerBound).accessibilityLabel("Decrease \(title)")
+            Divider().frame(height:28)
+            TextField(title,value:Binding(get:{value.wrappedValue},set:{value.wrappedValue=min(range.upperBound,max(range.lowerBound,$0))}),format:.number).multilineTextAlignment(.center).textFieldStyle(.plain).monospacedDigit().frame(width:62).accessibilityLabel(title)
+            Divider().frame(height:28)
+            Button {value.wrappedValue=min(range.upperBound,value.wrappedValue+1)} label:{Image(systemName:"plus").frame(width:36,height:42)}.disabled(value.wrappedValue>=range.upperBound).accessibilityLabel("Increase \(title)")
+        }.buttonStyle(.plain).background(StageTheme.raised,in:RoundedRectangle(cornerRadius:7))
+    }
     var body: some View {
         HStack(alignment: .top, spacing:8) {
             VStack(spacing:8) {
                 card("Block Sustain", detail:"Make the Sound ignore the Sustain Pedal") { Toggle("Block Sustain",isOn:$layer.blockSustain).labelsHidden().toggleStyle(.switch) }
                 card("MIDI Input Transpose",detail:"Shift MIDI notes before they reach the MIDI effects") {
-                    Stepper(value:Binding(get:{layer.effectiveTranspose},set:{layer.transpose=$0}),in: -48...48) { Text("\(layer.effectiveTranspose)").monospacedDigit().frame(minWidth:24) }.frame(width:150).accessibilityLabel("MIDI Input Transpose")
+                    numberControl("MIDI Input Transpose",value:Binding(get:{layer.effectiveTranspose},set:{layer.transpose=$0}),range: -48...48)
                 }
                 card("Voice Count",detail:"Simultaneous notes the Sound can play") {
-                    if layer.external == nil && layer.midiDestinationID == nil { Stepper(value:$layer.channelSettings.voiceCount,in:1...64) { Text("\(layer.channelSettings.voiceCount)").monospacedDigit() }.frame(width:150).accessibilityLabel("Voice Count") }
+                    if layer.external == nil && layer.midiDestinationID == nil { numberControl("Voice Count",value:$layer.channelSettings.voiceCount,range:1...64) }
                     else { Text("Instrument managed").font(.caption).foregroundStyle(.secondary) }
                 }
                 VStack(alignment:.leading,spacing:8) {
@@ -28,11 +37,12 @@ struct SoundSettingsControls: View {
             }
             if layer.midiDestinationID == nil {
                 VStack(spacing:8) {
-                    EffectKnob(descriptor:.init(index:0,name:"Sampler Vol",minimum:-60,maximum:12.0412,defaultValue:0,unit:"dB"),value:samplerDB).background(StageTheme.panel,in:RoundedRectangle(cornerRadius:8))
-                    if layer.external?.kind == .samplerPreset {
-                        EffectKnob(descriptor:.init(index:2,name:"Attack Smoothing",minimum:0,maximum:100,defaultValue:0,unit:"ms"),value:Binding(get:{layer.samplerAttackMinimum*1000},set:{layer.channelSettings.samplerAttackMinimum=$0/1000})).background(StageTheme.panel,in:RoundedRectangle(cornerRadius:8))
-                    }
-                    EffectKnob(descriptor:.init(index:1,name:"Audio Output · Pan",minimum:-1,maximum:1,defaultValue:0,unit:""),value:$layer.pan).background(StageTheme.panel,in:RoundedRectangle(cornerRadius:8))
+                    EffectKnob(compact:true,descriptor:.init(index:0,name:"Sampler Vol",minimum:-60,maximum:12.0412,defaultValue:0,unit:"dB"),value:samplerDB).background(StageTheme.panel,in:RoundedRectangle(cornerRadius:8))
+                    VStack(spacing:0) {
+                        Text("Audio Output").font(StageTheme.font(14,weight:.semibold)).frame(maxWidth:.infinity).padding(.vertical,10)
+                        Divider()
+                        EffectKnob(compact:true,descriptor:.init(index:1,name:"Pan",minimum:-1,maximum:1,defaultValue:0,unit:""),value:$layer.pan)
+                    }.background(StageTheme.panel,in:RoundedRectangle(cornerRadius:8))
                 }.frame(width:165)
             }
         }

@@ -16,7 +16,8 @@ enum MainStageProcessing {
         var gain:Float?
         var pan:Float?
         var muted:Bool?
-        var hasChanges:Bool {!effects.isEmpty || !macros.isEmpty || low != nil || high != nil || transpose != nil || blockSustain != nil || gain != nil || pan != nil || muted != nil}
+        var amplitudeVelocityCurve:Int?
+        var hasChanges:Bool {amplitudeVelocityCurve != nil || !effects.isEmpty || !macros.isEmpty || low != nil || high != nil || transpose != nil || blockSustain != nil || gain != nil || pan != nil || muted != nil}
         func applying(to original:Layer)throws->Layer {
             var layer=original
             layer.importedRack=try appending(to:layer.importedRack ?? layer.external?.nativeSampler?.rack)
@@ -30,6 +31,10 @@ enum MainStageProcessing {
         }
         func appending(to original:ImportedRack?)throws->ImportedRack {
             var rack=original ?? ImportedRack()
+            if let amplitudeVelocityCurve {
+                guard rack.mainStageAmplitudeVelocityCurve == nil || rack.mainStageAmplitudeVelocityCurve==amplitudeVelocityCurve else{throw MainStagePatch.Failure.invalid("The destination already has a different source velocity curve.")}
+                rack.mainStageAmplitudeVelocityCurve=amplitudeVelocityCurve
+            }
             let offset=rack.effects.count;rack.effects += effects
             for var macro in macros {
                 guard let index=(0..<128).first(where:{candidate in !rack.macros.contains{$0.index==candidate}}) else{throw MainStagePatch.Failure.invalid("No free macro slots.")}
@@ -106,6 +111,10 @@ enum MainStageProcessing {
     static func translate(_ data:Data,channelID:Int?=nil)throws->Draft {
         let devices=try MainStagePatch.devices(data)
         var draft=Draft(),targets:[Int:(effect:Int,name:String)]=[:]
+        draft.amplitudeVelocityCurve=try MainStagePatch.amplitudeVelocityCurve(data,devices:devices)
+        if let curve=draft.amplitudeVelocityCurve,curve != 0 {
+            draft.issues.append("Sampler amplitude velocity curve \(curve) is preserved per channel. Its host response still requires calibration; MIDI velocity, sample selection and filter response are not remapped.")
+        }
         var independentReverbSlots=Set<Int>()
         for (slot,device) in devices.enumerated() {
             let end=min(data.count,device.offset+device.byteCount)

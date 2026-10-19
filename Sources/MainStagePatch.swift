@@ -75,6 +75,38 @@ enum MainStagePatch {
         }
         return Array(Set(names)).sorted()
     }
+    /// Host-only sampler state is not included in the referenced EXS file.
+    /// Read bounded parameter pairs inside sampler devices, never arbitrary archive bytes.
+    static func amplitudeVelocityCurve(_ data:Data,devices:[Device])throws->Int? {
+        var curves=Set<Int>()
+        let marker=Data("MELCPMAS1MAS".utf8)
+        func integer(_ offset:Int)->Int {
+            Int(Int32(bitPattern:(0..<4).reduce(UInt32(0)){$0 | UInt32(data[offset+$1]) << ($1*8)}))
+        }
+        for device in devices where device.format == "MELC" {
+            let end=min(data.count,device.offset+device.byteCount)
+            var position=device.offset
+            while position<end,let range=data.range(of:marker,in:position..<end) {
+                position=range.upperBound
+                let nameEnd=min(end,range.lowerBound+76)
+                let name=data[range.upperBound..<nameEnd].prefix(while:{$0 != 0})
+                guard let filename=String(data:name,encoding:.utf8),filename.lowercased().hasSuffix(".exs"),filename==URL(fileURLWithPath:filename).lastPathComponent else{continue}
+                var seen=Set<Int>(),offset=range.lowerBound+76
+                for _ in 0..<512 {
+                    guard offset+8<=end else{break}
+                    let key=integer(offset),value=integer(offset+4)
+                    guard key>0,key<=0x10000,seen.insert(key).inserted else{break}
+                    if key==0x183 {
+                        guard (-20...20).contains(value) else{throw Failure.invalid("Sampler amplitude velocity curve exceeds the supported source range.")}
+                        curves.insert(value)
+                    }
+                    offset+=8
+                }
+            }
+        }
+        guard curves.count<=1 else{throw Failure.invalid("Conflicting sampler amplitude velocity curves; select a single instrument channel.")}
+        return curves.first
+    }
     static func findSamplerInstruments(_ names:Set<String>,in folder:URL)throws->[URL] {
         guard !names.isEmpty,names.count<=64 else{throw Failure.invalid("Invalid instrument reference list.")}
         guard let files=FileManager.default.enumerator(at:folder,includingPropertiesForKeys:[.isRegularFileKey,.isSymbolicLinkKey]) else{throw Failure.invalid("Could not read the selected instrument folder.")}

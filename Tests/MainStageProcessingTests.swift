@@ -11,6 +11,47 @@ import Foundation
             for (index,value) in values.enumerated(){for i in 0..<4{data[236+index*4+i]=UInt8((value.bitPattern >> (i*8)) & 255)}}
             return data
         }
+        func sampler(_ curves:[Int])->Data {
+            var bytes=device("Sampler",[])
+            bytes.replaceSubrange(168..<172,with:Data("MELC".utf8))
+            for curve in curves {
+                var record=Data(repeating:0,count:100)
+                record.replaceSubrange(0..<12,with:Data("MELCPMAS1MAS".utf8))
+                record.replaceSubrange(12..<21,with:Data("Piano.exs".utf8)+Data([0]))
+                for (offset,value) in [(76,0x183),(80,curve)] {
+                    let bits=UInt32(bitPattern:Int32(value))
+                    for i in 0..<4{record[offset+i]=UInt8((bits >> (i*8)) & 255)}
+                }
+                bytes.append(record)
+            }
+            let size=bytes.count-36
+            for i in 0..<4{bytes[28+i]=UInt8((size >> (i*8)) & 255)}
+            var channel=Data(repeating:0,count:36);channel.replaceSubrange(0..<4,with:Data("OCuA".utf8));channel.append(bytes)
+            return channel
+        }
+        let curveDraft=try MainStageProcessing.translate(sampler([-10,-10]))
+        assert(curveDraft.amplitudeVelocityCurve == -10 && curveDraft.hasChanges)
+        let curveLayer=try curveDraft.applying(to:Layer(name:"Curve",instrument:-1,gain:1))
+        let curveReload=try JSONDecoder().decode(Layer.self,from:JSONEncoder().encode(curveLayer))
+        assert(curveReload.importedRack?.mainStageAmplitudeVelocityCurve == -10)
+        assert(curveReload.importedRack?.validate()==true)
+        assert(curveReload.midiProgram == nil,"Amplitude response must not alter MIDI/sample-zone velocities")
+        assert(curveDraft.issues.contains{$0.contains("requires calibration")})
+        for values in [[-10,0],[21],[-21]] {
+            do{_ = try MainStageProcessing.translate(sampler(values));assertionFailure("Unsafe curve accepted")}catch{}
+        }
+        let fullSampler=sampler([-10])
+        let bounded=try MainStagePatch.amplitudeVelocityCurve(Data(fullSampler.dropLast(25)),devices:MainStagePatch.devices(fullSampler))
+        assert(bounded == nil,"Truncated parameter values must not be read outside their device")
+        var wrongFormat=fullSampler;wrongFormat.replaceSubrange(204..<208,with:Data("GAME".utf8))
+        let ignored=try MainStagePatch.amplitudeVelocityCurve(wrongFormat,devices:MainStagePatch.devices(wrongFormat))
+        assert(ignored == nil,"Effect payloads must not be interpreted as sampler state")
+        if let path=ProcessInfo.processInfo.environment["STAGEKEYS_HOST_CURVE_FIXTURE"] {
+            let real=try Data(contentsOf:URL(fileURLWithPath:path))
+            let curve=try MainStagePatch.amplitudeVelocityCurve(real,devices:MainStagePatch.devices(real))
+            assert(curve == -10,"Modern reference channel must retain its observed host curve")
+        }
+        print("PASS: bounded host curve decoding, duplicate agreement, conflict rejection and channel persistence")
         var source=Data(repeating:0,count:36);source.replaceSubrange(0..<4,with:Data("OCuA".utf8))
         source.append(device("Gain",[-6,0,0,0,0,0,0]))
         var eq:[Float]=[]

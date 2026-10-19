@@ -269,6 +269,17 @@ static float effectProcess(SKSynth*s,int l,int k,float x){
    float feedback=fminf(.985f,powf(.001f,seconds/decay));
    buffer[line*capacity+index]=input*.35f+tail*feedback;wet+=tail*.25f;
   }
+  // Short reflection paths build the room response before the late tank fills.
+  // Separate delay partitions keep their decay independent of the long tail.
+  float early=0,earlyDecay=fminf(decay*.4f,.6f+room*12+p[1]*1.2f);
+  for(int line=0;line<2;line++){
+   float seconds=room*(line==0?.47f:.61f)*(s->stereoSide?1.017f:1);
+   float*reflection=buffer+(6+line)*capacity;
+   float delayed=tap_capacity(reflection,index,seconds*rate,capacity);
+   reflection[index]=input+delayed*powf(.001f,seconds/earlyDecay);
+   early+=delayed*.5f;
+  }
+  wet+=early*p[1];
   float diffusion=.15f+.55f*p[3];
   for(int stage=0;stage<2;stage++){
    float*line=buffer+(4+stage)*capacity;

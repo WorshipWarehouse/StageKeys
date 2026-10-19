@@ -111,6 +111,8 @@ struct ImportedAudioRack: Codable, Equatable {
     var branches:[ImportedAudioBranch]
 }
 struct ImportedRack: Codable, Equatable {
+    /// Archived host amplitude response, not a MIDI/sample-zone velocity remap.
+    var mainStageAmplitudeVelocityCurve:Int?
     var audioRacks:[ImportedAudioRack]?
     var effectCount:Int {
         effects.filter{$0.kind != 0}.count + (branches ?? []).reduce(0){$0+$1.rack.effectCount} + (audioRacks ?? []).reduce(0){sum,stage in sum+stage.branches.reduce(0){$0+$1.rack.effectCount}}
@@ -130,7 +132,7 @@ struct ImportedRack: Codable, Equatable {
         return size
     }
     func validate(depth:Int = 0) -> Bool {
-        guard depth<12,(depth>0 || processingSize()<=256) else{return false}
+        guard (mainStageAmplitudeVelocityCurve.map{(-20...20).contains($0)} ?? true),depth<12,(depth>0 || processingSize()<=256) else{return false}
         if let audioRacks {
             guard audioRacks.count<=12 else{return false}
             for stage in audioRacks {
