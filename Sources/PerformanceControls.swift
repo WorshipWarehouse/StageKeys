@@ -168,7 +168,10 @@ struct ModulationWheel: View {
     @Binding var value: Float
     @State private var dragOrigin: Float?
     private var position: Float { value.isFinite ? min(1, max(0, value)) : 0 }
-    private func set(_ next: Float) { value = next.isFinite ? min(1, max(0, next)) : 0 }
+    private func set(_ next: Float) {
+        let step = next.isFinite ? (min(1, max(0, next)) * 127).rounded() / 127 : 0
+        if value != step { value = step }
+    }
     var body: some View {
         GeometryReader { geometry in
             let height = max(1, geometry.size.height)
@@ -180,11 +183,11 @@ struct ModulationWheel: View {
                     let spacing:CGFloat=7,rotation=CGFloat(position)*42
                     for row in -8...Int(size.height/spacing+8) {
                         let y=CGFloat(row)*spacing+rotation.truncatingRemainder(dividingBy:spacing)
-                        let visibility=Double(position)*0.8+0.05
+                        let visibility=Double(position)*0.72+0.08
                         let width:CGFloat=5
                         for x in [CGFloat(4),size.width-9] {
                             let rect=CGRect(x:x,y:y,width:width,height:3)
-                            context.fill(Path(roundedRect:rect,cornerRadius:1),with:.color(StageTheme.selected.opacity(visibility)))
+                            context.fill(Path(roundedRect:rect,cornerRadius:1),with:.linearGradient(Gradient(colors:[Color(white:0.22).opacity(visibility),Color(white:0.85).opacity(visibility),Color(white:0.32).opacity(visibility)]),startPoint:CGPoint(x:x,y:y),endPoint:CGPoint(x:x+width,y:y+3)))
                             context.fill(Path(CGRect(x:x,y:y+3,width:width,height:2)),with:.color(.black.opacity(0.8)))
                         }
                     }
@@ -194,6 +197,7 @@ struct ModulationWheel: View {
             }.frame(maxWidth: .infinity, maxHeight: .infinity).contentShape(Rectangle())
                 .gesture(DragGesture(minimumDistance: 0).onChanged { drag in
                     if dragOrigin == nil { dragOrigin = position }
+                    guard drag.translation.height != 0 else { return }
                     set((dragOrigin ?? position) - Float(drag.translation.height / height))
                 }.onEnded { _ in dragOrigin = nil })
         }
@@ -213,8 +217,8 @@ struct ModulationWheel: View {
 struct KeyboardWorkspace: View {
     @EnvironmentObject var store: PerformanceStore
     var body: some View {
-        HStack(spacing: 30) {
-            ModulationWheel(value:$store.modWheel).frame(width:44)
+        HStack(spacing: 20) {
+            ModulationWheel(value:$store.modWheel).frame(width:64)
             VStack(spacing: 5) {
                 if store.showRanges {
                     VStack(spacing: 2) {

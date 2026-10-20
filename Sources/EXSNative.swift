@@ -318,8 +318,11 @@ enum EXSNative {
             let b=group.body
             guard b.count>=92 else{throw MainStagePatch.Failure.invalid("Unsupported EXS group record.")}
             let kind=Int(b[84])
+            // Legacy group crossfade amounts use an unsigned 128 bias: 128
+            // means zero. Preserve the existing zero-byte off encoding too.
+            // Every other amount still needs an active crossfade implementation.
             guard kind==0 || kind==3,b[73]==0,b[2]==0,b[4]==0,b[7]==0,b[3]&0xee==0,u32(b,80)==0xffffffff || u32(b,80)==0,
-                  b[32]==0,b[35]==0 else{throw MainStagePatch.Failure.invalid("EXS group \(group.name) uses unsupported round-robin, release-trigger, crossfade or selection behavior. No flattened replacement was created.")}
+                  [UInt8(0),128].contains(b[32]),[UInt8(0),128].contains(b[35]) else{throw MainStagePatch.Failure.invalid("EXS group \(group.name) uses unsupported round-robin, release-trigger, crossfade or selection behavior. No flattened replacement was created.")}
             guard b[1]==0 else{throw MainStagePatch.Failure.invalid("EXS group pan requires verified native translation.")}
             let groupLow=b[3]&1 != 0 ? Int(b[88]):0,groupHigh=b[3]&1 != 0 ? Int(b[89]):127
             let groupVelocityLow=Int(b[5]),groupVelocityHigh=group.index==0xffffffff ? 127:Int(b[6])
