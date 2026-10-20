@@ -217,16 +217,20 @@ struct GroupedEffectControls:View {
     private func parameter(_ index:Int)->Binding<Float> {
         Binding(get:{index<values.count ? values[index]:AudioEffectCatalog.defaults(for:kind)[index]},set:{v in var next=values;if next.count != AudioEffectCatalog.defaults(for:kind).count {next=AudioEffectCatalog.defaults(for:kind)};next[index]=v;values=next})
     }
-    private func descriptor(_ index:Int)->AudioEffectParameterDescriptor {AudioEffectCatalog.descriptors(for:kind).first{$0.index==index}!}
+    private func descriptor(_ index:Int)->AudioEffectParameterDescriptor {
+        let d=AudioEffectCatalog.descriptors(for:kind).first{$0.index==index}!
+        let label=kind==10 ? (index==1 ? "FDBK":index==4 ? "Mod":d.name):d.name
+        return .init(index:d.index,name:label,minimum:d.minimum,maximum:d.maximum,defaultValue:d.defaultValue,unit:d.unit)
+    }
     private func panel<Content:View>(_ title:String,@ViewBuilder content:()->Content)->some View {
-        VStack(spacing:0){Text(title).font(StageTheme.font(13,weight:.semibold)).frame(maxWidth:.infinity).padding(.vertical,12);Divider().opacity(0.4);content().padding(12)}.background(StageTheme.panel,in:RoundedRectangle(cornerRadius:8))
+        VStack(spacing:0){Text(title).font(StageTheme.font(13,weight:.semibold)).frame(maxWidth:.infinity).padding(.vertical,12);Divider().opacity(0.4);content().frame(minHeight:kind==10 ? 150:0).padding(12)}.background(StageTheme.panel,in:RoundedRectangle(cornerRadius:8))
     }
     var body:some View {
         HStack(alignment:.top,spacing:5){
             VStack(spacing:5){ForEach(groups.indices,id:\.self){index in
                 panel(groups[index].0){LazyVGrid(columns:Array(repeating:GridItem(.flexible(),spacing:4),count:min(4,groups[index].1.count)),spacing:10){ForEach(groups[index].1,id:\.self){p in EffectKnob(compact:true,descriptor:descriptor(p),value:parameter(p))}}}
             }}
-            panel("Output"){HStack(alignment:.top,spacing:12){ForEach(outputs,id:\.self){p in EffectParameterFader(descriptor:descriptor(p),value:parameter(p))}}.frame(height:groups.count>1 ? 330:200)}.frame(width:outputs.count>1 ? 170:100)
+            panel("Output"){HStack(alignment:.top,spacing:12){ForEach(outputs,id:\.self){p in EffectParameterFader(descriptor:descriptor(p),value:parameter(p))}}.frame(height:kind==10 ? 370:groups.count>1 ? 330:200)}.frame(width:outputs.count>1 ? 170:100)
         }.padding(.horizontal,16).padding(.vertical,8)
     }
 }

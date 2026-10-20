@@ -1,5 +1,6 @@
 #include "Synth.h"
 #include "CreamCoat.h"
+#include "ShimmerPitch.h"
 #include <math.h>
 #include <stdlib.h>
 #include <stdatomic.h>
@@ -34,6 +35,7 @@ struct SKSynth {
  float *delay[BUSES][3],*predelay[BUSES][3];
  int predelayPosition[BUSES][3];
  _Atomic(SKCreamCoat*) cream[BUSES][3];
+ _Atomic(SKShimmerPitch*) shimmer[BUSES][3];
  double fxPhase[BUSES][3],clockRemaining,clockPhase;
  float clockTempo,clockEnvelope;
  int stereoSide;
@@ -42,7 +44,7 @@ struct SKSynth {
 };
 static SKSynth *create_engine(double rate,int buses,double seconds) {
  SKSynth *s=calloc(1,sizeof(*s)); if(!s) return NULL;
- for(int l=0;l<BUSES;l++)for(int k=0;k<3;k++)atomic_init(&s->cream[l][k],NULL);
+ for(int l=0;l<BUSES;l++)for(int k=0;k<3;k++){atomic_init(&s->cream[l][k],NULL);atomic_init(&s->shimmer[l][k],NULL);}
  s->delayLength=(int)fmax(DELAY,fmin(16,seconds)*rate);
  s->predelayLength=(int)ceil(rate*.2)+2;
  atomic_init(&s->read,0);atomic_init(&s->write,0);atomic_init(&s->emergency,0);
@@ -52,8 +54,8 @@ static SKSynth *create_engine(double rate,int buses,double seconds) {
 SKSynth *sk_create(double rate){return create_engine(rate,BUSES,2);}
 SKSynth *sk_create_effects(double rate){return create_engine(rate,1,2);}
 SKSynth *sk_create_effects_with_capacity(double rate,double seconds){return create_engine(rate,1,seconds);}
-void sk_destroy(SKSynth *s){if(!s)return;for(int l=0;l<BUSES;l++)for(int k=0;k<3;k++){sk_cream_destroy(atomic_load(&s->cream[l][k]));free(s->delay[l][k]);free(s->predelay[l][k]);}free(s);}
-static void clear_delay(SKSynth*s,int l,int k){SKCreamCoat*c=atomic_load_explicit(&s->cream[l][k],memory_order_acquire);if(c)sk_cream_reset(c);if(s->predelay[l][k])memset(s->predelay[l][k],0,s->predelayLength*sizeof(float));s->predelayPosition[l][k]=0;if(s->delay[l][k])memset(s->delay[l][k],0,s->delayLength*sizeof(float));}
+void sk_destroy(SKSynth *s){if(!s)return;for(int l=0;l<BUSES;l++)for(int k=0;k<3;k++){sk_cream_destroy(atomic_load(&s->cream[l][k]));free(atomic_load(&s->shimmer[l][k]));free(s->delay[l][k]);free(s->predelay[l][k]);}free(s);}
+static void clear_delay(SKSynth*s,int l,int k){SKCreamCoat*c=atomic_load_explicit(&s->cream[l][k],memory_order_acquire);if(c)sk_cream_reset(c);sk_pitch_reset(atomic_load_explicit(&s->shimmer[l][k],memory_order_acquire));if(s->predelay[l][k])memset(s->predelay[l][k],0,s->predelayLength*sizeof(float));s->predelayPosition[l][k]=0;if(s->delay[l][k])memset(s->delay[l][k],0,s->delayLength*sizeof(float));}
 static void enqueue(SKSynth *s,Command c) {
  unsigned w=atomic_load_explicit(&s->write,memory_order_relaxed);
  unsigned next=(w+1)%QUEUE;
@@ -73,6 +75,10 @@ void sk_effect(SKSynth *s,int layer,int slot,int kind,float amount){
  if(kind==13&&!atomic_load_explicit(&s->cream[layer][slot],memory_order_acquire)){
   SKCreamCoat*c=sk_cream_create(s->rate),*expected=NULL;
   if(c&&!atomic_compare_exchange_strong(&s->cream[layer][slot],&expected,c))sk_cream_destroy(c);
+ }
+ if(kind==10&&!atomic_load_explicit(&s->shimmer[layer][slot],memory_order_acquire)){
+  SKShimmerPitch*p=sk_pitch_create(),*expected=NULL;
+  if(p&&!atomic_compare_exchange_strong(&s->shimmer[layer][slot],&expected,p))free(p);
  }
  enqueue(s,(Command){.kind=5,.layer=layer,.key=slot,.instrument=kind,.value=fminf(1,fmaxf(0,amount))});
 }
@@ -272,12 +278,10 @@ static float effectProcess(SKSynth*s,int l,int k,float x){
    float delayed=tap_capacity(history,index,rate*(line==0?.0071f:.0113f)*(s->stereoSide?1.07f:1),capacity);
    float a=p[3]*.7f,out=delayed-a*wet;history[index]=wet+a*out;wet=out;
   }
-  int pp=s->predelayPosition[l][k];float*history=s->predelay[l][k];history[pp]=process(&e->eq[1],process(&e->eq[0],wet));
-  float window=fminf(s->predelayLength*.45f,rate*.06f),q=e->shiftPhase;
-  q-=1/window;q-=floorf(q);e->shiftPhase=q;float q2=q+.5f;q2-=floorf(q2);
-  float a=.5f-.5f*cosf(TAU*q);
-  pitch=a*tap_capacity(history,pp,16+q*window,s->predelayLength)+(1-a)*tap_capacity(history,pp,16+q2*window,s->predelayLength);
-  s->predelayPosition[l][k]=(pp+1)%s->predelayLength;e->z[6]=pitch;
+  // Frequency-tracked overlap/add avoids the periodic detuning of short
+  // crossfaded grains. Its frame latency belongs only to the wet octave path.
+  SKShimmerPitch*shifter=atomic_load_explicit(&s->shimmer[l][k],memory_order_acquire);
+  pitch=sk_pitch_process(shifter,process(&e->eq[1],process(&e->eq[0],wet)),1 << (int)roundf((1-p[9])*5));e->z[6]=pitch;
   wet=wet*(1-p[0])+pitch*p[0];
   e->z[0]+=e->coef[0]*(wet-e->z[0]);wet-=e->z[0];e->z[1]+=e->coef[1]*(wet-e->z[1]);wet=e->z[1];
   e->z[5]=wet;y=dry*p[7]+wet*p[8];s->fxPhase[l][k]=fmod(phase+TAU*.3f/rate,TAU);break;}

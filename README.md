@@ -1,3 +1,7 @@
+## Release planning
+
+The app remains in development. See the [public-release checklist](Docs/PUBLIC-RELEASE-CHECKLIST.md) for audio, MainStage conversion, plugin support, UI, stability, distribution and the later independent AI patch builder. Archived source presets are not counted as playable conversions.
+
 ## Version 0.29
 
 MainStage synced Stereo Delay now retains note/deviation timing, routing and polarity. SilverVerb and ClipDist controls drive native processors, with remaining DSP differences shown in conversion notes. Tonic Pad supports imported timbres, actual shimmer processing, remembered keys and snapshot lock. Sampled sounds live in a separate private library repository and install optionally; the app builds and ships without them. [Scope and verification](Docs/SOURCE-EFFECTS-AND-TONIC.md).
