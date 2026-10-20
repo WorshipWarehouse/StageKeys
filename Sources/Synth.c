@@ -281,7 +281,33 @@ static float effectProcess(SKSynth*s,int l,int k,float x){
   wet=wet*(1-p[0])+pitch*p[0];
   e->z[0]+=e->coef[0]*(wet-e->z[0]);wet-=e->z[0];e->z[1]+=e->coef[1]*(wet-e->z[1]);wet=e->z[1];
   e->z[5]=wet;y=dry*p[7]+wet*p[8];s->fxPhase[l][k]=fmod(phase+TAU*.3f/rate,TAU);break;}
- case 13:case 15:{
+ case 15:{
+  // Independent modulated delay lines, with a separate pre-tank chorus.
+  // Partitioned histories are allocated off-thread; the direct path is intact.
+  int capacity=s->delayLength/7,index=pos%capacity;
+  int prepos=s->predelayPosition[l][k];
+  float input=p[0]>0?tap_capacity(s->predelay[l][k],prepos,rate*p[0]*.001f,s->predelayLength):x;
+  s->predelay[l][k][prepos]=x;s->predelayPosition[l][k]=(prepos+1)%s->predelayLength;
+  float*chorus=buffer+6*capacity;chorus[index]=input;
+  if(p[6]>0&&p[7]>0){float seconds=.015f+.010f*(.5f+.5f*sinf(phase));input=input*(1-p[6])+tap_capacity(chorus,index,seconds*rate,capacity)*p[6];}
+  const float spacing[4]={1,1.271f,1.617f,1.953f};
+  float room=.025f+p[1]*.10f,decay=.5f+30*p[2]*p[2],wet=0;
+  for(int line=0;line<4;line++){
+   float seconds=room*spacing[line]*(s->stereoSide?1.019f:1);
+   float modulation=sinf(phase*(.37f+line*.173f)+line*1.73f+s->stereoSide*.91f)*p[5]*rate*.002f;
+   float*history=buffer+line*capacity;
+   float delayed=tap_capacity(history,index,seconds*rate+modulation,capacity);
+   float feedback=fminf(.9995f,powf(.001f,seconds/decay));
+   history[index]=input+delayed*feedback;wet+=delayed*.25f;
+  }
+  for(int line=0;line<2;line++){
+   float*history=buffer+(4+line)*capacity;
+   float delayed=tap_capacity(history,index,rate*(line==0?.0071f:.0113f)*(s->stereoSide?1.07f:1),capacity);
+   float a=.65f,out=delayed-a*wet;history[index]=wet+a*out;wet=out;
+  }
+  e->z[0]+=e->coef[0]*(wet-e->z[0]);wet-=e->z[0];e->z[1]+=e->coef[1]*(wet-e->z[1]);wet=e->z[1];
+  y=dry*p[8]+wet*p[9];s->fxPhase[l][k]=fmod(phase+TAU*p[7]/rate,TAU);break;}
+ case 13:{
   float size=kind==10?p[2]:kind==13?p[0]:p[1],feedback=kind==10?p[1]:p[2];float predelay=kind==13?p[1]:kind==15?p[0]:0;
   float modulation=kind==10?p[4]:kind==13?p[5]:p[6];float hz=kind==10?.3f:kind==13?p[6]:p[7];
   float base=rate*(.027f+size*.13f)*(kind==13 && s->stereoSide ? 1.037f:1),mod=sinf(phase)*rate*.001f*modulation;

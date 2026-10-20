@@ -1,0 +1,181 @@
+{
+  "rate": 48000,
+  "peak": 0.40199851989746094,
+  "onsets": [
+    10.94,
+    12.15,
+    13.36,
+    14.57,
+    15.780000000000001,
+    16.990000000000002,
+    18.2,
+    19.41,
+    20.62,
+    21.830000000000002,
+    23.04,
+    24.25
+  ],
+  "rows": [
+    {
+      "note": 60,
+      "velocity": 38,
+      "mainstageMinusStageKeysDB": -3.054800472302546,
+      "mainstageRMS": 0.007061307161979163
+    },
+    {
+      "note": 74,
+      "velocity": 38,
+      "mainstageMinusStageKeysDB": -3.917316489895581,
+      "mainstageRMS": 0.005336031389417838
+    },
+    {
+      "note": 86,
+      "velocity": 38,
+      "mainstageMinusStageKeysDB": -3.9751390510252356,
+      "mainstageRMS": 0.001659163633359755
+    },
+    {
+      "note": 60,
+      "velocity": 64,
+      "mainstageMinusStageKeysDB": -2.5330224916388175,
+      "mainstageRMS": 0.023792706141940127
+    },
+    {
+      "note": 74,
+      "velocity": 64,
+      "mainstageMinusStageKeysDB": -2.962300221353118,
+      "mainstageRMS": 0.021997866129713075
+    },
+    {
+      "note": 86,
+      "velocity": 64,
+      "mainstageMinusStageKeysDB": -3.9493529709805566,
+      "mainstageRMS": 0.012588518938750109
+    },
+    {
+      "note": 60,
+      "velocity": 83,
+      "mainstageMinusStageKeysDB": -0.37428250382246003,
+      "mainstageRMS": 0.03863701741667022
+    },
+    {
+      "note": 74,
+      "velocity": 83,
+      "mainstageMinusStageKeysDB": -0.5172958422155477,
+      "mainstageRMS": 0.036637335159439344
+    },
+    {
+      "note": 86,
+      "velocity": 83,
+      "mainstageMinusStageKeysDB": -1.0596730248234114,
+      "mainstageRMS": 0.025802452511912603
+    },
+    {
+      "note": 60,
+      "velocity": 102,
+      "mainstageMinusStageKeysDB": 1.5772165397324138,
+      "mainstageRMS": 0.06854820201178931
+    },
+    {
+      "note": 74,
+      "velocity": 102,
+      "mainstageMinusStageKeysDB": 1.393941017747256,
+      "mainstageRMS": 0.0709451147127535
+    },
+    {
+      "note": 86,
+      "velocity": 102,
+      "mainstageMinusStageKeysDB": 1.161546681398863,
+      "mainstageRMS": 0.0351477164529162
+    }
+  ],
+  "date": "2026-10-19",
+  "eqIsolation": {
+    "pianoBypassed": true,
+    "outputBypassed": true,
+    "outputEQFlat": true,
+    "pianoBoosts": [
+      {
+        "hz": 1860,
+        "gainDB": 0.5,
+        "q": 0.71
+      },
+      {
+        "hz": 2960,
+        "gainDB": 3.5,
+        "q": 0.71
+      }
+    ]
+  },
+  "native": "Fresh build of current sampler implementation, user effects bypassed, fader/master unity, host curve -10",
+  "reference": "Piano/output faders -0.2 dB each; direct Output 1-2, pad and Sum silent; no CC7/11 normalization",
+  "candidate": [
+    {
+      "note": 60,
+      "velocity": 38,
+      "deltaDB": 3.7988905619862923
+    },
+    {
+      "note": 74,
+      "velocity": 38,
+      "deltaDB": 2.9363631070640555
+    },
+    {
+      "note": 86,
+      "velocity": 38,
+      "deltaDB": 2.8785325899147622
+    },
+    {
+      "note": 60,
+      "velocity": 64,
+      "deltaDB": 3.9446459997473937
+    },
+    {
+      "note": 74,
+      "velocity": 64,
+      "deltaDB": 3.515388872081604
+    },
+    {
+      "note": 86,
+      "velocity": 64,
+      "deltaDB": 2.5283531671416837
+    },
+    {
+      "note": 60,
+      "velocity": 83,
+      "deltaDB": 4.6901547550369775
+    },
+    {
+      "note": 74,
+      "velocity": 83,
+      "deltaDB": 4.547162328769333
+    },
+    {
+      "note": 86,
+      "velocity": 83,
+      "deltaDB": 4.00476923081044
+    },
+    {
+      "note": 60,
+      "velocity": 102,
+      "deltaDB": 4.721913976895041
+    },
+    {
+      "note": 74,
+      "velocity": 102,
+      "deltaDB": 4.538643713777046
+    },
+    {
+      "note": 86,
+      "velocity": 102,
+      "deltaDB": 4.306284768437167
+    }
+  ],
+  "candidateApplied": false,
+  "restored": true,
+  "limitations": [
+    "Source Lush filter remains an approximation.",
+    "Linear half-depth amplitude candidate reduces the velocity trend but leaves 2.53\u20134.72 dB of level difference; it is not a verified replacement.",
+    "No sampler gain, velocity mapping, source sample or user patch was modified."
+  ]
+}

@@ -206,7 +206,7 @@ struct GroupedEffectControls:View {
     private var groups:[(String,[Int])] {
         switch kind {
         case 10:return [("Shimmer",[0,1,2,3]),("Character",[4,9,5,6])]
-        case 15:return [("Space",[0,1,2]),("Character",[5,6,7,3,4])]
+        case 15:return [("Space",[0,1,2]),("Character",[3,4]),("Modulation",[5,6,7])]
         case 16:return [("Room",[0,1,2,3]),("Character",[6,7,8,4,5])]
         case 5:return [("Chorus",[0,1,2,3])]
         case 11:return [("Overdrive",[0,1,2,4])]
