@@ -14,7 +14,7 @@
 typedef struct { int kind,key,pitch,instrument,layer; float value,seconds,a,b,d; } Command;
 typedef struct { int active,key,instrument,layer,releasing,held; double phase,phase2,step,age; float env,velocity; } Voice;
 typedef struct { float b0,b1,b2,a1,a2,z1,z2; } Biquad;
-typedef struct { float p[32],z[8],coef[8],shiftPhase,stereo; int custom; Biquad eq[8]; } EffectState;
+typedef struct { float p[32],z[12],coef[8],shiftPhase,stereo; int custom; Biquad eq[8]; } EffectState;
 struct SKSynth {
  double rate;
  int delayLength,predelayLength;
@@ -270,7 +270,10 @@ static float effectProcess(SKSynth*s,int l,int k,float x){
    float*history=buffer+line*capacity;
    float delayed=tap_capacity(history,index,rate*seconds+mod,capacity);
    float feedback=powf(.001f,seconds/decay);
-   history[index]=x+feedback*(delayed*(1-recirculate)+pitch*recirculate);
+   // Tone must absorb high-frequency energy on every trip through the
+   // tank; filtering only the output leaves a bright ringing tail inside.
+   e->z[8+line]+=e->coef[1]*(delayed-e->z[8+line]);
+   history[index]=x+feedback*(e->z[8+line]*(1-recirculate)+pitch*recirculate);
    wet+=delayed*.25f;
   }
   for(int line=0;line<2;line++){

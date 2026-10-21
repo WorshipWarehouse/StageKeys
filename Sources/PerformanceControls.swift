@@ -218,7 +218,7 @@ struct KeyboardWorkspace: View {
     @EnvironmentObject var store: PerformanceStore
     var body: some View {
         HStack(spacing: 20) {
-            ModulationWheel(value:$store.modWheel).frame(width:64)
+            ModulationWheel(value:$store.modWheel).frame(width:48)
             VStack(spacing: 5) {
                 if store.showRanges {
                     VStack(spacing: 2) {

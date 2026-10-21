@@ -1,0 +1,11 @@
+# Shimmer feedback damping — 0.49
+
+Tone previously filtered the output and pitch analysis signal, but left the four unpitched feedback paths undamped. Turning Tone down reduced brightness at the output without shortening the high-frequency ringing inside the tank. Each feedback line now has its own one-pole absorption state, using the existing Tone coefficient at the existing wet sample clock. Dry audio, saved parameter indices, pitch tracking, original samples and imported rack topology are unchanged. Panic clears the new state with the rest of the effect.
+
+The regression excites a 4 kHz burst, with octave Amount at zero to isolate the room, and compares late/early energy rather than absolute loudness. Before the fix, 1200 Hz and 14000 Hz Tone had essentially identical normalized decay (0.04779 vs 0.04776 at 44.1 kHz). Afterward, the dark setting's ratio is below 1e-7 while the bright setting remains 0.0339–0.0388 at 44.1/48/96 kHz. The pre-fix processor fails this regression. This demonstrates working frequency-dependent decay, not measured equivalence to Sunday Keys.
+
+The sanitizer suite passes predelay, dry identity, early reflections, chorus placement, Shimmer Quality, octave accuracy, anti-aliasing, sustained tails, bounded maximum feedback and Panic. Shared processing reaches native slots, imported racks and the Tonic Pad.
+
+Sunday Keys' Halo editor was rechecked: Shimmer has Amount/FDBK/Size/Diffusion; Character has Mod/Quality/Low Cut/Tone; separate Dry/Wet output faders. Our existing grouping follows that layout. The modulation wheel's reserved width is reduced from 64 to 48 points, closer to the observed reference; held-position CC1 and relative dragging are preserved. Tone's frequency-to-percentage taper still requires measurement, and full visual/sonic parity is not claimed.
+
+The saved MainStage SilverVerb reference was also tested against decay multipliers 1, 1.02, 1.04 and 1.06. The small 2% change improved average envelope error by only 0.082 dB at one setting; larger changes worsened it. The existing mapping is retained until additional settings establish a general correction. See Calibrations/SilverVerb-Decay-Candidates-v49.json. This comparison does not require opening MainStage or sending MIDI.
