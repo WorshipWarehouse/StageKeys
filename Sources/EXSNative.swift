@@ -21,7 +21,7 @@ struct NativeSamplerProgram:Codable,Hashable {
     var amplitudeEnvelope:EXSNative.Envelope?
     var voiceControls:EXSNative.VoiceControls?
     var valid:Bool {
-        (conversionVersion.map{(1...5).contains($0)} ?? true) && (amplitudeEnvelope?.valid ?? true) && (voiceControls?.valid ?? true) && !groups.isEmpty && groups.count<=64 && notes.count<=32 && notes.allSatisfy{$0.count<=2000} && groups.allSatisfy {group in
+        (conversionVersion.map{(1...6).contains($0)} ?? true) && (amplitudeEnvelope?.valid ?? true) && (voiceControls?.valid ?? true) && !groups.isEmpty && groups.count<=64 && notes.count<=32 && notes.allSatisfy{$0.count<=2000} && groups.allSatisfy {group in
             group.name.count<=200 && (0..<64).contains(group.layer) && (0...127).contains(group.low) && (group.low...127).contains(group.high) && (0...127).contains(group.velocityLow) && (group.velocityLow...127).contains(group.velocityHigh) && (group.controller.map{(0...127).contains($0)} ?? true) && (0...127).contains(group.controllerLow) && (group.controllerLow...127).contains(group.controllerHigh)
         } && rack.validate()
     }
@@ -112,6 +112,23 @@ enum EXSNative {
             }
         }
         envelopes[0]["Stages"]=stages;layer["Envelopes"]=envelopes
+        if envelope != nil,var connections=layer["Connections"] as? [[String:Any]] {
+            let id=layer["ID"] as? Int ?? 0,source=0x20000000+id*256,destination=0x50100000+id*256
+            for i in connections.indices where connections[i]["source"] as? Int==source && connections[i]["destination"] as? Int==destination {
+                connections[i]["transform"]=2
+            }
+            layer["Connections"]=connections
+        }
+    }
+    // MainStage's centered reference and AUSampler's centered output differ by
+    // sqrt(2). Keep the source gain itself intact and translate this separately.
+    static let centerGainDB=10*log10(2.0)
+    static func applyCenterGain(to layer:inout [String:Any]) {
+        guard (layer["pan"] as? NSNumber)?.doubleValue==0,var zones=layer["Zones"] as? [[String:Any]] else{return}
+        for i in zones.indices where (zones[i]["pan"] as? NSNumber)?.doubleValue==0 {
+            zones[i]["gain"]=((zones[i]["gain"] as? NSNumber)?.doubleValue ?? 0)+centerGainDB
+        }
+        layer["Zones"]=zones
     }
 
     /// Supported source-wide synthesis controls. No patch-name special cases.
@@ -167,11 +184,11 @@ enum EXSNative {
         }
         if values[0x08,default:0] != 0 || values[0x160,default:0] != 0 {notes.insert("EXS global amplitude key scaling/pan requires further translation.")}
         if values[0x05,default:64] != 64 {notes.insert("EXS source polyphony is retained in the original instrument; native playback currently uses 64 voices.")}
-        notes.insert("EXS pitch-bend asymmetry, amplitude velocity curve and advanced modulation/envelope shapes remain approximate or untranslated.")
+        notes.insert("EXS pitch-bend asymmetry and advanced modulation/envelope shapes remain approximate or untranslated.")
         var result=VoiceControls(gain:Double(values[0x07,default:0]),tuning:Double(values[0x0f,default:0])+100*Double(values[0x0e,default:0]+values[0x2d,default:0]),filter:filter)
         if let sensitivity=values[0x5a],let high=values[0x59] {
             let amplitude=VoiceControls.AmplitudeVelocity(sensitivity:Double(sensitivity),high:Double(high))
-            if amplitude.valid {result.amplitudeVelocity=amplitude;notes.insert("EXS amplitude velocity sensitivity and high-velocity level are active. Modern host velocity-curve overrides remain approximate/untranslated.")}
+            if amplitude.valid {result.amplitudeVelocity=amplitude;notes.insert("EXS amplitude velocity uses half-dB depth and endpoint-corrected MIDI gain. Source high-velocity level is retained.")}
             else {notes.insert("EXS amplitude velocity endpoints exceed the supported range and remain archived.")}
         }
         guard result.valid else{throw MainStagePatch.Failure.invalid("EXS synthesis controls exceed supported ranges.")}
@@ -181,7 +198,8 @@ enum EXSNative {
         let destination=0x50100000+(layer["ID"] as? Int ?? 0)*256
         var connections=layer["Connections"] as? [[String:Any]] ?? []
         connections.removeAll{($0["source"] as? Int)==301 && ($0["destination"] as? Int)==destination}
-        connections.append(["name":"StageKeys EXS amplitude","ID":(connections.compactMap{$0["ID"] as? Int}.max() ?? 0)+1,"enabled":true,"source":301,"destination":destination,"control":0,"transform":2,"inverse":true,"scale":amplitude.sensitivity])
+        let low=amplitude.sensitivity*0.5
+        connections.append(["name":"StageKeys EXS amplitude","ID":(connections.compactMap{$0["ID"] as? Int}.max() ?? 0)+1,"enabled":true,"source":301,"destination":destination,"control":0,"transform":1,"inverse":false,"min value":low,"max value":-low/127])
         layer["Connections"]=connections
         if amplitude.high != 0,var zones=layer["Zones"] as? [[String:Any]] {
             for i in zones.indices {zones[i]["gain"]=((zones[i]["gain"] as? NSNumber)?.doubleValue ?? 0)+amplitude.high}
@@ -378,6 +396,7 @@ enum EXSNative {
             guard [56,60,64].allSatisfy({u32(b,$0)==0}),u32(b,68)<=30000 else{throw MainStagePatch.Failure.invalid("EXS group envelope offsets require further translation.")}
             applyEnvelope(amplitude,group:b,to:&layer)
             applyVoiceControls(controls,envelope:amplitude,group:b,to:&layer)
+            applyCenterGain(to:&layer)
             if [56,60,64,68].contains(where:{u32(b,$0)>0}) {notes.insert("EXS group release offsets are applied to the native envelope. Their interaction with the original global envelope remains approximate.")}
             let keyRange=b[3]&1 != 0
             let rule=NativeSamplerProgram.Group(name:group.name,layer:index,low:keyRange ? Int(b[88]):0,high:keyRange ? Int(b[89]):127,velocityLow:Int(b[5]),velocityHigh:group.index==0xffffffff ? 127:Int(b[6]),controller:kind==3 ? Int(b[85]):nil,controllerLow:Int(b[86]),controllerHigh:Int(b[87]),enabled:b[3]&16==0)
@@ -386,7 +405,7 @@ enum EXSNative {
         }
         guard !native.isEmpty else{throw MainStagePatch.Failure.invalid("EXS has no playable native zones.")}
         instrument["Layers"]=native;instrument["voice count"]=64;state["Instrument"]=instrument;state["file-references"]=references;state["gain"]=0;state["name"]=source.deletingPathExtension().lastPathComponent
-        let program=NativeSamplerProgram(groups:rules,notes:notes.sorted(),compactGroups:true,conversionVersion:5,amplitudeEnvelope:amplitude,voiceControls:controls)
+        let program=NativeSamplerProgram(groups:rules,notes:notes.sorted(),compactGroups:true,conversionVersion:6,amplitudeEnvelope:amplitude,voiceControls:controls)
         guard program.valid else{throw MainStagePatch.Failure.invalid("EXS native group plan is invalid.")}
         state["StageKeys.NativeSampler"]=try JSONEncoder().encode(program)
         try PropertyListSerialization.data(fromPropertyList:state,format:.xml,options:0).write(to:output,options:.atomic)

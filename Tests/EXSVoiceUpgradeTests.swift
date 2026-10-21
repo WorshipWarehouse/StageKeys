@@ -14,7 +14,7 @@ import Foundation
   let updated=try StageKeysSampler.updateVoiceControls(sound,original:original,library:root)
   if let sampleRoot=ProcessInfo.processInfo.environment["STAGEKEYS_EXS_ROOT"] {
    let fresh=try EXSNative.convert(URL(fileURLWithPath:source),sampleRoot:URL(fileURLWithPath:sampleRoot),to:root.appendingPathComponent("fresh.aupreset"))
-   assert(fresh.conversionVersion==5 && fresh.voiceControls==updated.nativeSampler?.voiceControls,"Fresh imports must receive the same source controls as the existing-library upgrade")
+   assert(fresh.conversionVersion==6 && fresh.voiceControls==updated.nativeSampler?.voiceControls,"Fresh imports must receive the same source controls as the existing-library upgrade")
    print("PASS: newly imported MainStage EXS receives the same synthesis controls without patch-name matching")
   }
   assert(updated.name==sound.name && updated.nativeSampler?.conversionVersion==3 && updated.nativeSampler?.voiceControls?.filter != nil)

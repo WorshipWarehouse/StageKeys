@@ -53,7 +53,7 @@ import AVFoundation
   var amplitude=clean;amplitude.amplitudeVelocity = .init(sensitivity:-52,high:0)
   let defaultSoft=try render(clean,38),sourceSoft=try render(amplitude,38),defaultHard=try render(clean,127),sourceHard=try render(amplitude,127)
   let softGain=magnitude(sourceSoft,500)/magnitude(defaultSoft,500),hardGain=magnitude(sourceHard,500)/magnitude(defaultHard,500)
-  assert(softGain>2 && abs(hardGain-1)<0.03,"Source velocity sensitivity must raise soft notes without boosting the maximum: \(softGain), \(hardGain)")
+  assert(abs(softGain-1.3926)<0.03 && abs(hardGain-1)<0.03,"Source velocity sensitivity must raise soft notes without boosting the maximum: \(softGain), \(hardGain)")
   let savedAmplitude=try JSONDecoder().decode(EXSNative.VoiceControls.self,from:JSONEncoder().encode(amplitude));assert(savedAmplitude==amplitude)
   print("PASS: source amplitude velocity endpoints, rendered soft/hard level response and persistence",softGain,hardGain)
   let envelope=EXSNative.Envelope(attack:0,lowVelocityAttack:0.005,decay:10,sustain:1,release:0.2)

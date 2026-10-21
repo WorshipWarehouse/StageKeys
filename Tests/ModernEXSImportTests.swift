@@ -82,7 +82,7 @@ import AVFoundation
         store.updateSamplerEnvelopes()
         let actual=store.setlist.patches[0].layers[0]
         assert(actual.name==user.name && actual.id==user.id && actual.gain==user.gain && actual.pan==user.pan && actual.blockSustain==user.blockSustain && actual.importedRack==user.importedRack)
-        assert(actual.external?.name==named.name && actual.external?.bankMSB==13 && actual.external?.nativeSampler?.conversionVersion==5)
+        assert(actual.external?.name==named.name && actual.external?.bankMSB==13 && actual.external?.nativeSampler?.conversionVersion==6)
         assert(store.librarySounds[0].name==entry.name && store.librarySounds[0].sound?.name==named.name && store.librarySounds[0].layer?.importedRack==userRack)
         assert(store.libraryImportProgress?.contains("Updated 1")==true,store.libraryImportProgress ?? "No upgrade status")
         print("PASS: existing native EXS envelope upgrade, original preset backup, exact zone/routing/sample retention and edited-envelope protection")

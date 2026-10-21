@@ -1,0 +1,264 @@
+{
+  "version": 6,
+  "reference": "MainStage Steinway Grand Piano 2, filter/EQ bypassed, direct output, host velocity -10",
+  "notes": [
+    60,
+    74,
+    86
+  ],
+  "velocities": [
+    38,
+    64,
+    83,
+    102,
+    127
+  ],
+  "passes": 2,
+  "comparison": "Waveform-aligned stereo least-squares gain, 100\u2013300 ms after note-on",
+  "stageKeysOutputHeadroomDB": 1,
+  "sourcePeak": 0.627372,
+  "productionRender": true,
+  "sampleBytesChanged": false,
+  "rows": [
+    {
+      "note": 60,
+      "velocity": 38,
+      "offsetMS": 85.4375,
+      "deltaRMSDB": 0.9688305378455653,
+      "deltaFitDB": 0.9666936341852829,
+      "coherence": 0.9997540101348029
+    },
+    {
+      "note": 74,
+      "velocity": 38,
+      "offsetMS": 83.91666666666667,
+      "deltaRMSDB": 0.9759864157982241,
+      "deltaFitDB": 0.9715293842832777,
+      "coherence": 0.9994869969148368
+    },
+    {
+      "note": 86,
+      "velocity": 38,
+      "offsetMS": 83.95833333333333,
+      "deltaRMSDB": 0.9975168656890453,
+      "deltaFitDB": 0.9800165085567458,
+      "coherence": 0.9979872252804931
+    },
+    {
+      "note": 60,
+      "velocity": 64,
+      "offsetMS": 84.10416666666666,
+      "deltaRMSDB": 0.9733787737957127,
+      "deltaFitDB": 0.9672721794634498,
+      "coherence": 0.9992971994261741
+    },
+    {
+      "note": 74,
+      "velocity": 64,
+      "offsetMS": 84.14583333333334,
+      "deltaRMSDB": 0.9777077927352108,
+      "deltaFitDB": 0.9713343745958043,
+      "coherence": 0.9992665022611232
+    },
+    {
+      "note": 86,
+      "velocity": 64,
+      "offsetMS": 84.27083333333334,
+      "deltaRMSDB": 0.9964916096971401,
+      "deltaFitDB": 0.9787887794858867,
+      "coherence": 0.9979639618959042
+    },
+    {
+      "note": 60,
+      "velocity": 83,
+      "offsetMS": 84.39583333333334,
+      "deltaRMSDB": 0.9727568242751052,
+      "deltaFitDB": 0.9666501856316244,
+      "coherence": 0.9992971943282417
+    },
+    {
+      "note": 74,
+      "velocity": 83,
+      "offsetMS": 84.4375,
+      "deltaRMSDB": 0.976972330431859,
+      "deltaFitDB": 0.9705986543706271,
+      "coherence": 0.9992664725885569
+    },
+    {
+      "note": 86,
+      "velocity": 83,
+      "offsetMS": 84.54166666666667,
+      "deltaRMSDB": 0.9958638601460763,
+      "deltaFitDB": 0.9781610372952461,
+      "coherence": 0.9979639627415788
+    },
+    {
+      "note": 60,
+      "velocity": 102,
+      "offsetMS": 84.625,
+      "deltaRMSDB": 0.9728286252096684,
+      "deltaFitDB": 0.9669098149027611,
+      "coherence": 0.9993188039004344
+    },
+    {
+      "note": 74,
+      "velocity": 102,
+      "offsetMS": 84.66666666666667,
+      "deltaRMSDB": 0.9792617324354154,
+      "deltaFitDB": 0.9711498174381443,
+      "coherence": 0.9990665172389477
+    },
+    {
+      "note": 86,
+      "velocity": 102,
+      "offsetMS": 88.5,
+      "deltaRMSDB": 0.9971389191643866,
+      "deltaFitDB": 0.9778127920119846,
+      "coherence": 0.997777470869153
+    },
+    {
+      "note": 60,
+      "velocity": 127,
+      "offsetMS": 84.85416666666666,
+      "deltaRMSDB": 0.9745955795008026,
+      "deltaFitDB": 0.9686773516337686,
+      "coherence": 0.9993188709106269
+    },
+    {
+      "note": 74,
+      "velocity": 127,
+      "offsetMS": 85.0625,
+      "deltaRMSDB": 0.9810333750372192,
+      "deltaFitDB": 0.9729214874892906,
+      "coherence": 0.99906652039622
+    },
+    {
+      "note": 86,
+      "velocity": 127,
+      "offsetMS": 85.02083333333334,
+      "deltaRMSDB": 0.9989157467300189,
+      "deltaFitDB": 0.9795841853843945,
+      "coherence": 0.9977768466252241
+    },
+    {
+      "note": 60,
+      "velocity": 38,
+      "offsetMS": 85.125,
+      "deltaRMSDB": 0.9688305431243542,
+      "deltaFitDB": 0.9666936392458724,
+      "coherence": 0.999754010109688
+    },
+    {
+      "note": 74,
+      "velocity": 38,
+      "offsetMS": 85.22916666666666,
+      "deltaRMSDB": 0.9759864252122541,
+      "deltaFitDB": 0.9715293961060594,
+      "coherence": 0.9994869971920121
+    },
+    {
+      "note": 86,
+      "velocity": 38,
+      "offsetMS": 85.375,
+      "deltaRMSDB": 0.997516847854816,
+      "deltaFitDB": 0.9800164875574334,
+      "coherence": 0.9979872249168328
+    },
+    {
+      "note": 60,
+      "velocity": 64,
+      "offsetMS": 85.39583333333334,
+      "deltaRMSDB": 0.9733787885460845,
+      "deltaFitDB": 0.9672721930066188,
+      "coherence": 0.9992971992872871
+    },
+    {
+      "note": 74,
+      "velocity": 64,
+      "offsetMS": 85.5,
+      "deltaRMSDB": 0.9777077836608317,
+      "deltaFitDB": 0.9713343654615154,
+      "coherence": 0.999266502254231
+    },
+    {
+      "note": 86,
+      "velocity": 64,
+      "offsetMS": 85.5625,
+      "deltaRMSDB": 0.996491570747517,
+      "deltaFitDB": 0.978788738730641,
+      "coherence": 0.9979639616884476
+    },
+    {
+      "note": 60,
+      "velocity": 83,
+      "offsetMS": 85.72916666666666,
+      "deltaRMSDB": 0.972756884338364,
+      "deltaFitDB": 0.9666502447841043,
+      "coherence": 0.9992971942234582
+    },
+    {
+      "note": 74,
+      "velocity": 83,
+      "offsetMS": 85.75,
+      "deltaRMSDB": 0.9769723548738201,
+      "deltaFitDB": 0.9705986791675796,
+      "coherence": 0.999266472629397
+    },
+    {
+      "note": 86,
+      "velocity": 83,
+      "offsetMS": 85.85416666666666,
+      "deltaRMSDB": 0.9958638779338397,
+      "deltaFitDB": 0.9781610534458794,
+      "coherence": 0.9979639625534812
+    },
+    {
+      "note": 60,
+      "velocity": 102,
+      "offsetMS": 85.89583333333334,
+      "deltaRMSDB": 0.9728286849550488,
+      "deltaFitDB": 0.9669098746233908,
+      "coherence": 0.9993188038975869
+    },
+    {
+      "note": 74,
+      "velocity": 102,
+      "offsetMS": 86.0,
+      "deltaRMSDB": 0.9792616868638716,
+      "deltaFitDB": 0.9711497722754849,
+      "coherence": 0.9990665172859782
+    },
+    {
+      "note": 86,
+      "velocity": 102,
+      "offsetMS": 86.1875,
+      "deltaRMSDB": 0.9971390026839888,
+      "deltaFitDB": 0.977812875088473,
+      "coherence": 0.997777470818251
+    },
+    {
+      "note": 60,
+      "velocity": 127,
+      "offsetMS": 86.375,
+      "deltaRMSDB": 0.9745955480935371,
+      "deltaFitDB": 0.9686773203621929,
+      "coherence": 0.999318870926238
+    },
+    {
+      "note": 74,
+      "velocity": 127,
+      "offsetMS": 86.3125,
+      "deltaRMSDB": 0.9810333807747318,
+      "deltaFitDB": 0.9729214929422552,
+      "coherence": 0.9990665203634905
+    },
+    {
+      "note": 86,
+      "velocity": 127,
+      "offsetMS": 86.41666666666667,
+      "deltaRMSDB": 0.9989157735245164,
+      "deltaFitDB": 0.9795842112925328,
+      "coherence": 0.997776846523405
+    }
+  ]
+}

@@ -94,13 +94,80 @@ enum StageKeysSampler {
             if (updated.nativeSampler?.conversionVersion ?? 1)<2 {updated=try updateEnvelope(updated,original:original,library:library)}
             if (updated.nativeSampler?.conversionVersion ?? 1)<3 {updated=try updateVoiceControls(updated,original:original,library:library)}
             if (updated.nativeSampler?.conversionVersion ?? 1)<5 {updated=try updateSplitRegions(updated,original:original,library:library)}
-            return try updateAmplitudeVelocity(updated,original:original,library:library)
+            updated=try updateAmplitudeVelocity(updated,original:original,library:library)
+            return try updateResponse(updated,original:original,library:library)
         } catch {
             // A v1→v2 envelope step must not leave disk/metadata out of sync if
             // the following synthesis step rejects a hand-edited filter.
             try previous.write(to:file,options:.atomic)
             throw error
         }
+    }
+    /// Upgrade only generated gain routes; retain source bytes and user processing.
+    static func updateResponse(_ sound:ExternalSound,original:Original,library:URL)throws->ExternalSound {
+        guard var program=sound.nativeSampler,(program.conversionVersion ?? 1)<6 else{return sound}
+        guard let name=sound.fileName,name==URL(fileURLWithPath:name).lastPathComponent,
+              original.sha256.count==64,original.sha256.allSatisfy({$0.isHexDigit}),
+              original.file=="Original Instruments/"+original.sha256+".exs" else{throw ExternalInstrumentError.unsupportedFormat}
+        let sourceURL=library.appendingPathComponent(original.file)
+        guard (try sourceURL.resourceValues(forKeys:[.fileSizeKey]).fileSize ?? Int.max)<=16_000_000 else{throw CocoaError(.fileReadTooLarge)}
+        let source=try Data(contentsOf:sourceURL)
+        guard source.count<=16_000_000,MainStagePatch.digest(source)==original.sha256 else{throw CocoaError(.fileReadCorruptFile)}
+        let chunks=try EXSNative.referenceIdentities(EXSNative.chunks(source)),envelope=try EXSNative.envelope(chunks)
+        let file=library.appendingPathComponent("Imported Sounds/"+name),bytes=try Data(contentsOf:file)
+        guard bytes.count<=16_000_000,var state=try PropertyListSerialization.propertyList(from:bytes,options:[],format:nil) as? [String:Any],
+              let metadata=state["StageKeys.NativeSampler"] as? Data,try JSONDecoder().decode(NativeSamplerProgram.self,from:metadata)==program,
+              var instrument=state["Instrument"] as? [String:Any],var layers=instrument["Layers"] as? [[String:Any]] else{throw ExternalInstrumentError.unsupportedFormat}
+        func u32(_ b:[UInt8],_ p:Int)->Int {(0..<4).reduce(0){$0 | Int(b[p+$1]) << ($1*8)}}
+        var notes=Set(program.notes)
+        for rule in program.groups {
+            let groups=chunks.filter{$0.kind==2 && $0.name==rule.name}
+            guard layers.indices.contains(rule.layer),groups.count==1,groups[0].body.count>=92,
+                  let zones=layers[rule.layer]["Zones"] as? [[String:Any]] else{throw ExternalInstrumentError.unsupportedFormat}
+            let originals=chunks.filter{$0.kind==1 && $0.body.count>=96 && u32($0.body,88)==groups[0].index}
+            for zone in zones {
+                let matches=originals.filter{$0.name==zone["name"] as? String}
+                guard matches.count==1,let gain=(zone["gain"] as? NSNumber)?.doubleValue,
+                      abs(gain-(Double(Int8(bitPattern:matches[0].body[4]))+(program.voiceControls?.gain ?? 0)+(program.voiceControls?.amplitudeVelocity?.high ?? 0)))<0.000001 else{
+                    throw MainStagePatch.Failure.invalid("The sampler zone gain was edited; import the original EXS separately to preserve those edits.")
+                }
+            }
+            if let amp=program.voiceControls?.amplitudeVelocity {
+                let destination=0x50100000+rule.layer*256
+                let routes=(layers[rule.layer]["Connections"] as? [[String:Any]] ?? []).filter{($0["source"] as? Int)==301 && ($0["destination"] as? Int)==destination}
+                guard routes.count==1,let r=routes.first,r["enabled"] as? Bool==true,
+                      ((r["transform"] as? Int==2 && r["inverse"] as? Bool==true && (r["scale"] as? NSNumber)?.doubleValue==amp.sensitivity) ||
+                       (r["transform"] as? Int==1 && r["inverse"] as? Bool==false && (r["min value"] as? NSNumber)?.doubleValue==amp.sensitivity*0.5 && (r["max value"] as? NSNumber)?.doubleValue == -amp.sensitivity*0.5/127)) else{
+                    throw MainStagePatch.Failure.invalid("The sampler amplitude route was edited; import the original EXS separately to preserve those edits.")
+                }
+                // The high endpoint is already in these zones; do not add it twice.
+                var depth=amp;depth.high=0;EXSNative.applyAmplitudeVelocity(depth,to:&layers[rule.layer])
+            }
+            if let envelope {
+                var expected=layers[rule.layer];EXSNative.applyEnvelope(envelope,group:groups[0].body,to:&expected)
+                EXSNative.applyVoiceControls(program.voiceControls,envelope:envelope,group:groups[0].body,to:&expected)
+                if NSArray(array:expected["Envelopes"] as? [[String:Any]] ?? [])==NSArray(array:layers[rule.layer]["Envelopes"] as? [[String:Any]] ?? []),
+                   var connections=layers[rule.layer]["Connections"] as? [[String:Any]] {
+                    let source=0x20000000+rule.layer*256,destination=0x50100000+rule.layer*256
+                    for i in connections.indices where connections[i]["source"] as? Int==source && connections[i]["destination"] as? Int==destination {
+                        guard connections[i]["enabled"] as? Bool==true,connections[i]["inverse"] as? Bool==true,(connections[i]["scale"] as? NSNumber)?.doubleValue == -96,[1,2].contains(connections[i]["transform"] as? Int ?? 0) else{
+                            throw MainStagePatch.Failure.invalid("The sampler envelope gain route was edited; import the original EXS separately to preserve those edits.")
+                        }
+                        connections[i]["transform"]=2
+                    }
+                    layers[rule.layer]["Connections"]=connections
+                } else{notes.insert("An edited amplitude envelope was preserved; its gain curve was not upgraded.")}
+            }
+            EXSNative.applyCenterGain(to:&layers[rule.layer])
+        }
+        notes.insert("Native response v6 translates amplitude velocity half-dB units, MIDI endpoints, the amplitude envelope gain curve and centered output normalization. Original samples and source settings are retained.")
+        program.notes=notes.sorted();program.conversionVersion=6;guard program.valid else{throw ExternalInstrumentError.unsupportedFormat}
+        instrument["Layers"]=layers;state["Instrument"]=instrument;state["StageKeys.NativeSampler"]=try JSONEncoder().encode(program)
+        let backup=library.appendingPathComponent("Sampler Backups",isDirectory:true);try FileManager.default.createDirectory(at:backup,withIntermediateDirectories:true)
+        let retained=backup.appendingPathComponent(MainStagePatch.digest(bytes)+".aupreset")
+        if !FileManager.default.fileExists(atPath:retained.path){try bytes.write(to:retained,options:.atomic)}
+        try PropertyListSerialization.data(fromPropertyList:state,format:.xml,options:0).write(to:file,options:.atomic)
+        var updated=sound;updated.nativeSampler=program;return updated
     }
     static func updateAmplitudeVelocity(_ sound:ExternalSound,original:Original,library:URL)throws->ExternalSound {
         guard var program=sound.nativeSampler,program.voiceControls?.amplitudeVelocity==nil else{return sound}
@@ -273,8 +340,9 @@ enum SamplerHostVelocity {
             guard (0..<64).contains(layerID) else{throw ExternalInstrumentError.unsupportedFormat}
             let destination=0x50100000+layerID*256
             let routes=(layers[i]["Connections"] as? [[String:Any]] ?? []).filter{($0["source"] as? Int)==301 && ($0["destination"] as? Int)==destination}
-            guard routes.count==1,let route=routes.first,route["enabled"] as? Bool==true,route["inverse"] as? Bool==true,route["transform"] as? Int==2,
-                  (route["scale"] as? NSNumber)?.doubleValue==amplitude.sensitivity else{throw MainStagePatch.Failure.invalid("The sampler amplitude route was edited; its host curve was not applied.")}
+            guard routes.count==1,let route=routes.first,route["enabled"] as? Bool==true,
+                  ((route["inverse"] as? Bool==true && route["transform"] as? Int==2 && (route["scale"] as? NSNumber)?.doubleValue==amplitude.sensitivity) ||
+                   (route["inverse"] as? Bool==false && route["transform"] as? Int==1 && (route["min value"] as? NSNumber)?.doubleValue==amplitude.sensitivity*0.5 && (route["max value"] as? NSNumber)?.doubleValue == -amplitude.sensitivity*0.5/127)) else{throw MainStagePatch.Failure.invalid("The sampler amplitude route was edited; its host curve was not applied.")}
             guard let zones=layers[i]["Zones"] as? [[String:Any]] else{continue}
             var expanded:[[String:Any]]=[]
             for zone in zones {
