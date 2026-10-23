@@ -29,7 +29,12 @@ struct SoundBrowser: View {
             }
             return BrowserSound.library(entry)
         }
-        result += instruments.map{BrowserSound(id:"au-\($0.id)",name:$0.name,collection:"Audio Units",tags:.init(category:"Instruments",type:"Audio Unit",sourceModel:"Audio Unit"),external:ExternalSound(kind:.audioUnit,name:$0.name,component:$0))}
+        result += instruments.map { component in
+            var item=BrowserSound(id:"au-\(component.id)",name:component.name,collection:"Audio Units",tags:.init(category:"Instruments",type:"Audio Unit",sourceModel:component.vendor ?? "Audio Unit"),external:ExternalSound(kind:.audioUnit,name:component.name,component:component))
+            item.unavailableReason=component.unavailableReason
+            item.validationNote=component.validated == false ? "Not validated by auval; it may still work." : nil
+            return item
+        }
         result += destinations.map{BrowserSound(id:"midi-\($0.id)",name:$0.name,collection:"External MIDI",tags:.init(category:"External MIDI",type:"MIDI Destination",sourceModel:"External MIDI"),destination:$0)}
         return result.filter {sound in
             guard sound.collection != "Tonic Pads" else{return false}
@@ -38,6 +43,9 @@ struct SoundBrowser: View {
             case "MainStage Archive":return entries.contains(where:{$0.id == sound.id && $0.hostPath != nil})
             case "Sunday Free":return sound.collection.hasPrefix("Sunday Free") && sound.playable
             case "Sunday App":return sound.collection.hasPrefix("Sunday App")
+            // Keep unavailable Audio Units listed so the reason is visible; every
+            // other collection only offers playable sounds.
+            case "Audio Units":return sound.collection == "Audio Units"
             default:return sound.collection == collection && sound.playable
             }
         }.map {sound in
@@ -114,7 +122,7 @@ struct SoundBrowser: View {
                 LazyVStack(spacing:2) {
                     ForEach(results){sound in
                         HStack(spacing:0){
-                            Button{selectedID=sound.id}label:{VStack(alignment:.leading,spacing:5){Text(sound.name).font(StageTheme.font(16)).multilineTextAlignment(.leading);if collection == "MainStage Archive" {Text(sound.playable ? "Playable":"Needs Conversion").font(StageTheme.font(11)).foregroundStyle(.secondary)}}.frame(maxWidth:.infinity,alignment:.leading).padding(.leading,14).padding(.vertical,13)}.buttonStyle(.plain).accessibilityLabel("\(sound.name), \(sound.playable ? "Playable":"Needs Conversion")")
+                            Button{selectedID=sound.id}label:{VStack(alignment:.leading,spacing:5){Text(sound.name).font(StageTheme.font(16)).multilineTextAlignment(.leading);if collection == "MainStage Archive" {Text(sound.playable ? "Playable":"Needs Conversion").font(StageTheme.font(11)).foregroundStyle(.secondary)};if sound.collection == "Audio Units" {Text(sound.tags.sourceModel).font(StageTheme.font(11)).foregroundStyle(.secondary)}}.frame(maxWidth:.infinity,alignment:.leading).padding(.leading,14).padding(.vertical,13)}.buttonStyle(.plain).accessibilityLabel("\(sound.name), \(sound.unavailableReason != nil ? "Unavailable" : sound.playable ? "Playable":"Needs Conversion")")
                             SoundRatingControl(name:sound.name,rating:sound.rating){store.rateSound(sound.ratingID,$0)}.padding(.horizontal,12)
                         }.background(selectedID == sound.id ? selectionColor:.clear,in:RoundedRectangle(cornerRadius:7)).foregroundStyle(selectedID == sound.id ? .white:.white.opacity(0.85))
                          .contextMenu {if let entry=sound.entry {
@@ -149,11 +157,14 @@ struct SoundBrowser: View {
                     Text(selection.collection).lineLimit(1)
                     if let rack=selection.entry?.layer?.importedRack,rack.effectCount>0 {Text("Rack effects: \(rack.effectCount)"+(selection.tags.inferred ? " · Suggested tags":"")).foregroundStyle(.secondary).lineLimit(1)}
                     else if selection.tags.inferred {Text("Suggested tags · edit Note Range by right-clicking a sound").foregroundStyle(.secondary).lineLimit(1)}
-                    if !selection.playable {Text("This MainStage patch needs a compatible sound import before it can play here.").foregroundStyle(.secondary)}
+                    if let reason=selection.unavailableReason {Text(reason).foregroundStyle(.secondary).lineLimit(2)}
+                    else if let note=selection.validationNote {Text(note).foregroundStyle(.secondary).lineLimit(2)}
+                    else if !selection.playable {Text("This MainStage patch needs a compatible sound import before it can play here.").foregroundStyle(.secondary)}
                 } else {Text(results.count==1 ? "1 sound":"\(results.count) sounds").foregroundStyle(.secondary)}
             }.font(StageTheme.font(12)).frame(maxWidth:.infinity,alignment:.leading)
             if selection?.entry?.conversionNotes?.isEmpty == false {Button("Import Notes"){showingImportNotes=true}.buttonStyle(StageButtonStyle()).popover(isPresented:$showingImportNotes){ScrollView{VStack(alignment:.leading,spacing:12){ForEach(selection?.entry?.conversionNotes ?? [],id:\.self){Text($0)}}.padding(20)}.frame(width:420,height:300)}}
             if collection == "External MIDI" {Button("Refresh"){destinations=ExternalMIDIOutput.destinations()}.buttonStyle(StageButtonStyle())}
+            if collection == "Audio Units" {Button("Rescan"){instruments=ExternalInstrumentRack.instruments()}.buttonStyle(StageButtonStyle()).help("Re-scan installed Audio Units; a plug-in installed while StageKeys is running may need a relaunch")}
             Button(auditionToken == nil ? "Audition":"Stop Audition") {
                 if let token=auditionToken {store.endAudition(token);auditionToken=nil} else {auditionSelection()}
             }.buttonStyle(StageButtonStyle(selected:auditionToken != nil)).disabled(selection?.playable != true && auditionToken == nil).help("Play your keyboard to hear only the selected sound; Cancel restores the original mix")

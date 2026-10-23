@@ -165,7 +165,9 @@ final class PerformanceStore: ObservableObject {
         let patchID: UUID
         let layerID: UUID
         let index: Int
-        let pluginState: Data?
+        /// Updated when the instrument interface closes so its edits survive the
+        /// audition teardown instead of reverting to the state captured on open.
+        var pluginState: Data?
         var draft: Layer
         var isolatedLibrary = false
     }
@@ -554,7 +556,7 @@ final class PerformanceStore: ObservableObject {
     }
     func setPatchVolume(_ db:Float) { guard db.isFinite else {return};setlist.patches[selected].volumeDB=max(-24,min(12,db));audio.setPatchVolume(patch.volumeDB);save() }
 
-    func duplicate() { guard setlist.patches.count < 128 else { return }; let p = patch.duplicate(); setlist.patches.insert(p, at: selected + 1); choose(selected + 1); save() }
+    func duplicate() { guard setlist.patches.count < 128 else { return }; capturePluginStates(); let p = patch.duplicate(); setlist.patches.insert(p, at: selected + 1); choose(selected + 1); save() }
     func removePatch() { guard setlist.patches.count > 1 else { return }; panic(); cancelTransition(); setlist.patches.remove(at: selected); selected = min(selected, setlist.patches.count - 1); activeSnapshot = nil; applyPatch(); save() }
     func saveSnapshot() { captureSnapshot(patch.snapshots.count) }
     func recall(_ snapshot: Snapshot) {
@@ -563,7 +565,13 @@ final class PerformanceStore: ObservableObject {
         let initialSounds = patch.layers.map(SnapshotSoundState.init)
         let initialWheel = modWheel, initialTonicGain = tonicGain, initialBrightness = tonicBrightness
         if let states = snapshot.sounds {
-            for (i,state) in states.enumerated() {
+            for (i,state) in states.enumerated() where patch.layers.indices.contains(i) {
+                // Plug-in state is structural, not interpolated: restore it before
+                // the fade so the recalled instrument matches the stored snapshot.
+                if let pluginState=state.pluginState,patch.layers[i].external?.kind == .audioUnit,patch.layers[i].pluginState != pluginState {
+                    setlist.patches[selected].layers[i].pluginState=pluginState
+                    audio.restorePluginState(i,pluginState)
+                }
                 setlist.patches[selected].layers[i].effects=SnapshotMorph.interpolateEffects(from: initialSounds[i].effects, to: state.effects, fraction: 0)
                 setlist.patches[selected].layers[i].midiProgram=state.midiProgram
                 setlist.patches[selected].layers[i].midiEffectEnabled=state.midiEffectEnabled
@@ -640,6 +648,7 @@ final class PerformanceStore: ObservableObject {
     }
     func captureSnapshot(_ index: Int) {
         cancelTransition()
+        capturePluginStates()
         let gains = patch.layers.map { $0.loaded && !$0.muted ? $0.gain : 0 }
         if patch.snapshots.indices.contains(index) { setlist.patches[selected].snapshots[index].gains = gains; activeSnapshot = patch.snapshots[index].id }
         else if patch.snapshots.count < 16 { setlist.patches[selected].snapshots.append(Snapshot(name: "Scene \(patch.snapshots.count + 1)", gains: gains)); activeSnapshot = patch.snapshots.last?.id }
@@ -775,6 +784,19 @@ final class PerformanceStore: ObservableObject {
     private func sendMIDI(_ destination: Int32, _ status: UInt8, _ a: UInt8, _ b: UInt8) {
         do { try midiOutput?.send(destinationID: destination, status: status, data1: a, data2: b) }
         catch { message = error.localizedDescription }
+    }
+    /// Keep Audio Unit edits made in the instrument interface. The channel editor
+    /// runs inside an audition, so `capturePluginStates` deliberately skips this
+    /// layer and `endAudition` would otherwise restore the pre-edit state.
+    func finishPluginInterface(_ index: Int) {
+        guard patch.layers.indices.contains(index), patch.layers[index].external?.kind == .audioUnit else { return }
+        do {
+            if let state = try audio.externalRack?.stateData(channel: index) {
+                audition?.pluginState = state
+                setlist.patches[selected].layers[index].pluginState = state
+            }
+        } catch { message = "Could not capture plug-in state: \(error.localizedDescription)" }
+        save()
     }
     func capturePluginStates() {
         for (i,l) in patch.layers.enumerated() where l.external?.kind == .audioUnit {

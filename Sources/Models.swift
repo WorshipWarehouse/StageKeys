@@ -268,7 +268,10 @@ struct SnapshotSoundState: Codable {
     var midiProgram: MIDIProgram?
     var midiEffectEnabled: Bool
     var pan: Float
-    init(_ layer: Layer) { importedRack=layer.importedRack; effects=layer.effects; midiProgram=layer.midiProgram; midiEffectEnabled=layer.midiEffectEnabled; pan=layer.pan }
+    /// Serialized Audio Unit document state, so a scene recalls the plug-in
+    /// exactly as captured. Absent in older setlists and for non-AU sounds.
+    var pluginState: Data?
+    init(_ layer: Layer) { importedRack=layer.importedRack; effects=layer.effects; midiProgram=layer.midiProgram; midiEffectEnabled=layer.midiEffectEnabled; pan=layer.pan; pluginState=layer.pluginState }
 }
 struct Snapshot: Codable, Identifiable {
     var id = UUID()
@@ -380,7 +383,7 @@ struct Setlist: Codable {
                 guard l.channelSettings.validate(), (0...15).contains(l.midiOutputChannel), (l.pluginState?.count ?? 0) <= 2_000_000, (-1...2).contains(l.instrument), l.gain.isFinite, (0...1).contains(l.gain), (0...127).contains(l.low), (l.low...127).contains(l.high), (-2...2).contains(l.octave), (-48...48).contains(l.effectiveTranspose), l.pan.isFinite, (-1...1).contains(l.pan), l.name.count <= 200, l.effects.count == 3, l.effects.allSatisfy({ $0.validate() }) else { throw SetlistError.invalid }
             }
             for s in p.snapshots {
-                if let states = s.sounds { guard states.count == p.layers.count, states.allSatisfy({ ($0.importedRack?.validate() ?? true) && $0.effects.count == 3 && $0.effects.allSatisfy({ $0.validate() }) && $0.pan.isFinite && (-1...1).contains($0.pan) && ($0.midiProgram.map { $0 == $0.validated } ?? true) }) else { throw SetlistError.invalid } }
+                if let states = s.sounds { guard states.count == p.layers.count, states.allSatisfy({ ($0.importedRack?.validate() ?? true) && $0.effects.count == 3 && $0.effects.allSatisfy({ $0.validate() }) && $0.pan.isFinite && (-1...1).contains($0.pan) && ($0.midiProgram.map { $0 == $0.validated } ?? true) && ($0.pluginState?.count ?? 0) <= 2_000_000 }) else { throw SetlistError.invalid } }
                 guard [s.modulation,s.tonicLevel,s.tonicBrightness,s.tonicShimmer].allSatisfy({ $0.map { $0.isFinite && (0...1).contains($0) } ?? true }), s.tonicRoot.map({ (0...11).contains($0) }) ?? true, s.tonicTimbre.map({(0..<12).contains($0)}) ?? true else { throw SetlistError.invalid }
                 guard s.name.count <= 200, (s.note?.count ?? 0) <= 10_000, (0...2).contains(s.alignment ?? 0), s.gains.count == p.layers.count, s.gains.allSatisfy({ $0.isFinite && (0...1).contains($0) }), s.seconds.map({ $0.isFinite && (0...30).contains($0) }) ?? true, s.beats.map({ $0.isFinite && (0.25...32).contains($0) }) ?? true else { throw SetlistError.invalid }
             }

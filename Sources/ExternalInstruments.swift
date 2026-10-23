@@ -228,14 +228,50 @@ final class ExternalInstrumentRack {
         self.libraryURL = libraryURL ?? base.appendingPathComponent("Imported Sounds",isDirectory:true)
         try FileManager.default.createDirectory(at: self.libraryURL, withIntermediateDirectories: true)
     }
+    /// Enumerate installed Audio Units with the metadata the picker needs. Audio
+    /// Units installed while StageKeys is running may need a relaunch: Core Audio
+    /// provides no public rescan API, so this re-queries the component manager.
     static func instruments() -> [ExternalAUIdentity] {
         let query = AudioComponentDescription(componentType: kAudioUnitType_MusicDevice, componentSubType: 0,
                                              componentManufacturer: 0, componentFlags: 0, componentFlagsMask: 0)
-        return AVAudioUnitComponentManager.shared().components(matching: query).map {
-            let d = $0.audioComponentDescription
-            return ExternalAUIdentity(type: d.componentType, subtype: d.componentSubType,
-                                      manufacturer: d.componentManufacturer, name: $0.name)
-        }.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        let identities = AVAudioUnitComponentManager.shared().components(matching: query).map { component -> ExternalAUIdentity in
+            let d = component.audioComponentDescription
+            var identity = ExternalAUIdentity(type: d.componentType, subtype: d.componentSubType,
+                                              manufacturer: d.componentManufacturer, name: component.name)
+            let vendor = component.manufacturerName
+            identity.vendor = vendor.isEmpty ? nil : vendor
+            let version = component.versionString
+            identity.version = version.isEmpty ? nil : version
+            identity.isV3 = d.componentFlags & AudioComponentFlags.isV3AudioUnit.rawValue != 0
+            #if os(macOS)
+            identity.hasCustomView = component.hasCustomView
+            #endif
+            identity.unavailableReason = Self.unavailableReason(component)
+            #if os(macOS)
+            identity.validated = component.passesAUVal
+            #endif
+            return identity
+        }
+        return ExternalAUCatalog.sorted(identities)
+    }
+    /// Hard reasons this listed component cannot be hosted here. Only a missing
+    /// processor slice is treated as unavailable; auval status is reported but
+    /// never blocks, because working plug-ins are often simply unvalidated.
+    private static func unavailableReason(_ component: AVAudioUnitComponent) -> String? {
+        #if os(macOS)
+        let architectures = component.availableArchitectures
+        guard !architectures.isEmpty else { return nil }
+        #if arch(arm64)
+        let current = NSNumber(value: 0x0100_000C) // CPU_TYPE_ARM64
+        #elseif arch(x86_64)
+        let current = NSNumber(value: 0x0100_0007) // CPU_TYPE_X86_64
+        #else
+        return nil
+        #endif
+        return architectures.contains(current) ? nil : "This Audio Unit has no build for this Mac's processor."
+        #else
+        return nil
+        #endif
     }
     /// Copy user-picked files while the document picker security scope is available.
     func importSound(_ url: URL) throws -> ExternalSound {

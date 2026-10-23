@@ -56,8 +56,12 @@ struct BrowserSound: Identifiable {
     var destination:ExternalMIDIDestination?
     var rating=0
     var addedOrder=0
+    /// Set for installed Audio Units that cannot be hosted on this machine, and
+    /// for reporting that a component has not passed auval.
+    var unavailableReason:String?
+    var validationNote:String?
     var ratingID:String {entry?.id ?? id}
-    var playable:Bool {builtin != nil || entry?.sound != nil || entry?.layer != nil || external != nil || destination != nil}
+    var playable:Bool {(builtin != nil || entry?.sound != nil || entry?.layer != nil || external != nil || destination != nil) && unavailableReason == nil}
     func values(_ facet:LibraryFacet)->[String] {
         switch facet {
         case .noteRange:return tags.noteRanges?.isEmpty == false ? tags.noteRanges!:["Not Tagged"]
@@ -68,7 +72,7 @@ struct BrowserSound: Identifiable {
         case .articulation:return tags.articulations
         case .library:return [collection]
         case .source:return [tags.sourceModel]
-        case .availability:return [playable ? "Playable" : "Needs Conversion"]
+        case .availability:return [unavailableReason != nil ? "Unavailable" : playable ? "Playable" : "Needs Conversion"]
         }
     }
     static func archive(_ original:LibrarySound,converted:LibrarySound)->BrowserSound {
