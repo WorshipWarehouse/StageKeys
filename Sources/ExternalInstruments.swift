@@ -475,6 +475,11 @@ final class ExternalInstrumentRack {
             guard let component = sound.component, component.type == kAudioUnitType_MusicDevice else {
                 completion(.failure(ExternalInstrumentError.invalidComponent)); return
             }
+            #if os(iOS)
+            if let reason=component.platformUnavailableReason(isMobile:true) {
+                completion(.failure(NSError(domain:"StageKeysPluginPlatform",code:1,userInfo:[NSLocalizedDescriptionKey:reason])));return
+            }
+            #endif
             AVAudioUnit.instantiate(with: component.description, options: []) { [weak self] unit, error in
                 DispatchQueue.main.async {
                     guard let self else { return }
