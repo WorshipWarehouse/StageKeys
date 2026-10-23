@@ -32,6 +32,9 @@ final class MIDIInput {
     private var poll: Timer?
     private var refreshWork: DispatchWorkItem?
     private var lastError: String?
+    /// Endpoints that belong to this app (its virtual output) are never opened as
+    /// inputs, so a loopback or a renamed port cannot feed output back in.
+    private var ignoredSourceIDs: Set<Int32> = []
     private(set) var sources: [MIDIInputSource] = []
     private(set) var devices: [MIDIKnownDevice] = []
     var onEvent: ((UInt8, UInt8, UInt8) -> Void)?
@@ -73,6 +76,19 @@ final class MIDIInput {
         let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in self?.refresh() }
         RunLoop.main.add(timer, forMode: .common); poll = timer
     }
+    /// Ignore this app's own virtual output endpoints (by unique ID, so a renamed
+    /// port is still excluded) and drop any existing connection to them.
+    func ignoreSources(_ ids: Set<Int32>) {
+        precondition(Thread.isMainThread)
+        guard ids != ignoredSourceIDs else { return }
+        ignoredSourceIDs = ids
+        for (endpoint,identity) in Array(connected) where ids.contains(identity) {
+            MIDIPortDisconnectSource(port,endpoint)
+            connected.removeValue(forKey: endpoint)
+            onDisconnect?(identity)
+        }
+        refresh()
+    }
     private func scheduleRefresh() {
         refreshWork?.cancel()
         let work = DispatchWorkItem { [weak self] in self?.refresh() }
@@ -92,6 +108,7 @@ final class MIDIInput {
             guard name != "StageKeys to External App" else { continue }
             let display = Self.string(endpoint,kMIDIPropertyDisplayName)
             let identity = Self.integer(endpoint,kMIDIPropertyUniqueID)
+            guard !ignoredSourceIDs.contains(identity) else { continue }
             discovered.append(MIDIInputSource(id: identity == 0 ? Int32(bitPattern:endpoint) : identity, endpoint: endpoint, name: display.isEmpty ? (name.isEmpty ? "MIDI Keyboard" : name) : display, connected: false))
         }
         let endpoints = Set(discovered.map(\.endpoint))

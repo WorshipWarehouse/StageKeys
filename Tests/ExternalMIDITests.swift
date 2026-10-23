@@ -23,8 +23,25 @@ import CoreMIDI
         } == noErr)
         defer { MIDIPortDispose(port); MIDIClientDispose(client) }
         assert(MIDIPortConnectSource(port, source, nil) == noErr)
+        // The hosted port is listed first and stays virtual through a refresh.
+        assert(output.destinations.first?.id == ExternalMIDIOutput.broadcastID)
+        assert(output.destinations.first?.virtual == true)
+        assert(output.refresh().contains { $0.id == ExternalMIDIOutput.broadcastID })
         try output.send(destinationID: ExternalMIDIOutput.broadcastID, status: 0x92, data1: 60, data2: 100)
         try output.send(destinationID: ExternalMIDIOutput.broadcastID, status: 0x82, data1: 60, data2: 0)
+        // Channel mapping is carried in the status byte, not rewritten.
+        try output.send(destinationID: ExternalMIDIOutput.broadcastID, status: 0x93, data1: 62, data2: 90)
+        // An unknown destination reports a disconnected output instead of dropping it.
+        do {
+            try output.send(destinationID: 123_456_789, status: 0x90, data1: 60, data2: 100)
+            assertionFailure("An unknown MIDI destination was accepted")
+        } catch {}
+        do {
+            var own = ExternalMIDIDestination(id: 7, name: "Self", endpoint: 7)
+            own.virtual = true
+            assert(ExternalMIDIRouting.isLoop(own, ownSourceID: 7))
+            assert(ExternalMIDIRouting.resolve(7, in: [own], ownSourceID: 7) == nil)
+        }
         let end = Date().addingTimeInterval(2)
         while Date() < end {
             RunLoop.current.run(until: Date().addingTimeInterval(0.01))
@@ -32,7 +49,7 @@ import CoreMIDI
             if count >= 2 { break }
         }
         lock.lock(); let result = events; lock.unlock()
-        assert(result == [[0x92,60,100],[0x82,60,0]], "Virtual MIDI delivery failed: \(result)")
-        print("PASS: external-app virtual source delivers channel-specific note-on and note-off")
+        assert(result == [[0x92,60,100],[0x82,60,0],[0x93,62,90]], "Virtual MIDI delivery failed: \(result)")
+        print("PASS: external-app virtual source delivers channel-specific note-on, note-off and channel-mapped data")
     }
 }

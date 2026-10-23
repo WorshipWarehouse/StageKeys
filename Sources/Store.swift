@@ -91,6 +91,8 @@ final class PerformanceStore: ObservableObject {
     @Published var velocityMaximum = 127
     @Published var midiSourceNames: [Int32:String] = [:]
     @Published var midiLog: [String] = []
+    /// Current MIDI outputs, refreshed when Core MIDI reports a setup change.
+    @Published var midiDestinations: [ExternalMIDIDestination] = []
     @Published var disableSilent = false
     @Published var tonicBrightness: Float = 0.7 { didSet { configureTonic() } }
     @Published var tonicShimmer: Float = 0 { didSet { updateShimmer() } }
@@ -291,7 +293,9 @@ final class PerformanceStore: ObservableObject {
     @Published var currentSetlistID: UUID?
     private let saveURL: URL
     private var preferredAudioOutputUID: String?
+    private var preferredBufferFrames: UInt32?
     private var restoredAudioOutput = false
+    private var restoredAudioBuffer = false
     private var legacyVersion = 1
     private var legacyData: Data?
     var patch: Patch { setlist.patches[selected] }
@@ -322,12 +326,19 @@ final class PerformanceStore: ObservableObject {
             secondaryChannel = settings.secondaryChannel ?? -1
             velocityMinimum = settings.velocityMinimum ?? 0; velocityMaximum = settings.velocityMaximum ?? 127
             midiSourceNames = settings.sourceNames ?? [:]
+            metronome = settings.metronomeEnabled ?? false
+            preferredBufferFrames = settings.audioBufferFrames.map { UInt32(max(0, min(8192, $0))) }
             disableSilent = settings.disableSilent; showRanges = settings.showRanges
             tonicVelocitySelector=settings.tonicVelocitySelector ?? false;tonicTimbre=settings.tonicTimbre ?? 0;tonicLastRoot=settings.tonicLastRoot ?? 0;tonicSound=settings.tonicSound
             tonicGain = settings.tonicGain; tonicBrightness = settings.tonicBrightness; tonicShimmer = settings.tonicShimmer
         }
         audio.onError = { [weak self] in self?.message = $0 }
         do { midiOutput = try ExternalMIDIOutput() } catch { message = error.localizedDescription }
+        midiOutput?.onChange = { [weak self] in self?.refreshMIDIDestinations() }
+        midiDestinations = midiOutput?.destinations ?? []
+        // Exclude this app's virtual output before the input port starts, so a
+        // renamed or looped port cannot feed StageKeys' output back into itself.
+        if let own = midiOutput?.ownSourceID, own != 0 { midi.ignoreSources([own]) }
         midiFX.onNoteWithSource = { [weak self] channel, key, pitch, velocity, sourceID in
             guard let self, self.patch.layers.indices.contains(channel) else { return }
             if let audition=self.audition,audition.isolatedLibrary,audition.index != channel{return}
@@ -387,8 +398,18 @@ final class PerformanceStore: ObservableObject {
                 restoredAudioOutput = true
                 if let uid = preferredAudioOutputUID { try? audio.deviceController.select(uid: uid) }
             }
-            try audio.start(); audio.master(master);audio.space(reverb); started = true; applyPatch(); recallTonicPatch(); audio.clock(patch.tempo,metronome); refreshAudioDevices() }
+            try audio.start(); audio.master(master);audio.space(reverb); started = true; applyPatch(); recallTonicPatch(); audio.clock(patch.tempo,metronome); refreshAudioDevices(); restoreAudioBuffer() }
         catch { started = false; message = "Audio could not start: \(error.localizedDescription)" }
+    }
+    /// Re-apply the saved hardware buffer once the engine is running. A device that
+    /// no longer supports the saved size keeps its current buffer instead of failing.
+    private func restoreAudioBuffer() {
+        guard !restoredAudioBuffer, let frames = preferredBufferFrames, frames > 0,
+              audioStatus?.canSetBuffer == true, audioStatus?.bufferFrames != frames else { return }
+        restoredAudioBuffer = true
+        do { try audio.deviceController.buffer(frameCount: frames) }
+        catch { preferredBufferFrames = nil }
+        refreshAudioDevices()
     }
     func refreshAudioDevices() {
         guard !audio.offline else { return }
@@ -402,8 +423,15 @@ final class PerformanceStore: ObservableObject {
     }
     func setAudioBuffer(_ frames: UInt32) {
         panic()
-        do { try audio.deviceController.buffer(frameCount:frames); refreshAudioDevices() }
+        do { try audio.deviceController.buffer(frameCount:frames); preferredBufferFrames=frames; refreshAudioDevices(); save() }
         catch { message=error.localizedDescription; refreshAudioDevices() }
+    }
+    func refreshMIDIDestinations() { midiDestinations = midiOutput?.destinations ?? [] }
+    /// Short middle C, for verifying a hardware or virtual output by listening or
+    /// watching the receiving app's monitor.
+    func testMIDIDestination(_ id: Int32) {
+        sendMIDI(id, 0x90, 60, 100)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in self?.sendMIDI(id, 0x80, 60, 0) }
     }
     func noteOn(_ note: Int, velocity: Float = 0.8, hardware: Bool = false) {
         guard started else { return }
@@ -701,10 +729,10 @@ final class PerformanceStore: ObservableObject {
         midiLog.insert((midiSources.first(where: { $0.id == source })?.name ?? "MIDI") + String(format: " · Ch %02d · %02X · %d · %d", Int(status & 15) + 1, status & 0xf0, a, b), at: 0)
         midiLog = Array(midiLog.prefix(15))
         let channel=Int(status & 15)
-        func accepts(_ id: Int32, _ inputChannel: Int) -> Bool { (id == -1 || id == source) && (inputChannel == -1 || inputChannel == channel) }
-        guard accepts(primarySourceID,midiChannel) || accepts(secondarySourceID,secondaryChannel) else { return }
+        guard MIDIControllerRules.accepts(sourceID: primarySourceID, channel: midiChannel, source: source, inputChannel: channel) ||
+              MIDIControllerRules.accepts(sourceID: secondarySourceID, channel: secondaryChannel, source: source, inputChannel: channel) else { return }
         switch status & 0xf0 {
-        case 0x90: if b == 0 { hardwareOff(source: source, channel: Int(status & 15), note: Int(a)) } else { hardwareOn(source: source, channel: Int(status & 15), note: Int(a), velocity: Float(velocityMinimum) / 127 + Float(b)/127 * Float(velocityMaximum-velocityMinimum)/127) }
+        case 0x90: if b == 0 { hardwareOff(source: source, channel: Int(status & 15), note: Int(a)) } else { hardwareOn(source: source, channel: Int(status & 15), note: Int(a), velocity: MIDIControllerRules.velocity(b, minimum: velocityMinimum, maximum: velocityMaximum)) }
         case 0x80: hardwareOff(source: source, channel: Int(status & 15), note: Int(a))
         case 0xb0:
             if learningTarget == nil && learning == nil {applyImportedController(Int(a),value:b,channel:channel)}
@@ -718,10 +746,11 @@ final class PerformanceStore: ObservableObject {
                     guard target.valid else { learningTarget=nil; learning=nil; return }
                     clearMIDILearn(target,saveChanges:false)
                     mappedPedals=mappedPedals.filter{$0.cc != cc}; applySustain()
-                    setlist.assignments.removeValue(forKey:cc)
-                    setlist.controlAssignments?.removeValue(forKey:cc)
-                    if case .soundLevel(let index) = target { setlist.assignments[cc]=index }
-                    else { if setlist.controlAssignments == nil { setlist.controlAssignments=[:] }; setlist.controlAssignments![cc]=target }
+                    let learned=MIDIControllerRules.assigning(cc,to:target,assignments:setlist.controlAssignments ?? [:],soundLevels:setlist.assignments)
+                    guard !learned.reserved else { learningTarget=nil; learning=nil; return }
+                    setlist.controlAssignments = learned.assignments.isEmpty ? nil : learned.assignments
+                    setlist.assignments = learned.soundLevels
+                    if let displaced=learned.displaced { message = "CC \(cc) moved from \(displaced.title) to \(target.title)." }
                     learningTarget=nil; learning=nil
                     if !target.isRisingEdge { applyMIDIControl(target,value:b,key:key,rising:rising) }
                     save()
@@ -733,6 +762,16 @@ final class PerformanceStore: ObservableObject {
             else if setlist.patches.indices.contains(Int(a)),setlist.patches[Int(a)].programChangeEnabled == nil { choose(Int(a)) }
         default: break
         }
+    }
+    /// Remove every learned assignment, keeping the fixed modulation, sustain and
+    /// panic routes so the keyboard remains usable.
+    func resetMIDILearn() {
+        setlist.controlAssignments = nil
+        setlist.assignments = [:]
+        mappedPedals.removeAll(); applySustain()
+        learning = nil; learningTarget = nil
+        message = "MIDI learn assignments cleared. Fixed modulation, sustain, panic and program-change routes remain."
+        save()
     }
     func beginMIDILearn(_ target:MIDIControlTarget) {
         guard target.valid else { return }; learning=nil; learningTarget = learningTarget == target ? nil : target
@@ -1084,7 +1123,7 @@ final class PerformanceStore: ObservableObject {
             try data.write(to: saveURL, options: .atomic)
             currentSetlistID = try localSetlistLibrary().save(setlist,id:currentSetlistID).id
             refreshSetlists()
-            let settings = SessionSettings(selectedPatchID:patch.id,activeSnapshotID:activeSnapshot,notesMode:notesMode,modWheel:modWheel,master: master, reverb: reverb, transition: transition, midiChannel: midiChannel, primarySourceID: primarySourceID, secondarySourceID: secondarySourceID, secondaryChannel: secondaryChannel, velocityMinimum: velocityMinimum, velocityMaximum: velocityMaximum, sourceNames: midiSourceNames, disableSilent: disableSilent, showRanges: showRanges, tonicGain: tonicGain, tonicBrightness: tonicBrightness, tonicShimmer: tonicShimmer, audioOutputUID: preferredAudioOutputUID, activeSetlistID: currentSetlistID,tonicSound:tonicSound,tonicVelocitySelector:tonicVelocitySelector,tonicTimbre:tonicTimbre,tonicLastRoot:tonicLastRoot)
+            let settings = SessionSettings(selectedPatchID:patch.id,activeSnapshotID:activeSnapshot,notesMode:notesMode,modWheel:modWheel,master: master, reverb: reverb, transition: transition, midiChannel: midiChannel, primarySourceID: primarySourceID, secondarySourceID: secondarySourceID, secondaryChannel: secondaryChannel, velocityMinimum: velocityMinimum, velocityMaximum: velocityMaximum, sourceNames: midiSourceNames, disableSilent: disableSilent, showRanges: showRanges, tonicGain: tonicGain, tonicBrightness: tonicBrightness, tonicShimmer: tonicShimmer, audioOutputUID: preferredAudioOutputUID, activeSetlistID: currentSetlistID,tonicSound:tonicSound,tonicVelocitySelector:tonicVelocitySelector,tonicTimbre:tonicTimbre,tonicLastRoot:tonicLastRoot,metronomeEnabled:metronome,audioBufferFrames:preferredBufferFrames.map{Int($0)})
             guard settings.validate() else { throw SetlistError.invalid }
             try encoder.encode(settings).write(to: saveURL.deletingLastPathComponent().appendingPathComponent("settings.json"), options: .atomic) }
         catch { message = "Could not save: \(error.localizedDescription)" }

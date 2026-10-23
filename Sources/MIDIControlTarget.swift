@@ -52,3 +52,47 @@ enum MIDIControlTarget: Codable, Hashable, Identifiable {
     }
     static let reservedCCs: Set<Int> = [1, 64, 120, 123]
 }
+
+/// Input and learn rules shared by the store and the MIDI Learn UI. Kept pure so
+/// conflicts, scaling and input acceptance are verifiable without hardware.
+enum MIDIControllerRules {
+    /// Linear scaling of an incoming 0–127 velocity into the configured range.
+    static func velocity(_ value: UInt8, minimum: Int, maximum: Int) -> Float {
+        let low = max(0, min(127, minimum))
+        let high = max(low, min(127, maximum))
+        let input = Float(max(0, min(127, Int(value))))
+        return Float(low) / 127 + input / 127 * Float(high - low) / 127
+    }
+    /// A source/channel pair is accepted when it matches the primary or the
+    /// secondary controller selection. -1 means any source or any channel; -2
+    /// means the slot is unused.
+    static func accepts(sourceID: Int32, channel: Int, source: Int32, inputChannel: Int) -> Bool {
+        guard sourceID != -2 else { return false }
+        return (sourceID == -1 || sourceID == source) && (channel == -1 || channel == inputChannel)
+    }
+    struct Assignment: Equatable {
+        var assignments: [Int: MIDIControlTarget]
+        var soundLevels: [Int: Int]
+        /// Previous owner of the CC, so the UI can report a moved assignment.
+        var displaced: MIDIControlTarget?
+        var reserved: Bool
+    }
+    /// Learning a CC moves it from any other target, and a target owns at most
+    /// one CC. Reserved controllers keep their fixed route and are never learned.
+    static func assigning(_ cc: Int, to target: MIDIControlTarget,
+                          assignments: [Int: MIDIControlTarget], soundLevels: [Int: Int]) -> Assignment {
+        guard target.valid, (0...127).contains(cc), !MIDIControlTarget.reservedCCs.contains(cc) else {
+            return Assignment(assignments: assignments, soundLevels: soundLevels, displaced: nil, reserved: true)
+        }
+        var assignments = assignments, soundLevels = soundLevels
+        let existing = assignments[cc] ?? soundLevels[cc].map { MIDIControlTarget.soundLevel($0) }
+        assignments.removeValue(forKey: cc)
+        soundLevels.removeValue(forKey: cc)
+        for other in assignments.filter({ $0.value == target }).keys { assignments.removeValue(forKey: other) }
+        for other in soundLevels.filter({ MIDIControlTarget.soundLevel($0.value) == target }).keys { soundLevels.removeValue(forKey: other) }
+        if case .soundLevel(let index) = target { soundLevels[cc] = index } else { assignments[cc] = target }
+        return Assignment(assignments: assignments, soundLevels: soundLevels,
+                          displaced: existing == target ? nil : existing, reserved: false)
+    }
+}
+
