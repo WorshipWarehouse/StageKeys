@@ -167,6 +167,7 @@ import Darwin
         assert(peak(settled[0..<settled.count]) < 0.001, "Voices kept sounding after Panic")
 
         // 3. A missing preset must be reported and must not keep stale audio.
+        audio.configure(0,Layer.empty()) // Force a fresh load; an already-resident identical sound need not reread storage.
         try FileManager.default.removeItem(at: presetB)
         errors.removeAll()
         audio.configure(0, layerB)
