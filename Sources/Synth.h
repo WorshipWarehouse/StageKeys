@@ -2,6 +2,12 @@
 #include <stdint.h>
 #include <CoreMIDI/CoreMIDI.h>
 typedef struct SKSynth SKSynth;
+typedef struct SKOutputMeter SKOutputMeter;
+SKOutputMeter *sk_output_meter_create(void);
+void sk_output_meter_destroy(SKOutputMeter *meter);
+// One render producer. No allocation, locks, file I/O or signal mutation.
+void sk_output_meter_process(SKOutputMeter *meter,const float *left,const float *right,uint32_t frames);
+void sk_output_meter_read(SKOutputMeter *meter,float *peak,float *rms,uint64_t *frames,uint64_t *invalid,uint64_t *overload);
 SKSynth *sk_create(double sampleRate);
 void sk_destroy(SKSynth *s);
 // Lightweight three-slot effects-only engine, single producer/render consumer.

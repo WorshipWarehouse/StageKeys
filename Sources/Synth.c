@@ -5,6 +5,41 @@
 #include <stdlib.h>
 #include <stdatomic.h>
 #include <string.h>
+_Static_assert(ATOMIC_INT_LOCK_FREE == 2 && ATOMIC_LLONG_LOCK_FREE == 2,"Output metering requires lock-free atomics");
+struct SKOutputMeter {
+ atomic_uint peak,rms;
+ atomic_ullong frames,invalid,overload;
+};
+static unsigned meter_bits(float x){unsigned value;memcpy(&value,&x,sizeof(value));return value;}
+static float meter_float(unsigned x){float value;memcpy(&value,&x,sizeof(value));return value;}
+SKOutputMeter *sk_output_meter_create(void){
+ SKOutputMeter*m=calloc(1,sizeof(*m));if(!m)return NULL;
+ atomic_init(&m->peak,0);atomic_init(&m->rms,0);atomic_init(&m->frames,0);atomic_init(&m->invalid,0);atomic_init(&m->overload,0);return m;
+}
+void sk_output_meter_destroy(SKOutputMeter*m){free(m);}
+void sk_output_meter_process(SKOutputMeter*m,const float*l,const float*r,uint32_t n){
+ if(!m||!l||!r||!n)return;
+ float peak=0;double sum=0;uint64_t invalid=0,overload=0;
+ for(uint32_t i=0;i<n;i++){
+  float v[2]={l[i],r[i]};for(int c=0;c<2;c++){
+   if(!isfinite(v[c])){invalid++;continue;}
+   float a=fabsf(v[c]);peak=fmaxf(peak,a);sum+=(double)v[c]*v[c];if(a>=1)overload++;
+  }
+ }
+ atomic_store_explicit(&m->peak,meter_bits(peak),memory_order_relaxed);
+ atomic_store_explicit(&m->rms,meter_bits((float)sqrt(sum/((double)n*2))),memory_order_relaxed);
+ atomic_fetch_add_explicit(&m->frames,n,memory_order_relaxed);
+ atomic_fetch_add_explicit(&m->invalid,invalid,memory_order_relaxed);
+ atomic_fetch_add_explicit(&m->overload,overload,memory_order_relaxed);
+}
+void sk_output_meter_read(SKOutputMeter*m,float*p,float*r,uint64_t*f,uint64_t*i,uint64_t*o){
+ if(!m)return;
+ if(p)*p=meter_float(atomic_load_explicit(&m->peak,memory_order_relaxed));
+ if(r)*r=meter_float(atomic_load_explicit(&m->rms,memory_order_relaxed));
+ if(f)*f=atomic_load_explicit(&m->frames,memory_order_relaxed);
+ if(i)*i=atomic_load_explicit(&m->invalid,memory_order_relaxed);
+ if(o)*o=atomic_load_explicit(&m->overload,memory_order_relaxed);
+}
 #define VOICES 192
 #define BUSES 16
 #define DELAY 96000
