@@ -184,6 +184,14 @@ final class AudioController {
         try externalRack?.restoreStateData(state,channel:index)
         externalStates[index] = state
     }
+    /// Restore a saved Audio Unit document state in place. Snapshot recall uses
+    /// this instead of `restoreStateData` so the transition is not interrupted by
+    /// an engine stop and graph rebuild.
+    func restorePluginState(_ index: Int, _ state: Data) {
+        guard let map = try? PropertyListSerialization.propertyList(from: state, options: [], format: nil) as? [String: Any] else { return }
+        externalRack?.restoreState(map, channel: index)
+        externalStates[index] = state
+    }
     func configureSnapshot(_ index: Int, effects: [AudioEffect], pan: Float, importedRack:ImportedRack? = nil) {
         pans[index] = pan
         sk_pan(synth, Int32(index), pan)
