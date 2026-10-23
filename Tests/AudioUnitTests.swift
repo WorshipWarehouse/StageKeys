@@ -1,5 +1,6 @@
 import Foundation
 import AVFoundation
+import CoreAudioKit
 @main struct AudioUnitTests {
     static func main() throws {
         let installed=ExternalInstrumentRack.instruments()
