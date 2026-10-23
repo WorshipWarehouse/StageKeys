@@ -14,7 +14,7 @@ import Foundation
             layer.midiProgram=MIDIProgram(kind:.octaveUp)
             return LibrarySound(id:"mainstage-channel-"+channel.sha256+"-fixture",name:channel.name,collection:"My Sounds",sound:layer.external,layer:layer,sourceArchiveID:archive,conversionNotes:["Approximate source processor"])
         }
-        let patch=try MainStagePatch.assembledChannels(report,entries:entries.reversed())
+        let patch=try MainStagePatch.assembledChannels(report,entries:Array(entries.reversed()))
         assert(patch.layers.count==15 && patch.layers.prefix(2).map(\.name)==channels.map(\.name))
         for i in 0..<2 {
             let a=patch.layers[i],b=entries[i].layer!
