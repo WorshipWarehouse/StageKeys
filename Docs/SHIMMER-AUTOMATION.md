@@ -1,0 +1,5 @@
+# Shimmer transition smoothing
+
+Refs #9. Halo Shimmer now slews independent Dry/Wet gains over 20 ms at the full audio rate, including reduced Quality modes. Excitation/output filter targets also slew at the wet processing clock. New instances initialize to the saved settings immediately; automation does not clear the pitch/tank histories. The dry path gains no lookahead or processing delay, and no resampling of source assets is performed.
+
+The transition regression compares identical established networks while changing one from dry to fully wet, at 44.1/48/96 kHz and full/reduced Quality. It requires a small first-frame change and convergence to the independent wet reference. Existing pitch, alias, damping, tail and stability tests remain required. Size/Quality changes and pitch modulation geometry still require separate transition work. Reference listening at matched levels remains open; the Mac locked during reinspection, so this change does not establish Sunday Keys sonic equivalence.
