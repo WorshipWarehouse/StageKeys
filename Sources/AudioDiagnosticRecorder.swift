@@ -66,12 +66,15 @@ enum InstrumentGainMatch {
         let peakDB:Double
         let trimDB:Float
         let peakLimited:Bool
+        let targetDB:Double
+        var outputRMSDB:Double {rmsDB+Double(trimDB)}
+        var trimLimited:Bool {abs(outputRMSDB-targetDB)>0.01 && !peakLimited}
     }
     static func recommendation(rms:Double,peak:Double,targetDB:Double = -24,ceilingDB:Double = -9)throws->Result {
         guard rms.isFinite,peak.isFinite,rms>0.00001,peak>=rms,targetDB.isFinite,(-60 ... -6).contains(targetDB),ceilingDB.isFinite,(-24 ... -1).contains(ceilingDB) else{throw failure("No usable calibration signal. Check the instrument's playable range and preset.")}
         let rmsDB=20*log10(rms),peakDB=20*log10(peak),wanted=targetDB-rmsDB,allowed=ceilingDB-peakDB
         guard allowed >= -24 else{throw failure("The instrument output exceeds the calibration trim range. Lower its output and retry.")}
-        return Result(rmsDB:rmsDB,peakDB:peakDB,trimDB:Float(max(-24,min(12,min(wanted,allowed)))),peakLimited:allowed<wanted)
+        return Result(rmsDB:rmsDB,peakDB:peakDB,trimDB:Float(max(-24,min(12,min(wanted,allowed)))),peakLimited:allowed<min(wanted,12),targetDB:targetDB)
     }
     static func retarget(_ result:Result,to targetDB:Double)throws->Result {
         try recommendation(rms:pow(10,result.rmsDB/20),peak:pow(10,result.peakDB/20),targetDB:targetDB)

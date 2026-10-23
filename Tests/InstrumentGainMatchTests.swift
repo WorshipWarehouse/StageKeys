@@ -5,6 +5,11 @@ import Foundation
   assert(abs(result.trimDB+4)<0.001 && !result.peakLimited)
   let quieter=try InstrumentGainMatch.retarget(result,to:-30);assert(abs(quieter.trimDB+10)<0.001)
   for target in [Double.nan,-100,0] {do{_ = try InstrumentGainMatch.retarget(result,to:target);fatalError("Invalid target accepted")}catch{}}
+  let capped=try InstrumentGainMatch.recommendation(rms:0.001,peak:0.002,targetDB:-24)
+  assert(capped.trimLimited && !capped.peakLimited && abs(capped.outputRMSDB+48)<0.001)
+  let cut=try InstrumentGainMatch.recommendation(rms:0.1,peak:0.2,targetDB:-60)
+  assert(cut.trimLimited && cut.trimDB == -24)
+  assert(!result.trimLimited && abs(result.outputRMSDB+24)<0.001)
   let protected=try InstrumentGainMatch.recommendation(rms:0.01,peak:0.5)
   assert(protected.peakLimited && abs(protected.trimDB-(-9+6.0206))<0.001)
   for invalid in [0.0,Double.nan,Double.infinity] {do{_ = try InstrumentGainMatch.recommendation(rms:invalid,peak:1);fatalError("Invalid/quiet result accepted")}catch{}}

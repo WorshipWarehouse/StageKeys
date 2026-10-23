@@ -103,11 +103,15 @@ struct SoundModule: View {
             Divider().opacity(0.2)
             if layer.loaded {
                 if !store.notesMode {
-                    if let rack=layer.importedRack,rack.effectCount>0 {
-                        Button {open(.sound(index))} label:{
-                            HStack {Image(systemName:"waveform.path");Text("Rack FX · \(rack.effectCount)");Spacer();Image(systemName:"chevron.right")}
-                                .font(StageTheme.font(10)).foregroundStyle(color).padding(.vertical,4)
-                        }.buttonStyle(.plain).accessibilityLabel("Imported rack effects and macros")
+                    if store.patch.layers.contains(where:{$0.loaded && ($0.importedRack?.effectCount ?? 0)>0}) {
+                        Group {
+                            if let rack=layer.importedRack,rack.effectCount>0 {
+                                Button {open(.sound(index))} label:{
+                                    HStack {Image(systemName:"waveform.path");Text("Rack FX · \(rack.effectCount)");Spacer();Image(systemName:"chevron.right")}
+                                        .font(StageTheme.font(10)).foregroundStyle(color)
+                                }.buttonStyle(.plain).accessibilityLabel("Imported rack effects and macros")
+                            } else {Color.clear.accessibilityHidden(true)}
+                        }.frame(height:20)
                     }
                     midiSlot
                     ForEach(0..<3) { slot in effectSlot(slot) }

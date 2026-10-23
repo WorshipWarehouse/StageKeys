@@ -887,10 +887,10 @@ final class PerformanceStore: ObservableObject {
     func mainStageProcessing(_ channel:Int)throws->MainStageProcessing.Draft {
         guard let report=mainStageImportReport,let id=report.sourceArchiveID,UUID(uuidString:id) != nil,report.channels.indices.contains(channel) else{throw MainStagePatch.Failure.invalid("Import the MainStage source patch again to preview its processing.")}
         let root=saveURL.deletingLastPathComponent().appendingPathComponent("MainStage Sources/"+id+"/Source.patch",isDirectory:true)
-        let document=try PropertyListSerialization.propertyList(from:MainStagePatch.read(root.appendingPathComponent("data.plist"),in:root),options:[],format:nil) as? [String:Any]
+        let document=try PropertyListSerialization.propertyList(from:MainStagePatch.verifiedRead(root.appendingPathComponent("data.plist"),in:root,sha256:report.preservedFiles["data.plist"]),options:[],format:nil) as? [String:Any]
         let channels=document?["channels"] as? [[String:Any]]
         let source=channels?.first(where:{$0["Filename"] as? String==report.channels[channel].file})
-        var draft=try MainStageProcessing.translate(MainStagePatch.read(root.appendingPathComponent(report.channels[channel].file),in:root),channelID:source?["Channel_instID"] as? Int)
+        var draft=try MainStageProcessing.translate(MainStagePatch.verifiedRead(root.appendingPathComponent(report.channels[channel].file),in:root,sha256:report.channels[channel].sha256),channelID:source?["Channel_instID"] as? Int)
         if let source {MainStageProcessing.channelSettings(source,to:&draft)}
         return draft
     }

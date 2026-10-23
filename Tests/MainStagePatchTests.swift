@@ -30,6 +30,13 @@ import Foundation
         let copiedHash=try AssetDigest.sha256(destination.appendingPathComponent("Source.patch/Samples/Piano.caf"));assert(copiedHash==sampleHash,"Large bundled samples must be retained byte-for-byte without document-size rejection")
         let restored=try Data(contentsOf:destination.appendingPathComponent("Source.patch/Piano.cst"))
         assert(restored==bytes,"Source effects and mappings must be retained byte-for-byte")
+        let archivedRoot=destination.appendingPathComponent("Source.patch"),archivedStrip=archivedRoot.appendingPathComponent("Piano.cst")
+        let verified=try MainStagePatch.verifiedRead(archivedStrip,in:archivedRoot,sha256:report.channels[0].sha256);assert(verified==bytes)
+        try Data("changed".utf8).write(to:archivedStrip)
+        do{_ = try MainStagePatch.verifiedRead(archivedStrip,in:archivedRoot,sha256:report.channels[0].sha256);fatalError("Changed retained source accepted")}catch{}
+        try bytes.write(to:archivedStrip)
+        do{_ = try MainStagePatch.verifiedRead(archivedStrip,in:archivedRoot,sha256:nil);fatalError("Missing integrity record accepted")}catch{}
+
         do{_ = try MainStagePatch.retain(patch,to:destination);fatalError("Archive overwritten")}catch{}
         let cstArchive=root.appendingPathComponent("channel-archive"),cstReport=try MainStagePatch.retain(strip,to:cstArchive)
         assert(cstReport.name=="Piano" && cstReport.channels.count==1 && cstReport.blockers.contains{$0.contains("parent-patch")})

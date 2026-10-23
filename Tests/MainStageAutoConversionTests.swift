@@ -32,6 +32,17 @@ import Foundation
   guard let stripSound=stripStore.librarySounds.first(where:{$0.id.hasPrefix("mainstage-channel-")})?.sound else{fatalError(stripStore.libraryImportProgress ?? "CST conversion failed")}
   assert(stripSound.nativeSampler?.conversionVersion==6)
   let retainedStrip=try Data(contentsOf:channelRoot.appendingPathComponent("MainStage Sources/"+stripStore.mainStageImportReport!.sourceArchiveID!+"/Source.patch/Grand Piano.cst"));assert(retainedStrip==strip)
+  let archived=channelRoot.appendingPathComponent("MainStage Sources/"+stripStore.mainStageImportReport!.sourceArchiveID!+"/Source.patch")
+  _ = try stripStore.mainStageProcessing(0)
+  let metadata=archived.appendingPathComponent("data.plist"),originalMetadata=try Data(contentsOf:metadata)
+  try Data("changed".utf8).write(to:metadata)
+  do{_ = try stripStore.mainStageProcessing(0);fatalError("Changed patch metadata reached processing")}catch{}
+  try originalMetadata.write(to:metadata)
+  try Data("changed".utf8).write(to:archived.appendingPathComponent("Grand Piano.cst"))
+  do{_ = try stripStore.mainStageProcessing(0);fatalError("Changed channel strip reached processing")}catch{}
+  try strip.write(to:archived.appendingPathComponent("Grand Piano.cst"))
+  _ = try stripStore.mainStageProcessing(0)
+  print("PASS: processing rejects changed retained metadata and channel strips; originals remain usable")
   print("PASS: direct CST import and native conversion through the source-folder picker path")
   print("PASS: app-native bundled MainStage conversion v6, >16 MB sample retention, original hashes, rack processing and duplicate-aware reimport",store.libraryImportProgress ?? "")
  }

@@ -44,6 +44,11 @@ enum MainStagePatch {
         guard data.count<=16_000_000 else{throw Failure.invalid("Oversized MainStage document.")}
         return data
     }
+    static func verifiedRead(_ file:URL,in root:URL,sha256:String?)throws->Data {
+        let data=try read(file,in:root)
+        guard let sha256,digest(data)==sha256 else{throw Failure.invalid("The retained MainStage source changed or has no integrity record. Import the original patch again before converting.")}
+        return data
+    }
     static func devices(_ data:Data)throws->[Device] {
         guard data.count>=36,data.prefix(4)==Data("OCuA".utf8) else{throw Failure.invalid("Unsupported channel-strip version; original bytes will not be treated as a sampler preset.")}
         let bytes=[UInt8](data)
