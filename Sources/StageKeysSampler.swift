@@ -442,7 +442,12 @@ enum SamplerSplitRegions {
         func dbe(_ p:Int)->Int {desc[p..<p+4].reduce(0){($0<<8)|Int($1)}}
         let stride=dbe(16),framesPerPacket=dbe(20),channels=dbe(24),bits=dbe(28),flags=dbe(12)
         guard framesPerPacket==1,(1...8).contains(channels),[8,16,24,32,64].contains(bits),
-              stride==channels*(bits/8),flags&32==0,loop.upperBound<=data.count/stride else{throw ExternalInstrumentError.unsupportedFormat}
+              stride==channels*(bits/8),flags&32==0 else{throw ExternalInstrumentError.unsupportedFormat}
+        // Edited or corrupt region offsets must be rejected here. Data.subdata
+        // raises an Objective-C exception instead of throwing, which would end
+        // the process on a hostile or damaged preset rather than reporting it.
+        let frames=data.count/stride
+        guard frames>0,attack.upperBound<=frames,loop.upperBound<=frames else{throw ExternalInstrumentError.unsupportedFormat}
         let total=attack.count+loop.count
         guard total<=Int(Int32.max),total*stride<=256_000_000 else{throw ExternalInstrumentError.unsupportedFormat}
         var output=Data("caff".utf8);output.append(contentsOf:[0,1,0,0])

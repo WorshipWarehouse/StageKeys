@@ -217,6 +217,9 @@ final class AudioController {
     func releaseSource(_ source:Int32){externalRack?.releaseSource(source)}
     func sustain(_ on: Bool, layers: [Layer]) { sk_sustain(synth, on ? 1 : 0); for (i,l) in layers.enumerated() { externalRack?.sustain(channel: i, on: on && !l.blockSustain) } }
     func panic() { sk_panic(synth); externalRack?.panic(); reverb.auAudioUnit.reset(); outputLimiter.auAudioUnit.reset() }
+    /// Reported output latency for the published device/buffer matrix. Never
+    /// called from the render callback.
+    func latencyChain() throws -> AudioLatencyChain { try deviceController.latency() }
     func master(_ volume: Float) { engine.mainMixerNode.outputVolume = volume }
     func space(_ amount: Float) { reverb.wetDryMix = amount }
     // Runs an isolated production graph without sending sound to the device.

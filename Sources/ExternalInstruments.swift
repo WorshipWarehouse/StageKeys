@@ -464,6 +464,7 @@ final class ExternalInstrumentRack {
                 if sound.kind == .soundBank {
                     try sampler.loadSoundBankInstrument(at: file, program: sound.program, bankMSB: sound.bankMSB, bankLSB: sound.bankLSB)
                 } else if sound.kind == .samplerPreset {
+                    try Self.verifySamples(file)
                     try install(sampler, channel: channel) { let document=try SamplerAttack.load(sampler,file:file,minimum:attackMinimum,curve:hostVelocityCurve);self.rememberSampler(sampler,document:document) }
                     voices[channel]?.nativePreset=file;voices[channel]?.attackMinimum=attackMinimum;voices[channel]?.hostVelocityCurve=hostVelocityCurve
                     if sound.nativeSampler != nil {
@@ -477,6 +478,30 @@ final class ExternalInstrumentRack {
                 try install(sampler, channel: channel)
                 completion(.success(()))
             } catch { completion(.failure(error)) }
+        }
+    }
+    /// Reject managed presets whose samples are missing or offline before the
+    /// sampler is attached. AUSampler accepts an incomplete preset and can then
+    /// play silence or a stale instrument, and resident playback cannot recover
+    /// a file that disappeared after import. Only absolute paths and file URLs
+    /// are checked here; other references stay with the sampler's own resolver.
+    /// Runs on load, never on the audio render thread.
+    private static func verifySamples(_ preset:URL)throws {
+        guard let size=(try? preset.resourceValues(forKeys:[.fileSizeKey]))?.fileSize,size<=16_000_000,
+              let data=try? Data(contentsOf:preset),
+              let state=try? PropertyListSerialization.propertyList(from:data,options:[],format:nil) as? [String:Any],
+              let references=state["file-references"] as? [String:String] else{return}
+        for (_,reference) in references.sorted(by:{$0.key<$1.key}).prefix(4096) {
+            let path:String
+            if reference.hasPrefix("file://") {
+                guard let url=URL(string:reference),url.isFileURL else{continue}
+                path=url.path
+            } else if reference.hasPrefix("/") {path=reference}
+            else {continue}
+            guard FileManager.default.fileExists(atPath:path) else {
+                throw NSError(domain:"StageKeysSampler",code:1,userInfo:[NSLocalizedDescriptionKey:
+                    "Missing sample: \(URL(fileURLWithPath:path).lastPathComponent). Import this sound again or reconnect its storage."])
+            }
         }
     }
     private func mixerState() -> [(AVAudioMixerNode, Float, Float)] {

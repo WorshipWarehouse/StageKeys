@@ -20,6 +20,19 @@ struct AudioDeviceStatus: Equatable {
     var canSetBuffer: Bool
     var bufferMilliseconds: Double { sampleRate > 0 ? Double(bufferFrames) * 1000 / sampleRate : 0 }
 }
+
+/// Reported, not measured: the selected device's buffer plus Core Audio's
+/// presentation latency. Physical key-to-speaker latency also includes MIDI
+/// delivery and the instrument's own latency, which need a hardware loopback
+/// measurement; publish those separately in the device/buffer matrix.
+struct AudioLatencyChain: Equatable {
+    var deviceName: String
+    var sampleRate: Double
+    var bufferFrames: UInt32
+    var bufferMilliseconds: Double
+    var presentationLatencyMilliseconds: Double
+    var totalMilliseconds: Double { bufferMilliseconds + presentationLatencyMilliseconds }
+}
 enum AudioDeviceError: LocalizedError {
     case unavailable, unsupported, offline, invalidBuffer, status(OSStatus), restartFailed(String)
     var errorDescription: String? {
@@ -197,6 +210,16 @@ final class AudioDeviceController {
         }, rollback: { try? session.setPreferredIOBufferDuration(previous) })
     }
     #endif
+    /// Reported output chain for the published latency matrix. Available on both
+    /// platforms so diagnostics can compare requested and granted buffers.
+    func latency() throws -> AudioLatencyChain {
+        try assertOnline()
+        let status = try status()
+        let reported = engine.outputNode.presentationLatency
+        return AudioLatencyChain(deviceName: status.name, sampleRate: status.sampleRate,
+                                 bufferFrames: status.bufferFrames, bufferMilliseconds: status.bufferMilliseconds,
+                                 presentationLatencyMilliseconds: reported.isFinite ? max(0, reported) * 1000 : 0)
+    }
     private func transaction(change: () throws -> Void, rollback: () -> Void) throws {
         let wasRunning = engine.isRunning
         let volume = engine.mainMixerNode.outputVolume
