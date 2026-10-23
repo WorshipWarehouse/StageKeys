@@ -21,7 +21,7 @@ typedef struct {
  double oscSin[8],oscCos[8],stepSin[8],stepCos[8];
  int ready;
 } DenseReverb;
-typedef struct { DenseReverb reverb; float p[32],z[12],coef[8],shiftPhase,stereo; int custom; Biquad eq[8]; } EffectState;
+typedef struct { DenseReverb reverb; float p[32],z[12],coef[8],shiftPhase,stereo; int custom; Biquad eq[8];float clipControl[3];int clipReady; } EffectState;
 struct SKSynth {
  double rate;
  int delayLength,predelayLength;
@@ -210,6 +210,7 @@ static void effectCoefficients(EffectState*e,int kind,double rate){
  if(kind==3)e->coef[0]=1-exp(-TAU*p[2]/rate);
  if(kind==16){e->coef[0]=1-exp(-TAU*p[4]/rate);e->coef[1]=1-exp(-TAU*p[5]/rate);}
  if(kind==17){
+  e->coef[6]=1-exp(-1/(rate*.02));
   e->coef[0]=pow(10,p[0]/20);e->coef[5]=pow(10,p[8]/20);e->coef[4]=pow(10,p[9]/20);
   for(int i=1;i<=3;i++){float f=p[i==1?1:i==2?4:5],g=tanf(TAU*.5f*fminf(f,rate*.45f)/rate);e->coef[i]=g/(1+g);}
   equalizer(&e->eq[0],rate,6,p[7],p[6],.707f);
@@ -446,7 +447,11 @@ static float effectProcess(SKSynth*s,int l,int k,float x){
   y=x*p[9]+wet*p[10];s->fxPhase[l][k]=fmod(phase+TAU*p[6]/rate,TAU);break;
  }
  case 17:{
-  float input=x*e->coef[5],amplified=input*e->coef[0];
+  if(!e->clipReady){e->clipControl[0]=e->coef[5];e->clipControl[1]=e->coef[4];e->clipControl[2]=p[3];e->clipReady=1;}
+  e->clipControl[0]+=e->coef[6]*(e->coef[5]-e->clipControl[0]);
+  e->clipControl[1]+=e->coef[6]*(e->coef[4]-e->clipControl[1]);
+  e->clipControl[2]+=e->coef[6]*(p[3]-e->clipControl[2]);
+  float input=x*e->clipControl[0],amplified=input*e->coef[0];
   float v=(amplified-e->z[0])*e->coef[1],low=v+e->z[0];e->z[0]=low+v;
   float bias=p[2]*.01f,signal=amplified-low;
   // Antiderivative antialiasing of the independent soft clipper. The divided
@@ -459,9 +464,9 @@ static float effectProcess(SKSynth*s,int l,int k,float x){
   }
   e->z[3]=signal;
   v=(clipped-e->z[1])*e->coef[2];low=v+e->z[1];e->z[1]=low+v;
-  float mixed=input*(1-p[3])+low*p[3];
+  float mixed=input*(1-e->clipControl[2])+low*e->clipControl[2];
   v=(mixed-e->z[2])*e->coef[3];low=v+e->z[2];e->z[2]=low+v;
-  y=process(&e->eq[0],low)*e->coef[4];break;
+  y=process(&e->eq[0],low)*e->clipControl[1];break;
  }
  case 14:{float target=p[0]<.5f?0:p[0]<1.5f?p[1]/60:p[2]/60;e->z[0]+=(target-e->z[0])*e->coef[1];s->fxPhase[l][k]=fmod(phase+TAU*e->z[0]/rate,TAU);float doppler=rate*(.002f+.0015f*(p[7]/100)*sinf(phase));buffer[pos]=x;float body=tap(buffer,pos,doppler);float driven=tanhf(body*(1+p[4]*12));float ambience=tap(buffer,pos,rate*(.02f+.15f*p[9]));float amp=.72f+.28f*cosf(phase)*(1-p[6]*.5f);y=(driven*amp+ambience*p[11]*.4f)*e->coef[0];e->stereo=sinf(phase)*fminf(1,p[8]/200)*p[10];break;}
  default:break;
