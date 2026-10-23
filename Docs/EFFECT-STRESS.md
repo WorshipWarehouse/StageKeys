@@ -1,0 +1,5 @@
+# Processor stress evidence
+
+Refs #4. Run `Tests/test-library.sh EffectStressTests` for descriptor-driven min/default/max automation across every public C effect at 44.1/48/96 kHz, mono/stereo and irregular 1/31/64/127/257-frame boundaries. Synthetic excitation includes quiet tails and explicit Panic after every mode. Invalid output or nonzero post-Panic history fails immediately. Output includes per-case peak, worst observed render duration and blocks exceeding their nominal audio deadline. High-output effects can exceed unity; the harness records this rather than hiding gain behind normalization.
+
+`STAGEKEYS_EFFECT_STRESS_ROUNDS` repeats the matrix (1–10000) to extend DSP stress. This is offline CPU stress, not an eight-hour live-device soak. Deadline overruns include OS scheduling interference and must be reviewed on target hardware; no fragile CI timing threshold substitutes for that review. The matrix covers C processor boundaries, not AVAudioEngine route recovery, third-party plug-ins or physical iPad thermal behavior. Prolonged maximum feedback, memory-growth measurement and the live hardware soak remain release gates.
