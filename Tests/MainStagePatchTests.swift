@@ -1,6 +1,10 @@
 import Foundation
 @main struct MainStagePatchTests {
     static func main()throws {
+        for (name,family) in [("ES2","ES2"),("RetroSyn","Retro Synth"),("Sculpture","Sculpture"),("Alchemy","Alchemy")] {
+            let channel=MainStagePatch.Channel(name:"Fixture",file:"x.cst",sha256:"hash",instruments:["unrelated.exs"],devices:[.init(name:name,offset:0,byteCount:1,format:"MELC")],hasMappings:false,hasMIDIState:false)
+            assert(channel.unsupportedInstrumentFamily==family && channel.nativeInstrumentStatus.contains("Archive only"))
+        }
         let root=FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString,isDirectory:true)
         defer{try? FileManager.default.removeItem(at:root)}
         let patch=root.appendingPathComponent("Fixture.patch",isDirectory:true)
