@@ -103,6 +103,9 @@ enum InstrumentGainMatch {
         let trimDB:Float
         let peakLimited:Bool
         let targetDB:Double
+        var probeNotes:[Int] = []
+        var repeatabilityDB:Double? = nil
+        var confidenceWarning:String? = nil
         var outputRMSDB:Double {rmsDB+Double(trimDB)}
         var trimLimited:Bool {abs(outputRMSDB-targetDB)>0.01 && !peakLimited}
     }
@@ -113,7 +116,13 @@ enum InstrumentGainMatch {
         return Result(rmsDB:rmsDB,peakDB:peakDB,trimDB:Float(max(-24,min(12,min(wanted,allowed)))),peakLimited:allowed<min(wanted,12),targetDB:targetDB)
     }
     static func retarget(_ result:Result,to targetDB:Double)throws->Result {
-        try recommendation(rms:pow(10,result.rmsDB/20),peak:pow(10,result.peakDB/20),targetDB:targetDB)
+        var updated = try recommendation(rms:pow(10,result.rmsDB/20),peak:pow(10,result.peakDB/20),targetDB:targetDB)
+        updated.probeNotes=result.probeNotes;updated.repeatabilityDB=result.repeatabilityDB;updated.confidenceWarning=result.confidenceWarning
+        return updated
+    }
+    static func repeatability(_ levels:[Double]) throws -> Double {
+        guard levels.count >= 2, levels.allSatisfy({$0.isFinite && $0 > 0.00001}) else {throw failure("A calibration pass was silent or invalid. Check playable zones and slow attacks before applying trim.")}
+        return 20*log10(levels.max()!/levels.min()!)
     }
     private static func failure(_ message:String)->NSError {NSError(domain:"StageKeysGainMatch",code:1,userInfo:[NSLocalizedDescriptionKey:message])}
     @MainActor static func measure(_ original:Layer,modulation:Float,targetDB:Double = -24,tempo:Double = 72)async throws->Result {
@@ -154,16 +163,29 @@ enum InstrumentGainMatch {
         try await render(4096,measure:false)
         let selected=[48,60,72].filter{(layer.low...layer.high).contains($0)}
         let notes=selected.isEmpty ? [(layer.low+layer.high)/2]:selected
-        for note in notes {
-            audio.noteOn(key:note,pitch:note,instrument:layer.instrument,layer:0,velocity:83.0/127)
-            try await render(28800,measure:true)
-            audio.noteOff(key:note,channel:0);try await render(14400,measure:false)
+        var passLevels:[Double]=[]
+        for _ in 0..<2 {
+            let before=energy, beforeCount=count
+            for note in notes {
+                audio.panic();try await render(4096,measure:false)
+                let noteEnergy=energy,noteCount=count
+                audio.noteOn(key:note,pitch:note,instrument:layer.instrument,layer:0,velocity:83.0/127)
+                try await render(28800,measure:true)
+                guard count>noteCount,sqrt((energy-noteEnergy)/Double(count-noteCount))>0.00001 else {
+                    throw failure("Calibration note MIDI \(note) was silent in the measured window. Choose a playable range or measure a slower sound separately.")
+                }
+                audio.noteOff(key:note,channel:0);try await render(14400,measure:false)
+            }
+            passLevels.append(sqrt((energy-before)/Double(count-beforeCount)))
         }
         audio.sustain(true,layers:[layer])
         for note in notes {audio.noteOn(key:note,pitch:note,instrument:layer.instrument,layer:0,velocity:1);audio.noteOff(key:note,channel:0)}
         try await render(48000,measure:false);audio.sustain(false,layers:[layer]);try await render(24000,measure:false)
         if let error=loadError{throw failure(error)}
         guard count>0 else{throw failure("No calibration audio was rendered.")}
-        return try recommendation(rms:sqrt(energy/Double(count)),peak:peak,targetDB:targetDB)
+        var result=try recommendation(rms:sqrt(energy/Double(count)),peak:peak,targetDB:targetDB)
+        result.probeNotes=notes;result.repeatabilityDB=try repeatability(passLevels)
+        if result.repeatabilityDB!>1 {result.confidenceWarning="Repeated probes differ by more than 1 dB. This evolving or nondeterministic sound needs a listening comparison; the proposed trim is only an estimate."}
+        return result
     }
 }
