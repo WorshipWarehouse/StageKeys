@@ -426,7 +426,7 @@ final class PerformanceStore: ObservableObject {
         do { try audio.deviceController.buffer(frameCount:frames); preferredBufferFrames=frames; refreshAudioDevices(); save() }
         catch { message=error.localizedDescription; refreshAudioDevices() }
     }
-    func refreshMIDIDestinations() { midiDestinations = midiOutput?.destinations ?? [] }
+    func refreshMIDIDestinations() { midiDestinations = midiOutput?.refresh() ?? [] }
     /// Short middle C, for verifying a hardware or virtual output by listening or
     /// watching the receiving app's monitor.
     func testMIDIDestination(_ id: Int32) {
