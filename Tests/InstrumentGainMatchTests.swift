@@ -1,6 +1,8 @@
 import Foundation
 @main struct InstrumentGainMatchTests {
  @MainActor static func main()async throws {
+  assert(abs(try! InstrumentGainMatch.repeatability([0.1,0.2])-6.0206)<0.001)
+  for levels in [[0.0,0.1],[Double.nan,0.1],[0.1]] {do{_ = try InstrumentGainMatch.repeatability(levels);fatalError("Invalid repeatability accepted")}catch{}}
   let result=try InstrumentGainMatch.recommendation(rms:0.1,peak:0.2)
   assert(abs(result.trimDB+4)<0.001 && !result.peakLimited)
   let quieter=try InstrumentGainMatch.retarget(result,to:-30);assert(abs(quieter.trimDB+10)<0.001)
@@ -18,6 +20,8 @@ import Foundation
   var invalid=legacy;invalid.outputTrimDB = .nan;assert(!invalid.validate());invalid.outputTrimDB=13;assert(!invalid.validate())
   let base=Layer(name:"Probe",instrument:0,gain:0.2)
   let a=try await InstrumentGainMatch.measure(base,modulation:0.5);var changed=base;changed.gain=0.8;changed.channelSettings.outputTrimDB = -12
+  assert(a.probeNotes == [48,60,72] && a.repeatabilityDB != nil)
+  let preserved=try InstrumentGainMatch.retarget(a,to:-30);assert(preserved.probeNotes==a.probeNotes && preserved.repeatabilityDB==a.repeatabilityDB)
   let b=try await InstrumentGainMatch.measure(changed,modulation:0.5)
   assert(abs(a.rmsDB-b.rmsDB)<0.001 && abs(a.trimDB-b.trimDB)<0.001,"Probe must be independent of fader and existing trim")
   func outputEnergy(_ trim:Float)throws->Double {
