@@ -24,7 +24,7 @@ struct SoundTags: Codable, Equatable {
         else if n.contains("bell") || n.contains("glass") || n.contains("glock") {result.category="Bells, Glass, Toy Piano";result.type=n.contains("glock") ? "Glockenspiel" : "Bells";result.articulations=["Struck"]}
         else if n.contains("string") || n.contains("violin") {result.category="Strings";result.type="Strings";result.articulations=[n.contains("stacc") ? "Staccato" : "Sustained"]}
         else if n.contains("brass") || n.contains("trombone") {result.category="Brass";result.type="Brass Section";result.articulations=["Blown"]}
-        else if n.contains("piano") || n.contains("keys") || n.contains("roads") || n.contains("tine") || words.contains("ep") {result.category="Acoustic Piano & Keys";result.type=n.contains("felt") ? "Felt Piano" : electric ? "Electric Piano" : "Acoustic Piano";result.articulations=["Struck"]}
+        else if electric || n.contains("piano") || n.contains("keys") || n.contains("roads") || n.contains("tine") || words.contains("ep") {result.category="Acoustic Piano & Keys";result.type=n.contains("felt") ? "Felt Piano" : electric ? "Electric Piano" : "Acoustic Piano";result.articulations=["Struck"]}
         else if !words.isDisjoint(with:["organ","organs"]) {result.category="Organs";result.type="Organ"}
         else if n.contains("guitar") || n.contains("telecaster") {result.category="Guitars";result.type="Electric Guitar";result.articulations=["Plucked"]}
         else if n.contains("pluck") || n.contains("pizz") {result.category="Leads";result.type="Synth Plucks";result.articulations=["Plucked"]}
