@@ -21,15 +21,26 @@ final class AudioController {
     private var samplerHostCurves:[Int:Int]=[:]
     private var levels: [Int: Float] = [:]
     private var diagnosticRecorder:AudioDiagnosticRecorder?
+    private let outputMeter=OutputMeter()
+    private var outputTapInstalled=false
+    var outputMetrics:OutputMeter.Reading {outputMeter.read()}
+    private func installOutputTap(recorder:AudioDiagnosticRecorder?=nil) {
+        if outputTapInstalled {protectedOutput.removeTap(onBus:0)}
+        let meter=outputMeter
+        protectedOutput.installTap(onBus:0,bufferSize:512,format:protectedOutput.outputFormat(forBus:0)) { [weak recorder] buffer,_ in
+            meter.append(buffer);recorder?.append(buffer)
+        }
+        outputTapInstalled=true
+    }
     func startAudioCheck(at url:URL,completion:@escaping(Result<AudioDiagnosticRecorder.Summary,Error>)->Void)throws {
         guard engine.isRunning,diagnosticRecorder==nil else{throw NSError(domain:"StageKeysAudioCheck",code:2,userInfo:[NSLocalizedDescriptionKey:"Start audio playback and stop any existing audio check first."])}
         let format=protectedOutput.outputFormat(forBus:0)
         let recorder=try AudioDiagnosticRecorder(url:url,format:format) { [weak self] result in
-            self?.protectedOutput.removeTap(onBus:0);self?.diagnosticRecorder=nil
+            self?.diagnosticRecorder=nil;self?.installOutputTap()
             completion(result)
         }
         diagnosticRecorder=recorder
-        protectedOutput.installTap(onBus:0,bufferSize:512,format:format) { [weak recorder] buffer,_ in recorder?.append(buffer) }
+        installOutputTap(recorder:recorder)
     }
     func stopAudioCheck(){diagnosticRecorder?.finish()}
     // Session-only diagnostic switch. Keep the graph and 1 dB output headroom
@@ -79,6 +90,7 @@ final class AudioController {
         // Leave 1 dB after limiting for reconstructed output peaks.
         protectedOutput.outputVolume=pow(Float(10),Float(-1)/20)
         engine.mainMixerNode.outputVolume = 0.7
+        installOutputTap()
     }
     func start() throws {
         #if os(iOS)

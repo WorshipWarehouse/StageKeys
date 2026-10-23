@@ -36,6 +36,25 @@ struct SupportDiagnostics: Codable {
     }
 }
 
+final class OutputMeter {
+    struct Reading {
+        var peak:Float=0,rms:Float=0
+        var frames:UInt64=0,invalid:UInt64=0,overload:UInt64=0
+        var peakDB:Float {peak>0 ? 20*log10(peak): -120}
+        var rmsDB:Float {rms>0 ? 20*log10(rms): -120}
+    }
+    private let meter=sk_output_meter_create()!
+    func append(_ buffer:AVAudioPCMBuffer) {
+        guard let channels=buffer.floatChannelData,buffer.format.channelCount==2 else{return}
+        sk_output_meter_process(meter,channels[0],channels[1],buffer.frameLength)
+    }
+    func read()->Reading {
+        var r=Reading();sk_output_meter_read(meter,&r.peak,&r.rms,&r.frames,&r.invalid,&r.overload);return r
+    }
+    deinit{sk_output_meter_destroy(meter)}
+
+}
+
 /// Copies a bounded take from an output tap. File I/O runs on its own queue;
 /// instrument samples and library presets are never opened for writing.
 final class AudioDiagnosticRecorder {

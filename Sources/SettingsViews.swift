@@ -34,6 +34,12 @@ struct SettingsEditor: View {
                             #endif
                             Toggle("Audio Running",isOn:Binding(get:{store.started},set:{if $0 {store.start()} else {store.panic();store.audio.stop();store.started=false}}))
                             Toggle("Bypass Master Limiter (Temporary)",isOn:$store.masterLimiterBypassed)
+                            TimelineView(.periodic(from:.now,by:0.1)) { _ in
+                                let reading=store.audio.outputMetrics
+                                Text("Output sample peak \(reading.peakDB,specifier:"%.1f") dBFS · RMS \(reading.rmsDB,specifier:"%.1f") dBFS").monospacedDigit()
+                                Text("Samples ≥ 0 dBFS: \(reading.overload) · invalid samples: \(reading.invalid)").font(.caption).foregroundStyle(reading.overload>0 || reading.invalid>0 ? .orange:.secondary)
+                            }
+                            Text("Measures the final mixed output after protection/headroom. Sample peak is not true peak. The system limiter does not expose gain reduction; no reduction value is inferred.").font(.caption).foregroundStyle(.secondary)
                             Text("For listening comparisons. The limiter returns on when StageKeys restarts; output headroom stays unchanged.").font(.caption).foregroundStyle(.secondary)
                             if let status=store.audioStatus {
                                 Text("Sample Rate: \(Int(status.sampleRate)) Hz")
