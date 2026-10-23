@@ -1,5 +1,55 @@
 import Foundation
 
+/// Local, provider-independent proposal boundary for a later optional builder.
+/// Data only: no paths, scripts, downloads, network calls or automatic session mutation.
+struct PatchDraftPlan:Codable {
+    struct Sound:Codable {
+        var libraryID:String
+        var gain:Float
+        var pan:Float=0
+        var low:Int=0
+        var high:Int=127
+        var effects:[AudioEffect]?
+    }
+    struct Preview {
+        var patch:Patch?
+        var missingSoundIDs:[String]
+        var warnings:[String]
+    }
+    var schemaVersion=1
+    var name:String
+    var sounds:[Sound]
+    func preview(library:[LibrarySound],available:(ExternalSound)->Bool)throws->Preview {
+        guard schemaVersion==1,!name.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty,name.count<=200,
+              (1...15).contains(sounds.count),Set(sounds.map(\.libraryID)).count==sounds.count else{throw SetlistError.invalid}
+        var layers:[Layer]=[],missing:[String]=[],warnings:[String]=[]
+        for proposal in sounds {
+            guard !proposal.libraryID.isEmpty,proposal.libraryID.count<=256,
+                  proposal.gain.isFinite,(0...1).contains(proposal.gain),proposal.pan.isFinite,(-1...1).contains(proposal.pan),
+                  (0...127).contains(proposal.low),(proposal.low...127).contains(proposal.high),
+                  proposal.effects.map({$0.count==3 && $0.allSatisfy{$0.validate()}}) ?? true else{throw SetlistError.invalid}
+            let matches=library.filter{$0.id==proposal.libraryID}
+            guard matches.count==1,let entry=matches.first else{missing.append(proposal.libraryID);continue}
+            var layer:Layer
+            if let saved=entry.layer {layer=saved}
+            else if let sound=entry.sound {layer=Layer(name:entry.name,instrument:-1,gain:proposal.gain);layer.external=sound;layer.importedRack=sound.nativeSampler?.rack}
+            else {missing.append(proposal.libraryID);continue}
+            if let external=layer.external,!available(external){missing.append(proposal.libraryID);continue}
+            guard layer.loaded,layer.midiDestinationID==nil else{missing.append(proposal.libraryID);continue}
+            layer.id=UUID();layer.gain=proposal.gain;layer.pan=proposal.pan;layer.low=proposal.low;layer.high=proposal.high
+            if let effects=proposal.effects {layer.effects=effects}
+            layers.append(layer)
+            warnings += entry.conversionNotes ?? []
+        }
+        guard missing.isEmpty else{return Preview(patch:nil,missingSoundIDs:missing,warnings:warnings)}
+        if layers.reduce(Float(0),{$0+$1.gain})>1 {warnings.append("Layer gains sum above unity. Audition at a low master level and review output headroom before confirming.")}
+        layers += (layers.count..<15).map{_ in Layer.empty()}
+        let patch=Patch(name:name,layers:layers,snapshots:[])
+        var check=Setlist();check.patches=[patch];try check.validate()
+        return Preview(patch:patch,missingSoundIDs:[],warnings:warnings)
+    }
+}
+
 struct ImportedDelay: Codable, Equatable {
     var left: Double
     var right: Double
