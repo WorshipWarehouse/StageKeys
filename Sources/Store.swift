@@ -285,6 +285,20 @@ final class PerformanceStore: ObservableObject {
     }
     func previewLibraryRange(_ index:Int,_ layer:Layer?) {libraryRangePreviewIndex=layer == nil ? nil:index;libraryRangePreview=layer}
     @Published var mainStageImportReport:MainStagePatch.Report?
+    @Published var mainStageChannelSelection:Set<Int>?
+    var selectedMainStageChannels:Set<Int> {
+        guard let report=mainStageImportReport else{return []}
+        return (mainStageChannelSelection ?? Set(report.channels.indices)).filter{report.channels.indices.contains($0) && !report.channels[$0].instruments.isEmpty}
+    }
+    func selectMainStageChannel(_ index:Int,_ enabled:Bool) {
+        var selection=selectedMainStageChannels
+        if enabled {selection.insert(index)} else {selection.remove(index)}
+        mainStageChannelSelection=selection
+    }
+    func convertIncludedMainStageSounds() {
+        guard let id=mainStageImportReport?.sourceArchiveID,UUID(uuidString:id) != nil else{return}
+        importMainStageSamplers(saveURL.deletingLastPathComponent().appendingPathComponent("MainStage Sources/"+id+"/Source.patch",isDirectory:true))
+    }
     @Published var libraryImportBusy=false
     @Published var libraryImportProgress:String?
     @Published var savedSetlists: [SetlistLibraryDescriptor] = []
@@ -957,7 +971,8 @@ final class PerformanceStore: ObservableObject {
     }
     func importMainStageSamplers(_ folder:URL) {
         guard !libraryImportBusy,let report=mainStageImportReport else{return}
-        let names=Set(report.channels.flatMap(\.instruments))
+        let selection=selectedMainStageChannels
+        let names=Set(report.channels.enumerated().filter{selection.contains($0.offset)}.flatMap{$0.element.instruments})
         guard !names.isEmpty,names.count<=64 else{libraryImportProgress="No supported EXS references were found in this source patch.";return}
         libraryImportBusy=true
         Task { @MainActor in
@@ -966,7 +981,7 @@ final class PerformanceStore: ObservableObject {
             do {
                 let files=try MainStagePatch.findSamplerInstruments(names,in:folder)
                 var imported=0,skipped=0,failures:[String]=[]
-                for (channelIndex,channel) in report.channels.enumerated() where !channel.instruments.isEmpty {
+                for (channelIndex,channel) in report.channels.enumerated() where selection.contains(channelIndex) && !channel.instruments.isEmpty {
                     guard channel.instruments.count==1,let name=channel.instruments.first else{failures.append(channel.name+": layered sampler selection requires translation");continue}
                     let matches=files.filter{$0.lastPathComponent==name}
                     guard matches.count==1 else{failures.append(name+": "+(matches.isEmpty ? "instrument not found in the selected folder":"multiple matches; choose a narrower folder"));continue}
@@ -1002,11 +1017,11 @@ final class PerformanceStore: ObservableObject {
             let encoder=JSONEncoder();encoder.outputFormatting=[.prettyPrinted,.sortedKeys]
             try encoder.encode(report).write(to:saveURL.deletingLastPathComponent().appendingPathComponent("mainstage-import-report.json"),options:.atomic)
             mainStageImportReport=report
+            mainStageChannelSelection=Set(report.channels.indices.filter{!report.channels[$0].instruments.isEmpty})
             let retainedRoot=directory.appendingPathComponent("Source.patch",isDirectory:true)
             let names=Set(report.channels.flatMap(\.instruments))
             if !names.isEmpty,!(try MainStagePatch.findSamplerInstruments(names,in:retainedRoot)).isEmpty {
-                libraryImportProgress="Converting included sampler instruments. MainStage is not required; review conversion notes for remaining processing differences."
-                importMainStageSamplers(retainedRoot)
+                libraryImportProgress="Preflight complete. Review channel selection and conversion limitations, then choose Convert Included Instruments. No sounds have been added."
                 return
             }
             libraryImportProgress="Preserved \(report.channels.count) channel strips and their original effects, macros and MIDI data. Playback conversion requires \(report.blockers.count) unsupported settings to be translated. No incomplete sound was added."
