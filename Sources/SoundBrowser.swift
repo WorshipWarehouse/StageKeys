@@ -165,6 +165,7 @@ struct SoundBrowser: View {
             }.font(StageTheme.font(12)).frame(maxWidth:.infinity,alignment:.leading)
             if selection?.entry?.conversionNotes?.isEmpty == false {Button("Import Notes"){showingImportNotes=true}.buttonStyle(StageButtonStyle()).popover(isPresented:$showingImportNotes){ScrollView{VStack(alignment:.leading,spacing:12){ForEach(selection?.entry?.conversionNotes ?? [],id:\.self){Text($0)}}.padding(20)}.frame(width:420,height:300)}}
             if collection == "External MIDI" {Button("Refresh"){store.refreshMIDIDestinations()}.buttonStyle(StageButtonStyle())}
+            if collection == "Audio Units" {Button("Allow Blocked Loads") {do{try ExternalInstrumentRack.allowBlockedLoads();instruments=ExternalInstrumentRack.instruments()}catch{store.message=error.localizedDescription}}.buttonStyle(StageButtonStyle()).help("Explicitly retry plug-ins blocked after failed or interrupted loading")}
             if collection == "Audio Units" {Button("Rescan"){instruments=ExternalInstrumentRack.instruments()}.buttonStyle(StageButtonStyle()).help("Re-scan installed Audio Units; a plug-in installed while StageKeys is running may need a relaunch")}
             Button(auditionToken == nil ? "Audition":"Stop Audition") {
                 if let token=auditionToken {store.endAudition(token);auditionToken=nil} else {auditionSelection()}

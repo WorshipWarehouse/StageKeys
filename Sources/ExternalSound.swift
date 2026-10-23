@@ -2,6 +2,39 @@ import Foundation
 import AVFoundation
 import AudioToolbox
 
+/// Loading journal only; no plug-in state or user session content is stored.
+final class PluginLoadRecovery {
+    private struct Record: Codable {var pending:[String:Int]=[:];var blocked:Set<String>=[]}
+    private var record:Record
+    private let url:URL
+    init(url:URL)throws {
+        self.url=url
+        if FileManager.default.fileExists(atPath:url.path) {
+            let data=try Data(contentsOf:url)
+            guard data.count<=1_000_000 else{throw ExternalInstrumentError.invalidComponent}
+            record=try JSONDecoder().decode(Record.self,from:data)
+        } else {record=Record()}
+        record.blocked.formUnion(record.pending.keys);record.pending=[:]
+        try save()
+    }
+    private func save()throws {
+        try FileManager.default.createDirectory(at:url.deletingLastPathComponent(),withIntermediateDirectories:true)
+        try JSONEncoder().encode(record).write(to:url,options:.atomic)
+    }
+    func isBlocked(_ id:String)->Bool {record.blocked.contains(id)}
+    func begin(_ id:String)throws {
+        guard !isBlocked(id) else{throw NSError(domain:"StageKeysPluginRecovery",code:1,userInfo:[NSLocalizedDescriptionKey:"This Audio Unit is blocked after a failed or interrupted load. Use Allow Blocked Loads in the Audio Units browser to retry explicitly."])}
+        record.pending[id,default:0]+=1;try save()
+    }
+    func finish(_ id:String,failed:Bool)throws {
+        let remaining=max(0,(record.pending[id] ?? 1)-1)
+        if remaining==0 {record.pending[id]=nil} else {record.pending[id]=remaining}
+        if failed {record.blocked.insert(id)}
+        try save()
+    }
+    func allowBlockedLoads()throws {record.blocked=[];try save()}
+}
+
 /// Persisted, portable component identity; installation remains a device requirement.
 /// Display metadata from the component catalog is presentation only: equality and
 /// hashing use the component triple and display name, so enriching a saved layer
