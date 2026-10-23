@@ -242,7 +242,7 @@ final class ExternalInstrumentRack {
             identity.vendor = vendor.isEmpty ? nil : vendor
             let version = component.versionString
             identity.version = version.isEmpty ? nil : version
-            identity.isV3 = d.componentFlags & UInt32(kAudioComponentFlag_IsV3AudioUnit) != 0
+            identity.isV3 = d.componentFlags & AudioComponentFlags.isV3AudioUnit.rawValue != 0
             #if os(macOS)
             identity.hasCustomView = component.hasCustomView
             #endif
