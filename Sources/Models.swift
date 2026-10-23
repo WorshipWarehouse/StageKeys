@@ -317,7 +317,8 @@ struct Patch: Codable, Identifiable {
     var programChangeNumber: Int?
     var tonicState:TonicPatchState?
     var silencePrevious = false
-    enum CodingKeys: String, CodingKey { case id,name,tempo,transpose,playIn,hearIn,layers,snapshots,visualMode,silencePrevious,volumeDB,programChangeEnabled,programChangeNumber,tonicState }
+    var conversionNotes:[String]?
+    enum CodingKeys: String, CodingKey { case id,name,tempo,transpose,playIn,hearIn,layers,snapshots,visualMode,silencePrevious,volumeDB,programChangeEnabled,programChangeNumber,tonicState,conversionNotes }
     init(name: String, layers: [Layer], snapshots: [Snapshot]) { self.name = name; self.layers = layers; self.snapshots = snapshots }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -333,6 +334,7 @@ struct Patch: Codable, Identifiable {
         programChangeNumber = try c.decodeIfPresent(Int.self,forKey:.programChangeNumber)
         tonicState = try c.decodeIfPresent(TonicPatchState.self,forKey:.tonicState)
         silencePrevious = try c.decodeIfPresent(Bool.self, forKey: .silencePrevious) ?? false
+        conversionNotes = try c.decodeIfPresent([String].self,forKey:.conversionNotes)
     }
     static func make(_ name: String = "New Patch", gains: [Float] = [0.72, 0.35, 0]) -> Patch {
         let layers = [Layer(name: "Soft Keys", instrument: 0, gain: gains[0]), Layer(name: "Warm Pad", instrument: 1, gain: gains[1]), Layer(name: "Glass Bells", instrument: 2, gain: gains[2])] + (0..<12).map { _ in Layer.empty() }
@@ -369,6 +371,7 @@ struct Setlist: Codable {
         guard (1...4).contains(version), !patches.isEmpty, patches.count <= 128, name.count <= 200 else { throw SetlistError.invalid }
         guard Set(patches.map(\.id)).count == patches.count else { throw SetlistError.invalid }
         for p in patches {
+            guard p.conversionNotes.map({$0.count<=128 && $0.allSatisfy{$0.count<=2000}}) ?? true else {throw SetlistError.invalid}
             guard p.tonicState?.valid ?? true else{throw SetlistError.invalid}
             guard p.volumeDB.isFinite,(-24...12).contains(p.volumeDB),p.programChangeNumber == nil || (0...127).contains(p.programChangeNumber!), !p.name.isEmpty, p.name.count <= 200, p.tempo.isFinite, (20...300).contains(p.tempo), (-24...24).contains(p.transpose), (0...11).contains(p.playIn), (0...11).contains(p.hearIn), (1...15).contains(p.layers.count), p.snapshots.count <= 16, (0...2).contains(p.visualMode), Set(p.layers.map(\.id)).count == p.layers.count, Set(p.snapshots.map(\.id)).count == p.snapshots.count else { throw SetlistError.invalid }
             for l in p.layers {

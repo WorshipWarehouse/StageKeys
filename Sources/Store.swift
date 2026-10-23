@@ -1012,6 +1012,14 @@ final class PerformanceStore: ObservableObject {
             libraryImportProgress="Preserved \(report.channels.count) channel strips and their original effects, macros and MIDI data. Playback conversion requires \(report.blockers.count) unsupported settings to be translated. No incomplete sound was added."
         }catch{mainStageImportReport=nil;libraryImportProgress=error.localizedDescription}
     }
+    func assembleConvertedMainStagePatch() {
+        guard !patchLock,let report=mainStageImportReport,setlist.patches.count<128 else{return}
+        do {
+            let assembled=try MainStagePatch.assembledChannels(report,entries:librarySounds)
+            setlist.patches.append(assembled);choose(setlist.patches.count-1);save()
+            message="Converted channels added as a new patch. Review Conversion Notes in Patch Settings before performing."
+        }catch{message=error.localizedDescription}
+    }
     @discardableResult
     func importSound(_ url:URL,index:Int,sampleRoot:URL?=nil)->Bool {
         guard let sound=importLibrarySound(url,sampleRoot:sampleRoot),
