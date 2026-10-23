@@ -4,6 +4,8 @@ import AVFoundation
 import CryptoKit
 #if os(macOS)
 import AppKit
+#else
+import UIKit
 #endif
 
 final class PerformanceStore: ObservableObject {
@@ -32,6 +34,22 @@ final class PerformanceStore: ObservableObject {
         }catch{message=error.localizedDescription}
     }
     func stopAudioCheck(){audio.stopAudioCheck()}
+    func copySupportDiagnostics() {
+        do {
+            let report = SupportDiagnostics(version: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "development",
+                build: Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "development",
+                running: audio.running, status: audioStatus, latency: try? audio.latencyChain(),
+                midiSources: midiSources.filter(\.connected).count, loadedSlots: patch.layers.filter(\.loaded).count,
+                limiterBypassed: masterLimiterBypassed, recording: audioCheckRecording)
+            let text = try report.json()
+            #if os(macOS)
+            NSPasteboard.general.clearContents(); NSPasteboard.general.setString(text, forType: .string)
+            #else
+            UIPasteboard.general.string = text
+            #endif
+            message = "Diagnostics copied locally. Review before sharing. No device names, file paths, samples, setlists or plug-in state are included. Underruns and physical keyboard latency are not measured."
+        } catch { message = "Could not create diagnostics: \(error.localizedDescription)" }
+    }
     @Published var deviceCount = 0
     @Published var midiSources: [MIDIInputSource] = []
     @Published var midiDevices: [MIDIKnownDevice] = []
