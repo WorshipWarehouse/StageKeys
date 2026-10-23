@@ -25,12 +25,16 @@ struct SoundImportView:View {
                 }
                 if let report=store.mainStageImportReport {
                     if report.channels.contains(where:{!$0.instruments.isEmpty}) {
-                        Button("Import MainStage Sounds") {choice = .mainStageSamples;choosing=true}.buttonStyle(StageButtonStyle())
+                        Button("Locate Samples and Convert Selected Channels") {choice = .mainStageSamples;choosing=true}.buttonStyle(StageButtonStyle())
+                        Button("Convert Included Instruments") {store.convertIncludedMainStageSounds()}.buttonStyle(StageButtonStyle()).disabled(store.selectedMainStageChannels.isEmpty)
                         Text("Choose the original EXS/sample folder. Supported channel effects and controls are saved with each sound; conversion notes list remaining differences.").font(.caption).foregroundStyle(.secondary)
                     }
                     DisclosureGroup("Conversion Report · \(report.name)") {
                         ScrollView {VStack(alignment:.leading,spacing:6) {
-                            ForEach(Array(report.channels.enumerated()),id:\.offset) {_,channel in
+                            ForEach(Array(report.channels.enumerated()),id:\.offset) {channelIndex,channel in
+                                if !channel.instruments.isEmpty {
+                                    Toggle("Convert \(channel.name)",isOn:Binding(get:{store.selectedMainStageChannels.contains(channelIndex)},set:{store.selectMainStageChannel(channelIndex,$0)}))
+                                }
                                 Text(channel.name+": "+channel.devices.map(\.name).joined(separator:", ")).font(.caption)
                                 if !channel.instruments.isEmpty {Text(channel.instruments.joined(separator:", ")).font(.caption).foregroundStyle(.secondary)}
                             }
