@@ -13,7 +13,8 @@ struct SoundBrowser: View {
     @State private var showingImportNotes=false
     @State private var auditionToken:UUID?
     @State private var instruments=ExternalInstrumentRack.instruments()
-    @State private var destinations=ExternalMIDIOutput.destinations()
+    /// Shared with Settings so a setup change reaches the library immediately.
+    private var destinations:[ExternalMIDIDestination] { store.midiDestinations }
     private var collections:[String] {
         let builtins=["All Sounds","StageKeys","My Sounds","Sunday Free","Sunday App","MainStage Archive","Audio Units","External MIDI"]
         return builtins + Set(store.librarySounds.map(\.collection).filter{$0 != "Tonic Pads"}).subtracting(builtins).sorted{$0.localizedStandardCompare($1) == .orderedAscending}
@@ -163,7 +164,7 @@ struct SoundBrowser: View {
                 } else {Text(results.count==1 ? "1 sound":"\(results.count) sounds").foregroundStyle(.secondary)}
             }.font(StageTheme.font(12)).frame(maxWidth:.infinity,alignment:.leading)
             if selection?.entry?.conversionNotes?.isEmpty == false {Button("Import Notes"){showingImportNotes=true}.buttonStyle(StageButtonStyle()).popover(isPresented:$showingImportNotes){ScrollView{VStack(alignment:.leading,spacing:12){ForEach(selection?.entry?.conversionNotes ?? [],id:\.self){Text($0)}}.padding(20)}.frame(width:420,height:300)}}
-            if collection == "External MIDI" {Button("Refresh"){destinations=ExternalMIDIOutput.destinations()}.buttonStyle(StageButtonStyle())}
+            if collection == "External MIDI" {Button("Refresh"){store.refreshMIDIDestinations()}.buttonStyle(StageButtonStyle())}
             if collection == "Audio Units" {Button("Rescan"){instruments=ExternalInstrumentRack.instruments()}.buttonStyle(StageButtonStyle()).help("Re-scan installed Audio Units; a plug-in installed while StageKeys is running may need a relaunch")}
             Button(auditionToken == nil ? "Audition":"Stop Audition") {
                 if let token=auditionToken {store.endAudition(token);auditionToken=nil} else {auditionSelection()}

@@ -66,6 +66,20 @@ struct SettingsEditor: View {
                             Stepper("Minimum: \(store.velocityMinimum)",value:$store.velocityMinimum,in:0...store.velocityMaximum)
                             Stepper("Maximum: \(store.velocityMaximum)",value:$store.velocityMaximum,in:store.velocityMinimum...127)
                         }
+                        Section("MIDI Outputs") {
+                            if store.midiDestinations.isEmpty { Text("No MIDI outputs are available. Connect an interface or create an IAC bus in Audio MIDI Setup.").font(.caption).foregroundStyle(.secondary) }
+                            ForEach(store.midiDestinations) { destination in
+                                HStack {
+                                    Image(systemName: destination.virtual ? "rectangle.connected.to.line.below" : destination.online ? "checkmark.circle.fill" : "exclamationmark.circle").foregroundStyle(destination.virtual ? StageTheme.selected : destination.online ? .green : .orange)
+                                    Text(destination.name)
+                                    Spacer()
+                                    if !destination.online { Text("Offline").foregroundStyle(.secondary) }
+                                    Button("Test") { store.testMIDIDestination(destination.id) }.disabled(!destination.online)
+                                }
+                            }
+                            Button("Refresh MIDI Outputs") { store.refreshMIDIDestinations() }
+                            Text("Choose an output per sound in Sound Settings. Do not route a destination back into a StageKeys input; a loopback driver can otherwise repeat notes and controllers.").font(.caption).foregroundStyle(.secondary)
+                        }
                         #if os(macOS)
                         Section("Bluetooth / Network MIDI") {
                             Text("Connect Bluetooth or network controllers in Audio MIDI Setup, then assign them above.").font(.caption)

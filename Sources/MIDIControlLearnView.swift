@@ -12,6 +12,7 @@ struct MIDIControlLearnView: View {
                     Text("\(store.deviceCount) MIDI input\(store.deviceCount == 1 ? "" : "s") connected").font(StageTheme.font(12)).foregroundStyle(.secondary)
                 }
                 Spacer()
+                Button("Reset All") { store.resetMIDILearn() }.buttonStyle(StageButtonStyle()).help("Remove every learned controller assignment; fixed modulation, sustain, panic and program-change routes remain")
                 Button { store.learningTarget = nil; dismiss() } label: { Image(systemName: "xmark").font(.system(size: 18)).frame(width: 30,height: 30) }.buttonStyle(.plain).accessibilityLabel("Close MIDI Learn")
             }.padding(20).background(StageTheme.base)
             ScrollView {
