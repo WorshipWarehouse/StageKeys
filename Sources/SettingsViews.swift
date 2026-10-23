@@ -48,6 +48,14 @@ struct SettingsEditor: View {
                             Button("Refresh Audio Devices") { store.refreshAudioDevices() }
                         }
                         Section("Shared Hall Reverb") { Slider(value:$store.reverb,in:0...65);Text("Wet Mix: \(Int(store.reverb)) %") }
+                        Section("Local Diagnostics") {
+                            Button("Copy Support Diagnostics") { store.copySupportDiagnostics() }
+                            Text("Copies app version, audio rate/buffer, reported latency, MIDI/sound counts and limiter state. No automatic upload. Device names, paths, samples, setlists and plug-in state are excluded.").font(.caption).foregroundStyle(.secondary)
+                            Button(store.audioCheckRecording ? "Stop Audio Check" : "Record 30-Second Audio Check") {
+                                if store.audioCheckRecording { store.stopAudioCheck() } else { store.startAudioCheck() }
+                            }
+                            Text("Audio checks record your performance to a local file only. Share a recording only when you choose to.").font(.caption).foregroundStyle(.secondary)
+                        }
                     case "Flex Routing":
                         Section("Stereo Output") { Text("All modules and the tonic pad feed the system stereo output. Per-module pan is available in Sound Settings.") }
                         Text("Multiple hardware outputs and category routing are not implemented.").foregroundStyle(.secondary)
