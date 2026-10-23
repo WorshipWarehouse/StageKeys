@@ -53,6 +53,12 @@ struct ExternalAUIdentity: Codable, Hashable, Identifiable {
     var id: String { "\(type)-\(subtype)-\(manufacturer)" }
     var isAvailable: Bool { unavailableReason == nil }
     var displayName: String { vendor.map { "\(name) — \($0)" } ?? name }
+    func platformUnavailableReason(isMobile:Bool)->String? {
+        if isMobile && manufacturer != kAudioUnitManufacturer_Apple && isV3 == false {
+            return "This saved instrument is a macOS AUv2 plug-in. Install an iOS AUv3 version on this device; a Mac binary cannot run on iPhone or iPad."
+        }
+        return unavailableReason
+    }
     static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.type == rhs.type && lhs.subtype == rhs.subtype && lhs.manufacturer == rhs.manufacturer && lhs.name == rhs.name
     }

@@ -486,6 +486,11 @@ final class ExternalInstrumentRack {
             guard let component = sound.component, component.type == kAudioUnitType_MusicDevice else {
                 completion(.failure(ExternalInstrumentError.invalidComponent)); return
             }
+            #if os(iOS)
+            if let reason=component.platformUnavailableReason(isMobile:true) {
+                completion(.failure(NSError(domain:"StageKeysPluginPlatform",code:1,userInfo:[NSLocalizedDescriptionKey:reason])));return
+            }
+            #endif
             let recovery:PluginLoadRecovery
             do {recovery=try Self.loadRecovery();try recovery.begin(component.id)}
             catch {completion(.failure(error));return}
