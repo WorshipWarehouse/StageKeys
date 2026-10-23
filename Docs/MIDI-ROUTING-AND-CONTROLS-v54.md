@@ -55,3 +55,9 @@ Pending manual checks:
 - Pitch bend, aftertouch, program change and SysEx are not forwarded to MIDI layers, and incoming MIDI is only forwarded as note on/off plus pedal/level CCs.
 - The MIDI monitor is a flat 15-line log without filtering by device or message type.
 - MIDI learn addresses host controls only, not Audio Unit parameters (issue #12's generic editor writes parameters directly).
+
+## Mac verification follow-up — 23 October 2026
+
+Universal Mac and iOS Simulator Release builds pass with the inherited AU fixes. Manual MIDI refresh now calls the output enumerator rather than reading the existing cache. A production-store regression creates a real CoreMIDI destination without yielding to queued setup notifications and proves explicit refresh adds/removes it.
+
+MIDISetupTests, ManualMIDIDestinationRefreshTests, ExternalMIDITests and MIDIInputTests pass. CoreMIDI is allowed to coalesce messages, so the output test traverses every packet and checks decoded three-byte messages rather than assuming one message per packet. The test waits for all three output messages. Input coverage includes post-launch attachment, two source/channel identities, stable refresh, sustain/note-off, unplug and surviving input. The real Alesis was left idle; these synthetic endpoints do not constitute USB power-cycle or external IAC/hardware receiver certification. Broader physical-device acceptance remains open under issue #15.
