@@ -318,6 +318,11 @@ final class PerformanceStore: ObservableObject {
         importMainStageSamplers(saveURL.deletingLastPathComponent().appendingPathComponent("MainStage Sources/"+id+"/Source.patch",isDirectory:true))
     }
     @Published var libraryImportBusy=false
+    private var libraryImportCancelRequested=false
+    func cancelLibraryImport(){libraryImportCancelRequested=true}
+    private func checkLibraryImportCancellation()throws {
+        if libraryImportCancelRequested {throw MainStagePatch.Failure.invalid("Import cancelled. No prepared catalog entries were committed.")}
+    }
     @Published var libraryImportProgress:String?
     @Published var savedSetlists: [SetlistLibraryDescriptor] = []
     @Published var setlistLibraryIssues: [SetlistLibraryIssue] = []
@@ -919,19 +924,21 @@ final class PerformanceStore: ObservableObject {
     }
     func importLibraryBackup(_ folder:URL) {
         guard !libraryImportBusy else{return}
-        libraryImportBusy=true
+        libraryImportCancelRequested=false;libraryImportBusy=true
         Task { @MainActor in
             let access=folder.startAccessingSecurityScopedResource()
             defer{libraryImportBusy=false;if access{folder.stopAccessingSecurityScopedResource()}}
             do {
                 let pack=try LibraryBackup.read(folder)
-                var entries=librarySounds,imported=0,skipped=0,failures:[String]=[]
+                let library=SoundLibrary(url:saveURL.deletingLastPathComponent().appendingPathComponent("sound-library.json"))
+                let original=try library.read()
+                var entries=original,imported=0,skipped=0,failures:[String]=[]
                 var installedPresets:[String:ExternalSound]=[:]
                 guard let rack=audio.externalRack else{throw ExternalInstrumentError.unsupportedFormat}
                 for var entry in pack.sounds {
                     guard !entries.contains(where:{$0.id==entry.id}) else{skipped+=1;continue}
                     guard let sound=entry.sound ?? entry.layer?.external,sound.kind == .samplerPreset else{skipped+=1;continue}
-                    libraryImportProgress="Importing library sound: "+entry.name;await Task.yield()
+                    libraryImportProgress="Preparing library sound: "+entry.name;await Task.yield();try checkLibraryImportCancellation()
                     let temp=FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString+".aupreset")
                     defer{try? FileManager.default.removeItem(at:temp)}
                     do {
@@ -952,7 +959,9 @@ final class PerformanceStore: ObservableObject {
                         entries.append(entry);imported+=1
                     }catch{failures.append(entry.name+": "+error.localizedDescription)}
                 }
-                try SoundLibrary(url:saveURL.deletingLastPathComponent().appendingPathComponent("sound-library.json")).write(entries);librarySounds=entries
+                try checkLibraryImportCancellation()
+                guard failures.isEmpty else {throw MainStagePatch.Failure.invalid("Import not committed: "+failures.prefix(6).joined(separator:"; "))}
+                try library.commitImport(entries,replacing:original);librarySounds=entries
                 libraryImportProgress="Imported \(imported) library sounds with their rack processing; \(skipped) existing/archive entries skipped. "+failures.prefix(6).joined(separator:"; ")
             }catch{libraryImportProgress=error.localizedDescription}
         }
@@ -1003,24 +1012,26 @@ final class PerformanceStore: ObservableObject {
         let selection=selectedMainStageChannels
         let names=Set(report.channels.enumerated().filter{selection.contains($0.offset)}.flatMap{$0.element.instruments})
         guard !names.isEmpty,names.count<=64 else{libraryImportProgress="No supported EXS references were found in this source patch.";return}
-        libraryImportBusy=true
+        libraryImportCancelRequested=false;libraryImportBusy=true
         Task { @MainActor in
             let access=folder.startAccessingSecurityScopedResource()
             defer{libraryImportBusy=false;if access{folder.stopAccessingSecurityScopedResource()}}
             do {
                 let files=try MainStagePatch.findSamplerInstruments(names,in:folder)
-                var imported=0,skipped=0,failures:[String]=[]
+                let library=SoundLibrary(url:saveURL.deletingLastPathComponent().appendingPathComponent("sound-library.json"))
+                let original=try library.read()
+                var entries=original,imported=0,skipped=0,failures:[String]=[]
                 for (channelIndex,channel) in report.channels.enumerated() where selection.contains(channelIndex) && !channel.instruments.isEmpty {
-                    guard channel.unsupportedInstrumentFamily == nil else { failures.append(channel.name+": "+channel.nativeInstrumentStatus);continue }
+                    guard channel.unsupportedInstrumentFamily == nil else {failures.append(channel.name+": "+channel.nativeInstrumentStatus);continue}
                     guard channel.instruments.count==1,let name=channel.instruments.first else{failures.append(channel.name+": layered sampler selection requires translation");continue}
                     let matches=files.filter{$0.lastPathComponent==name}
                     guard matches.count==1 else{failures.append(name+": "+(matches.isEmpty ? "instrument not found in the selected folder":"multiple matches; choose a narrower folder"));continue}
                     let file=matches[0]
                     libraryImportProgress="Importing MainStage channel: "+channel.name
-                    await Task.yield()
+                    await Task.yield();try checkLibraryImportCancellation()
                     do {
                         let id="mainstage-channel-"+channel.sha256+"-"+(try AssetDigest.sha256(file))
-                        if librarySounds.contains(where:{$0.id==id}){skipped+=1;continue}
+                        if entries.contains(where:{$0.id==id}){skipped+=1;continue}
                         let processing=try mainStageProcessing(channelIndex)
                         let (sound,notes,template)=try prepareLibrarySound(file,sampleRoot:folder)
                         var layer=template ?? Layer(name:channel.name,instrument:-1,gain:1)
@@ -1028,11 +1039,13 @@ final class PerformanceStore: ObservableObject {
                         layer=try processing.applying(to:layer)
                         let original=try StageKeysSampler.retainOriginal(file,library:saveURL.deletingLastPathComponent())
                         let entry=LibrarySound(id:id,name:channel.name,collection:"MainStage Patches",sound:sound,layer:layer,sourceArchiveID:report.sourceArchiveID,conversionNotes:(notes ?? [])+processing.issues,originalInstrument:original)
-                        var entries=librarySounds;entries.append(entry)
-                        try SoundLibrary(url:saveURL.deletingLastPathComponent().appendingPathComponent("sound-library.json")).write(entries);librarySounds=entries
+                        entries.append(entry)
                         imported+=1
                     }catch{failures.append(channel.name+": "+error.localizedDescription)}
                 }
+                try checkLibraryImportCancellation()
+                guard failures.isEmpty else{throw MainStagePatch.Failure.invalid("Import not committed: "+failures.prefix(6).joined(separator:"; "))}
+                try library.commitImport(entries,replacing:original);librarySounds=entries
                 libraryImportProgress="Imported \(imported) MainStage channels with supported effects, macros and MIDI settings; \(skipped) already present. Review conversion notes for unsupported routing and processing. "+failures.joined(separator:"; ")
             }catch{libraryImportProgress=error.localizedDescription}
         }
@@ -1066,28 +1079,34 @@ final class PerformanceStore: ObservableObject {
         addLibrarySound(entry,index:index);return true
     }
     func importSamplerLibrary(_ folder: URL) {
-        let access = folder.startAccessingSecurityScopedResource()
-        defer { if access { folder.stopAccessingSecurityScopedResource() } }
-        do {
-            guard !libraryImportBusy else{message="A sound library import is already running.";return}
-            let library = SoundLibrary(url: saveURL.deletingLastPathComponent().appendingPathComponent("sound-library.json"))
-            var entries = try library.read()
-            let presets = try SoundLibrary.samplerPresets(in: folder)
-            var imported = 0, skipped = 0; var failures: [String] = []
-            for url in presets {
-                do {
-                    let bytes = try Data(contentsOf: url)
-                    guard bytes.count <= 16_000_000 else { throw ExternalInstrumentError.unsupportedFormat }
-                    let id = "sampler-" + SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
-                    if entries.contains(where: { $0.id == id }) { skipped += 1; continue }
+        guard !libraryImportBusy else{message="A sound library import is already running.";return}
+        libraryImportCancelRequested=false;libraryImportBusy=true
+        Task { @MainActor in
+            let access=folder.startAccessingSecurityScopedResource()
+            defer{libraryImportBusy=false;if access{folder.stopAccessingSecurityScopedResource()}}
+            do {
+                let library=SoundLibrary(url:saveURL.deletingLastPathComponent().appendingPathComponent("sound-library.json"))
+                let original=try library.read()
+                var entries=original,imported=0,skipped=0
+                for url in try SoundLibrary.samplerPresets(in:folder) {
+                    libraryImportProgress="Preparing sampler: "+url.lastPathComponent
+                    await Task.yield();try checkLibraryImportCancellation()
+                    let values=try url.resourceValues(forKeys:[.fileSizeKey])
+                    guard (values.fileSize ?? Int.max)<=16_000_000 else{throw ExternalInstrumentError.unsupportedFormat}
+                    let bytes=try Data(contentsOf:url)
+                    guard bytes.count<=16_000_000 else{throw ExternalInstrumentError.unsupportedFormat}
+                    let id="sampler-"+MainStagePatch.digest(bytes)
+                    if entries.contains(where:{$0.id==id}){skipped+=1;continue}
                     let (sound,notes,layer)=try prepareLibrarySound(url,sampleRoot:folder)
-                    entries.append(LibrarySound(id: id, name: sound.name, collection: "My Sounds", sound: sound,layer:layer,conversionNotes:notes))
-                    try library.write(entries); imported += 1
-                } catch { failures.append("\(url.lastPathComponent): \(error.localizedDescription)") }
-            }
-            librarySounds = entries
-            message = "Imported \(imported) sampler instruments; \(skipped) already in library; \(failures.count) failed." + (failures.isEmpty ? "" : "\n" + failures.prefix(3).joined(separator: "\n"))
-        } catch { message = error.localizedDescription }
+                    let originalInstrument=try StageKeysSampler.retainOriginal(url,library:saveURL.deletingLastPathComponent())
+                    entries.append(LibrarySound(id:id,name:sound.name,collection:"My Sounds",sound:sound,layer:layer,conversionNotes:notes,originalInstrument:originalInstrument))
+                    imported+=1
+                }
+                try checkLibraryImportCancellation()
+                try library.commitImport(entries,replacing:original);librarySounds=entries
+                libraryImportProgress="Imported \(imported) sampler instruments; \(skipped) already present."
+            }catch{libraryImportProgress="Import not committed: "+error.localizedDescription}
+        }
     }
     #if os(macOS)
     func exportLibrarySound(_ entry: LibrarySound) {
