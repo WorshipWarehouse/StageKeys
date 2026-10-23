@@ -71,6 +71,7 @@ struct SoundEditor: View {
                 } else {
                     VStack(spacing:12) {
                         ScrollView(.horizontal,showsIndicators:false) { SoundSettingsControls(layer:$draft).frame(minWidth:700) }
+                        if draft.loaded && draft.midiDestinationID == nil {InstrumentGainMatchControls(layer:$draft,index:index)}
                         if draft.external?.kind == .samplerPreset {StageKeysSamplerControls(sound:draft.external!)}
                         if let report=store.mainStageImportReport {
                             Menu("Preview MainStage Processing") {
@@ -168,6 +169,7 @@ struct SoundEditor: View {
 }
 struct EffectKnob: View {
     var compact = false
+    var inline = false
     let descriptor: AudioEffectParameterDescriptor
     @Binding var value: Float
     @State private var initial: Float?
@@ -180,23 +182,31 @@ struct EffectKnob: View {
         value = logarithmic ? descriptor.minimum * pow(descriptor.maximum/descriptor.minimum,unit) : descriptor.minimum + unit*(descriptor.maximum-descriptor.minimum)
         if descriptor.unit == "bits" || descriptor.unit == "semitones" { value = value.rounded() }
     }
-    var body: some View {
-        VStack(spacing: compact ? 6:10) {
-            Text(descriptor.name).font(StageTheme.font(13,weight:.semibold)).lineLimit(2).frame(height:compact ? 24:32)
+    private var dial:some View {
             ZStack {
                 Circle().trim(from:0.13,to:0.87).stroke(.white.opacity(0.14),lineWidth:3).rotationEffect(.degrees(90))
                 Circle().trim(from:0.13,to:0.13 + 0.74*CGFloat(position)).stroke(StageTheme.selected,lineWidth:3).rotationEffect(.degrees(90))
                 Circle().fill(LinearGradient(colors:[StageTheme.raised,StageTheme.base],startPoint:.topLeading,endPoint:.bottomTrailing)).padding(7).shadow(color:.black.opacity(0.5),radius:4,y:3)
-                Capsule().fill(StageTheme.selected).frame(width:3,height:16).offset(y:compact ? -17:-23).rotationEffect(.degrees(-133+Double(position)*266))
-            }.frame(width:compact ? 56:84,height:compact ? 56:84).contentShape(Circle())
+                Capsule().fill(StageTheme.selected).frame(width:3,height:inline ? 12:16).offset(y:inline ? -12:compact ? -17:-23).rotationEffect(.degrees(-133+Double(position)*266))
+            }.frame(width:inline ? 44:compact ? 56:84,height:inline ? 44:compact ? 56:84).contentShape(Circle())
                 .gesture(DragGesture(minimumDistance:0).onChanged { v in if initial == nil { initial = position }; set(initial! - Float(v.translation.height)/180) }.onEnded { _ in initial=nil })
                 .accessibilityElement().accessibilityLabel(descriptor.name).accessibilityValue("\(descriptor.unit == "%" ? value*100:value) \(descriptor.unit)")
                 .accessibilityAdjustableAction { set(position + ($0 == .increment ? 0.02 : -0.02)) }
+    }
+    private var valueField:some View {
             HStack(spacing:4) {
-                TextField(descriptor.name,value:Binding(get:{descriptor.unit == "%" ? value*100 : value},set:{ if $0.isFinite { let raw=descriptor.unit == "%" ? $0/100 : $0; value=min(descriptor.maximum,max(descriptor.minimum,raw)) } }),format:.number.precision(.fractionLength(0...2))).textFieldStyle(.plain).multilineTextAlignment(.center).frame(width:65)
+                TextField(descriptor.name,value:Binding(get:{descriptor.unit == "%" ? value*100 : value},set:{ if $0.isFinite { let raw=descriptor.unit == "%" ? $0/100 : $0; value=min(descriptor.maximum,max(descriptor.minimum,raw)) } }),format:.number.precision(.fractionLength(0...2))).textFieldStyle(.plain).multilineTextAlignment(inline ? .leading:.center).frame(width:inline ? 50:65)
                 Text(descriptor.unit).font(StageTheme.font(10)).foregroundStyle(.secondary)
             }
-        }.frame(maxWidth:.infinity).padding(compact ? 6:10)
+    }
+    var body:some View {
+        Group {
+            if inline {
+                HStack(spacing:6){dial;VStack(alignment:.leading,spacing:4){Text(descriptor.name).font(StageTheme.font(11)).foregroundStyle(.secondary).lineLimit(2);valueField}}.frame(maxWidth:.infinity,alignment:.leading).padding(4)
+            } else {
+                VStack(spacing:compact ? 6:10){Text(descriptor.name).font(StageTheme.font(13,weight:.semibold)).lineLimit(2).frame(height:compact ? 24:32);dial;valueField}.frame(maxWidth:.infinity).padding(compact ? 6:10)
+            }
+        }
     }
 }
 /// Shared settings/output organization for native and imported rack effects.
@@ -206,7 +216,7 @@ struct GroupedEffectControls:View {
     private var groups:[(String,[Int])] {
         switch kind {
         case 10:return [("Shimmer",[0,1,2,3]),("Character",[4,9,5,6])]
-        case 15:return [("Space",[0,1,2]),("Character",[3,4]),("Modulation",[5,6,7])]
+        case 15:return [("Settings",[0,1,2]),("Character",[10,3,4]),("Modulation",[5,6,7])]
         case 16:return [("Room",[0,1,2,3]),("Character",[6,7,8,4,5])]
         case 5:return [("Chorus",[0,1,2,3])]
         case 11:return [("Overdrive",[0,1,2,4])]
@@ -219,18 +229,18 @@ struct GroupedEffectControls:View {
     }
     private func descriptor(_ index:Int)->AudioEffectParameterDescriptor {
         let d=AudioEffectCatalog.descriptors(for:kind).first{$0.index==index}!
-        let label=kind==10 ? (index==1 ? "FDBK":index==4 ? "Mod":d.name):d.name
+        let label=kind==10 ? (index==1 ? "FDBK":index==4 ? "Mod":d.name):kind==15 ? (index==6 ? "Chorus AMT":index==7 ? "Chorus Rate":d.name):d.name
         return .init(index:d.index,name:label,minimum:d.minimum,maximum:d.maximum,defaultValue:d.defaultValue,unit:d.unit)
     }
     private func panel<Content:View>(_ title:String,@ViewBuilder content:()->Content)->some View {
-        VStack(spacing:0){Text(title).font(StageTheme.font(13,weight:.semibold)).frame(maxWidth:.infinity).padding(.vertical,12);Divider().opacity(0.4);content().frame(minHeight:kind==10 ? 150:0).padding(12)}.background(StageTheme.panel,in:RoundedRectangle(cornerRadius:8))
+        VStack(spacing:0){Text(title).font(StageTheme.font(13,weight:.semibold)).frame(maxWidth:.infinity).padding(.vertical,12);Divider().opacity(0.4);content().frame(minHeight:kind==10 ? 150:kind==15 ? 90:0).padding(12)}.background(StageTheme.panel,in:RoundedRectangle(cornerRadius:8))
     }
     var body:some View {
         HStack(alignment:.top,spacing:5){
             VStack(spacing:5){ForEach(groups.indices,id:\.self){index in
-                panel(groups[index].0){LazyVGrid(columns:Array(repeating:GridItem(.flexible(),spacing:4),count:min(4,groups[index].1.count)),spacing:10){ForEach(groups[index].1,id:\.self){p in EffectKnob(compact:true,descriptor:descriptor(p),value:parameter(p))}}}
+                panel(groups[index].0){LazyVGrid(columns:Array(repeating:GridItem(.flexible(),spacing:4),count:min(4,groups[index].1.count)),spacing:10){ForEach(groups[index].1,id:\.self){p in EffectKnob(compact:true,inline:kind==15,descriptor:descriptor(p),value:parameter(p))}}}
             }}
-            panel("Output"){HStack(alignment:.top,spacing:12){ForEach(outputs,id:\.self){p in EffectParameterFader(descriptor:descriptor(p),value:parameter(p))}}.frame(height:kind==10 ? 370:groups.count>1 ? 330:200)}.frame(width:outputs.count>1 ? 170:100)
+            panel("Output"){HStack(alignment:.top,spacing:12){ForEach(outputs,id:\.self){p in EffectParameterFader(descriptor:descriptor(p),value:parameter(p))}}.frame(height:kind==10 ? 370:kind==15 ? 410:groups.count>1 ? 330:200)}.frame(width:outputs.count>1 ? 170:100)
         }.padding(.horizontal,16).padding(.vertical,8)
     }
 }
@@ -320,7 +330,7 @@ struct EffectEditor: View {
                     }
                     Spacer()
                     if !replacing {
-                        Text(draft.enabled ? "Effect ON":"Effect OFF").font(.caption).foregroundStyle(.secondary)
+                        Text(draft.enabled ? "Effect ON":"Effect Bypassed").font(.caption).foregroundStyle(.secondary)
                         Button{draft.enabled.toggle()}label:{Image(systemName:"power").frame(width:22,height:22)}.buttonStyle(StageButtonStyle(selected:draft.enabled)).accessibilityLabel("Effect power").accessibilityValue(draft.enabled ? "On":"Off")
                     } else {Toggle("Effect ON",isOn:$draft.enabled).toggleStyle(.switch)}
                 }.padding(.horizontal,20).padding(.bottom,12)

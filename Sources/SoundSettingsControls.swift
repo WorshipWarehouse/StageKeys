@@ -278,3 +278,47 @@ struct StageKeysSamplerControls:View {
         }
     }
 }
+
+struct InstrumentGainMatchControls:View {
+    @EnvironmentObject private var store:PerformanceStore
+    @Binding var layer:Layer
+    let index:Int
+    @State private var measurement:InstrumentGainMatch.Result?
+    @State private var status:String?
+    @State private var task:Task<Void,Never>?
+    @State private var measurementToken=UUID()
+    private func measure() {
+        let input=layer,token=UUID();measurementToken=token
+        var source=input
+        do {if source.external?.kind == .audioUnit {source.pluginState=try store.audio.externalRack?.stateData(channel:index) ?? source.pluginState}}
+        catch{status=error.localizedDescription;return}
+        measurement=nil;status="Measuring an isolated copy; live playback is unchanged."
+        task=Task { @MainActor in
+            do {
+                let result=try await InstrumentGainMatch.measure(source,modulation:store.modWheel)
+                guard !Task.isCancelled,measurementToken==token,layer==input else{return}
+                measurement=result
+                status=String(format:"Probe RMS %.1f dBFS · peak %.1f dBFS%@",result.rmsDB,result.peakDB,result.peakLimited ? " · peak limited":"")
+            }catch is CancellationError {}catch{if measurementToken==token{status=error.localizedDescription}}
+            if measurementToken==token{task=nil}
+        }
+    }
+    var body:some View {
+        VStack(alignment:.leading,spacing:8) {
+            HStack {
+                Text("Output Level Match").font(.headline)
+                Text(String(format:"%+.1f dB",layer.channelSettings.outputTrimDB ?? 0)).monospacedDigit()
+                Spacer()
+                if task != nil {ProgressView();Button("Cancel"){task?.cancel();task=nil;measurementToken=UUID();status="Calibration cancelled."}}
+                else {Button("Measure Sound",action:measure)}
+                Button("Reset Trim"){layer.channelSettings.outputTrimDB=nil}.disabled(layer.channelSettings.outputTrimDB==nil)
+                if let result=measurement {Button(String(format:"Apply %+.1f dB",result.trimDB)){layer.channelSettings.outputTrimDB=result.trimDB;measurement=nil;status="Output trim applied to this draft. Confirm to save or Discard to restore."}}
+            }.buttonStyle(StageButtonStyle())
+            Text("Unity-fader probe at velocities 83 and 127; target −24 dBFS RMS, measured peak ceiling −9 dBFS, trim −24…+12 dB. Applies a separate output trim and preserves source settings. Check sustained chords and slow or tempo-dependent sounds by ear; this is a fixed-probe estimate, not continuous leveling.").font(.caption).foregroundStyle(.secondary)
+            if let status {Text(status).font(.caption).textSelection(.enabled)}
+        }.padding(12).background(StageTheme.panel,in:RoundedRectangle(cornerRadius:8))
+        .onChange(of:layer){_ in task?.cancel();task=nil;measurementToken=UUID();measurement=nil}
+        .onChange(of:store.modWheel){_ in task?.cancel();task=nil;measurementToken=UUID();measurement=nil;status="Modulation changed; measure again."}
+        .onDisappear{task?.cancel();task=nil;measurementToken=UUID()}
+    }
+}

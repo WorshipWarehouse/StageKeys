@@ -58,3 +58,69 @@ final class AudioDiagnosticRecorder {
         lock.unlock()
     }
 }
+
+/// Opt-in fixed calibration. This measures an isolated graph, never the live mix.
+enum InstrumentGainMatch {
+    struct Result:Equatable {
+        let rmsDB:Double
+        let peakDB:Double
+        let trimDB:Float
+        let peakLimited:Bool
+    }
+    static func recommendation(rms:Double,peak:Double,targetDB:Double = -24,ceilingDB:Double = -9)throws->Result {
+        guard rms.isFinite,peak.isFinite,rms>0.00001,peak>=rms,targetDB.isFinite,ceilingDB.isFinite else{throw failure("No usable calibration signal. Check the instrument's playable range and preset.")}
+        let rmsDB=20*log10(rms),peakDB=20*log10(peak),wanted=targetDB-rmsDB,allowed=ceilingDB-peakDB
+        guard allowed >= -24 else{throw failure("The instrument output exceeds the calibration trim range. Lower its output and retry.")}
+        return Result(rmsDB:rmsDB,peakDB:peakDB,trimDB:Float(max(-24,min(12,min(wanted,allowed)))),peakLimited:allowed<wanted)
+    }
+    private static func failure(_ message:String)->NSError {NSError(domain:"StageKeysGainMatch",code:1,userInfo:[NSLocalizedDescriptionKey:message])}
+    @MainActor static func measure(_ original:Layer,modulation:Float)async throws->Result {
+        guard original.loaded,original.midiDestinationID==nil else{throw failure("External MIDI devices cannot be measured by the app's audio engine.")}
+        var layer=original;layer.gain=1;layer.muted=false;layer.channelSettings.outputTrimDB=nil
+        let audio=AudioController();var loadError:String?
+        audio.onError={loadError=$0};defer{audio.stop()}
+        try audio.prepareOffline();audio.bypassMasterLimiter(true);audio.master(1);audio.space(0)
+        audio.modulation(0,value:modulation);audio.configure(0,layer);audio.gain(0,1,seconds:0)
+        if layer.external != nil {
+            for _ in 0..<500 {
+                try Task.checkCancellation()
+                if let error=loadError{throw failure(error)}
+                if audio.externalRack?.unit(channel:0) != nil{break}
+                try await Task.sleep(nanoseconds:20_000_000)
+            }
+            guard audio.externalRack?.unit(channel:0) != nil else{throw failure("The instrument did not finish loading for calibration.")}
+        }
+        var energy=0.0,count=0,peak=0.0,blocks=0
+        func render(_ frames:Int,measure:Bool)async throws {
+            var position=0
+            while position<frames {
+                try Task.checkCancellation()
+                let buffer=try audio.offlineBlock()
+                guard let data=buffer.floatChannelData else{throw failure("The instrument did not provide floating-point audio.")}
+                for i in 0..<Int(buffer.frameLength) {
+                    for c in 0..<Int(buffer.format.channelCount) {
+                        let sample=Double(data[c][i]);guard sample.isFinite else{throw failure("The instrument produced invalid audio during calibration.")}
+                        peak=max(peak,abs(sample))
+                        if measure && position+i>=4800 && position+i<24000 {energy+=sample*sample;count+=1}
+                    }
+                }
+                position+=Int(buffer.frameLength);blocks+=1
+                if blocks%32==0 {await Task.yield()}
+            }
+        }
+        try await render(4096,measure:false)
+        let selected=[48,60,72].filter{(layer.low...layer.high).contains($0)}
+        let notes=selected.isEmpty ? [(layer.low+layer.high)/2]:selected
+        for note in notes {
+            audio.noteOn(key:note,pitch:note,instrument:layer.instrument,layer:0,velocity:83.0/127)
+            try await render(28800,measure:true)
+            audio.noteOff(key:note,channel:0);try await render(14400,measure:false)
+        }
+        audio.sustain(true,layers:[layer])
+        for note in notes {audio.noteOn(key:note,pitch:note,instrument:layer.instrument,layer:0,velocity:1);audio.noteOff(key:note,channel:0)}
+        try await render(48000,measure:false);audio.sustain(false,layers:[layer]);try await render(24000,measure:false)
+        if let error=loadError{throw failure(error)}
+        guard count>0 else{throw failure("No calibration audio was rendered.")}
+        return try recommendation(rms:sqrt(energy/Double(count)),peak:peak)
+    }
+}

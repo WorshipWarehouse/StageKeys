@@ -100,7 +100,8 @@ final class AudioController {
     }
     func noteOff(_ key: Int) { sk_note_off(synth, Int32(key)); externalRack?.noteOff(key: key) }
     private var patchGain: Float = 1
-    private func scaledGain(_ index:Int,_ gain:Float)->Float { gain * (index<15 ? patchGain : 1) }
+    private var outputTrims:[Int:Float]=[:]
+    private func scaledGain(_ index:Int,_ gain:Float)->Float { gain * (outputTrims[index] ?? 1) * (index<15 ? patchGain : 1) }
     func setPatchVolume(_ db:Float) { patchGain=pow(10,max(-24,min(12,db))/20);for (index,gain) in levels where index<15 { self.gain(index,gain) } }
     func gain(_ index: Int, _ gain: Float, seconds: Float = 0.025) {
         levels[index] = gain
@@ -126,6 +127,7 @@ final class AudioController {
             compressorEnabled: c.compressorEnabled, threshold: c.threshold, attack: c.compressorAttack, release: c.compressorRelease, makeup: c.makeup,ratio:c.ratio,inputGain:c.compressorInputGain ?? 0,mix:c.compressorMix ?? 1)
     }
     func configure(_ index: Int, _ layer: Layer) {
+        outputTrims[index]=pow(10,(layer.channelSettings.outputTrimDB ?? 0)/20)
         pans[index] = layer.pan
         let hostCurve=layer.importedRack?.mainStageAmplitudeVelocityCurve ?? layer.external?.nativeSampler?.rack.mainStageAmplitudeVelocityCurve
         if samplerHostCurves[index] != hostCurve || externalSounds[index] != layer.external || externalStates[index] != layer.pluginState || samplerAttacks[index] != layer.samplerAttackMinimum {
@@ -217,8 +219,7 @@ final class AudioController {
     func panic() { sk_panic(synth); externalRack?.panic() }
     func master(_ volume: Float) { engine.mainMixerNode.outputVolume = volume }
     func space(_ amount: Float) { reverb.wetDryMix = amount }
-    #if DEBUG
-    // Runs the actual production graph without sending sound to the device.
+    // Runs an isolated production graph without sending sound to the device.
     func prepareOffline() throws {
         let format = AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 2)!
         try engine.enableManualRenderingMode(.offline, format: format, maximumFrameCount: 512)
@@ -231,6 +232,5 @@ final class AudioController {
         guard status == .success else { throw NSError(domain: "StageKeysOffline", code: Int(status.rawValue)) }
         return buffer
     }
-    #endif
     deinit { engine.stop(); sk_destroy(synth) }
 }

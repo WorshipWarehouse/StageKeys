@@ -12,7 +12,7 @@ PrimaVerb's source-core path formerly chorused its finished wet output. Chorus n
 
 ## Remaining differences
 
-This article is a behavioral specification, not source DSP or proof of sonic equivalence. StageKeys SolaVerb still uses an approximate tank and lacks an independent Quality parameter. Version 0.45 moves pitch modulation to individual delay lines and separates the pre-tank chorus. Its diffusion, tonal response and modulation ranges still need matched listening. PrimaVerb's room models, reflectivity envelope, modulation ranges and Quality taper need matched listening/measurement. Halo Shimmer is a separate effect; the article does not specify its octave-shifting algorithm. Do not use it as evidence that Shimmer matches.
+This article is a behavioral specification, not source DSP or proof of sonic equivalence. StageKeys SolaVerb still uses an approximate tank; 0.50 adds an independent wet-clock Quality parameter, with its exact source taper unverified. Version 0.45 moves pitch modulation to individual delay lines and separates the pre-tank chorus. Its diffusion, tonal response and modulation ranges still need matched listening. PrimaVerb's room models, reflectivity envelope, modulation ranges and Quality taper need matched listening/measurement. Halo Shimmer is a separate effect; the article does not specify its octave-shifting algorithm. Do not use it as evidence that Shimmer matches.
 
 Steinway loudness/velocity calibration remains open; this chorus fix does not change sampler gain or velocity mapping. Remaining source patches requiring unavailable instruments or native synth engines remain blocked rather than receiving substitute sounds.
 
@@ -22,6 +22,6 @@ The 19 October piano-only capture validates 12 isolated notes with peak 0.4822 (
 
 ## SolaVerb 0.45
 
-Replaced the shared feedback tank/output pitch blend with four independently modulated feedback paths, two diffusion stages, and a separate pre-tank chorus. Reflectivity now sets a continuous decay target rather than multiplying one short shared loop. Predelay affects only wet excitation. The UI separates Character from Modulation. Existing parameter indices and saved presets remain valid; their wet sound changes with the new algorithm. Quality remains unimplemented for SolaVerb.
+Replaced the shared feedback tank/output pitch blend with four independently modulated feedback paths, two diffusion stages, and a separate pre-tank chorus. Reflectivity now sets a continuous decay target rather than multiplying one short shared loop. Predelay affects only wet excitation. The UI separates Character from Modulation. Existing parameter indices and saved presets remain valid; their wet sound changes with the new algorithm. Quality was subsequently added in 0.50; see CONVERSION-AND-LEVEL-MATCH-v50.md.
 
 Sanitizer tests cover independent pitch/chorus behavior, dry identity, sustained finite tails and Panic at 44.1/48/96 kHz. The full reverb suite retains Shimmer octave/tail/alias regressions. This is independent DSP, not measured Sunday Keys sonic parity.

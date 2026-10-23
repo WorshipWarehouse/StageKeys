@@ -58,7 +58,7 @@ struct AudioEffect: Codable, Equatable {
     var renderValues:[Float] { kind == 13 ? values+[usesCreamCoat ? 1:0]:values }
     var title: String { AudioEffectCatalog.names.indices.contains(kind) ? AudioEffectCatalog.names[kind] : "No Effect" }
     var values: [Float] {
-        if let parameters { return (kind == 13 || kind == 10) && parameters.count == 9 ? parameters+[1]:parameters }
+        if let parameters { if kind == 15 && parameters.count == 10 {return parameters+[1]}; return (kind == 13 || kind == 10) && parameters.count == 9 ? parameters+[1]:parameters }
         var values = AudioEffectCatalog.defaults(for: kind)
         if kind == 1 { values[0] = min(20000,max(20,-48000 * log(1 - (0.004 + amount*amount*0.8)) / (2 * .pi))) }
         if kind == 2 { values[0] = amount }
@@ -71,7 +71,7 @@ struct AudioEffect: Codable, Equatable {
         guard importedDelay.map({kind == 3 && $0.validate()}) ?? true else{return false}
         guard syncBeats.map({ $0.isFinite && (0.0625...4).contains($0) }) ?? true, (0...17).contains(kind), amount.isFinite, (0...1).contains(amount) else { return false }
         guard let parameters else { return true }
-        guard (parameters.count == AudioEffectCatalog.defaults(for: kind).count || (kind == 13 || kind == 10) && parameters.count == 9), parameters.allSatisfy(\.isFinite) else { return false }
+        guard (parameters.count == AudioEffectCatalog.defaults(for: kind).count || (kind == 13 || kind == 10) && parameters.count == 9 || kind == 15 && parameters.count == 10), parameters.allSatisfy(\.isFinite) else { return false }
         return AudioEffectCatalog.descriptors(for: kind).allSatisfy { ($0.minimum...$0.maximum).contains(values[$0.index]) }
     }
 }

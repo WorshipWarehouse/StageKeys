@@ -1,6 +1,6 @@
 # StageKeys public release checklist
 
-Updated 20 October 2026. StageKeys is a development build, not ready for a public reliability or complete MainStage-compatibility claim. This is the release gate list, not a list of completed features. Current implementation evidence lives in PARITY-STATUS.md, MAINSTAGE-NATIVE.md, REVERB-REFERENCE.md and Calibrations/. Historical version documents are not current coverage totals. Native response v6 now passes the dry Steinway calibration at three pitches and five velocities (two passes), within 0.04 dB after the intentional output headroom; this does not close the broader audio gate. See [sampler response evidence](SAMPLER-RESPONSE-v48.md).
+Updated 23 October 2026. All remaining gates are tracked in [RELEASE-ISSUES.md](RELEASE-ISSUES.md). StageKeys is a development build, not ready for a public reliability or complete MainStage-compatibility claim. This is the release gate list, not a list of completed features. Current implementation evidence lives in PARITY-STATUS.md, MAINSTAGE-NATIVE.md, REVERB-REFERENCE.md and Calibrations/. Historical version documents are not current coverage totals. Native response v6 now passes the dry Steinway calibration at three pitches and five velocities (two passes), within 0.04 dB after the intentional output headroom; this does not close the broader audio gate. See [sampler response evidence](SAMPLER-RESPONSE-v48.md).
 
 ## Product scope and release sequence
 

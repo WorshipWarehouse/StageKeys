@@ -15,6 +15,9 @@ import Foundation
   var modern=legacy;modern.parameters=legacy.values;modern.parameters![9]=0.4
   let migrated=EffectPreset(name:"Soft Shimmer",effect:modern);try EffectPresetArchive.save([migrated],to:url)
   assert(EffectPresetArchive.load(url)==[migrated],"Shimmer quality must survive preset persistence")
+  var sola=AudioEffect.factoryDefault(kind:15);sola.parameters=Array(sola.values.prefix(10))
+  assert(sola.validate() && sola.values.count==11 && sola.values[10]==1,"Existing SolaVerb presets must keep full quality")
+  sola.parameters=sola.values;sola.parameters![10]=0.25;let sp=EffectPreset(name:"Reduced Sola",effect:sola);try EffectPresetArchive.save([sp],to:url);assert(EffectPresetArchive.load(url)==[sp])
   let delay=AudioEffect.factoryDefault(kind:3);assert(delay.values[1]==0.75 && delay.values[0]==0.3 && delay.values[2]==1000 && delay.values[3]==0.5)
   assert(delay.validate() && delay.playbackDelay?.pingPong==true && delay.playbackDelay?.leftSynced==true)
   let dp=EffectPreset(name:"Stereo eighth",effect:delay);try EffectPresetArchive.save([dp],to:url);assert(EffectPresetArchive.load(url)==[dp])

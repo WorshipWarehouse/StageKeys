@@ -165,7 +165,7 @@ enum MainStagePatch {
             let source=destination.appendingPathComponent("Source.patch",isDirectory:true)
             try manager.createDirectory(at:source,withIntermediateDirectories:false)
             guard let enumeration=manager.enumerator(at:root,includingPropertiesForKeys:[.isSymbolicLinkKey,.isDirectoryKey,.isRegularFileKey,.fileSizeKey]) else{throw Failure.invalid("Could not read patch files.")}
-            var count=0,total=0
+            var count=0,total=0,audioTotal=0
             for case let file as URL in enumeration {
                 count+=1;guard count<=4096,contained(file,in:root) else{throw Failure.invalid("Patch file limit or unsafe reference.")}
                 let values=try file.resourceValues(forKeys:[.isSymbolicLinkKey,.isDirectoryKey,.isRegularFileKey,.fileSizeKey])
@@ -173,11 +173,22 @@ enum MainStagePatch {
                 let relative=String(file.resolvingSymlinksInPath().standardizedFileURL.path.dropFirst(root.path.count+1)),target=source.appendingPathComponent(relative)
                 if values.isDirectory==true {try manager.createDirectory(at:target,withIntermediateDirectories:true)}
                 else {
-                    let data=try read(file,in:root);total+=data.count
-                    guard total<=128_000_000 else{throw Failure.invalid("Patch archive exceeds 128 MB.")}
                     try manager.createDirectory(at:target.deletingLastPathComponent(),withIntermediateDirectories:true)
-                    try data.write(to:target,options:.atomic)
-                    guard try Data(contentsOf:target)==data else{throw Failure.invalid("Patch archive verification failed.")}
+                    if ["caf","wav","aif","aiff","flac"].contains(file.pathExtension.lowercased()) {
+                        let size=values.fileSize ?? Int.max
+                        guard values.isRegularFile==true,size>=0,size<=2_000_000_000,audioTotal<=4_000_000_000-size else{throw Failure.invalid("Bundled sample archive exceeds its 4 GB total / 2 GB file limit.")}
+                        audioTotal+=size
+                        // Audio assets can be much larger than serialized documents.
+                        // Copy and hash streams; never load a whole piano into Data.
+                        let before=try AssetDigest.sha256(file)
+                        try manager.copyItem(at:file,to:target)
+                        guard try AssetDigest.sha256(target)==before,try AssetDigest.sha256(file)==before else{throw Failure.invalid("A bundled sample changed during source retention. Retry the import.")}
+                    } else {
+                        let data=try read(file,in:root);total+=data.count
+                        guard total<=128_000_000 else{throw Failure.invalid("Patch document archive exceeds 128 MB.")}
+                        try data.write(to:target,options:.atomic)
+                        guard try Data(contentsOf:target)==data else{throw Failure.invalid("Patch archive verification failed.")}
+                    }
                 }
             }
             for (name,hash) in report.preservedFiles {guard digest(try read(source.appendingPathComponent(name),in:source))==hash else{throw Failure.invalid("Source changed while archiving. Retry the import.")}}

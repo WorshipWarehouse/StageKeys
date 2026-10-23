@@ -183,16 +183,17 @@ struct ModulationWheel: View {
                     let spacing:CGFloat=7,rotation=CGFloat(position)*42
                     for row in -8...Int(size.height/spacing+8) {
                         let y=CGFloat(row)*spacing+rotation.truncatingRemainder(dividingBy:spacing)
-                        let visibility=Double(position)*0.72+0.08
+                        let lit=max(0,min(1,(CGFloat(position)*size.height-(size.height-y))/28))
+                        let visibility=0.07+Double(lit)*0.68
                         let width:CGFloat=5
                         for x in [CGFloat(4),size.width-9] {
                             let rect=CGRect(x:x,y:y,width:width,height:3)
-                            context.fill(Path(roundedRect:rect,cornerRadius:1),with:.linearGradient(Gradient(colors:[Color(white:0.22).opacity(visibility),Color(white:0.85).opacity(visibility),Color(white:0.32).opacity(visibility)]),startPoint:CGPoint(x:x,y:y),endPoint:CGPoint(x:x+width,y:y+3)))
+                            context.fill(Path(roundedRect:rect,cornerRadius:1),with:.linearGradient(Gradient(colors:[Color(white:0.22).opacity(visibility),Color(white:0.75).opacity(visibility),Color(white:0.32).opacity(visibility)]),startPoint:CGPoint(x:x,y:y),endPoint:CGPoint(x:x+width,y:y+3)))
                             context.fill(Path(CGRect(x:x,y:y+3,width:width,height:2)),with:.color(.black.opacity(0.8)))
                         }
                     }
                 }.padding(.vertical,6)
-                RoundedRectangle(cornerRadius:5).fill(LinearGradient(stops:[.init(color:Color(white:0.07),location:0),.init(color:Color(white:0.16+Double(position)*0.12),location:0.2),.init(color:Color(white:0.09),location:0.6),.init(color:.black,location:1)],startPoint:.top,endPoint:.bottom)).padding(.horizontal,12).padding(.vertical,7)
+                RoundedRectangle(cornerRadius:5).fill(LinearGradient(stops:[.init(color:Color(white:0.07),location:0),.init(color:Color(white:0.11+Double(position)*0.05),location:0.2),.init(color:Color(white:0.09),location:0.6),.init(color:.black,location:1)],startPoint:.top,endPoint:.bottom)).padding(.horizontal,12).padding(.vertical,7)
                 RoundedRectangle(cornerRadius:7).stroke(.white.opacity(0.08),lineWidth:1)
             }.frame(maxWidth: .infinity, maxHeight: .infinity).contentShape(Rectangle())
                 .gesture(DragGesture(minimumDistance: 0).onChanged { drag in

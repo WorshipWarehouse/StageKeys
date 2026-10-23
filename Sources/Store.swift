@@ -939,6 +939,13 @@ final class PerformanceStore: ObservableObject {
             let encoder=JSONEncoder();encoder.outputFormatting=[.prettyPrinted,.sortedKeys]
             try encoder.encode(report).write(to:saveURL.deletingLastPathComponent().appendingPathComponent("mainstage-import-report.json"),options:.atomic)
             mainStageImportReport=report
+            let retainedRoot=directory.appendingPathComponent("Source.patch",isDirectory:true)
+            let names=Set(report.channels.flatMap(\.instruments))
+            if !names.isEmpty,!(try MainStagePatch.findSamplerInstruments(names,in:retainedRoot)).isEmpty {
+                libraryImportProgress="Converting included sampler instruments. MainStage is not required; review conversion notes for remaining processing differences."
+                importMainStageSamplers(retainedRoot)
+                return
+            }
             libraryImportProgress="Preserved \(report.channels.count) channel strips and their original effects, macros and MIDI data. Playback conversion requires \(report.blockers.count) unsupported settings to be translated. No incomplete sound was added."
         }catch{mainStageImportReport=nil;libraryImportProgress=error.localizedDescription}
     }

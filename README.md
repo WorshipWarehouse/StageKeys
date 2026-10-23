@@ -2,6 +2,10 @@
 
 The app remains in development. See the [public-release checklist](Docs/PUBLIC-RELEASE-CHECKLIST.md) for audio, MainStage conversion, plugin support, UI, stability, distribution and the later independent AI patch builder. Archived source presets are not counted as playable conversions.
 
+## Version 0.50
+
+Supported MainStage patch bundles convert included EXS sounds natively, retaining original samples and translated processing. Sound Settings includes optional fixed-probe output matching for converted instruments and hosted AUs. SolaVerb now has a wet-only Quality control with legacy-preset compatibility; its controls and the modulation wheel follow newly observed reference behavior. See [scope, limits and verification](Docs/CONVERSION-AND-LEVEL-MATCH-v50.md) and the [28 release issues](Docs/RELEASE-ISSUES.md). Full DSP/UI parity remains unfinished.
+
 ## Version 0.29
 
 MainStage synced Stereo Delay now retains note/deviation timing, routing and polarity. SilverVerb and ClipDist controls drive native processors, with remaining DSP differences shown in conversion notes. Tonic Pad supports imported timbres, actual shimmer processing, remembered keys and snapshot lock. Sampled sounds live in a separate private library repository and install optionally; the app builds and ships without them. [Scope and verification](Docs/SOURCE-EFFECTS-AND-TONIC.md).

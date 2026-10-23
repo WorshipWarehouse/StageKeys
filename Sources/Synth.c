@@ -128,7 +128,7 @@ static const float effectDefault[18][32]={
 {12,0.2},
 {0.5,0,0.3,100,20000,0,1,0.8,0.4,1},
 {1,44,402,2.5,0,0,0.5,18,130,0.9,0.82,0.35},
-{20,0.5,0.5,100,14000,0.33,0.2,1,0.8,0.4},
+{20,0.5,0.5,100,14000,0.33,0.2,1,0.8,0.4,1},
 {20,.2,70,1,410,6000,.65,.51,60,.7,.3},
 {15,170,-16,.45,4400,5300,0,980,0,5},
 };
@@ -168,11 +168,11 @@ static const float effectMax[18][32]={
 {24,1},
 {1,200,0.95,2000,20000,1,10,1,1,1,1},
 {2,120,600,10,1,12,1,100,200,1,1,1},
-{200,1,0.95,2000,20000,1,1,10,1,1},
+{200,1,0.95,2000,20000,1,1,10,1,1,1},
 {200,1,1000,1,20000,20000,20,1,360,1,1},
 {100,20000,100,1,20000,20000,30,20000,60,60},
 };
-static const int effectCount[18]={0,3,4,4,3,5,7,24,4,1,10,5,2,11,12,10,11,10};
+static const int effectCount[18]={0,3,4,4,3,5,7,24,4,1,10,5,2,11,12,11,11,10};
 
 // Delay taps interpolate bounded preallocated memory. All state is render-owned.
 static float tap_capacity(const float *buffer,int pos,float offset,int capacity){
@@ -185,8 +185,8 @@ static void effectReset(EffectState *e){
 }
 static void effectCoefficients(EffectState*e,int kind,double rate){
  float *p=e->p;
+ if(kind==10||kind==15)rate/=(1 << (int)roundf((1-p[kind==10?9:10])*5));
  if(kind==10){
-  rate/=(1 << (int)roundf((1-p[9])*5));
   // An octave-up read doubles input frequencies. Band-limit the wet pitch
   // history first so high harmonics do not fold back as dissonant aliases.
   float cutoff=fminf(p[6]*.5f,rate*.2f);
@@ -235,10 +235,10 @@ static float effectProcess(SKSynth*s,int l,int k,float x){
  int kind=s->fxKind[l][k];EffectState*e=&s->effect[l][k];float *p=e->p,*buffer=s->delay[l][k],dry=x,y=x;
  int pos=s->delayPosition[l][k];double rate=s->rate;float phase=s->fxPhase[l][k];
  e->stereo=0;
- if(kind==10){
-  int divider=1 << (int)roundf((1-p[9])*5);
+ if(kind==10||kind==15){
+  int divider=1 << (int)roundf((1-p[kind==10?9:10])*5);
   e->z[3]+=x;e->z[4]+=1;
-  if(e->z[4]<divider)return dry*p[7]+e->z[5]*p[8];
+  if(e->z[4]<divider)return kind==10?dry*p[7]+e->z[5]*p[8]:dry*p[8]+e->z[5]*p[9];
   x=e->z[3]/e->z[4];e->z[3]=e->z[4]=0;rate/=divider;
  }
  if(kind==13&&p[10]>0){float a=cream_input(s,l,k,x),b=a;SKCreamCoat*c=atomic_load_explicit(&s->cream[l][k],memory_order_acquire);if(!c)return x;sk_cream_frame(c,&a,&b);return cream_output(s,l,k,x,(a+b)*.5f);}
@@ -313,7 +313,7 @@ static float effectProcess(SKSynth*s,int l,int k,float x){
    float a=.65f,out=delayed-a*wet;history[index]=wet+a*out;wet=out;
   }
   e->z[0]+=e->coef[0]*(wet-e->z[0]);wet-=e->z[0];e->z[1]+=e->coef[1]*(wet-e->z[1]);wet=e->z[1];
-  y=dry*p[8]+wet*p[9];s->fxPhase[l][k]=fmod(phase+TAU*p[7]/rate,TAU);break;}
+  e->z[5]=wet;y=dry*p[8]+wet*p[9];s->fxPhase[l][k]=fmod(phase+TAU*p[7]/rate,TAU);break;}
  case 13:{
   float size=kind==10?p[2]:kind==13?p[0]:p[1],feedback=kind==10?p[1]:p[2];float predelay=kind==13?p[1]:kind==15?p[0]:0;
   float modulation=kind==10?p[4]:kind==13?p[5]:p[6];float hz=kind==10?.3f:kind==13?p[6]:p[7];

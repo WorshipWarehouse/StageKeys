@@ -145,6 +145,7 @@ enum AudioEffectCatalog {
             .init(index: 7, name: "Rate", minimum: 0.01, maximum: 10, defaultValue: 1, unit: "Hz"),
             .init(index: 8, name: "Dry", minimum: 0, maximum: 1, defaultValue: 0.8, unit: "%"),
             .init(index: 9, name: "Wet", minimum: 0, maximum: 1, defaultValue: 0.4, unit: "%"),
+            .init(index: 10, name: "Quality", minimum: 0, maximum: 1, defaultValue: 1, unit: "%"),
         ]
         case 16: return [
             .init(index:0,name:"Predelay",minimum:0,maximum:200,defaultValue:20,unit:"ms"),
