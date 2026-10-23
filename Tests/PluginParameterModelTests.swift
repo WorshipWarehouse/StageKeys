@@ -6,7 +6,7 @@ final class ParameterFixtureUnit:AUAudioUnit {
  init(_ address:AUParameterAddress)throws {
   let parameter=AUParameterTree.createParameter(withIdentifier:"level",name:"Level",address:address,min:0,max:1,unit:.generic,unitName:nil,flags:[.flag_IsReadable,.flag_IsWritable],valueStrings:nil,dependentParameters:nil)
   tree=AUParameterTree.createTree(withChildren:[parameter])
-  try super.init(componentDescription:AudioComponentDescription(componentType:kAudioUnitType_Effect,componentSubType:0x74657374,componentManufacturer:0x53744b79,componentFlags:0,componentFlagsMask:0))
+  try super.init(componentDescription:AudioComponentDescription(componentType:kAudioUnitType_Effect,componentSubType:0x74657374,componentManufacturer:0x53744b79,componentFlags:0,componentFlagsMask:0),options:[])
   tree.implementorValueObserver={ [weak self] _,value in self?.current=value }
   tree.implementorValueProvider={ [weak self] _ in self?.current ?? 0 }
  }
