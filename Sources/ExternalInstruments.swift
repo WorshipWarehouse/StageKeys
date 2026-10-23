@@ -66,6 +66,15 @@ private final class ImportedBranchVoice {
 /// All methods run on the main thread, never in a render callback. Owns no engine.
 /// The host must silence held notes before a graph edit and surface thrown errors.
 final class ExternalInstrumentRack {
+    private static var recoveryStores:[String:PluginLoadRecovery]=[:]
+    private static func loadRecovery()throws->PluginLoadRecovery {
+        precondition(Thread.isMainThread)
+        let base=ProcessInfo.processInfo.environment["STAGEKEYS_DATA_DIR"].map{URL(fileURLWithPath:$0)} ?? FileManager.default.urls(for:.applicationSupportDirectory,in:.userDomainMask)[0].appendingPathComponent("StageKeys")
+        let url=base.appendingPathComponent("plugin-load-recovery.json")
+        if let existing=recoveryStores[url.path]{return existing}
+        let recovery=try PluginLoadRecovery(url:url);recoveryStores[url.path]=recovery;return recovery
+    }
+    static func allowBlockedLoads()throws {try loadRecovery().allowBlockedLoads()}
     private let engine: AVAudioEngine
     private var controllerValues:[Int:[Int:Int]]=[:]
     let libraryURL: URL
@@ -247,6 +256,8 @@ final class ExternalInstrumentRack {
             identity.hasCustomView = component.hasCustomView
             #endif
             identity.unavailableReason = Self.unavailableReason(component)
+            do {if try loadRecovery().isBlocked(identity.id) {identity.unavailableReason="Blocked after a failed/interrupted load. Use Allow Blocked Loads to retry."}}
+            catch {identity.unavailableReason="The Audio Unit recovery journal could not be read. Preserve it and contact support."}
             #if os(macOS)
             identity.validated = component.passesAUVal
             #endif
@@ -475,17 +486,37 @@ final class ExternalInstrumentRack {
             guard let component = sound.component, component.type == kAudioUnitType_MusicDevice else {
                 completion(.failure(ExternalInstrumentError.invalidComponent)); return
             }
-            AVAudioUnit.instantiate(with: component.description, options: []) { [weak self] unit, error in
+            let recovery:PluginLoadRecovery
+            do {recovery=try Self.loadRecovery();try recovery.begin(component.id)}
+            catch {completion(.failure(error));return}
+            var finished=false
+            func finish(_ result:Result<Void,Error>,failed:Bool=false) {
+                guard !finished else{return};finished=true
+                do {try recovery.finish(component.id,failed:failed);completion(result)}
+                catch {completion(.failure(error))}
+            }
+            DispatchQueue.main.asyncAfter(deadline:.now()+10) { [weak self] in
+                guard !finished else{return}
+                guard self?.generations[channel]==generation else{finish(.failure(ExternalInstrumentError.superseded));return}
+                finish(.failure(NSError(domain:"StageKeysPluginRecovery",code:2,userInfo:[NSLocalizedDescriptionKey:"Audio Unit loading timed out after 10 seconds. It is blocked until you explicitly allow another attempt."])),failed:true)
+            }
+            #if os(macOS)
+            let options:AudioComponentInstantiationOptions = component.isV3 == true ? .loadOutOfProcess:[]
+            #else
+            let options:AudioComponentInstantiationOptions = []
+            #endif
+            AVAudioUnit.instantiate(with: component.description, options: options) { [weak self] unit, error in
                 DispatchQueue.main.async {
-                    guard let self else { return }
+                    guard !finished else{return}
+                    guard let self else {finish(.failure(ExternalInstrumentError.superseded));return}
                     guard self.generations[channel] == generation else {
-                        completion(.failure(ExternalInstrumentError.superseded)); return
+                        finish(.failure(ExternalInstrumentError.superseded)); return
                     }
                     guard let unit, unit.auAudioUnit.scheduleMIDIEventBlock != nil else {
-                        completion(.failure(error ?? ExternalInstrumentError.invalidComponent)); return
+                        finish(.failure(error ?? ExternalInstrumentError.invalidComponent),failed:true); return
                     }
-                    do { try self.install(unit, channel: channel); completion(.success(())) }
-                    catch { completion(.failure(error)) }
+                    do { try self.install(unit, channel: channel); finish(.success(())) }
+                    catch { finish(.failure(error),failed:true) }
                 }
             }
         } else {
