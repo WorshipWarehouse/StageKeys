@@ -1011,6 +1011,7 @@ final class PerformanceStore: ObservableObject {
                 let files=try MainStagePatch.findSamplerInstruments(names,in:folder)
                 var imported=0,skipped=0,failures:[String]=[]
                 for (channelIndex,channel) in report.channels.enumerated() where selection.contains(channelIndex) && !channel.instruments.isEmpty {
+                    guard channel.unsupportedInstrumentFamily == nil else { failures.append(channel.name+": "+channel.nativeInstrumentStatus);continue }
                     guard channel.instruments.count==1,let name=channel.instruments.first else{failures.append(channel.name+": layered sampler selection requires translation");continue}
                     let matches=files.filter{$0.lastPathComponent==name}
                     guard matches.count==1 else{failures.append(name+": "+(matches.isEmpty ? "instrument not found in the selected folder":"multiple matches; choose a narrower folder"));continue}

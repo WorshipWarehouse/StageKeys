@@ -36,6 +36,7 @@ struct SoundImportView:View {
                                     Toggle("Convert \(channel.name)",isOn:Binding(get:{store.selectedMainStageChannels.contains(channelIndex)},set:{store.selectMainStageChannel(channelIndex,$0)}))
                                 }
                                 Text(channel.name+": "+channel.devices.map(\.name).joined(separator:", ")).font(.caption)
+                                Text(channel.nativeInstrumentStatus).font(.caption).foregroundStyle(.secondary)
                                 if !channel.instruments.isEmpty {Text(channel.instruments.joined(separator:", ")).font(.caption).foregroundStyle(.secondary)}
                             }
                             ForEach(Array(report.blockers.enumerated()),id:\.offset){_,message in Text(message).font(.caption).foregroundStyle(.secondary)}
