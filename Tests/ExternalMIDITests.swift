@@ -16,10 +16,17 @@ import CoreMIDI
         var events: [[UInt8]] = []
         assert(MIDIClientCreateWithBlock("StageKeys Test Listener" as CFString, &client, nil) == noErr)
         assert(MIDIInputPortCreateWithBlock(client, "Listener" as CFString, &port) { list, _ in
-            let packet = list.pointee.packet
-            var bytes = packet.data
-            let captured = withUnsafeBytes(of: &bytes) { Array($0.prefix(Int(packet.length))) }
-            lock.lock(); events.append(captured); lock.unlock()
+            var packet=UnsafeRawPointer(list).advanced(by:MemoryLayout<MIDIPacketList>.offset(of:\.packet)!).assumingMemoryBound(to:MIDIPacket.self)
+            lock.lock();defer{lock.unlock()}
+            for _ in 0..<list.pointee.numPackets {
+                let bytes=UnsafeRawPointer(packet).advanced(by:MemoryLayout<MIDIPacket>.offset(of:\.data)!).assumingMemoryBound(to:UInt8.self)
+                // CoreMIDI may coalesce several three-byte note messages into
+                // one packet; assert message delivery, not packet boundaries.
+                for offset in stride(from:0,to:Int(packet.pointee.length),by:3) where offset+2<Int(packet.pointee.length) {
+                    events.append(Array(UnsafeBufferPointer(start:bytes+offset,count:3)))
+                }
+                packet=MIDIPacketNext(packet)
+            }
         } == noErr)
         defer { MIDIPortDispose(port); MIDIClientDispose(client) }
         assert(MIDIPortConnectSource(port, source, nil) == noErr)
