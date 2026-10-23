@@ -43,8 +43,16 @@ Record `AudioController.latencyChain()` for the granted/reported columns, and co
 
 ## Limits and remaining work
 
-- None of this was compiled or executed for this change: the work was done on a Linux host without Xcode, Core Audio or an output device. Run the commands above and the Xcode build before merging; treat the tests as unverified until then.
+- The original submission was not compiled or executed: the work was done on a Linux host without Xcode, Core Audio or an output device. Run the commands above and the Xcode build before merging; treat the tests as unverified until then.
 - Physical MIDI delivery, device buffer and hardware latency are still unmeasured, and no matrix rows are published yet. `CoreMIDI` events are delivered to the main queue, so the live path's additional scheduling delay is included in that measurement, not in the offline tests.
 - The transport is still AUSampler, so "no disk reads on the render thread" is covered by resident playback plus the moved-file test, not by instrumentation of Apple's render callback.
 - iOS keeps its existing system loading policy; the moved-file test proves the offline/resident path only and does not establish iPad streaming behaviour.
 - Eight-hour soak, memory pressure with a real multi-sample library, and slow external storage are still open; this change bounds reload growth and exercises offline/missing storage with small fixtures.
+
+## Mac verification follow-up — 23 October 2026
+
+Universal macOS Release and iOS Simulator Release builds pass on this Mac (production sources unchanged from the built commit). The sampler boundary and streaming tests now run against Apple frameworks. Fixture corrections neutralize CC1 vibrato for phase-aligned wave checks, compare equal authored root-zone gain rather than assuming an undocumented AUSampler gain, drain eight already-rendered blocks after Panic, and unload a resident voice before checking missing-preset reload failure. These do not remove the loop, pitch, release, missing-content or sample-byte assertions.
+
+All root notes started in render block 0; root held-level spread was below 0.000001 dB and the transposed note below 0.003 dB. The one-shot ended correctly. Resident playback survived moved sample storage; 24 rapid switches and 20 reload cycles passed. Reload resident growth measured 8,339,456 bytes in the accepted run. Original sample/preset bytes stayed unchanged.
+
+The private Steinway realtime regression also passes: upper-note attacks, a second-instrument graph reload and sustain produced maximum step 0.06809379 against offline source reference 0.07149801. This checks the live render path, not physical MIDI-to-speaker latency. The device/buffer matrix, physical iPad policy, slow storage and eight-hour soak remain open, so this PR references issue #2 rather than closing that release gate.
