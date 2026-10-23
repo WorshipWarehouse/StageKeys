@@ -25,3 +25,7 @@ The 19 October piano-only capture validates 12 isolated notes with peak 0.4822 (
 Replaced the shared feedback tank/output pitch blend with four independently modulated feedback paths, two diffusion stages, and a separate pre-tank chorus. Reflectivity now sets a continuous decay target rather than multiplying one short shared loop. Predelay affects only wet excitation. The UI separates Character from Modulation. Existing parameter indices and saved presets remain valid; their wet sound changes with the new algorithm. Quality was subsequently added in 0.50; see CONVERSION-AND-LEVEL-MATCH-v50.md.
 
 Sanitizer tests cover independent pitch/chorus behavior, dry identity, sustained finite tails and Panic at 44.1/48/96 kHz. The full reverb suite retains Shimmer octave/tail/alias regressions. This is independent DSP, not measured Sunday Keys sonic parity.
+
+## SilverVerb 0.51
+
+Late-tank feedback now includes frequency-dependent damping. See [the measured improvement and wideband-envelope tradeoff](REFERENCE-MATCHING-v51.md). This change does not revise Shimmer or establish full reverb equivalence.

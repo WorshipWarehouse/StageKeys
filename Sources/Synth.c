@@ -342,14 +342,17 @@ static float effectProcess(SKSynth*s,int l,int k,float x){
   s->predelay[l][k][prepos]=x;s->predelayPosition[l][k]=(prepos+1)%s->predelayLength;
   int capacity=s->delayLength/8,index=pos%capacity;float wet=0;
   const float spacing[4]={.73f,.89f,1.07f,1.19f};
-  float room=.025f+p[2]*.0003f,decay=.2f+p[3]*8+p[1]*4;
+  float room=.025f+p[2]*.0003f,decay=(.2f+p[3]*8+p[1]*4)*1.04f;
   float angle=phase+s->stereoSide*p[8]*TAU/360;
   for(int line=0;line<4;line++){
    float seconds=room*spacing[line]*(s->stereoSide?1.013f:1),offset=seconds*rate;
    offset+=sinf(angle+line)*p[7]*rate*.0015f;
    float tail=tap_capacity(buffer+line*capacity,index,offset,capacity);
    float feedback=fminf(.985f,powf(.001f,seconds/decay));
-   buffer[line*capacity+index]=input*.35f+tail*feedback;wet+=tail*.25f;
+   // Absorb high frequencies on successive late-tank trips; an output
+   // filter alone cannot reproduce the source's frequency-dependent decay.
+   e->z[8+line]+=e->coef[1]*(tail-e->z[8+line]);
+   buffer[line*capacity+index]=input*.35f+(tail*.8f+e->z[8+line]*.2f)*feedback;wet+=tail*.25f;
   }
   // Short reflection paths build the room response before the late tank fills.
   // Separate delay partitions keep their decay independent of the long tail.

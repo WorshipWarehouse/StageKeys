@@ -295,10 +295,10 @@ struct InstrumentGainMatchControls:View {
         measurement=nil;status="Measuring an isolated copy; live playback is unchanged."
         task=Task { @MainActor in
             do {
-                let result=try await InstrumentGainMatch.measure(source,modulation:store.modWheel)
+                let result=try await InstrumentGainMatch.measure(source,modulation:store.modWheel,targetDB:store.gainMatchTargetDB,tempo:store.patch.tempo)
                 guard !Task.isCancelled,measurementToken==token,layer==input else{return}
-                measurement=result
-                status=String(format:"Probe RMS %.1f dBFS · peak %.1f dBFS%@",result.rmsDB,result.peakDB,result.peakLimited ? " · peak limited":"")
+                measurement=try InstrumentGainMatch.retarget(result,to:store.gainMatchTargetDB)
+                status="Measurement complete. Review the suggested trim before applying."
             }catch is CancellationError {}catch{if measurementToken==token{status=error.localizedDescription}}
             if measurementToken==token{task=nil}
         }
@@ -314,9 +314,27 @@ struct InstrumentGainMatchControls:View {
                 Button("Reset Trim"){layer.channelSettings.outputTrimDB=nil}.disabled(layer.channelSettings.outputTrimDB==nil)
                 if let result=measurement {Button(String(format:"Apply %+.1f dB",result.trimDB)){layer.channelSettings.outputTrimDB=result.trimDB;measurement=nil;status="Output trim applied to this draft. Confirm to save or Discard to restore."}}
             }.buttonStyle(StageButtonStyle())
-            Text("Unity-fader probe at velocities 83 and 127; target −24 dBFS RMS, measured peak ceiling −9 dBFS, trim −24…+12 dB. Applies a separate output trim and preserves source settings. Check sustained chords and slow or tempo-dependent sounds by ear; this is a fixed-probe estimate, not continuous leveling.").font(.caption).foregroundStyle(.secondary)
+            HStack(spacing:8) {
+                Text("Target RMS").font(.caption)
+                TextField("Target RMS",value:Binding(get:{store.gainMatchTargetDB},set:{if $0.isFinite{store.gainMatchTargetDB=min(-6,max(-60,$0));store.gainMatchReferenceName=nil}}),format:.number.precision(.fractionLength(1))).textFieldStyle(.roundedBorder).frame(width:65)
+                Text("dBFS").font(.caption)
+                if let result=measurement {Button("Use Matched Level as Reference"){
+                    let level=result.rmsDB+Double(result.trimDB)
+                    guard (-60 ... -6).contains(level) else{status="This sound's matched level is outside the supported target range.";return}
+                    store.gainMatchReferenceName=layer.name;store.gainMatchTargetDB=level
+                    status="Reference retained for this app session. Other sounds can use this target."
+                }.buttonStyle(StageButtonStyle())}
+                Spacer()
+            }
+            if let name=store.gainMatchReferenceName {Text("Session reference: "+name).font(.caption).foregroundStyle(.secondary)}
+            Text("Unity-fader probe at velocities 83 and 127; measured peak ceiling −9 dBFS, trim −24…+12 dB. Applies a separate output trim and preserves source settings. Check sustained chords and slow or tempo-dependent sounds by ear; this is a fixed-probe estimate, not continuous leveling.").font(.caption).foregroundStyle(.secondary)
+            if let result=measurement {Text(String(format:"Probe RMS %.1f dBFS · peak %.1f dBFS%@",result.rmsDB,result.peakDB,result.peakLimited ? " · peak limited":"")).font(.caption).monospacedDigit()}
             if let status {Text(status).font(.caption).textSelection(.enabled)}
         }.padding(12).background(StageTheme.panel,in:RoundedRectangle(cornerRadius:8))
+        .onChange(of:store.gainMatchTargetDB){target in
+            if let result=measurement {do{measurement=try InstrumentGainMatch.retarget(result,to:target)}catch{measurement=nil;status=error.localizedDescription}}
+        }
+        .onChange(of:store.patch.tempo){_ in task?.cancel();task=nil;measurementToken=UUID();measurement=nil;status="Tempo changed; measure again."}
         .onChange(of:layer){_ in task?.cancel();task=nil;measurementToken=UUID();measurement=nil}
         .onChange(of:store.modWheel){_ in task?.cancel();task=nil;measurementToken=UUID();measurement=nil;status="Modulation changed; measure again."}
         .onDisappear{task?.cancel();task=nil;measurementToken=UUID()}

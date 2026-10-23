@@ -24,6 +24,15 @@ import Foundation
   let count=store.librarySounds.count;store.importMainStagePatch(patch)
   for _ in 0..<1500 where store.libraryImportBusy {try await Task.sleep(nanoseconds:20_000_000)}
   assert(store.librarySounds.count==count,"Reimport duplicated the native instrument")
+  let channelRoot=root.appendingPathComponent("channel-data");setenv("STAGEKEYS_DATA_DIR",channelRoot.path,1)
+  let stripStore=PerformanceStore();stripStore.importMainStagePatch(patch.appendingPathComponent("Grand Piano.cst"))
+  assert(stripStore.mainStageImportReport?.blockers.contains{$0.contains("parent-patch")}==true)
+  stripStore.importMainStageSamplers(patch)
+  for _ in 0..<1500 where stripStore.libraryImportBusy {try await Task.sleep(nanoseconds:20_000_000)}
+  guard let stripSound=stripStore.librarySounds.first(where:{$0.id.hasPrefix("mainstage-channel-")})?.sound else{fatalError(stripStore.libraryImportProgress ?? "CST conversion failed")}
+  assert(stripSound.nativeSampler?.conversionVersion==6)
+  let retainedStrip=try Data(contentsOf:channelRoot.appendingPathComponent("MainStage Sources/"+stripStore.mainStageImportReport!.sourceArchiveID!+"/Source.patch/Grand Piano.cst"));assert(retainedStrip==strip)
+  print("PASS: direct CST import and native conversion through the source-folder picker path")
   print("PASS: app-native bundled MainStage conversion v6, >16 MB sample retention, original hashes, rack processing and duplicate-aware reimport",store.libraryImportProgress ?? "")
  }
 }

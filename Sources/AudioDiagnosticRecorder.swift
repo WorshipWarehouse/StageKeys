@@ -68,19 +68,23 @@ enum InstrumentGainMatch {
         let peakLimited:Bool
     }
     static func recommendation(rms:Double,peak:Double,targetDB:Double = -24,ceilingDB:Double = -9)throws->Result {
-        guard rms.isFinite,peak.isFinite,rms>0.00001,peak>=rms,targetDB.isFinite,ceilingDB.isFinite else{throw failure("No usable calibration signal. Check the instrument's playable range and preset.")}
+        guard rms.isFinite,peak.isFinite,rms>0.00001,peak>=rms,targetDB.isFinite,(-60 ... -6).contains(targetDB),ceilingDB.isFinite,(-24 ... -1).contains(ceilingDB) else{throw failure("No usable calibration signal. Check the instrument's playable range and preset.")}
         let rmsDB=20*log10(rms),peakDB=20*log10(peak),wanted=targetDB-rmsDB,allowed=ceilingDB-peakDB
         guard allowed >= -24 else{throw failure("The instrument output exceeds the calibration trim range. Lower its output and retry.")}
         return Result(rmsDB:rmsDB,peakDB:peakDB,trimDB:Float(max(-24,min(12,min(wanted,allowed)))),peakLimited:allowed<wanted)
     }
+    static func retarget(_ result:Result,to targetDB:Double)throws->Result {
+        try recommendation(rms:pow(10,result.rmsDB/20),peak:pow(10,result.peakDB/20),targetDB:targetDB)
+    }
     private static func failure(_ message:String)->NSError {NSError(domain:"StageKeysGainMatch",code:1,userInfo:[NSLocalizedDescriptionKey:message])}
-    @MainActor static func measure(_ original:Layer,modulation:Float)async throws->Result {
+    @MainActor static func measure(_ original:Layer,modulation:Float,targetDB:Double = -24,tempo:Double = 72)async throws->Result {
         guard original.loaded,original.midiDestinationID==nil else{throw failure("External MIDI devices cannot be measured by the app's audio engine.")}
+        guard tempo.isFinite,(20...300).contains(tempo),targetDB.isFinite,(-60 ... -6).contains(targetDB) else{throw failure("Choose a valid target level and patch tempo before measuring.")}
         var layer=original;layer.gain=1;layer.muted=false;layer.channelSettings.outputTrimDB=nil
         let audio=AudioController();var loadError:String?
         audio.onError={loadError=$0};defer{audio.stop()}
         try audio.prepareOffline();audio.bypassMasterLimiter(true);audio.master(1);audio.space(0)
-        audio.modulation(0,value:modulation);audio.configure(0,layer);audio.gain(0,1,seconds:0)
+        audio.clock(tempo,false);audio.modulation(0,value:modulation);audio.configure(0,layer);audio.gain(0,1,seconds:0)
         if layer.external != nil {
             for _ in 0..<500 {
                 try Task.checkCancellation()
@@ -121,6 +125,6 @@ enum InstrumentGainMatch {
         try await render(48000,measure:false);audio.sustain(false,layers:[layer]);try await render(24000,measure:false)
         if let error=loadError{throw failure(error)}
         guard count>0 else{throw failure("No calibration audio was rendered.")}
-        return try recommendation(rms:sqrt(energy/Double(count)),peak:peak)
+        return try recommendation(rms:sqrt(energy/Double(count)),peak:peak,targetDB:targetDB)
     }
 }

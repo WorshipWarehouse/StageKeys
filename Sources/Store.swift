@@ -242,6 +242,8 @@ final class PerformanceStore: ObservableObject {
     let audio = AudioController()
     let midi = MIDIInput()
     @Published var librarySounds: [LibrarySound] = []
+    @Published var gainMatchTargetDB:Double = -24
+    @Published var gainMatchReferenceName:String?
     @Published private(set) var soundRatings:[String:Int]=[:]
     @Published var libraryRangePreview: Layer?
     private var libraryRangePreviewIndex: Int?

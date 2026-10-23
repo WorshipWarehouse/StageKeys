@@ -16,7 +16,7 @@ struct SoundImportView:View {
                 Text("Imported sounds appear in your library and can be added to any patch.").foregroundStyle(.secondary)
                 Button{choice = .file;choosing=true}label:{HStack{Image(systemName:"plus.circle.fill").font(.title);VStack(alignment:.leading,spacing:4){Text("Choose a Sound File").font(.headline);Text("StageKeys Sampler · EXS · AUPRESET · audio · sound banks").font(.caption)};Spacer();Image(systemName:"chevron.right")}.padding(20).frame(maxWidth:.infinity,alignment:.leading)}.buttonStyle(.plain).background(StageTheme.panel,in:RoundedRectangle(cornerRadius:10))
                 Button{choice = .library;choosing=true}label:{HStack{Image(systemName:"folder.badge.plus").font(.title);VStack(alignment:.leading,spacing:4){Text("Import a Sampler Library Folder").font(.headline);Text("Add EXS and AUPRESET instruments with their original samples").font(.caption)};Spacer();Image(systemName:"chevron.right")}.padding(20).frame(maxWidth:.infinity,alignment:.leading)}.buttonStyle(.plain).background(StageTheme.panel,in:RoundedRectangle(cornerRadius:10))
-                Button{choice = .mainStage;choosing=true}label:{HStack{Image(systemName:"pianokeys").font(.title);VStack(alignment:.leading,spacing:4){Text("Convert a MainStage Patch").font(.headline);Text("Convert included EXS sounds without opening MainStage; preserve source processing").font(.caption)};Spacer();Image(systemName:"chevron.right")}.padding(20).frame(maxWidth:.infinity,alignment:.leading)}.buttonStyle(.plain).background(StageTheme.panel,in:RoundedRectangle(cornerRadius:10))
+                Button{choice = .mainStage;choosing=true}label:{HStack{Image(systemName:"pianokeys").font(.title);VStack(alignment:.leading,spacing:4){Text("Convert a MainStage Patch or Channel Strip").font(.headline);Text("Convert included EXS sounds without opening MainStage; preserve source processing").font(.caption)};Spacer();Image(systemName:"chevron.right")}.padding(20).frame(maxWidth:.infinity,alignment:.leading)}.buttonStyle(.plain).background(StageTheme.panel,in:RoundedRectangle(cornerRadius:10))
                 Button("Install a Separate Sound Library") {choice = .backup;choosing=true}.buttonStyle(StageButtonStyle())
                 Text("Choose a downloaded StageKeys-Library pack. Sounds and rack processing install separately; the app ships without sampled content.").font(.caption).foregroundStyle(.secondary)
                 if store.librarySounds.contains(where:{$0.originalInstrument?.file.hasSuffix(".exs")==true && $0.sound?.nativeSampler != nil && ($0.sound?.nativeSampler?.conversionVersion ?? 1)<6}) {
@@ -44,12 +44,13 @@ struct SoundImportView:View {
                 Spacer()
             }.padding(28).disabled(store.libraryImportBusy)
             }
-        }.fileImporter(isPresented:$choosing,allowedContentTypes:choice == .file ? [.audio,.data] : choice == .mainStage ? [.package,.folder] : [.folder]) {result in
+        }.fileImporter(isPresented:$choosing,allowedContentTypes:choice == .file ? [.audio,.data] : choice == .mainStage ? [.package,.folder,.data] : [.folder]) {result in
             switch result {
             case .success(let url):
                 switch choice {
                 case .file:
-                    if ["exs","aupreset"].contains(url.pathExtension.lowercased()) {
+                    if ["patch","cst"].contains(url.pathExtension.lowercased()) {store.importMainStagePatch(url);status=nil}
+                    else if ["exs","aupreset"].contains(url.pathExtension.lowercased()) {
                         pending=url;status="Choose the folder containing this instrument’s samples. Imports preserve sample maps and translated rack effects, macros and MIDI settings. Conversion notes describe remaining approximations."
                         // Present the second picker after the first has dismissed.
                         DispatchQueue.main.async {choice = .samples;choosing=true}

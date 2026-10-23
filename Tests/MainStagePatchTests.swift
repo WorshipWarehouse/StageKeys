@@ -31,6 +31,10 @@ import Foundation
         let restored=try Data(contentsOf:destination.appendingPathComponent("Source.patch/Piano.cst"))
         assert(restored==bytes,"Source effects and mappings must be retained byte-for-byte")
         do{_ = try MainStagePatch.retain(patch,to:destination);fatalError("Archive overwritten")}catch{}
+        let cstArchive=root.appendingPathComponent("channel-archive"),cstReport=try MainStagePatch.retain(strip,to:cstArchive)
+        assert(cstReport.name=="Piano" && cstReport.channels.count==1 && cstReport.blockers.contains{$0.contains("parent-patch")})
+        let retainedCST=try Data(contentsOf:cstArchive.appendingPathComponent("Source.patch/Piano.cst"));assert(retainedCST==bytes,"CST import must preserve original device bytes")
+        assert(cstReport.channels[0].instruments==["Fixture.exs"] && !cstReport.complete)
         do{_ = try MainStagePatch.devices(Data(repeating:0,count:64));fatalError("Invalid header accepted")}catch{}
         let unsafe:[String:Any]=["channels":[["Filename":"../outside.cst"]]]
         try PropertyListSerialization.data(fromPropertyList:unsafe,format:.binary,options:0).write(to:patch.appendingPathComponent("data.plist"))

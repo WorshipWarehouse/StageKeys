@@ -2,6 +2,10 @@
 
 The app remains in development. See the [public-release checklist](Docs/PUBLIC-RELEASE-CHECKLIST.md) for audio, MainStage conversion, plugin support, UI, stability, distribution and the later independent AI patch builder. Archived source presets are not counted as playable conversions.
 
+## Version 0.51
+
+Direct MainStage channel-strip import, reusable session gain references and tempo-aware matching are available. SilverVerb late-tail damping improves the saved reference’s frequency-dependent decay, with remaining differences documented. See [scope and verification](Docs/REFERENCE-MATCHING-v51.md).
+
 ## Version 0.50
 
 Supported MainStage patch bundles convert included EXS sounds natively, retaining original samples and translated processing. Sound Settings includes optional fixed-probe output matching for converted instruments and hosted AUs. SolaVerb now has a wet-only Quality control with legacy-preset compatibility; its controls and the modulation wheel follow newly observed reference behavior. See [scope, limits and verification](Docs/CONVERSION-AND-LEVEL-MATCH-v50.md) and the [28 release issues](Docs/RELEASE-ISSUES.md). Full DSP/UI parity remains unfinished.

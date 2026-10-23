@@ -133,6 +133,7 @@ enum MainStagePatch {
         let authoredName=engine?["name"] as? String ?? patch.deletingPathExtension().lastPathComponent
         guard authoredName.count<=200 else{throw Failure.invalid("The patch name exceeds the supported length.")}
         var result=Report(name:authoredName,channels:[],blockers:[],preservedFiles:["data.plist":digest(bytes)])
+        if document["StageKeys.channelStripOnly"] as? Bool==true {result.blockers.append("Imported channel strip only: parent-patch buses, sends and patch-level MIDI settings were not included in the CST document.")}
         for channel in channels {
             guard let filename=channel["Filename"] as? String,filename==URL(fileURLWithPath:filename).lastPathComponent,filename.lowercased().hasSuffix(".cst") else{throw Failure.invalid("Unsafe or unsupported channel-strip reference.")}
             let data=try read(patch.appendingPathComponent(filename),in:patch)
@@ -156,6 +157,20 @@ enum MainStagePatch {
     /// Archive all source files byte-for-byte. Paths, hashes, mappings, effects,
     /// MIDI state and unknown records survive, but no incomplete sound is added.
     static func retain(_ patch:URL,to destination:URL)throws->Report {
+        if patch.pathExtension.lowercased()=="cst" {
+            // A channel strip is a document, not a full patch. Build an explicit
+            // metadata wrapper while preserving the actual CST bytes verbatim.
+            let bytes=try read(patch,in:patch.deletingLastPathComponent())
+            _ = try devices(bytes)
+            let staging=FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString+".patch",isDirectory:true)
+            try FileManager.default.createDirectory(at:staging,withIntermediateDirectories:true)
+            defer{try? FileManager.default.removeItem(at:staging)}
+            let name=patch.deletingPathExtension().lastPathComponent
+            let document:[String:Any]=["StageKeys.channelStripOnly":true,"patch":["engineNode":["name":name]],"channels":[["Filename":patch.lastPathComponent,"Channel_name":name]]]
+            try bytes.write(to:staging.appendingPathComponent(patch.lastPathComponent),options:.atomic)
+            try PropertyListSerialization.data(fromPropertyList:document,format:.binary,options:0).write(to:staging.appendingPathComponent("data.plist"),options:.atomic)
+            return try retain(staging,to:destination)
+        }
         let report=try inspect(patch)
         let manager=FileManager.default
         let root=patch.resolvingSymlinksInPath().standardizedFileURL

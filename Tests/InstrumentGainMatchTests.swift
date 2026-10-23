@@ -3,6 +3,8 @@ import Foundation
  @MainActor static func main()async throws {
   let result=try InstrumentGainMatch.recommendation(rms:0.1,peak:0.2)
   assert(abs(result.trimDB+4)<0.001 && !result.peakLimited)
+  let quieter=try InstrumentGainMatch.retarget(result,to:-30);assert(abs(quieter.trimDB+10)<0.001)
+  for target in [Double.nan,-100,0] {do{_ = try InstrumentGainMatch.retarget(result,to:target);fatalError("Invalid target accepted")}catch{}}
   let protected=try InstrumentGainMatch.recommendation(rms:0.01,peak:0.5)
   assert(protected.peakLimited && abs(protected.trimDB-(-9+6.0206))<0.001)
   for invalid in [0.0,Double.nan,Double.infinity] {do{_ = try InstrumentGainMatch.recommendation(rms:invalid,peak:1);fatalError("Invalid/quiet result accepted")}catch{}}
