@@ -354,12 +354,20 @@ struct EffectEditor: View {
                         if draft.kind==14 {
                             Picker("Rotor Speed",selection:Binding(get:{Int(draft.values[0])},set:{var values=draft.values;values[0]=Float($0);draft.parameters=values})) { Text("Brake").tag(0); Text("Slow").tag(1); Text("Fast").tag(2) }.pickerStyle(.segmented).padding(.horizontal,20)
                         }
+                        if draft.kind==13 || draft.kind==15 {
+                            HStack {
+                                Text(draft.reverbCore == "dense-v1" ? "StageKeys Dense Engine" : "Legacy Engine").font(.caption).foregroundStyle(.secondary)
+                                Spacer()
+                                if draft.reverbCore != "dense-v1" {Button("Use Dense Engine"){draft.reverbCore="dense-v1"}.buttonStyle(StageButtonStyle())}
+                            }.padding(.horizontal,20)
+                            Text("Choose engine, size and quality before playing. Dry/Wet changes are smoothed in the Dense Engine. Near-maximum reflectivity creates long sustaining tails.").font(.caption).foregroundStyle(.secondary).padding(.horizontal,20)
+                        }
                         if draft.kind == 3 {
                             DelayEffectControls(effect:$draft,stereoAvailable:store.patch.layers[index].external != nil)
                         } else if draft.kind == 7 {
                             ChannelEqualizerControls(bands:equalizerBands,enabled:$draft.enabled).padding(.top,12)
                         } else if draft.kind == 13 {
-                            ScrollView(.horizontal,showsIndicators:false){PrimaVerbControls(sourceCore:draft.usesCreamCoat,values:Binding(get:{draft.values},set:{draft.parameters=$0})).frame(minWidth:600).padding(.horizontal,16).padding(.vertical,8)}
+                            ScrollView(.horizontal,showsIndicators:false){PrimaVerbControls(sourceCore:draft.usesCreamCoat,denseCore:draft.reverbCore == "dense-v1",values:Binding(get:{draft.values},set:{draft.parameters=$0})).frame(minWidth:600).padding(.horizontal,16).padding(.vertical,8)}
                         } else if [4,5,10,11,15,16].contains(draft.kind) {
                             GroupedEffectControls(kind:draft.kind,values:Binding(get:{draft.values},set:{draft.parameters=$0}))
                         } else { LazyVGrid(columns:Array(repeating:GridItem(.flexible(),spacing:10),count:3),spacing:15) {
@@ -664,8 +672,9 @@ struct SnapshotNoteEditor: View {
 /// normalized CreamCoat predelay; legacy reverbs retain literal milliseconds.
 struct PrimaVerbControls: View {
     var sourceCore=false
+    var denseCore=false
     @Binding var values:[Float]
-    private let sizes=["Small Room","Medium Room","Large Room","Medium Hall","Large Hall","Ambient Hall","Cathedral"]
+    private var sizes:[String] {denseCore ? ["Studio","Medium Room","Large Room","Medium Hall","Large Hall","Ambient Hall","Cathedral"]:["Small Room","Medium Room","Large Room","Medium Hall","Large Hall","Ambient Hall","Cathedral"]}
     private func value(_ index:Int)->Binding<Float> {Binding(get:{values[index]},set:{values[index]=$0})}
     private var sizeIndex:Int {min(6,max(0,Int((values[0]*6).rounded())))}
     private func section<Content:View>(_ title:String,@ViewBuilder content:()->Content)->some View {
@@ -686,7 +695,8 @@ struct PrimaVerbControls: View {
                         VStack(alignment:.leading,spacing:7){Text("Reverb Size").font(.caption).foregroundStyle(.secondary)
                             HStack(spacing:6){Button{values[0]=Float(sizeIndex-1)/6}label:{Image(systemName:"chevron.left")}.disabled(sizeIndex==0).accessibilityLabel("Previous reverb size");Text(sizes[sizeIndex]).font(StageTheme.font(14,weight:.semibold)).frame(minWidth:112);Button{values[0]=Float(sizeIndex+1)/6}label:{Image(systemName:"chevron.right")}.disabled(sizeIndex==6).accessibilityLabel("Next reverb size")}.buttonStyle(.plain).padding(12).background(StageTheme.raised,in:RoundedRectangle(cornerRadius:6))
                         }
-                        InlineEffectKnob(descriptor:.init(index:1,name:"Predelay",minimum:0,maximum:1,defaultValue:0,unit:"%"),value:Binding(get:{values[1]/200},set:{values[1]=$0*200})).help(sourceCore ? "Normalized reverb predelay; 100% is the processor’s full predelay range" : "Legacy predelay: 100% is 200 ms")
+                        if denseCore {knob(1).help("Wet-only predelay in milliseconds; the dry signal has no added delay")}
+                        else {InlineEffectKnob(descriptor:.init(index:1,name:"Predelay",minimum:0,maximum:1,defaultValue:0,unit:"%"),value:Binding(get:{values[1]/200},set:{values[1]=$0*200})).help(sourceCore ? "Normalized reverb predelay; 100% is the processor’s full predelay range" : "Legacy predelay: 100% is 200 ms")}
                     }
                 }
                 section("Character"){HStack(spacing:8){knob(2);knob(3);knob(4)}}

@@ -13,6 +13,11 @@ import Foundation
   current.parameters![9]=1.01;assert(!current.validate());current.parameters=Array(repeating:0,count:8);assert(!current.validate())
   let source=LibrarySound(id:"fixture",name:"SK App Felt Piano v1_6",collection:"Private",sound:ExternalSound(kind:.samplerPreset,name:"Felt",fileName:"fixture.aupreset"))
   let room=SundayFactoryVoicing.feltRoom(from:source)!.layer!;assert(room.effects[1].validate()&&room.effects[1].values[6]==0&&room.effects[1].values[9]==1)
+  for kind in [13,15] {
+   let effect=AudioEffect.factoryDefault(kind:kind);assert(effect.reverbCore=="dense-v1" && effect.validate())
+   let decoded=try JSONDecoder().decode(AudioEffect.self,from:JSONEncoder().encode(effect));assert(decoded==effect && decoded.renderValues.last==(kind==13 ? 2:1))
+   var old=effect;old.reverbCore=nil;assert(old.validate() && old.renderValues.last==0)
+  }
   print("PASS: legacy PrimaVerb keeps stored values, missing Quality defaults to 100%, zero chorus rate validates, and Felt Room retains observed controls")
  }
 }

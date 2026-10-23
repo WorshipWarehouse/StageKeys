@@ -1,0 +1,175 @@
+{
+  "sampleRate": 48000,
+  "durationSecondsPerRender": 12,
+  "channels": 2,
+  "compiler": "clang -O3, uninstrumented",
+  "fixtures": "Original synthesized piano-like, organ-like, pad, synth and layered chords; no sampled source assets",
+  "results": [
+    {
+      "instrument": "piano",
+      "kind": 13,
+      "engine": "legacy",
+      "cpuSeconds": 0.017977,
+      "peak": 0.144542,
+      "rms": 0.025728
+    },
+    {
+      "instrument": "piano",
+      "kind": 13,
+      "engine": "dense-v1",
+      "cpuSeconds": 0.052262,
+      "peak": 0.120054,
+      "rms": 0.014254
+    },
+    {
+      "instrument": "piano",
+      "kind": 15,
+      "engine": "legacy",
+      "cpuSeconds": 0.053307,
+      "peak": 0.09153,
+      "rms": 0.014104
+    },
+    {
+      "instrument": "piano",
+      "kind": 15,
+      "engine": "dense-v1",
+      "cpuSeconds": 0.056671,
+      "peak": 0.08913,
+      "rms": 0.01373
+    },
+    {
+      "instrument": "organ",
+      "kind": 13,
+      "engine": "legacy",
+      "cpuSeconds": 0.016435,
+      "peak": 0.231903,
+      "rms": 0.04154
+    },
+    {
+      "instrument": "organ",
+      "kind": 13,
+      "engine": "dense-v1",
+      "cpuSeconds": 0.052542,
+      "peak": 0.147176,
+      "rms": 0.026716
+    },
+    {
+      "instrument": "organ",
+      "kind": 15,
+      "engine": "legacy",
+      "cpuSeconds": 0.053658,
+      "peak": 0.176102,
+      "rms": 0.029987
+    },
+    {
+      "instrument": "organ",
+      "kind": 15,
+      "engine": "dense-v1",
+      "cpuSeconds": 0.056425,
+      "peak": 0.131707,
+      "rms": 0.025726
+    },
+    {
+      "instrument": "pad",
+      "kind": 13,
+      "engine": "legacy",
+      "cpuSeconds": 0.016376,
+      "peak": 0.093583,
+      "rms": 0.019724
+    },
+    {
+      "instrument": "pad",
+      "kind": 13,
+      "engine": "dense-v1",
+      "cpuSeconds": 0.05214,
+      "peak": 0.041431,
+      "rms": 0.009754
+    },
+    {
+      "instrument": "pad",
+      "kind": 15,
+      "engine": "legacy",
+      "cpuSeconds": 0.05325,
+      "peak": 0.045126,
+      "rms": 0.00908
+    },
+    {
+      "instrument": "pad",
+      "kind": 15,
+      "engine": "dense-v1",
+      "cpuSeconds": 0.056488,
+      "peak": 0.034655,
+      "rms": 0.007673
+    },
+    {
+      "instrument": "synth",
+      "kind": 13,
+      "engine": "legacy",
+      "cpuSeconds": 0.016475,
+      "peak": 0.12849,
+      "rms": 0.019494
+    },
+    {
+      "instrument": "synth",
+      "kind": 13,
+      "engine": "dense-v1",
+      "cpuSeconds": 0.05224,
+      "peak": 0.124148,
+      "rms": 0.011366
+    },
+    {
+      "instrument": "synth",
+      "kind": 15,
+      "engine": "legacy",
+      "cpuSeconds": 0.053283,
+      "peak": 0.096175,
+      "rms": 0.011678
+    },
+    {
+      "instrument": "synth",
+      "kind": 15,
+      "engine": "dense-v1",
+      "cpuSeconds": 0.056395,
+      "peak": 0.08689,
+      "rms": 0.010957
+    },
+    {
+      "instrument": "layered",
+      "kind": 13,
+      "engine": "legacy",
+      "cpuSeconds": 0.016334,
+      "peak": 0.107556,
+      "rms": 0.021015
+    },
+    {
+      "instrument": "layered",
+      "kind": 13,
+      "engine": "dense-v1",
+      "cpuSeconds": 0.052569,
+      "peak": 0.072451,
+      "rms": 0.010929
+    },
+    {
+      "instrument": "layered",
+      "kind": 15,
+      "engine": "legacy",
+      "cpuSeconds": 0.053165,
+      "peak": 0.064142,
+      "rms": 0.010303
+    },
+    {
+      "instrument": "layered",
+      "kind": 15,
+      "engine": "dense-v1",
+      "cpuSeconds": 0.056731,
+      "peak": 0.054226,
+      "rms": 0.009693
+    }
+  ],
+  "limitations": [
+    "Synthetic corpus is not a substitute for original instrument listening or physical-device soak testing",
+    "CPU is process time on this development Mac; not a hard realtime deadline measurement",
+    "No source video listening comparison was available",
+    "Different engines deliberately differ in wet level and timbre; legacy settings remain unchanged"
+  ]
+}

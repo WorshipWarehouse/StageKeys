@@ -114,6 +114,8 @@
 		F8F66DB7421CBFA480A2B92C /* MIDIControlTarget.swift in Sources */ = {isa = PBXBuildFile; fileRef = C00F1F02C3CF4226328A4FA9 /* MIDIControlTarget.swift */; };
 		FA2418D1812AE56E768C4CB3 /* EqualizerEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED265E8EFF001037EAF7DA64 /* EqualizerEditor.swift */; };
 		FACD85820BEFDE0E65386E3A /* EXS-Parser-MIT.md in Resources */ = {isa = PBXBuildFile; fileRef = CFB410416D53204E71F7C3D6 /* EXS-Parser-MIT.md */; };
+		87699E3BB2C33B9B07A0DFCE /* StageKeys-Dense-Reverb-MIT.txt in Resources */ = {isa = PBXBuildFile; fileRef = 8533AD9834ADBBCA548AE766 /* StageKeys-Dense-Reverb-MIT.txt */; };
+		E896DBFDA10D53C590280E7F /* StageKeys-Dense-Reverb-MIT.txt in Resources */ = {isa = PBXBuildFile; fileRef = 8533AD9834ADBBCA548AE766 /* StageKeys-Dense-Reverb-MIT.txt */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -176,6 +178,7 @@
 		EFA6073004859909EFFC68D0 /* libz.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libz.tbd; path = usr/lib/libz.tbd; sourceTree = SDKROOT; };
 		F2BE6DDCBC4000BC7F71BDEE /* SettingsViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsViews.swift; sourceTree = "<group>"; };
 		FE199D254288342CC8E4434F /* Store.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Store.swift; sourceTree = "<group>"; };
+		8533AD9834ADBBCA548AE766 /* StageKeys-Dense-Reverb-MIT.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = "StageKeys-Dense-Reverb-MIT.txt"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -214,6 +217,7 @@
 			isa = PBXGroup;
 			children = (
 				D4B91BEF3486CE615B3CCBF7 /* Airwindows-MIT.txt */,
+				8533AD9834ADBBCA548AE766 /* StageKeys-Dense-Reverb-MIT.txt */,
 				CFB410416D53204E71F7C3D6 /* EXS-Parser-MIT.md */,
 			);
 			path = Licenses;
@@ -394,6 +398,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				1BEBCECF4552A195F45BD1C1 /* Airwindows-MIT.txt in Resources */,
+				87699E3BB2C33B9B07A0DFCE /* StageKeys-Dense-Reverb-MIT.txt in Resources */,
 				FACD85820BEFDE0E65386E3A /* EXS-Parser-MIT.md in Resources */,
 				43BEEAD5F32858CBE1D15390 /* IBMPlexSans-Bold.ttf in Resources */,
 				9390F437E14C43D331CE990B /* IBMPlexSans-Regular.ttf in Resources */,
@@ -408,6 +413,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				C676D610CDA685ABB7E711AC /* Airwindows-MIT.txt in Resources */,
+				E896DBFDA10D53C590280E7F /* StageKeys-Dense-Reverb-MIT.txt in Resources */,
 				62E6379C6EF8630C450EFBCB /* EXS-Parser-MIT.md in Resources */,
 				B1D2C0303B3EBD357A3237FD /* IBMPlexSans-Bold.ttf in Resources */,
 				5FC121D86AE7721D0C6436FF /* IBMPlexSans-Regular.ttf in Resources */,
@@ -600,7 +606,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 56;
+				CURRENT_PROJECT_VERSION = 57;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
@@ -626,7 +632,7 @@
 					"IBMPlexSans-SemiBold.ttf",
 					"IBMPlexSans-Bold.ttf",
 				);
-				MARKETING_VERSION = 0.52.0;
+				MARKETING_VERSION = 0.53.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
@@ -714,7 +720,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 56;
+				CURRENT_PROJECT_VERSION = 57;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -734,7 +740,7 @@
 					"IBMPlexSans-SemiBold.ttf",
 					"IBMPlexSans-Bold.ttf",
 				);
-				MARKETING_VERSION = 0.52.0;
+				MARKETING_VERSION = 0.53.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";

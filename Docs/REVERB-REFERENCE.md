@@ -29,3 +29,7 @@ Sanitizer tests cover independent pitch/chorus behavior, dry identity, sustained
 ## SilverVerb 0.51
 
 Late-tank feedback now includes frequency-dependent damping. See [the measured improvement and wideband-envelope tradeoff](REFERENCE-MATCHING-v51.md). This change does not revise Shimmer or establish full reverb equivalence.
+
+## Versioned Dense engines 0.53
+
+New acoustic and ambient effects now default to an independent coupled feedback network. Legacy and CreamCoat engines remain selectable through existing saved patches. See [DSP audit, controls, tests and remaining acceptance work](REVERB-ENGINES-v53.md). Full reference listening parity and physical-device qualification remain unverified.

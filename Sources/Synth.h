@@ -22,6 +22,8 @@ void sk_clock(SKSynth *s, float tempo, int enabled);
 void sk_sustain(SKSynth *s, int enabled);
 void sk_panic(SKSynth *s);
 void sk_panic_channel(SKSynth *s,int layer);
+// Release voices without clearing effect histories; explicit Panic still clears all.
+void sk_release_voices(SKSynth *s,int layer);
 void sk_render(SKSynth *s, float *left, float *right, uint32_t frames);
 typedef void (*SKMIDIEvent)(void *context, uint8_t status, uint8_t data1, uint8_t data2);
 void sk_read_midi(const MIDIEventList *list, SKMIDIEvent callback, void *context);

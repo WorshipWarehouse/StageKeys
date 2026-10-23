@@ -46,7 +46,7 @@ struct AudioEffect: Codable, Equatable {
     }
     static func factoryDefault(kind:Int)->AudioEffect {
         var effect=AudioEffect();effect.kind=kind;effect.parameters=AudioEffectCatalog.defaults(for:kind)
-        if kind==13 {effect.reverbCore="creamcoat"}
+        if kind==13 || kind==15 {effect.reverbCore="dense-v1"}
         if kind==3 {effect.parameters![1]=0.75;effect.delayPingPong=true}
         return effect
     }
@@ -55,7 +55,7 @@ struct AudioEffect: Codable, Equatable {
         guard kind==3,delayPingPong==true else{return nil}
         return ImportedDelay(left:Double(values[1]),right:Double(values[1]),leftSynced:true,rightSynced:true,pingPong:true,highCut:values[2])
     }
-    var renderValues:[Float] { kind == 13 ? values+[usesCreamCoat ? 1:0]:values }
+    var renderValues:[Float] { kind == 13 ? values+[reverbCore == "dense-v1" ? 2:usesCreamCoat ? 1:0]:kind == 15 ? values+[reverbCore == "dense-v1" ? 1:0]:values }
     var title: String { AudioEffectCatalog.names.indices.contains(kind) ? AudioEffectCatalog.names[kind] : "No Effect" }
     var values: [Float] {
         if let parameters { if kind == 15 && parameters.count == 10 {return parameters+[1]}; return (kind == 13 || kind == 10) && parameters.count == 9 ? parameters+[1]:parameters }
@@ -66,7 +66,7 @@ struct AudioEffect: Codable, Equatable {
         return values
     }
     func validate() -> Bool {
-        guard reverbCore.map({kind == 13 && ["creamcoat","legacy"].contains($0)}) ?? true else{return false}
+        guard reverbCore.map({(kind == 13 && ["creamcoat","legacy","dense-v1"].contains($0)) || (kind == 15 && ["legacy","dense-v1"].contains($0))}) ?? true else{return false}
         guard delayPingPong == nil || kind==3 else{return false}
         guard importedDelay.map({kind == 3 && $0.validate()}) ?? true else{return false}
         guard syncBeats.map({ $0.isFinite && (0.0625...4).contains($0) }) ?? true, (0...17).contains(kind), amount.isFinite, (0...1).contains(amount) else { return false }

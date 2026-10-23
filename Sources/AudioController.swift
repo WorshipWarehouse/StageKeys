@@ -43,7 +43,7 @@ final class AudioController {
     }
     func removePlaybackProbe(){engine.mainMixerNode.removeTap(onBus:0)}
     #endif
-    func panic(channel:Int) { sk_panic_channel(synth,Int32(channel)); externalRack?.panic(channel) }
+    func panic(channel:Int,preserveEffectTails:Bool=false) { if preserveEffectTails {sk_release_voices(synth,Int32(channel))} else {sk_panic_channel(synth,Int32(channel))}; externalRack?.panic(channel,preserveEffectTails:preserveEffectTails) }
     var running: Bool { engine.isRunning }
     init() {
         #if os(macOS)
@@ -216,7 +216,7 @@ final class AudioController {
     }
     func releaseSource(_ source:Int32){externalRack?.releaseSource(source)}
     func sustain(_ on: Bool, layers: [Layer]) { sk_sustain(synth, on ? 1 : 0); for (i,l) in layers.enumerated() { externalRack?.sustain(channel: i, on: on && !l.blockSustain) } }
-    func panic() { sk_panic(synth); externalRack?.panic() }
+    func panic() { sk_panic(synth); externalRack?.panic(); reverb.auAudioUnit.reset(); outputLimiter.auAudioUnit.reset() }
     func master(_ volume: Float) { engine.mainMixerNode.outputVolume = volume }
     func space(_ amount: Float) { reverb.wetDryMix = amount }
     // Runs an isolated production graph without sending sound to the device.

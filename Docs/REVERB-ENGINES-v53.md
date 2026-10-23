@@ -1,0 +1,35 @@
+# Acoustic and ambient reverbs — 0.53
+
+## Audit and implementation decision
+
+The prior acoustic path includes a pinned MIT Airwindows CreamCoat adaptation with stereo room models, plus an earlier single-tank fallback. The prior ambient path has four independently recirculating lines and two output allpasses. Output-only filtering leaves bright energy circulating inside that ambient tank; uncoupled lines also limit interaction and diffusion. Patch selection formerly called Panic, discarding channel effect histories even when the same graph was retained.
+
+We evaluated retaining [Airwindows CreamCoat](https://github.com/airwindows/airwindows/tree/master/plugins/WinVST/CreamCoat) ([MIT](https://raw.githubusercontent.com/airwindows/airwindows/master/LICENSE)), adding [CloudSeedCore](https://github.com/GhostNoteAudio/CloudSeedCore) ([MIT](https://raw.githubusercontent.com/GhostNoteAudio/CloudSeedCore/master/LICENSE)), and improving the existing C engine. CloudSeedCore is a viable candidate, but importing it would add another DSP implementation/integration surface; no measured benefit has yet justified that dependency. CreamCoat stays available unchanged. The selected new implementation is an independent eight-line Householder feedback-delay network in the current C render architecture. No Sunday Keys DSP, presets, samples, UI assets or CloudSeed code are copied. The new network and corpus generator have a scoped [MIT notice](../Licenses/StageKeys-Dense-Reverb-MIT.txt); existing third-party notices remain intact.
+
+The capability benchmark is [Sunday Sounds’ reverb article](https://sundaysounds.com/blogs/news/new-reverbs-added-huge-sunday-keys-update): acoustic room types, separate Dry/Wet, pre-tank chorus, and independent ambient line modulation. The supplied YouTube pages could not be fetched for listening; sonic equivalence has not been established.
+
+## Signal flow and controls
+
+Both new modes use wet-only predelay, excitation low cut, pre-tank chorus, four input allpasses, eight coupled delay lines, feedback tone absorption/DC removal, sparse early reflections, and output tone filtering. The feedback mixing matrix is orthogonal and each line’s decay gain stays below one. Stereo excitation crosses a small amount of input into the opposite wet network; dry channels remain independent. Modulation oscillators and feedback coefficients are prepared outside the sample loop; render-time histories use existing preallocated buffers. No new allocation, lock, FFT or lookahead is added inside the sample path.
+
+Acoustic Size selects Studio, Medium Room, Large Room, Medium Hall, Large Hall, Ambient Hall and Cathedral. Delay geometry changes with size and room class. Predelay is shown in milliseconds for the Dense Engine. Reflectivity controls the decay target. Ambient Size is continuous, with independently moving fractional delay reads; Pitch Mod controls movement within the network, separately from pre-tank Chorus and Rate. Maximum ambient reflectivity approaches a long sustaining cloud (nominal low-frequency decay target about 135 seconds before damping/interpolation losses), never mathematically infinite feedback. Tone and Low Cut can make actual measured decay substantially shorter. Dry=0 / Wet=1 supports pad textures.
+
+Dry and Wet slew over approximately 20 ms in the new core. Size, Quality and engine changes are setup operations, not click-free performance automation. Quality runs only the wet path at a reduced clock; reduced settings are a deliberate lo-fi mode, not a claim of transparent oversampling. The dry path has no added processing latency. Engine changes clear incompatible histories. Normal-level feedback is linear; an emergency high-level soft bound protects tank state. Multiple additive Dry/Wet stages can still raise mix level: retain the app output protection and review peak/headroom when stacking.
+
+## Compatibility and tails
+
+Newly selected acoustic and ambient effects store `reverbCore: dense-v1`. Existing unversioned/legacy ambient, legacy acoustic and CreamCoat effects retain their original algorithms and parameters. **Use Dense Engine** explicitly upgrades a draft; Confirm saves it and Discard restores the prior effect. JSON patch and effect-preset round trips retain the engine choice. Both built-in instruments and hosted/native sampler processing receive the same selector and physical parameter values.
+
+Patch selection now releases notes/sustain without clearing effects when Silence Previous is off. Reverb tails survive only where the instrument and effect graph remain retained and compatible, at the new patch’s output level. Different instruments, changed effect types, bypass/removal, graph rebuilds and Silence Previous can still cut tails. There is no detached old-graph tail pool in this release. Explicit Panic resets channel histories, the shared hall and limiter history; buffered output takes its normal host-buffer time to drain. The production-graph regression allows host numerical residue below −110 dBFS RMS after draining eight blocks (measured approximately −121 dBFS), rather than asserting mathematical silence from Apple’s units.
+
+## Verification and evidence
+
+`Tests/test-reverb.sh` adds sanitizer coverage for both Dense modes at 44.1/48/96 kHz: wet-only predelay, distinct short/long decay, stereo decorrelation and left-only spread, dry identity, feedback Tone absorption, smoothed output automation, three serial instances, retained configuration tails and Panic. Existing CreamCoat goldens, Sola/Prima legacy tests, SilverVerb and Shimmer tests remain intact.
+
+`DenseHostedTests` compares actual native AU output against direct C stereo DSP at reduced Quality. `PrimaVerbModelTests` and `EffectPresetTests` cover legacy and versioned persistence. `ReverbTransitionTests` exercises patch selection and explicit Panic through the production store/audio graph.
+
+`Tools/render-reverb-comparison.c` generates an original synthetic piano-like, organ-like, pad, synth and layered chord corpus, rendering both legacy and Dense stereo engines. [Corpus measurements](Calibrations/Dense-Reverb-v53.json) include raw peak, RMS and process CPU time for each 12-second render. These are process-time measurements on one development Mac, not worst-case callback deadlines or hardware/iPad qualification. The new acoustic core costs more CPU than the existing CreamCoat in this corpus, while staying below 0.06 CPU seconds per 12 seconds of stereo audio in the recorded run. Wet level/timbre differs between engines; the corpus is not loudness-matched listening evidence.
+
+## Remaining acceptance work
+
+Matched subjective listening against the supplied demonstrations and real piano/organ/synth/pad instruments; room-by-room tonal tuning; prolonged maximum-setting/large-instance live soak; physical iPad CPU/memory/thermal and route-interruption tests; denormal/quiet-tail profiling; click-free size/predelay/Quality automation if those become performance controls; and detached tail preservation when instruments/graphs change. These remain release gates, not passed acceptance claims.

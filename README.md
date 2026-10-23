@@ -2,6 +2,10 @@
 
 The app remains in development. See the [public-release checklist](Docs/PUBLIC-RELEASE-CHECKLIST.md) for audio, MainStage conversion, plugin support, UI, stability, distribution and the later independent AI patch builder. Archived source presets are not counted as playable conversions.
 
+## Version 0.53
+
+New versioned acoustic and ambient Dense reverb engines add coupled diffusion, feedback damping, stereo wet excitation and smoothed output controls. Compatible retained graphs keep tails across patch selection; existing effects retain their engines. See [DSP, controls, verification and remaining acceptance work](Docs/REVERB-ENGINES-v53.md).
+
 ## Version 0.52
 
 Native MainStage translation now checks retained source integrity, output matching shows achievable levels and limits, and mixed imported/built-in mixer columns stay aligned. See [scope and verification](Docs/IMPORT-INTEGRITY-AND-LEVELS-v52.md).

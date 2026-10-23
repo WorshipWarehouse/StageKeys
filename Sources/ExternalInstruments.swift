@@ -60,7 +60,7 @@ private final class ImportedBranchVoice {
     func releaseSource(_ source:Int32){midi.releaseSource(source);children.forEach{$0.releaseSource(source)}}
     func advance(_ time:Double){midi.advance(to:time);children.forEach{$0.advance(time)}}
     func prepareOffline()throws {if let sampler{try SamplerRendering.configure(sampler,offline:true)};for child in children{try child.prepareOffline()}}
-    func panic(){controllers[64]=0;midi.panic();children.forEach{$0.panic()};sampler?.sendController(64,withValue:0,onChannel:0);sampler?.sendController(120,withValue:0,onChannel:0);pitches.removeAll();audioGraph?.reset()}
+    func panic(preserveEffectTails:Bool=false){controllers[64]=0;midi.panic();children.forEach{$0.panic(preserveEffectTails:preserveEffectTails)};sampler?.sendController(64,withValue:0,onChannel:0);sampler?.sendController(preserveEffectTails ? 123:120,withValue:0,onChannel:0);pitches.removeAll();if !preserveEffectTails {audioGraph?.reset()}}
 }
 
 /// All methods run on the main thread, never in a render callback. Owns no engine.
@@ -695,19 +695,21 @@ final class ExternalInstrumentRack {
             restoreState(state, channel: channel)
         }
     }
-    func panic(_ channel: Int? = nil) {
+    func panic(_ channel: Int? = nil,preserveEffectTails:Bool=false) {
         precondition(Thread.isMainThread)
         for index in channel.map({ [$0] }) ?? Array(voices.keys) {
             controllerValues[index,default:[:]][64]=0
-            voices[index]?.parallel.forEach{$0.panic()}
+            voices[index]?.parallel.forEach{$0.panic(preserveEffectTails:preserveEffectTails)}
             midi(index, 0xB0, 64, 0)
             for note in voices[index]?.pitches.values ?? Dictionary<Int, UInt8>().values { midi(index, 0x80, note, 0) }
-            midi(index, 0xB0, 123, 0); midi(index, 0xB0, 120, 0)
+            midi(index, 0xB0, 123, 0); if !preserveEffectTails {midi(index, 0xB0, 120, 0)}
             voices[index]?.pitches.removeAll()
+            if !preserveEffectTails {
             voices[index]?.builtin.auAudioUnit.reset()
             voices[index]?.compressor.auAudioUnit.reset()
             voices[index]?.imported.forEach{$0.auAudioUnit.reset()}
             voices[index]?.audioGraph?.reset()
+            }
         }
     }
     func unit(channel: Int) -> AVAudioUnit? { voices[channel]?.unit }
