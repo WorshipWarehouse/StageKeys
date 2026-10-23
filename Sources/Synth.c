@@ -56,7 +56,7 @@ typedef struct {
  double oscSin[8],oscCos[8],stepSin[8],stepCos[8];
  int ready;
 } DenseReverb;
-typedef struct { DenseReverb reverb; float p[32],z[12],coef[8],shiftPhase,stereo; int custom; Biquad eq[8]; } EffectState;
+typedef struct { DenseReverb reverb; float p[32],z[12],coef[8],shiftPhase,stereo; int custom; Biquad eq[8]; float shimmerControl[4];int shimmerReady; } EffectState;
 struct SKSynth {
  double rate;
  int delayLength,predelayLength;
@@ -228,8 +228,10 @@ static void effectReset(EffectState *e){
 }
 static void effectCoefficients(EffectState*e,int kind,double rate){
  float *p=e->p;
+ if(kind==10)e->coef[6]=1-exp(-1/(rate*.02));
  if(kind==10||kind==15||(kind==13&&p[10]>1.5f))rate/=(1 << (int)roundf((1-p[kind==10||kind==13?9:10])*5));
  if(kind==10){
+  e->coef[7]=1-exp(-1/(rate*.02));
   // An octave-up read doubles input frequencies. Band-limit the wet pitch
   // history first so high harmonics do not fold back as dissonant aliases.
   float cutoff=fminf(p[6]*.5f,rate*.2f);
@@ -341,10 +343,15 @@ static float effectProcess(SKSynth*s,int l,int k,float x){
  int kind=s->fxKind[l][k];EffectState*e=&s->effect[l][k];float *p=e->p,*buffer=s->delay[l][k],dry=x,y=x;
  int pos=s->delayPosition[l][k];double rate=s->rate;float phase=s->fxPhase[l][k];
  e->stereo=0;
+ if(kind==10){
+  if(!e->shimmerReady){e->shimmerControl[0]=p[7];e->shimmerControl[1]=p[8];e->shimmerControl[2]=e->coef[0];e->shimmerControl[3]=e->coef[1];e->shimmerReady=1;}
+  e->shimmerControl[0]+=e->coef[6]*(p[7]-e->shimmerControl[0]);
+  e->shimmerControl[1]+=e->coef[6]*(p[8]-e->shimmerControl[1]);
+ }
  if(kind==10||kind==15||(kind==13&&p[10]>1.5f)){
   int divider=1 << (int)roundf((1-p[kind==10||kind==13?9:10])*5);
   e->z[3]+=x;e->z[4]+=1;
-  if(e->z[4]<divider)return (kind==13&&p[10]>1.5f)||(kind==15&&p[11]>0) ? dry*e->reverb.mix[0]+e->z[5]*e->reverb.mix[1] : kind==10?dry*p[7]+e->z[5]*p[8]:dry*p[8]+e->z[5]*p[9];
+  if(e->z[4]<divider)return (kind==13&&p[10]>1.5f)||(kind==15&&p[11]>0) ? dry*e->reverb.mix[0]+e->z[5]*e->reverb.mix[1] : kind==10?dry*e->shimmerControl[0]+e->z[5]*e->shimmerControl[1]:dry*p[8]+e->z[5]*p[9];
   x=e->z[3]/e->z[4];e->z[3]=e->z[4]=0;rate/=divider;
  }
  if((kind==13&&p[10]>1.5f)||(kind==15&&p[11]>0))return dense_process(s,l,k,x,dry,rate);
@@ -367,6 +374,8 @@ static float effectProcess(SKSynth*s,int l,int k,float x){
  case 10:{
   // Diffuse the room before octave shifting. The pitch history contains only
   // the wet return, never the dry attack. All buffers are allocated off-thread.
+  e->shimmerControl[2]+=e->coef[7]*(e->coef[0]-e->shimmerControl[2]);
+  e->shimmerControl[3]+=e->coef[7]*(e->coef[1]-e->shimmerControl[3]);
   int capacity=s->delayLength/6,index=pos%capacity;
   float room=.035f+p[2]*.13f,decay=.4f+p[2]*7,wet=0;
   const float spacing[4]={1,1.271f,1.617f,1.953f};
@@ -379,7 +388,7 @@ static float effectProcess(SKSynth*s,int l,int k,float x){
    float feedback=powf(.001f,seconds/decay);
    // Tone must absorb high-frequency energy on every trip through the
    // tank; filtering only the output leaves a bright ringing tail inside.
-   e->z[8+line]+=e->coef[1]*(delayed-e->z[8+line]);
+   e->z[8+line]+=e->shimmerControl[3]*(delayed-e->z[8+line]);
    history[index]=x+feedback*(e->z[8+line]*(1-recirculate)+pitch*recirculate);
    wet+=delayed*.25f;
   }
@@ -393,8 +402,8 @@ static float effectProcess(SKSynth*s,int l,int k,float x){
   SKShimmerPitch*shifter=atomic_load_explicit(&s->shimmer[l][k],memory_order_acquire);
   pitch=sk_pitch_process(shifter,process(&e->eq[1],process(&e->eq[0],wet)),1 << (int)roundf((1-p[9])*5));e->z[6]=pitch;
   wet=wet*(1-p[0])+pitch*p[0];
-  e->z[0]+=e->coef[0]*(wet-e->z[0]);wet-=e->z[0];e->z[1]+=e->coef[1]*(wet-e->z[1]);wet=e->z[1];
-  e->z[5]=wet;y=dry*p[7]+wet*p[8];s->fxPhase[l][k]=fmod(phase+TAU*.3f/rate,TAU);break;}
+  e->z[0]+=e->shimmerControl[2]*(wet-e->z[0]);wet-=e->z[0];e->z[1]+=e->shimmerControl[3]*(wet-e->z[1]);wet=e->z[1];
+  e->z[5]=wet;y=dry*e->shimmerControl[0]+wet*e->shimmerControl[1];s->fxPhase[l][k]=fmod(phase+TAU*.3f/rate,TAU);break;}
  case 15:{
   // Independent modulated delay lines, with a separate pre-tank chorus.
   // Partitioned histories are allocated off-thread; the direct path is intact.
