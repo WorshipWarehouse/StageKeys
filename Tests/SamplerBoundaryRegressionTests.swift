@@ -180,6 +180,7 @@ import AVFoundation
         let audio = AudioController()
         try audio.prepareOffline()
         defer { audio.stop() }
+        audio.modulation(0,value:0) // Keep the phase-aligned fixture free of Sampler CC1 vibrato.
         audio.configure(0, layer)
         audio.master(1)
         audio.space(0)
