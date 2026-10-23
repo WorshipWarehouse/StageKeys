@@ -46,7 +46,7 @@ import CoreMIDI
         while Date() < end {
             RunLoop.current.run(until: Date().addingTimeInterval(0.01))
             lock.lock(); let count = events.count; lock.unlock()
-            if count >= 2 { break }
+            if count >= 3 { break }
         }
         lock.lock(); let result = events; lock.unlock()
         assert(result == [[0x92,60,100],[0x82,60,0],[0x93,62,90]], "Virtual MIDI delivery failed: \(result)")
