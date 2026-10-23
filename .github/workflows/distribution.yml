@@ -32,7 +32,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Parser corpus
-        run: python3 Tests/test-preset-coverage.py
+        run: |
+          python3 Tests/test-preset-coverage.py
+          python3 Tests/test-distribution.py
+          python3 Tests/test-sampler-calibration.py
       - name: Reverb memory and undefined-behavior regressions
         run: Tests/test-reverb.sh
   library:
