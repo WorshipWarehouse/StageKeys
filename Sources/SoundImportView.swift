@@ -43,6 +43,8 @@ struct SoundImportView:View {
                 if let status {Text(status).font(.callout).textSelection(.enabled)}
                 Spacer()
             }.padding(28).disabled(store.libraryImportBusy)
+            }.overlay(alignment:.bottom) {
+                if store.libraryImportBusy {Button("Cancel Import Before Commit") {store.cancelLibraryImport()}.buttonStyle(StageButtonStyle()).padding().background(StageTheme.base)}
             }
         }.fileImporter(isPresented:$choosing,allowedContentTypes:choice == .file ? [.audio,.data] : choice == .mainStage ? [.package,.folder,.data] : [.folder]) {result in
             switch result {
