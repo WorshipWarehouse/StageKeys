@@ -517,6 +517,7 @@ final class PerformanceStore: ObservableObject {
         audio.gain(15, tonicGain); configureTonic(); updateToneFilters()
     }
     func setRange(_ index: Int, low: Int, high: Int) {
+        guard patch.layers.indices.contains(index),(0...127).contains(low),(low...127).contains(high) else{return}
         if !held.isEmpty { panic() }
         setlist.patches[selected].layers[index].low = low
         setlist.patches[selected].layers[index].high = high
@@ -552,12 +553,14 @@ final class PerformanceStore: ObservableObject {
         applyPatch(); save()
     }
     func setGain(_ index: Int, _ value: Float) {
+        guard patch.layers.indices.contains(index),value.isFinite,(0...1).contains(value) else{return}
         cancelTransition(); activeSnapshot = nil
         setlist.patches[selected].layers[index].gain = value
         let layer = patch.layers[index]; audio.gain(index, layer.muted ? 0 : value)
         if let d = layer.midiDestinationID { sendMIDI(d, 0xb0 | UInt8(layer.midiOutputChannel), 7, UInt8(max(0,min(127,Int((layer.muted ? 0 : value)*127))))) }
     }
     func mute(_ index: Int) {
+        guard patch.layers.indices.contains(index) else{return}
         cancelTransition()
         setlist.patches[selected].layers[index].muted.toggle()
         let l = patch.layers[index]; audio.gain(index, l.muted ? 0 : l.gain); if let d = l.midiDestinationID { sendMIDI(d, 0xb0 | UInt8(l.midiOutputChannel), 7, UInt8(l.muted ? 0 : Int(l.gain * 127))) }
@@ -642,6 +645,9 @@ final class PerformanceStore: ObservableObject {
         return snapshot.seconds ?? transition
     }
     func commitLayer(_ index: Int, _ layer: Layer) {
+        guard patch.layers.indices.contains(index) else{return}
+        var validation=Setlist();validation.patches=[Patch(name:"Sound Edit",layers:[layer],snapshots:[])]
+        guard (try? validation.validate()) != nil else{message="The sound edit contains unsupported or invalid settings. The previous sound was retained.";return}
         cancelAudition()
         let previous=patch.layers[index]
         if previous.instrument != layer.instrument || previous.external != layer.external || previous.midiDestinationID != layer.midiDestinationID {
@@ -655,15 +661,18 @@ final class PerformanceStore: ObservableObject {
         audio.configure(index, layer); audio.gain(index, layer.loaded && !layer.muted ? layer.gain : 0); updateToneFilters(); save()
     }
     func addSound(_ index: Int, _ instrument: Int) {
+        guard patch.layers.indices.contains(index),(0...2).contains(instrument) else{return}
         let name = ["Soft Keys", "Warm Pad", "Glass Bells"][instrument]
         var l = Layer(name: name, instrument: instrument, gain: 0.65)
         l.id = patch.layers[index].id; commitLayer(index, l)
     }
     func removeSound(_ index: Int) {
+        guard patch.layers.indices.contains(index) else{return}
         var l = Layer.empty(); l.id = patch.layers[index].id; commitLayer(index, l)
     }
-    func toggleMIDIEffect(_ index: Int) { var l = patch.layers[index]; l.midiEffectEnabled.toggle(); commitLayer(index,l) }
+    func toggleMIDIEffect(_ index: Int) { guard patch.layers.indices.contains(index) else{return};var l = patch.layers[index]; l.midiEffectEnabled.toggle(); commitLayer(index,l) }
     func setEffect(_ index: Int, _ slot: Int, _ effect: AudioEffect) {
+        guard patch.layers.indices.contains(index),patch.layers[index].effects.indices.contains(slot),effect.validate() else{return}
         let changedKind = patch.layers[index].effects[slot].kind != effect.kind
         if changedKind {
             for i in patch.snapshots.indices {
@@ -1075,6 +1084,7 @@ final class PerformanceStore: ObservableObject {
         } catch { message = error.localizedDescription; return false }
     }
     func addLibrarySound(_ entry: LibrarySound, index: Int) {
+        guard patch.layers.indices.contains(index) else{return}
         if var layer = entry.layer { layer.id = patch.layers[index].id; commitLayer(index, layer); return }
         if let sound = entry.sound { addExternal(sound, index: index); return }
         #if os(macOS)
