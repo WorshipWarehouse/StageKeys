@@ -25,7 +25,7 @@ import CoreMIDI
                 for offset in stride(from:0,to:Int(packet.pointee.length),by:3) where offset+2<Int(packet.pointee.length) {
                     events.append(Array(UnsafeBufferPointer(start:bytes+offset,count:3)))
                 }
-                packet=MIDIPacketNext(packet)
+                packet=UnsafePointer(MIDIPacketNext(packet))
             }
         } == noErr)
         defer { MIDIPortDispose(port); MIDIClientDispose(client) }
