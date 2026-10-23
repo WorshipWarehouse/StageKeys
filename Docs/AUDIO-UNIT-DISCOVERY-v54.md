@@ -60,3 +60,11 @@ Not built or executed: this change was prepared on Linux without Xcode, Core Aud
 - AU parameter automation and MIDI learn mapping onto plug-in parameters are not implemented; the generic editor writes parameters directly.
 - There is no embedded editor inside the channel strip, and no preset browsing beyond the plug-in's factory presets.
 - Rescan cannot make Core Audio re-scan a newly installed Audio Unit without a relaunch.
+
+## Mac verification follow-up — 23 October 2026
+
+Universal Mac and iOS Simulator Release builds pass after correcting the AUAudioUnit editor receiver, registering/removing observers on the retained AUParameterTree, using AudioComponentFlags.isV3AudioUnit, and guarding macOS-only custom-view metadata. A generation token prevents an old unit's queued callback from changing a newly attached editor. The generic model is separated into PluginParameterModel.swift and included in both application targets and regression builds.
+
+PluginParameterModelTests passes against real AU parameter-tree callbacks, clamped writes, unit replacement and observer removal. Catalog and effect-preset/snapshot serialization tests pass. The hosted instrument test ran OB-Xd: custom editor resolved, 97 parameters and 128 factory presets were reported, MIDI/offline audio rendered (peak 0.13084845), document state round-tripped and obsolete asynchronous loads were cancelled. The harness now uses an isolated data directory and imports CoreAudioKit; Apple DLS is the fallback if OB-Xd is unavailable.
+
+This does not qualify out-of-process isolation, physical iOS AUv3, every plugin's parameter semantics, or every manual snapshot/editor workflow. Those remain release work.
