@@ -122,6 +122,7 @@ import Darwin
         let audio = AudioController()
         try audio.prepareOffline()
         defer { audio.stop() }
+        audio.modulation(0,value:0)
         audio.configure(0, layerA)
         audio.master(1)
         audio.space(0)
@@ -161,6 +162,7 @@ import Darwin
         audio.sustain(false, layers: [layerA])
         assert(errors.isEmpty, "Rapid patch changes reported errors: \(errors)")
         audio.panic()
+        _ = try samples(audio, blocks: 8) // Drain already-rendered host buffers and the short release.
         let settled = try samples(audio, blocks: 32)
         assert(peak(settled[0..<settled.count]) < 0.001, "Voices kept sounding after Panic")
 
