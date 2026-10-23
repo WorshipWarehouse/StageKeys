@@ -422,6 +422,12 @@ struct PatchEditor: View {
                     row("Visual state when Patch is selected","Have this Patch recall a specific visual state when it is selected") {
                         Picker("Visual state",selection:$store.setlist.patches[store.selected].visualMode){Text("Don't change").tag(0);Text("Show Effects").tag(1);Text("Show Notes").tag(2)}.pickerStyle(.segmented).labelsHidden().frame(width:335)
                     }
+                    if let notes=store.patch.conversionNotes,!notes.isEmpty {
+                        VStack(alignment:.leading,spacing:8) {
+                            Text("Conversion Notes").font(.headline)
+                            ForEach(Array(notes.enumerated()),id:\.offset){_,note in Text(note).font(.caption).textSelection(.enabled)}
+                        }.padding(16).frame(maxWidth:.infinity,alignment:.leading).background(StageTheme.panel,in:RoundedRectangle(cornerRadius:8))
+                    }
                 }.padding(32)
             }
         }.onDisappear{store.save()}

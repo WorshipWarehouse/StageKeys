@@ -46,6 +46,26 @@ enum MainStagePatch {
         case invalid(String)
         var errorDescription:String? {if case .invalid(let message)=self{return message};return nil}
     }
+    static func assembledChannels(_ report:Report,entries:[LibrarySound])throws->Patch {
+        let channels=report.channels.filter{!$0.instruments.isEmpty}
+        guard let archive=report.sourceArchiveID,!channels.isEmpty,channels.count<=15 else {
+            throw Failure.invalid("Choose a source patch with 1–15 converted sampler channels. More complex patch routing requires manual setup.")
+        }
+        var layers:[Layer]=[],notes=["Converted channel strips only. Patch-level buses/sends, tempo, scripts and routing require review; this is not full MainStage topology parity."]
+        for channel in channels {
+            let matches=entries.filter{$0.sourceArchiveID==archive && $0.id.hasPrefix("mainstage-channel-"+channel.sha256+"-")}
+            guard matches.count==1,let entry=matches.first,var layer=entry.layer,layer.external?.kind == .samplerPreset else {
+                throw Failure.invalid("\(channel.name): convert the channel first and resolve multiple converted versions before assembling this patch.")
+            }
+            layer.id=UUID();layer.name=channel.name;layers.append(layer)
+            notes += (entry.conversionNotes ?? []).map{channel.name+": "+$0}
+        }
+        layers += (layers.count..<15).map{_ in Layer.empty()}
+        var patch=Patch(name:String(report.name.prefix(180))+" · Converted",layers:layers,snapshots:[])
+        patch.conversionNotes=Array((notes+report.blockers).prefix(128)).map{String($0.prefix(2000))}
+        var validation=Setlist();validation.patches=[patch];try validation.validate()
+        return patch
+    }
     static func digest(_ data:Data)->String {SHA256.hash(data:data).map{String(format:"%02x",$0)}.joined()}
     private static func contained(_ file:URL,in root:URL)->Bool {
         file.resolvingSymlinksInPath().standardizedFileURL.path.hasPrefix(root.resolvingSymlinksInPath().standardizedFileURL.path+"/")
