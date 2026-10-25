@@ -59,3 +59,7 @@ These PRs deliberately implement parts of broader release gates. The linked issu
 - #58: saved-setlist path aliases (PR #59).
 
 PRs #57 and #59 use Closes links, so their narrow issues close on merge. No broad release issue is marked complete prematurely.
+
+## Live startup blocker found after local builds
+
+The real multi-instrument Piano session did not become responsive within several minutes. A one-second process sample traced the main thread to `PerformanceStore.start → applyPatch → AudioController.configure → editGraph → restoreSamplers → AVAudioUnitSampler.loadInstrument`; the process used about 2 GB resident memory. Issue #60 records the investigation and acceptance criteria. The development StageKeys process was stopped and the previous app bundle restored; no session/library/sample files were reset. StageKeys Live's instrument-channel update remains installed. This finding blocks a blanket merge-ready statement for the full stack despite successful local builds/offline regressions. The individual snapshot and path corrections remain available in PRs #57/#59.
