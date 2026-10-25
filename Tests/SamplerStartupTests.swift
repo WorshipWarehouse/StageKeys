@@ -28,6 +28,15 @@ import AVFoundation
         for _ in 0..<20 {let buffer=try audio.offlineBlock();for i in 0..<Int(buffer.frameLength){peak=max(peak,abs(buffer.floatChannelData![0][i]))}}
         assert(peak>0.001,"Resident sampler stopped playing after empty-slot configuration")
         assert((try! Data(contentsOf:source))==original)
+        let beforeBatch = rack.samplerRestorationCount
+        try audio.withGraphChanges {
+            audio.configure(1, layer); audio.configure(2, layer)
+        }
+        assert(rack.samplerRestorationCount - beforeBatch == 3, "Patch graph edits must restore each attached sampler just once")
+        enum ProbeFailure: Error { case expected }
+        do { try audio.withGraphChanges { try rack.remove(2); throw ProbeFailure.expected } } catch ProbeFailure.expected {}
+        assert(audio.running && rack.unit(channel: 0) != nil && rack.unit(channel: 1) != nil)
+        try audio.withGraphChanges {} // No-op batch must not restore or stop anything.
         try rack.remove(0)
         assert(rack.unit(channel:0)==nil)
         print("PASS: configuring/removing 15 empty slots adds zero sampler restorations, keeps audio running and preserves loaded sound/source bytes")

@@ -561,8 +561,16 @@ final class PerformanceStore: ObservableObject {
         }
         cancelAudition()
         audio.setPatchVolume(patch.volumeDB)
-        for (i, l) in patch.layers.enumerated() { configureMIDI(i, l); audio.configure(i, l); audio.gain(i, l.loaded && !l.muted ? l.gain : 0) }
-        audio.gain(15, tonicGain); configureTonic(); updateToneFilters()
+        do {
+            try audio.withGraphChanges {
+                for (i, l) in patch.layers.enumerated() { configureMIDI(i, l); audio.configure(i, l) }
+                configureTonic()
+            }
+        } catch { message = "Could not complete the patch audio graph: " + error.localizedDescription }
+        // Graph restoration protects old mixer values. Apply the requested patch
+        // levels/pans only after the final graph has restored its samplers.
+        for (i, l) in patch.layers.enumerated() { audio.gain(i, l.loaded && !l.muted ? l.gain : 0) }
+        audio.gain(15, tonicGain); updateToneFilters()
     }
     func setRange(_ index: Int, low: Int, high: Int) {
         guard patch.layers.indices.contains(index),(0...127).contains(low),(low...127).contains(high) else{return}
