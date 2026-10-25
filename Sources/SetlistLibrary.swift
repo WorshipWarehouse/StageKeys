@@ -100,7 +100,7 @@ final class SetlistLibrary {
     }
     private func bytes(_ url: URL, directory: URL) throws -> Data {
         guard directory.resolvingSymlinksInPath().standardizedFileURL.path == directory.path,
-              url.deletingLastPathComponent().path == directory.path else { throw SetlistLibraryError.unsafeFile }
+              url.deletingLastPathComponent().resolvingSymlinksInPath().standardizedFileURL.path == directory.resolvingSymlinksInPath().standardizedFileURL.path else { throw SetlistLibraryError.unsafeFile }
         let values = try url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey])
         guard values.isRegularFile == true, values.isSymbolicLink != true else { throw SetlistLibraryError.unsafeFile }
         guard (values.fileSize ?? Int.max) <= byteLimit else { throw SetlistLibraryError.oversized }
