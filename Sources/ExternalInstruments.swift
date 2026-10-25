@@ -621,54 +621,76 @@ final class ExternalInstrumentRack {
             }
         }
     }
+    private struct GraphEdit {
+        var mixers: [(AVAudioMixerNode, Float, Float)]
+        var samplers: [(AVAudioUnitSampler, [String: Any])]
+        var wasRunning: Bool
+    }
+    private var graphBatchDepth = 0
+    private var pendingGraphEdit: GraphEdit?
+    /// One lazy graph transaction per patch. Built-in-only updates never stop audio.
+    func withGraphChanges(_ operation: () throws -> Void) throws {
+        precondition(Thread.isMainThread)
+        if graphBatchDepth > 0 { try operation(); return }
+        graphBatchDepth = 1
+        defer { graphBatchDepth = 0 }
+        do { try operation() }
+        catch { try? finishGraphChanges(); throw error }
+        try finishGraphChanges()
+    }
+    private func finishGraphChanges() throws {
+        guard var edit = pendingGraphEdit else { return }
+        pendingGraphEdit = nil
+        edit.samplers += samplerState().filter { candidate in !edit.samplers.contains(where: { $0.0 === candidate.0 }) }
+        var failure: Error?
+        do { try restoreSamplers(edit.samplers) } catch { failure = error }
+        restoreMixers(edit.mixers)
+        if edit.wasRunning {
+            do { engine.prepare(); try engine.start() } catch { if failure == nil { failure = error } }
+        }
+        if let failure { throw failure }
+    }
     private func editGraph(_ operation: () throws -> Void) throws {
-        let mixerSnapshot = mixerState()
-        var samplers = samplerState()
-        var restored=false
-        defer {if !restored {try? restoreSamplers(samplers)};restoreMixers(mixerSnapshot)}
-        let wasRunning = engine.isRunning
-        if wasRunning { engine.stop() }
-        do {try operation(); samplers += samplerState().filter { candidate in !samplers.contains(where:{$0.0 === candidate.0}) }} catch {if wasRunning {try? engine.start()};throw error}
-        try restoreSamplers(samplers);restored=true
-        if wasRunning { engine.prepare(); try engine.start() }
+        if graphBatchDepth == 0 {
+            try withGraphChanges { try editGraph(operation) }
+            return
+        }
+        if pendingGraphEdit == nil {
+            pendingGraphEdit = GraphEdit(mixers: mixerState(), samplers: samplerState(), wasRunning: engine.isRunning)
+            if engine.isRunning { engine.stop() }
+        }
+        try operation()
     }
     private func install(_ unit: AVAudioUnit, channel: Int, configure: (() throws -> Void)? = nil) throws {
-        let mixerSnapshot = mixerState()
-        var samplers = samplerState()
-        var restored=false
-        defer {if !restored {try? restoreSamplers(samplers)};restoreMixers(mixerSnapshot)}
-        let wasRunning = engine.isRunning
-        if wasRunning { engine.stop() }
-        engine.attach(unit)
-        do { try configure?(); if let sampler=unit as? AVAudioUnitSampler {rememberSampler(sampler)}; samplers += samplerState().filter { candidate in !samplers.contains(where:{$0.0 === candidate.0}) } } catch {
-            engine.detach(unit)
-            if wasRunning { engine.prepare(); try? engine.start() }
-            throw error
+        try editGraph {
+            engine.attach(unit)
+            do {
+                try configure?()
+                if let sampler = unit as? AVAudioUnitSampler { rememberSampler(sampler) }
+            } catch { engine.detach(unit); throw error }
+            panic(channel)
+            detach(channel)
+            let mixer = AVAudioMixerNode()
+            let filter = AVAudioUnitEQ(numberOfBands: 1)
+            filter.bands[0].filterType = .resonantLowPass
+            filter.bands[0].bypass = true
+            let eq = AVAudioUnitEQ(numberOfBands: 8)
+            for (i, band) in eq.bands.enumerated() {
+                band.filterType = i == 0 ? .highPass : i == 1 ? .lowShelf : i == 6 ? .highShelf : i == 7 ? .lowPass : .parametric
+                band.bypass = i == 0 || i == 7
+            }
+            let compressor=BuiltinEffectUnit.make()
+            for node in [mixer as AVAudioNode, filter, eq, compressor] { engine.attach(node) }
+            let processingFormat=AVAudioFormat(standardFormatWithSampleRate:engine.isInManualRenderingMode ? engine.manualRenderingFormat.sampleRate:48000,channels:2)!
+            engine.connect(unit, to: filter, format: processingFormat)
+            engine.connect(filter, to: eq, format: processingFormat)
+            engine.connect(eq, to: compressor, format: processingFormat)
+            let builtin=BuiltinEffectUnit.make();engine.attach(builtin)
+            let voice = Voice(unit: unit, mixer: mixer, filter: filter, eq: eq, compressor: compressor,builtin:builtin)
+            connectEffects(voice)
+            engine.connect(mixer, to: engine.mainMixerNode, format: nil)
+            voices[channel] = voice
         }
-        panic(channel)
-        detach(channel)
-        let mixer = AVAudioMixerNode()
-        let filter = AVAudioUnitEQ(numberOfBands: 1)
-        filter.bands[0].filterType = .resonantLowPass
-        filter.bands[0].bypass = true
-        let eq = AVAudioUnitEQ(numberOfBands: 8)
-        for (i, band) in eq.bands.enumerated() {
-            band.filterType = i == 0 ? .highPass : i == 1 ? .lowShelf : i == 6 ? .highShelf : i == 7 ? .lowPass : .parametric
-            band.bypass = i == 0 || i == 7
-        }
-        let compressor=BuiltinEffectUnit.make()
-        for node in [mixer as AVAudioNode, filter, eq, compressor] { engine.attach(node) }
-        let processingFormat=AVAudioFormat(standardFormatWithSampleRate:engine.isInManualRenderingMode ? engine.manualRenderingFormat.sampleRate:48000,channels:2)!
-        engine.connect(unit, to: filter, format: processingFormat)
-        engine.connect(filter, to: eq, format: processingFormat)
-        engine.connect(eq, to: compressor, format: processingFormat)
-        let builtin=BuiltinEffectUnit.make();engine.attach(builtin)
-        let voice = Voice(unit: unit, mixer: mixer, filter: filter, eq: eq, compressor: compressor,builtin:builtin)
-        connectEffects(voice)
-        engine.connect(mixer, to: engine.mainMixerNode, format: nil)
-        voices[channel] = voice
-        try restoreSamplers(samplers);restored=true
-        if wasRunning { engine.prepare(); try engine.start() }
     }
     private func detach(_ channel: Int) {
         guard let old = voices.removeValue(forKey: channel) else { return }

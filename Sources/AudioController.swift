@@ -126,6 +126,10 @@ final class AudioController {
             eqEnabled: c.eqEnabled, bands: c.equalizer.map { ($0.frequency, $0.gain, $0.q) },
             compressorEnabled: c.compressorEnabled, threshold: c.threshold, attack: c.compressorAttack, release: c.compressorRelease, makeup: c.makeup,ratio:c.ratio,inputGain:c.compressorInputGain ?? 0,mix:c.compressorMix ?? 1)
     }
+    func withGraphChanges(_ operation: () throws -> Void) throws {
+        if let rack = externalRack { try rack.withGraphChanges(operation) }
+        else { try operation() }
+    }
     func configure(_ index: Int, _ layer: Layer) {
         outputTrims[index]=pow(10,(layer.channelSettings.outputTrimDB ?? 0)/20)
         pans[index] = layer.pan
