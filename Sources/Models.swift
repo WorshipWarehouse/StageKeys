@@ -274,6 +274,9 @@ struct SnapshotSoundState: Codable {
     init(_ layer: Layer) { importedRack=layer.importedRack; effects=layer.effects; midiProgram=layer.midiProgram; midiEffectEnabled=layer.midiEffectEnabled; pan=layer.pan; pluginState=layer.pluginState }
 }
 struct Snapshot: Codable, Identifiable {
+    /// Nil in legacy sessions means a populated snapshot. Empty slots keep their index.
+    var emptySlot: Bool?
+    var isEmptySlot: Bool { emptySlot == true }
     var id = UUID()
     var name: String
     var gains: [Float]
