@@ -30,3 +30,7 @@ Created 23 October 2026. These issues cover all 56 unchecked gates in PUBLIC-REL
 - [[P1] Verify and complete native MainStage archive conversion](https://github.com/WorshipWarehouse/StageKeys-Library/issues/1)
 - [[P1] Complete portable optional-library installation and integrity checks](https://github.com/WorshipWarehouse/StageKeys-Library/issues/2)
 - [[P1] Audit library names, source tags, presets and content provenance](https://github.com/WorshipWarehouse/StageKeys-Library/issues/3)
+
+## Focused follow-ups — 24 October 2026
+
+See [PR readiness and remaining acceptance gates](PR-READINESS-2026-10-24.md) for the audit, fixes, CI blocker and new issues #52–#56/#58.
