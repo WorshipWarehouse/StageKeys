@@ -1,7 +1,7 @@
 import Foundation
 @main struct SetlistPathAliasTests {
     static func main() throws {
-        let base = URL(fileURLWithPath: ProcessInfo.processInfo.environment["STAGEKEYS_DATA_DIR"]!)
+        let base = URL(fileURLWithPath: ProcessInfo.processInfo.environment["STAGEKEYS_DATA_DIR"]!).appendingPathComponent("fresh-" + UUID().uuidString)
         let library = try SetlistLibrary(root: base.appendingPathComponent("Setlists"))
         let saved = try library.save(Setlist())
         let initial = try library.list()
