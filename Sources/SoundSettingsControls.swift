@@ -287,6 +287,8 @@ struct InstrumentGainMatchControls:View {
     @State private var status:String?
     @State private var task:Task<Void,Never>?
     @State private var measurementToken=UUID()
+    @State private var undoTrim:Float?
+    @State private var canUndoTrim=false
     private func measure() {
         let input=layer,token=UUID();measurementToken=token
         var source=input
@@ -311,9 +313,10 @@ struct InstrumentGainMatchControls:View {
                 Spacer()
                 if task != nil {ProgressView();Button("Cancel"){task?.cancel();task=nil;measurementToken=UUID();status="Calibration cancelled."}}
                 else {Button("Measure Sound",action:measure)}
-                Button("Reset Trim"){layer.channelSettings.outputTrimDB=nil}.disabled(layer.channelSettings.outputTrimDB==nil)
-                if let result=measurement {Button(String(format:"Apply %+.1f dB",result.trimDB)){layer.channelSettings.outputTrimDB=result.trimDB;measurement=nil;status="Output trim applied to this draft. Confirm to save or Discard to restore."}}
+                Button("Reset Trim"){undoTrim=layer.channelSettings.outputTrimDB;canUndoTrim=true;layer.channelSettings.outputTrimDB=nil}.disabled(layer.channelSettings.outputTrimDB==nil)
+                if let result=measurement {Button(String(format:"Apply %+.1f dB",result.trimDB)){undoTrim=layer.channelSettings.outputTrimDB;canUndoTrim=true;layer.channelSettings.outputTrimDB=result.trimDB;measurement=nil;status="Output trim applied to this draft. Confirm to save or Discard to restore."}}
             }.buttonStyle(StageButtonStyle())
+            if canUndoTrim {Button("Undo Last Trim Change") {layer.channelSettings.outputTrimDB=undoTrim;canUndoTrim=false;status="Previous output trim restored to this draft."}.buttonStyle(StageButtonStyle())}
             HStack(spacing:8) {
                 Text("Target RMS").font(.caption)
                 TextField("Target RMS",value:Binding(get:{store.gainMatchTargetDB},set:{if $0.isFinite{store.gainMatchTargetDB=min(-6,max(-60,$0));store.gainMatchReferenceName=nil}}),format:.number.precision(.fractionLength(1))).textFieldStyle(.roundedBorder).frame(width:65)
@@ -329,6 +332,10 @@ struct InstrumentGainMatchControls:View {
             if let name=store.gainMatchReferenceName {Text("Session reference: "+name).font(.caption).foregroundStyle(.secondary)}
             Text("Unity-fader probe at velocities 83 and 127; measured peak ceiling −9 dBFS, trim −24…+12 dB. Applies a separate output trim and preserves source settings. Check sustained chords and slow or tempo-dependent sounds by ear; this is a fixed-probe estimate, not continuous leveling.").font(.caption).foregroundStyle(.secondary)
             if let result=measurement {Text(String(format:"Probe RMS %.1f dBFS · peak %.1f dBFS · proposed RMS %.1f dBFS%@",result.rmsDB,result.peakDB,result.outputRMSDB,result.peakLimited ? " · peak limited":result.trimLimited ? " · trim limited":"")).font(.caption).monospacedDigit()}
+            if let result=measurement,let variation=result.repeatabilityDB {
+                Text("MIDI notes: \(result.probeNotes.map(String.init).joined(separator:", ")) · two-pass spread \(variation,specifier:"%.2f") dB · sample peak only, not true peak").font(.caption)
+                if let warning=result.confidenceWarning {Text(warning).font(.caption).foregroundStyle(.orange)}
+            }
             if let status {Text(status).font(.caption).textSelection(.enabled)}
         }.padding(12).background(StageTheme.panel,in:RoundedRectangle(cornerRadius:8))
         .onChange(of:store.gainMatchTargetDB){target in
