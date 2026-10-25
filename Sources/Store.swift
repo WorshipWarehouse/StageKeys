@@ -637,8 +637,9 @@ final class PerformanceStore: ObservableObject {
 
     func duplicate() { guard setlist.patches.count < 128 else { return }; capturePluginStates(); let p = patch.duplicate(); setlist.patches.insert(p, at: selected + 1); choose(selected + 1); save() }
     func removePatch() { guard setlist.patches.count > 1 else { return }; panic(); cancelTransition(); setlist.patches.remove(at: selected); selected = min(selected, setlist.patches.count - 1); activeSnapshot = nil; applyPatch(); save() }
-    func saveSnapshot() { captureSnapshot(patch.snapshots.count) }
+    func saveSnapshot() { captureSnapshot(patch.snapshots.firstIndex(where: { $0.isEmptySlot }) ?? patch.snapshots.count) }
     func recall(_ snapshot: Snapshot) {
+        guard !snapshot.isEmptySlot else { return }
         cancelAudition()
         cancelTransition(); activeSnapshot = snapshot.id
         let initialSounds = patch.layers.map(SnapshotSoundState.init)
@@ -731,12 +732,30 @@ final class PerformanceStore: ObservableObject {
         setlist.patches[selected].layers[index].effects[slot] = effect
         audio.configure(index, patch.layers[index]); updateToneFilters(); save()
     }
+    func clearSnapshot(_ index: Int) {
+        guard patch.snapshots.indices.contains(index) else { return }
+        cancelTransition()
+        let oldID = patch.snapshots[index].id
+        var empty = Snapshot(name: "Snapshot \(index + 1)", gains: patch.layers.map { _ in 0 })
+        empty.emptySlot = true
+        setlist.patches[selected].snapshots[index] = empty
+        if activeSnapshot == oldID { activeSnapshot = nil }
+        save()
+    }
     func captureSnapshot(_ index: Int) {
+        guard (0..<16).contains(index) else { return }
         cancelTransition()
         capturePluginStates()
         let gains = patch.layers.map { $0.loaded && !$0.muted ? $0.gain : 0 }
-        if patch.snapshots.indices.contains(index) { setlist.patches[selected].snapshots[index].gains = gains; activeSnapshot = patch.snapshots[index].id }
-        else if patch.snapshots.count < 16 { setlist.patches[selected].snapshots.append(Snapshot(name: "Scene \(patch.snapshots.count + 1)", gains: gains)); activeSnapshot = patch.snapshots.last?.id }
+        while setlist.patches[selected].snapshots.count <= index {
+            let slot = setlist.patches[selected].snapshots.count
+            var empty = Snapshot(name: "Snapshot \(slot + 1)", gains: patch.layers.map { _ in 0 })
+            empty.emptySlot = true
+            setlist.patches[selected].snapshots.append(empty)
+        }
+        setlist.patches[selected].snapshots[index].emptySlot = nil
+        setlist.patches[selected].snapshots[index].gains = gains
+        activeSnapshot = patch.snapshots[index].id
         if let snapshotIndex = patch.snapshots.firstIndex(where: { $0.id == activeSnapshot }) {
             setlist.patches[selected].snapshots[snapshotIndex].sounds = patch.layers.map(SnapshotSoundState.init)
             setlist.patches[selected].snapshots[snapshotIndex].modulation = modWheel
