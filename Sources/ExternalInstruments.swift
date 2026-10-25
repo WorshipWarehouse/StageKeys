@@ -597,6 +597,9 @@ final class ExternalInstrumentRack {
             return (sampler,state)
         }
     }
+    #if DEBUG
+    private(set) var samplerRestorationCount = 0
+    #endif
     private func restoreSamplers(_ states:[(AVAudioUnitSampler,[String:Any])]) throws {
         for (sampler,state) in states where sampler.engine === engine {
             // loadInstrument resolves document file references; assigning state
@@ -605,6 +608,9 @@ final class ExternalInstrumentRack {
             defer{try? FileManager.default.removeItem(at:file)}
             try PropertyListSerialization.data(fromPropertyList:state,format:.xml,options:0).write(to:file)
             try sampler.loadInstrument(at:file)
+            #if DEBUG
+            samplerRestorationCount += 1
+            #endif
         }
         // Instrument reloads reset AU controller state. Restore the held pedal
         // and filter/level CCs after every sampler in the graph has reloaded.
@@ -673,6 +679,9 @@ final class ExternalInstrumentRack {
     func remove(_ channel: Int) throws {
         precondition(Thread.isMainThread)
         generations[channel] = UUID()
+        // Cancel any pending load even when no voice is installed. Empty slots
+        // do not change the graph and must not reload every resident sampler.
+        guard voices[channel] != nil else { return }
         panic(channel)
         try editGraph { detach(channel) }
     }
