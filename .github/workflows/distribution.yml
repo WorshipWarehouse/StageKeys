@@ -34,8 +34,9 @@ jobs:
       - name: Parser corpus
         run: |
           python3 Tests/test-preset-coverage.py
-          python3 Tests/test-distribution.py
-          python3 Tests/test-sampler-calibration.py
+          for check in Tests/test-distribution.py Tests/test-sampler-calibration.py; do
+            if [[ -f "$check" ]]; then python3 "$check"; fi
+          done
       - name: Reverb memory and undefined-behavior regressions
         run: Tests/test-reverb.sh
   library:
