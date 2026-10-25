@@ -15,7 +15,7 @@ struct EditorFrame<Content: View>: View {
             content()
         }
         #if os(macOS)
-        .frame(minWidth:min(540,width),idealWidth:width,maxWidth:width,minHeight:min(400,height),idealHeight:height,maxHeight:height)
+        .frame(minWidth:min(width,max(320,(NSScreen.main?.visibleFrame.width ?? width)-80)),idealWidth:width,maxWidth:width,minHeight:min(height,max(360,(NSScreen.main?.visibleFrame.height ?? height)-100)),idealHeight:height,maxHeight:height)
         #else
         .frame(minWidth:320,idealWidth:width,minHeight:360,idealHeight:height)
         #endif
