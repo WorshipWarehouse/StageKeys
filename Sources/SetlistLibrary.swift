@@ -86,8 +86,11 @@ final class SetlistLibrary {
     }
     init(root: URL) throws {
         guard root.isFileURL else { throw SetlistLibraryError.unsafeFile }
-        self.root = root.resolvingSymlinksInPath().standardizedFileURL
-        try manager.createDirectory(at: self.root, withIntermediateDirectories: true)
+        let requestedRoot = root.resolvingSymlinksInPath().standardizedFileURL
+        try FileManager.default.createDirectory(at: requestedRoot, withIntermediateDirectories: true)
+        // Foundation normalizes /private/tmp differently once a previously
+        // missing directory exists. Pin the canonical path after creation.
+        self.root = requestedRoot.resolvingSymlinksInPath().standardizedFileURL
         try manager.createDirectory(at: trash, withIntermediateDirectories: true)
         guard trash.resolvingSymlinksInPath().standardizedFileURL.path == trash.path else { throw SetlistLibraryError.unsafeFile }
     }
