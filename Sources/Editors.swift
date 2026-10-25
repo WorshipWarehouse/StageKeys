@@ -11,11 +11,11 @@ struct EditorFrame<Content: View>: View {
     @ViewBuilder var content: () -> Content
     var body: some View {
         VStack(spacing: 0) {
-            if showsHeader { ZStack { Text(title).font(StageTheme.font(16,weight:.bold)); HStack { Spacer(); Button { dismiss() } label: { Image(systemName: "xmark").font(.system(size:18)).frame(width:30,height:30) }.buttonStyle(.plain).accessibilityLabel("Close") } }.padding(20) }
+            if showsHeader { ZStack { Text(title).font(StageTheme.font(16,weight:.bold)); HStack { Spacer(); Button { dismiss() } label: { Image(systemName: "xmark").font(.system(size:18)).frame(width:44,height:44) }.buttonStyle(.plain).accessibilityLabel("Close") } }.padding(12) }
             content()
         }
         #if os(macOS)
-        .frame(width:width,height:height)
+        .frame(minWidth:min(width,max(320,(NSScreen.main?.visibleFrame.width ?? width)-80)),idealWidth:width,maxWidth:width,minHeight:min(height,max(360,(NSScreen.main?.visibleFrame.height ?? height)-100)),idealHeight:height,maxHeight:height)
         #else
         .frame(minWidth:320,idealWidth:width,minHeight:360,idealHeight:height)
         #endif
@@ -192,6 +192,12 @@ struct EffectKnob: View {
                 .gesture(DragGesture(minimumDistance:0).onChanged { v in if initial == nil { initial = position }; set(initial! - Float(v.translation.height)/180) }.onEnded { _ in initial=nil })
                 .accessibilityElement().accessibilityLabel(descriptor.name).accessibilityValue("\(descriptor.unit == "%" ? value*100:value) \(descriptor.unit)")
                 .accessibilityAdjustableAction { set(position + ($0 == .increment ? 0.02 : -0.02)) }
+                #if os(macOS)
+                .focusable()
+                .onMoveCommand { direction in
+                    switch direction {case .up,.right:set(position+0.01);case .down,.left:set(position-0.01);default:break}
+                }
+                #endif
     }
     private var valueField:some View {
             HStack(spacing:4) {
@@ -259,6 +265,12 @@ struct EffectParameterFader:View {
                     RoundedRectangle(cornerRadius:3).fill(LinearGradient(colors:[StageTheme.raised,Color(white:0.48),StageTheme.raised],startPoint:.top,endPoint:.bottom)).frame(width:31,height:38).shadow(color:.black.opacity(0.6),radius:3,y:3).overlay{Rectangle().fill(StageTheme.selected).frame(width:22,height:2)}.offset(y:travel*(0.5-CGFloat(position)))
                 }.frame(maxWidth:.infinity,maxHeight:.infinity).contentShape(Rectangle()).gesture(DragGesture(minimumDistance:0).onChanged{set(Float(1-($0.location.y-19)/travel))})
             }.accessibilityElement().accessibilityLabel(descriptor.name).accessibilityValue("\(descriptor.unit == "%" ? value*100:value) \(descriptor.unit)").accessibilityAdjustableAction{set(position+($0 == .increment ? 0.01 : -0.01))}
+            #if os(macOS)
+            .focusable()
+            .onMoveCommand { direction in
+                switch direction {case .up,.right:set(position+0.01);case .down,.left:set(position-0.01);default:break}
+            }
+            #endif
             Text("\(descriptor.unit == "%" ? value*100:value,specifier:"%.0f") \(descriptor.unit)").font(StageTheme.font(12,weight:.semibold)).monospacedDigit().foregroundStyle(StageTheme.selected)
         }.frame(maxWidth:.infinity)
     }
