@@ -30,6 +30,7 @@ struct PluginInterface: View {
     @StateObject private var parameters = PluginParameterModel()
     @State private var status = "Loading instrument interface…"
     @State private var generic = false
+    @State private var requestGeneration:UUID?
     @State private var size = CGSize(width: 650, height: 420)
     @Environment(\.dismiss) var dismiss
     var body: some View {
@@ -41,10 +42,14 @@ struct PluginInterface: View {
             }.padding(16)
             content
         }
+        #if os(macOS)
         .frame(minWidth: min(1000, max(650, size.width)), minHeight: min(700, max(420, size.height + 60)))
+        #else
+        .frame(maxWidth:.infinity,maxHeight:.infinity)
+        #endif
         .background(StageTheme.base)
-        .onAppear { open() }
-        .onDisappear { parameters.detach() }
+        .onAppear { let token=UUID();requestGeneration=token;open(token:token) }
+        .onDisappear { requestGeneration=nil;parameters.detach();controller=nil;generic=false }
     }
     @ViewBuilder private var content: some View {
         if let controller {
@@ -96,15 +101,16 @@ struct PluginInterface: View {
     /// The instrument may still be loading asynchronously when the sheet opens.
     /// Retry briefly instead of leaving the user on a permanent "loading" screen,
     /// then fall back to the generic editor when no custom view is provided.
-    private func open(attempt: Int = 0) {
-        guard controller == nil else { return }
+    private func open(token:UUID,attempt: Int = 0) {
+        guard requestGeneration==token,controller == nil else { return }
         guard attempt < 40 else { status = "The instrument is still loading or unavailable."; return }
         guard let unit = store.audio.externalRack?.unit(channel: index) else {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { open(attempt: attempt + 1) }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { open(token:token,attempt: attempt + 1) }
             return
         }
         unit.auAudioUnit.requestViewController { view in
             DispatchQueue.main.async {
+                guard requestGeneration==token,store.audio.externalRack?.unit(channel:index) === unit else{return}
                 if let view {
                     let preferred = view.preferredContentSize
                     let actual = view.view.frame.size

@@ -13,23 +13,24 @@ struct SoundTags: Codable, Equatable {
     var types:[String]?
     var recommended:Bool?
     static func inferred(name: String, source: String = "Sampler") -> SoundTags {
-        let n = name.lowercased()
+        let n = name.replacingOccurrences(of:"([a-z])([A-Z])",with:"$1 $2",options:.regularExpression).lowercased()
         let words=Set(n.split(whereSeparator:{!$0.isLetter && !$0.isNumber}).map(String.init))
-        let electric=words.contains("electric") || words.contains("roads") || words.contains("tine") || words.contains("ep") || n.hasPrefix("e piano") || n.contains(" e piano")
+        let electric=words.contains("electric") || words.contains("roads") || words.contains("rhodes") || words.contains("wurli") || words.contains("wurlitzer") || words.contains("tine") || words.contains("ep") || n.hasPrefix("e piano") || n.contains(" e piano")
         var result = SoundTags(category:"Other",type:"Other",sourceModel:source,inferred:true)
-        if n.contains("arp") || n.contains("sequence") || n.contains(" seq") { result.category="Arps & Sequences";result.type=n.contains("sequence") || n.contains(" seq") ? "Sequences" : "Melodic Arps";result.articulations=["Arpeggiated"] }
-        else if n.contains("bass") {result.category="Bass";result.type="Synth Bass"}
+        let sequenced = !words.isDisjoint(with:["sequence","sequences","sequenced","seq"])
+        if sequenced || !words.isDisjoint(with:["arp","arps","arpeggio","arpeggios","arpeggiated"]) { result.category="Arps & Sequences";result.type=sequenced ? "Sequences" : "Melodic Arps";result.articulations=["Arpeggiated"] }
+        else if !words.isDisjoint(with:["bass","basses"]) {result.category="Bass";result.type="Synth Bass"}
         else if n.contains("pad") || n.contains("soundbed") {result.category="Pads";result.type=n.contains("airy") || n.contains("flute") ? "Airy Pads" : "Synth Pads";result.articulations=["Sustained"]}
         else if n.contains("bell") || n.contains("glass") || n.contains("glock") {result.category="Bells, Glass, Toy Piano";result.type=n.contains("glock") ? "Glockenspiel" : "Bells";result.articulations=["Struck"]}
         else if n.contains("string") || n.contains("violin") {result.category="Strings";result.type="Strings";result.articulations=[n.contains("stacc") ? "Staccato" : "Sustained"]}
         else if n.contains("brass") || n.contains("trombone") {result.category="Brass";result.type="Brass Section";result.articulations=["Blown"]}
-        else if n.contains("piano") || n.contains("keys") || n.contains("roads") || n.contains("tine") || words.contains("ep") {result.category="Acoustic Piano & Keys";result.type=n.contains("felt") ? "Felt Piano" : electric ? "Electric Piano" : "Acoustic Piano";result.articulations=["Struck"]}
-        else if n.contains("organ") {result.category="Organs";result.type="Organ"}
+        else if electric || n.contains("piano") || n.contains("keys") || n.contains("roads") || n.contains("tine") || words.contains("ep") {result.category="Acoustic Piano & Keys";result.type=n.contains("felt") ? "Felt Piano" : electric ? "Electric Piano" : "Acoustic Piano";result.articulations=["Struck"]}
+        else if !words.isDisjoint(with:["organ","organs"]) {result.category="Organs";result.type="Organ"}
         else if n.contains("guitar") || n.contains("telecaster") {result.category="Guitars";result.type="Electric Guitar";result.articulations=["Plucked"]}
         else if n.contains("pluck") || n.contains("pizz") {result.category="Leads";result.type="Synth Plucks";result.articulations=["Plucked"]}
         else if n.contains("lead") || n.contains("synth") {result.category="Leads";result.type="Synth Leads"}
         for pair in [("warm","Warm"),("bright","Bright"),("soft","Soft"),("dark","Dark"),("airy","Airy"),("retro","Retro"),("clean","Clean"),("shimmer","Shimmer"),("glass","Glassy")] where n.contains(pair.0) {result.timbres.append(pair.1)}
-        if n.contains("mono") {result.articulations.append("Monophonic")}
+        if words.contains("mono") || words.contains("monophonic") {result.articulations.append("Monophonic")}
         return result
     }
 }
@@ -68,8 +69,8 @@ struct BrowserSound: Identifiable {
         case .complexity:return [tags.complexity ?? "Not Tagged"]
         case .category:return [tags.category]
         case .type:return Array(Set([tags.type]+(tags.types ?? []))).sorted()
-        case .timbre:return tags.timbres
-        case .articulation:return tags.articulations
+        case .timbre:return tags.timbres.isEmpty ? ["Not Tagged"]:tags.timbres
+        case .articulation:return tags.articulations.isEmpty ? ["Not Tagged"]:tags.articulations
         case .library:return [collection]
         case .source:return [tags.sourceModel]
         case .availability:return [unavailableReason != nil ? "Unavailable" : playable ? "Playable" : "Needs Conversion"]

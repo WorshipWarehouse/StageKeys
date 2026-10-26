@@ -24,13 +24,19 @@ struct SoundImportView:View {
                     Text("Update source filters, velocity response, level and envelope curves. Original samples and effects stay intact; edited settings are protected.").font(.caption).foregroundStyle(.secondary)
                 }
                 if let report=store.mainStageImportReport {
+                    Button("Create Patch from All Converted Channels") {store.assembleConvertedMainStagePatch()}.buttonStyle(StageButtonStyle()).disabled(store.patchLock)
+                    Text("Requires one converted version of every sampler channel. Preserves channel order, effects, macros and MIDI; patch-level routing limitations remain in Conversion Notes.").font(.caption).foregroundStyle(.secondary)
                     if report.channels.contains(where:{!$0.instruments.isEmpty}) {
-                        Button("Import MainStage Sounds") {choice = .mainStageSamples;choosing=true}.buttonStyle(StageButtonStyle())
+                        Button("Locate Samples and Convert Selected Channels") {choice = .mainStageSamples;choosing=true}.buttonStyle(StageButtonStyle())
+                        Button("Convert Included Instruments") {store.convertIncludedMainStageSounds()}.buttonStyle(StageButtonStyle()).disabled(store.selectedMainStageChannels.isEmpty)
                         Text("Choose the original EXS/sample folder. Supported channel effects and controls are saved with each sound; conversion notes list remaining differences.").font(.caption).foregroundStyle(.secondary)
                     }
                     DisclosureGroup("Conversion Report · \(report.name)") {
                         ScrollView {VStack(alignment:.leading,spacing:6) {
-                            ForEach(Array(report.channels.enumerated()),id:\.offset) {_,channel in
+                            ForEach(Array(report.channels.enumerated()),id:\.offset) {channelIndex,channel in
+                                if !channel.instruments.isEmpty {
+                                    Toggle("Convert \(channel.name)",isOn:Binding(get:{store.selectedMainStageChannels.contains(channelIndex)},set:{store.selectMainStageChannel(channelIndex,$0)}))
+                                }
                                 Text(channel.name+": "+channel.devices.map(\.name).joined(separator:", ")).font(.caption)
                                 Text(channel.nativeInstrumentStatus).font(.caption).foregroundStyle(.secondary)
                                 if !channel.instruments.isEmpty {Text(channel.instruments.joined(separator:", ")).font(.caption).foregroundStyle(.secondary)}
@@ -44,6 +50,8 @@ struct SoundImportView:View {
                 if let status {Text(status).font(.callout).textSelection(.enabled)}
                 Spacer()
             }.padding(28).disabled(store.libraryImportBusy)
+            }.overlay(alignment:.bottom) {
+                if store.libraryImportBusy {Button("Cancel Import Before Commit") {store.cancelLibraryImport()}.buttonStyle(StageButtonStyle()).padding().background(StageTheme.base)}
             }
         }.fileImporter(isPresented:$choosing,allowedContentTypes:choice == .file ? [.audio,.data] : choice == .mainStage ? [.package,.folder,.data] : [.folder]) {result in
             switch result {

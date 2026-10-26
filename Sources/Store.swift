@@ -4,6 +4,8 @@ import AVFoundation
 import CryptoKit
 #if os(macOS)
 import AppKit
+#else
+import UIKit
 #endif
 
 final class PerformanceStore: ObservableObject {
@@ -32,6 +34,22 @@ final class PerformanceStore: ObservableObject {
         }catch{message=error.localizedDescription}
     }
     func stopAudioCheck(){audio.stopAudioCheck()}
+    func copySupportDiagnostics() {
+        do {
+            let report = SupportDiagnostics(version: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "development",
+                build: Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "development",
+                running: audio.running, status: audioStatus, latency: try? audio.latencyChain(),
+                midiSources: midiSources.filter(\.connected).count, loadedSlots: patch.layers.filter(\.loaded).count,
+                limiterBypassed: masterLimiterBypassed, recording: audioCheckRecording)
+            let text = try report.json()
+            #if os(macOS)
+            NSPasteboard.general.clearContents(); NSPasteboard.general.setString(text, forType: .string)
+            #else
+            UIPasteboard.general.string = text
+            #endif
+            message = "Diagnostics copied locally. Review before sharing. No device names, file paths, samples, setlists or plug-in state are included. Underruns and physical keyboard latency are not measured."
+        } catch { message = "Could not create diagnostics: \(error.localizedDescription)" }
+    }
     @Published var deviceCount = 0
     @Published var midiSources: [MIDIInputSource] = []
     @Published var midiDevices: [MIDIKnownDevice] = []
@@ -328,7 +346,26 @@ final class PerformanceStore: ObservableObject {
     }
     func previewLibraryRange(_ index:Int,_ layer:Layer?) {libraryRangePreviewIndex=layer == nil ? nil:index;libraryRangePreview=layer}
     @Published var mainStageImportReport:MainStagePatch.Report?
+    @Published var mainStageChannelSelection:Set<Int>?
+    var selectedMainStageChannels:Set<Int> {
+        guard let report=mainStageImportReport else{return []}
+        return (mainStageChannelSelection ?? Set(report.channels.indices)).filter{report.channels.indices.contains($0) && !report.channels[$0].instruments.isEmpty}
+    }
+    func selectMainStageChannel(_ index:Int,_ enabled:Bool) {
+        var selection=selectedMainStageChannels
+        if enabled {selection.insert(index)} else {selection.remove(index)}
+        mainStageChannelSelection=selection
+    }
+    func convertIncludedMainStageSounds() {
+        guard let id=mainStageImportReport?.sourceArchiveID,UUID(uuidString:id) != nil else{return}
+        importMainStageSamplers(saveURL.deletingLastPathComponent().appendingPathComponent("MainStage Sources/"+id+"/Source.patch",isDirectory:true))
+    }
     @Published var libraryImportBusy=false
+    private var libraryImportCancelRequested=false
+    func cancelLibraryImport(){libraryImportCancelRequested=true}
+    private func checkLibraryImportCancellation()throws {
+        if libraryImportCancelRequested {throw MainStagePatch.Failure.invalid("Import cancelled. No prepared catalog entries were committed.")}
+    }
     @Published var libraryImportProgress:String?
     @Published var savedSetlists: [SetlistLibraryDescriptor] = []
     @Published var setlistLibraryIssues: [SetlistLibraryIssue] = []
@@ -567,10 +604,19 @@ final class PerformanceStore: ObservableObject {
         }
         cancelAudition()
         audio.setPatchVolume(patch.volumeDB)
-        for (i, l) in patch.layers.enumerated() { configureMIDI(i, l); audio.configure(i, l); audio.gain(i, l.loaded && !l.muted ? l.gain : 0) }
-        audio.gain(15, tonicGain); configureTonic(); updateToneFilters()
+        do {
+            try audio.withGraphChanges {
+                for (i, l) in patch.layers.enumerated() { configureMIDI(i, l); audio.configure(i, l) }
+                configureTonic()
+            }
+        } catch { message = "Could not complete the patch audio graph: " + error.localizedDescription }
+        // Graph restoration protects old mixer values. Apply the requested patch
+        // levels/pans only after the final graph has restored its samplers.
+        for (i, l) in patch.layers.enumerated() { audio.gain(i, l.loaded && !l.muted ? l.gain : 0) }
+        audio.gain(15, tonicGain); updateToneFilters()
     }
     func setRange(_ index: Int, low: Int, high: Int) {
+        guard patch.layers.indices.contains(index),(0...127).contains(low),(low...127).contains(high) else{return}
         if !held.isEmpty { panic() }
         setlist.patches[selected].layers[index].low = low
         setlist.patches[selected].layers[index].high = high
@@ -606,12 +652,14 @@ final class PerformanceStore: ObservableObject {
         applyPatch(); save()
     }
     func setGain(_ index: Int, _ value: Float) {
+        guard patch.layers.indices.contains(index),value.isFinite,(0...1).contains(value) else{return}
         cancelTransition(); activeSnapshot = nil
         setlist.patches[selected].layers[index].gain = value
         let layer = patch.layers[index]; audio.gain(index, layer.muted ? 0 : value)
         if let d = layer.midiDestinationID { sendMIDI(d, 0xb0 | UInt8(layer.midiOutputChannel), 7, UInt8(max(0,min(127,Int((layer.muted ? 0 : value)*127))))) }
     }
     func mute(_ index: Int) {
+        guard patch.layers.indices.contains(index) else{return}
         cancelTransition()
         setlist.patches[selected].layers[index].muted.toggle()
         let l = patch.layers[index]; audio.gain(index, l.muted ? 0 : l.gain); if let d = l.midiDestinationID { sendMIDI(d, 0xb0 | UInt8(l.midiOutputChannel), 7, UInt8(l.muted ? 0 : Int(l.gain * 127))) }
@@ -640,8 +688,9 @@ final class PerformanceStore: ObservableObject {
 
     func duplicate() { guard setlist.patches.count < 128 else { return }; capturePluginStates(); let p = patch.duplicate(); setlist.patches.insert(p, at: selected + 1); choose(selected + 1); save() }
     func removePatch() { guard setlist.patches.count > 1 else { return }; panic(); cancelTransition(); setlist.patches.remove(at: selected); selected = min(selected, setlist.patches.count - 1); activeSnapshot = nil; applyPatch(); save() }
-    func saveSnapshot() { captureSnapshot(patch.snapshots.count) }
+    func saveSnapshot() { captureSnapshot(patch.snapshots.firstIndex(where: { $0.isEmptySlot }) ?? patch.snapshots.count) }
     func recall(_ snapshot: Snapshot) {
+        guard !snapshot.isEmptySlot else { return }
         cancelAudition()
         cancelTransition(); activeSnapshot = snapshot.id
         let initialSounds = patch.layers.map(SnapshotSoundState.init)
@@ -696,6 +745,9 @@ final class PerformanceStore: ObservableObject {
         return snapshot.seconds ?? transition
     }
     func commitLayer(_ index: Int, _ layer: Layer) {
+        guard patch.layers.indices.contains(index) else{return}
+        var validation=Setlist();validation.patches=[Patch(name:"Sound Edit",layers:[layer],snapshots:[])]
+        guard (try? validation.validate()) != nil else{message="The sound edit contains unsupported or invalid settings. The previous sound was retained.";return}
         cancelAudition()
         let previous=patch.layers[index]
         if previous.instrument != layer.instrument || previous.external != layer.external || previous.midiDestinationID != layer.midiDestinationID {
@@ -709,15 +761,18 @@ final class PerformanceStore: ObservableObject {
         audio.configure(index, layer); audio.gain(index, layer.loaded && !layer.muted ? layer.gain : 0); updateToneFilters(); save()
     }
     func addSound(_ index: Int, _ instrument: Int) {
+        guard patch.layers.indices.contains(index),(0...2).contains(instrument) else{return}
         let name = ["Soft Keys", "Warm Pad", "Glass Bells"][instrument]
         var l = Layer(name: name, instrument: instrument, gain: 0.65)
         l.id = patch.layers[index].id; commitLayer(index, l)
     }
     func removeSound(_ index: Int) {
+        guard patch.layers.indices.contains(index) else{return}
         var l = Layer.empty(); l.id = patch.layers[index].id; commitLayer(index, l)
     }
-    func toggleMIDIEffect(_ index: Int) { var l = patch.layers[index]; l.midiEffectEnabled.toggle(); commitLayer(index,l) }
+    func toggleMIDIEffect(_ index: Int) { guard patch.layers.indices.contains(index) else{return};var l = patch.layers[index]; l.midiEffectEnabled.toggle(); commitLayer(index,l) }
     func setEffect(_ index: Int, _ slot: Int, _ effect: AudioEffect) {
+        guard patch.layers.indices.contains(index),patch.layers[index].effects.indices.contains(slot),effect.validate() else{return}
         let changedKind = patch.layers[index].effects[slot].kind != effect.kind
         if changedKind {
             for i in patch.snapshots.indices {
@@ -728,12 +783,30 @@ final class PerformanceStore: ObservableObject {
         setlist.patches[selected].layers[index].effects[slot] = effect
         audio.configure(index, patch.layers[index]); updateToneFilters(); save()
     }
+    func clearSnapshot(_ index: Int) {
+        guard patch.snapshots.indices.contains(index) else { return }
+        cancelTransition()
+        let oldID = patch.snapshots[index].id
+        var empty = Snapshot(name: "Snapshot \(index + 1)", gains: patch.layers.map { _ in 0 })
+        empty.emptySlot = true
+        setlist.patches[selected].snapshots[index] = empty
+        if activeSnapshot == oldID { activeSnapshot = nil }
+        save()
+    }
     func captureSnapshot(_ index: Int) {
+        guard (0..<16).contains(index) else { return }
         cancelTransition()
         capturePluginStates()
         let gains = patch.layers.map { $0.loaded && !$0.muted ? $0.gain : 0 }
-        if patch.snapshots.indices.contains(index) { setlist.patches[selected].snapshots[index].gains = gains; activeSnapshot = patch.snapshots[index].id }
-        else if patch.snapshots.count < 16 { setlist.patches[selected].snapshots.append(Snapshot(name: "Scene \(patch.snapshots.count + 1)", gains: gains)); activeSnapshot = patch.snapshots.last?.id }
+        while setlist.patches[selected].snapshots.count <= index {
+            let slot = setlist.patches[selected].snapshots.count
+            var empty = Snapshot(name: "Snapshot \(slot + 1)", gains: patch.layers.map { _ in 0 })
+            empty.emptySlot = true
+            setlist.patches[selected].snapshots.append(empty)
+        }
+        setlist.patches[selected].snapshots[index].emptySlot = nil
+        setlist.patches[selected].snapshots[index].gains = gains
+        activeSnapshot = patch.snapshots[index].id
         if let snapshotIndex = patch.snapshots.firstIndex(where: { $0.id == activeSnapshot }) {
             setlist.patches[selected].snapshots[snapshotIndex].sounds = patch.layers.map(SnapshotSoundState.init)
             setlist.patches[selected].snapshots[snapshotIndex].modulation = modWheel
@@ -930,19 +1003,21 @@ final class PerformanceStore: ObservableObject {
     }
     func importLibraryBackup(_ folder:URL) {
         guard !libraryImportBusy else{return}
-        libraryImportBusy=true
+        libraryImportCancelRequested=false;libraryImportBusy=true
         Task { @MainActor in
             let access=folder.startAccessingSecurityScopedResource()
             defer{libraryImportBusy=false;if access{folder.stopAccessingSecurityScopedResource()}}
             do {
                 let pack=try LibraryBackup.read(folder)
-                var entries=librarySounds,imported=0,skipped=0,failures:[String]=[]
+                let library=SoundLibrary(url:saveURL.deletingLastPathComponent().appendingPathComponent("sound-library.json"))
+                let original=try library.read()
+                var entries=original,imported=0,skipped=0,failures:[String]=[]
                 var installedPresets:[String:ExternalSound]=[:]
                 guard let rack=audio.externalRack else{throw ExternalInstrumentError.unsupportedFormat}
                 for var entry in pack.sounds {
                     guard !entries.contains(where:{$0.id==entry.id}) else{skipped+=1;continue}
                     guard let sound=entry.sound ?? entry.layer?.external,sound.kind == .samplerPreset else{skipped+=1;continue}
-                    libraryImportProgress="Importing library sound: "+entry.name;await Task.yield()
+                    libraryImportProgress="Preparing library sound: "+entry.name;await Task.yield();try checkLibraryImportCancellation()
                     let temp=FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString+".aupreset")
                     defer{try? FileManager.default.removeItem(at:temp)}
                     do {
@@ -963,7 +1038,9 @@ final class PerformanceStore: ObservableObject {
                         entries.append(entry);imported+=1
                     }catch{failures.append(entry.name+": "+error.localizedDescription)}
                 }
-                try SoundLibrary(url:saveURL.deletingLastPathComponent().appendingPathComponent("sound-library.json")).write(entries);librarySounds=entries
+                try checkLibraryImportCancellation()
+                guard failures.isEmpty else {throw MainStagePatch.Failure.invalid("Import not committed: "+failures.prefix(6).joined(separator:"; "))}
+                try library.commitImport(entries,replacing:original);librarySounds=entries
                 libraryImportProgress="Imported \(imported) library sounds with their rack processing; \(skipped) existing/archive entries skipped. "+failures.prefix(6).joined(separator:"; ")
             }catch{libraryImportProgress=error.localizedDescription}
         }
@@ -1011,26 +1088,29 @@ final class PerformanceStore: ObservableObject {
     }
     func importMainStageSamplers(_ folder:URL) {
         guard !libraryImportBusy,let report=mainStageImportReport else{return}
-        let names=Set(report.channels.flatMap(\.instruments))
+        let selection=selectedMainStageChannels
+        let names=Set(report.channels.enumerated().filter{selection.contains($0.offset)}.flatMap{$0.element.instruments})
         guard !names.isEmpty,names.count<=64 else{libraryImportProgress="No supported EXS references were found in this source patch.";return}
-        libraryImportBusy=true
+        libraryImportCancelRequested=false;libraryImportBusy=true
         Task { @MainActor in
             let access=folder.startAccessingSecurityScopedResource()
             defer{libraryImportBusy=false;if access{folder.stopAccessingSecurityScopedResource()}}
             do {
                 let files=try MainStagePatch.findSamplerInstruments(names,in:folder)
-                var imported=0,skipped=0,failures:[String]=[]
-                for (channelIndex,channel) in report.channels.enumerated() where !channel.instruments.isEmpty {
-                    guard channel.unsupportedInstrumentFamily == nil else { failures.append(channel.name+": "+channel.nativeInstrumentStatus);continue }
+                let library=SoundLibrary(url:saveURL.deletingLastPathComponent().appendingPathComponent("sound-library.json"))
+                let original=try library.read()
+                var entries=original,imported=0,skipped=0,failures:[String]=[]
+                for (channelIndex,channel) in report.channels.enumerated() where selection.contains(channelIndex) && !channel.instruments.isEmpty {
+                    guard channel.unsupportedInstrumentFamily == nil else {failures.append(channel.name+": "+channel.nativeInstrumentStatus);continue}
                     guard channel.instruments.count==1,let name=channel.instruments.first else{failures.append(channel.name+": layered sampler selection requires translation");continue}
                     let matches=files.filter{$0.lastPathComponent==name}
                     guard matches.count==1 else{failures.append(name+": "+(matches.isEmpty ? "instrument not found in the selected folder":"multiple matches; choose a narrower folder"));continue}
                     let file=matches[0]
                     libraryImportProgress="Importing MainStage channel: "+channel.name
-                    await Task.yield()
+                    await Task.yield();try checkLibraryImportCancellation()
                     do {
                         let id="mainstage-channel-"+channel.sha256+"-"+(try AssetDigest.sha256(file))
-                        if librarySounds.contains(where:{$0.id==id}){skipped+=1;continue}
+                        if entries.contains(where:{$0.id==id}){skipped+=1;continue}
                         let processing=try mainStageProcessing(channelIndex)
                         let (sound,notes,template)=try prepareLibrarySound(file,sampleRoot:folder)
                         var layer=template ?? Layer(name:channel.name,instrument:-1,gain:1)
@@ -1038,11 +1118,13 @@ final class PerformanceStore: ObservableObject {
                         layer=try processing.applying(to:layer)
                         let original=try StageKeysSampler.retainOriginal(file,library:saveURL.deletingLastPathComponent())
                         let entry=LibrarySound(id:id,name:channel.name,collection:"MainStage Patches",sound:sound,layer:layer,sourceArchiveID:report.sourceArchiveID,conversionNotes:(notes ?? [])+processing.issues,originalInstrument:original)
-                        var entries=librarySounds;entries.append(entry)
-                        try SoundLibrary(url:saveURL.deletingLastPathComponent().appendingPathComponent("sound-library.json")).write(entries);librarySounds=entries
+                        entries.append(entry)
                         imported+=1
                     }catch{failures.append(channel.name+": "+error.localizedDescription)}
                 }
+                try checkLibraryImportCancellation()
+                guard failures.isEmpty else{throw MainStagePatch.Failure.invalid("Import not committed: "+failures.prefix(6).joined(separator:"; "))}
+                try library.commitImport(entries,replacing:original);librarySounds=entries
                 libraryImportProgress="Imported \(imported) MainStage channels with supported effects, macros and MIDI settings; \(skipped) already present. Review conversion notes for unsupported routing and processing. "+failures.joined(separator:"; ")
             }catch{libraryImportProgress=error.localizedDescription}
         }
@@ -1057,15 +1139,23 @@ final class PerformanceStore: ObservableObject {
             let encoder=JSONEncoder();encoder.outputFormatting=[.prettyPrinted,.sortedKeys]
             try encoder.encode(report).write(to:saveURL.deletingLastPathComponent().appendingPathComponent("mainstage-import-report.json"),options:.atomic)
             mainStageImportReport=report
+            mainStageChannelSelection=Set(report.channels.indices.filter{!report.channels[$0].instruments.isEmpty})
             let retainedRoot=directory.appendingPathComponent("Source.patch",isDirectory:true)
             let names=Set(report.channels.flatMap(\.instruments))
             if !names.isEmpty,!(try MainStagePatch.findSamplerInstruments(names,in:retainedRoot)).isEmpty {
-                libraryImportProgress="Converting included sampler instruments. MainStage is not required; review conversion notes for remaining processing differences."
-                importMainStageSamplers(retainedRoot)
+                libraryImportProgress="Preflight complete. Review channel selection and conversion limitations, then choose Convert Included Instruments. No sounds have been added."
                 return
             }
             libraryImportProgress="Preserved \(report.channels.count) channel strips and their original effects, macros and MIDI data. Playback conversion requires \(report.blockers.count) unsupported settings to be translated. No incomplete sound was added."
         }catch{mainStageImportReport=nil;libraryImportProgress=error.localizedDescription}
+    }
+    func assembleConvertedMainStagePatch() {
+        guard !patchLock,let report=mainStageImportReport,setlist.patches.count<128 else{return}
+        do {
+            let assembled=try MainStagePatch.assembledChannels(report,entries:librarySounds)
+            setlist.patches.append(assembled);choose(setlist.patches.count-1);save()
+            message="Converted channels added as a new patch. Review Conversion Notes in Patch Settings before performing."
+        }catch{message=error.localizedDescription}
     }
     @discardableResult
     func importSound(_ url:URL,index:Int,sampleRoot:URL?=nil)->Bool {
@@ -1076,28 +1166,34 @@ final class PerformanceStore: ObservableObject {
         addLibrarySound(entry,index:index);return true
     }
     func importSamplerLibrary(_ folder: URL) {
-        let access = folder.startAccessingSecurityScopedResource()
-        defer { if access { folder.stopAccessingSecurityScopedResource() } }
-        do {
-            guard !libraryImportBusy else{message="A sound library import is already running.";return}
-            let library = SoundLibrary(url: saveURL.deletingLastPathComponent().appendingPathComponent("sound-library.json"))
-            var entries = try library.read()
-            let presets = try SoundLibrary.samplerPresets(in: folder)
-            var imported = 0, skipped = 0; var failures: [String] = []
-            for url in presets {
-                do {
-                    let bytes = try Data(contentsOf: url)
-                    guard bytes.count <= 16_000_000 else { throw ExternalInstrumentError.unsupportedFormat }
-                    let id = "sampler-" + SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
-                    if entries.contains(where: { $0.id == id }) { skipped += 1; continue }
+        guard !libraryImportBusy else{message="A sound library import is already running.";return}
+        libraryImportCancelRequested=false;libraryImportBusy=true
+        Task { @MainActor in
+            let access=folder.startAccessingSecurityScopedResource()
+            defer{libraryImportBusy=false;if access{folder.stopAccessingSecurityScopedResource()}}
+            do {
+                let library=SoundLibrary(url:saveURL.deletingLastPathComponent().appendingPathComponent("sound-library.json"))
+                let original=try library.read()
+                var entries=original,imported=0,skipped=0
+                for url in try SoundLibrary.samplerPresets(in:folder) {
+                    libraryImportProgress="Preparing sampler: "+url.lastPathComponent
+                    await Task.yield();try checkLibraryImportCancellation()
+                    let values=try url.resourceValues(forKeys:[.fileSizeKey])
+                    guard (values.fileSize ?? Int.max)<=16_000_000 else{throw ExternalInstrumentError.unsupportedFormat}
+                    let bytes=try Data(contentsOf:url)
+                    guard bytes.count<=16_000_000 else{throw ExternalInstrumentError.unsupportedFormat}
+                    let id="sampler-"+MainStagePatch.digest(bytes)
+                    if entries.contains(where:{$0.id==id}){skipped+=1;continue}
                     let (sound,notes,layer)=try prepareLibrarySound(url,sampleRoot:folder)
-                    entries.append(LibrarySound(id: id, name: sound.name, collection: "My Sounds", sound: sound,layer:layer,conversionNotes:notes))
-                    try library.write(entries); imported += 1
-                } catch { failures.append("\(url.lastPathComponent): \(error.localizedDescription)") }
-            }
-            librarySounds = entries
-            message = "Imported \(imported) sampler instruments; \(skipped) already in library; \(failures.count) failed." + (failures.isEmpty ? "" : "\n" + failures.prefix(3).joined(separator: "\n"))
-        } catch { message = error.localizedDescription }
+                    let originalInstrument=try StageKeysSampler.retainOriginal(url,library:saveURL.deletingLastPathComponent())
+                    entries.append(LibrarySound(id:id,name:sound.name,collection:"My Sounds",sound:sound,layer:layer,conversionNotes:notes,originalInstrument:originalInstrument))
+                    imported+=1
+                }
+                try checkLibraryImportCancellation()
+                try library.commitImport(entries,replacing:original);librarySounds=entries
+                libraryImportProgress="Imported \(imported) sampler instruments; \(skipped) already present."
+            }catch{libraryImportProgress="Import not committed: "+error.localizedDescription}
+        }
     }
     #if os(macOS)
     func exportLibrarySound(_ entry: LibrarySound) {
@@ -1130,6 +1226,7 @@ final class PerformanceStore: ObservableObject {
         } catch { message = error.localizedDescription; return false }
     }
     func addLibrarySound(_ entry: LibrarySound, index: Int) {
+        guard patch.layers.indices.contains(index) else{return}
         if var layer = entry.layer { layer.id = patch.layers[index].id; commitLayer(index, layer); return }
         if let sound = entry.sound { addExternal(sound, index: index); return }
         #if os(macOS)

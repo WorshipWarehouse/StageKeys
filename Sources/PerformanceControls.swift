@@ -176,7 +176,7 @@ enum PianoGeometry {
 /// returns its value to centre; incoming MIDI updates the same binding.
 struct ModulationWheel: View {
     @Binding var value: Float
-    @State private var dragOrigin: Float?
+    @State private var wheelDrag=ModulationWheelDrag()
     private var position: Float { value.isFinite ? min(1, max(0, value)) : 0 }
     private func set(_ next: Float) {
         let step = next.isFinite ? (min(1, max(0, next)) * 127).rounded() / 127 : 0
@@ -207,15 +207,15 @@ struct ModulationWheel: View {
                 RoundedRectangle(cornerRadius:7).stroke(.white.opacity(0.08),lineWidth:1)
             }.frame(maxWidth: .infinity, maxHeight: .infinity).contentShape(Rectangle())
                 .gesture(DragGesture(minimumDistance: 0).onChanged { drag in
-                    if dragOrigin == nil { dragOrigin = position }
-                    guard drag.translation.height != 0 else { return }
-                    set((dragOrigin ?? position) - Float(drag.translation.height / height))
-                }.onEnded { _ in dragOrigin = nil })
+                    set(wheelDrag.update(current:position,translation:Float(drag.translation.height),height:Float(height)))
+                }.onEnded { _ in wheelDrag.end() })
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Modulation wheel")
         .accessibilityValue("\(Int((position * 127).rounded())) of 127")
         .accessibilityHint("Adjusts MIDI controller 1. Position is held when released.")
+        .help("CC1: \(Int((position*127).rounded())) / 127 · low at bottom, high at top")
+        .onDisappear{wheelDrag.end()}
         .accessibilityAdjustableAction { direction in
             switch direction {
             case .increment: set(position + 1 / 127)

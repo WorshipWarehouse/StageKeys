@@ -11,6 +11,12 @@ import Foundation
         assert(decoded.name == "Legacy Synth")
         assert(decoded.vendor == nil && decoded.version == nil && decoded.validated == nil && decoded.unavailableReason == nil)
         assert(decoded.isAvailable)
+        var macOnly=decoded;macOnly.manufacturer=123;macOnly.isV3=false
+        assert(macOnly.platformUnavailableReason(isMobile:true)?.contains("AUv2")==true)
+        assert(macOnly.platformUnavailableReason(isMobile:false)==nil)
+        macOnly.isV3=true;assert(macOnly.platformUnavailableReason(isMobile:true)==nil)
+        macOnly.isV3=false;macOnly.manufacturer=0x6170706c
+        assert(macOnly.platformUnavailableReason(isMobile:true)==nil)
 
         // Catalog detail is presentation only. Identity equality must not change,
         // or a saved layer would reload its instrument whenever the picker supplies

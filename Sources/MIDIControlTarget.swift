@@ -1,5 +1,23 @@
 import Foundation
 
+/// Relative held-position drag with explicit handoff when hardware/snapshot CC1 changes.
+struct ModulationWheelDrag {
+    private var raw:Float?
+    private var sent:Float?
+    private var translation:Float=0
+    static func quantized(_ value:Float)->Float {
+        value.isFinite ? (min(1,max(0,value))*127).rounded()/127:0
+    }
+    mutating func update(current:Float,translation next:Float,height:Float)->Float {
+        guard next.isFinite,height.isFinite,height>0 else{return Self.quantized(current)}
+        if raw == nil || current != sent {raw=current.isFinite ? min(1,max(0,current)):0}
+        raw=min(1,max(0,raw!-(next-translation)/height))
+        translation=next;sent=Self.quantized(raw!)
+        return sent!
+    }
+    mutating func end(){raw=nil;sent=nil;translation=0}
+}
+
 /// Persistent, stable identity for a MIDI CC assignment.
 enum MIDIControlTarget: Codable, Hashable, Identifiable {
     case soundLevel(Int)
