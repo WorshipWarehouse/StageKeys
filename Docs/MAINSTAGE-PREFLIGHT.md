@@ -23,3 +23,15 @@ Observed 2026-10-26 against the installed OB-Xd 3.24.0 (`aumu`/`Obx3`/`DDSP`) fr
 `MainStageAudioUnit.match` performs that rewrite only for a version-changed match and leaves an exact match untouched. `Tools/ApplyMainStageAUState` runs the whole path and prints the changed parameters. The class-info setter settles asynchronously: about 0.5 s passed before parameter values reflected the change, so a restore check must wait rather than read immediately.
 
 This is not sonic parity. The saved bank stores 82 values per program while the installed plug-in exposes 97 parameters; missing values take the plug-in's defaults, and whether the first 82 indices mean the same thing in both versions is unverified. A hosted layer needs its own listening test before anything here can be described as matched sound.
+
+### Hosting a converted channel
+
+Refs #5, #12. Converting a channel whose only instrument is a saved Audio Unit now creates a hosted layer instead of a blocker: `MainStageAudioUnit.hostedLayer` matches the saved identity against the components installed here, keeps the vendor payload byte-for-byte, and stores the class info on the layer, which is the document the rack restores. The channel appears in the conversion report and is selected like a sampler channel.
+
+Availability decides the outcome. A component that is not installed, is blocked after a failed load, or has no build for this processor fails the import with a message naming it; nothing is substituted. `ExternalInstrumentRack.instruments()` supplies the installed list, and the conversion accepts an injected list so this path can be verified without third-party plug-ins present.
+
+Observed 2026-10-26 on the private local library, using the installed OB-Xd 3.24.0: 16 of 41 patch bundles contain a saved Audio Unit, and converting six of them produced 24 hosted entries — four channels each, all `aumu/Obxd/DDSP` mapped to the installed `aumu/Obx3/DDSP` with the vendor payload intact. Loading one hosted entry through the app's own rack and restoring its stored state changed 13 of 97 parameters, so the state reaches the plug-in rather than being accepted and dropped.
+
+Limits: a layer hosts one instrument, so a channel that saved both a sampler and an Audio Unit converts the sampler only and its notes say the plug-in state stayed in the archive; a channel holding more than one saved Audio Unit is refused rather than guessed. The conversion notes warn that a version-changed match relies on the plug-in's own parameter mapping, and that values whose meaning changed between versions fall back to its defaults. Assembly still requires every convertible channel to be converted first, so a patch that also contains sampler channels needs both conversions before it can be created. Nothing here has been listening-tested.
+
+One defect this exposed: capturing plug-in state on patch switches replaced a layer's retained state with nothing when the plug-in was not loaded, which would have erased the saved state of an Audio Unit that is installed on one Mac and not another. `capturePluginStates` now keeps the existing state in that case.
