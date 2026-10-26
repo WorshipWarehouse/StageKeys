@@ -1,5 +1,55 @@
 import Foundation
 
+/// Local, provider-independent proposal boundary for a later optional builder.
+/// Data only: no paths, scripts, downloads, network calls or automatic session mutation.
+struct PatchDraftPlan:Codable {
+    struct Sound:Codable {
+        var libraryID:String
+        var gain:Float
+        var pan:Float=0
+        var low:Int=0
+        var high:Int=127
+        var effects:[AudioEffect]?
+    }
+    struct Preview {
+        var patch:Patch?
+        var missingSoundIDs:[String]
+        var warnings:[String]
+    }
+    var schemaVersion=1
+    var name:String
+    var sounds:[Sound]
+    func preview(library:[LibrarySound],available:(ExternalSound)->Bool)throws->Preview {
+        guard schemaVersion==1,!name.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty,name.count<=200,
+              (1...15).contains(sounds.count),Set(sounds.map(\.libraryID)).count==sounds.count else{throw SetlistError.invalid}
+        var layers:[Layer]=[],missing:[String]=[],warnings:[String]=[]
+        for proposal in sounds {
+            guard !proposal.libraryID.isEmpty,proposal.libraryID.count<=256,
+                  proposal.gain.isFinite,(0...1).contains(proposal.gain),proposal.pan.isFinite,(-1...1).contains(proposal.pan),
+                  (0...127).contains(proposal.low),(proposal.low...127).contains(proposal.high),
+                  proposal.effects.map({$0.count==3 && $0.allSatisfy{$0.validate()}}) ?? true else{throw SetlistError.invalid}
+            let matches=library.filter{$0.id==proposal.libraryID}
+            guard matches.count==1,let entry=matches.first else{missing.append(proposal.libraryID);continue}
+            var layer:Layer
+            if let saved=entry.layer {layer=saved}
+            else if let sound=entry.sound {layer=Layer(name:entry.name,instrument:-1,gain:proposal.gain);layer.external=sound;layer.importedRack=sound.nativeSampler?.rack}
+            else {missing.append(proposal.libraryID);continue}
+            if let external=layer.external,!available(external){missing.append(proposal.libraryID);continue}
+            guard layer.loaded,layer.midiDestinationID==nil else{missing.append(proposal.libraryID);continue}
+            layer.id=UUID();layer.gain=proposal.gain;layer.pan=proposal.pan;layer.low=proposal.low;layer.high=proposal.high
+            if let effects=proposal.effects {layer.effects=effects}
+            layers.append(layer)
+            warnings += entry.conversionNotes ?? []
+        }
+        guard missing.isEmpty else{return Preview(patch:nil,missingSoundIDs:missing,warnings:warnings)}
+        if layers.reduce(Float(0),{$0+$1.gain})>1 {warnings.append("Layer gains sum above unity. Audition at a low master level and review output headroom before confirming.")}
+        layers += (layers.count..<15).map{_ in Layer.empty()}
+        let patch=Patch(name:name,layers:layers,snapshots:[])
+        var check=Setlist();check.patches=[patch];try check.validate()
+        return Preview(patch:patch,missingSoundIDs:[],warnings:warnings)
+    }
+}
+
 struct ImportedDelay: Codable, Equatable {
     var left: Double
     var right: Double
@@ -274,6 +324,9 @@ struct SnapshotSoundState: Codable {
     init(_ layer: Layer) { importedRack=layer.importedRack; effects=layer.effects; midiProgram=layer.midiProgram; midiEffectEnabled=layer.midiEffectEnabled; pan=layer.pan; pluginState=layer.pluginState }
 }
 struct Snapshot: Codable, Identifiable {
+    /// Nil in legacy sessions means a populated snapshot. Empty slots keep their index.
+    var emptySlot: Bool?
+    var isEmptySlot: Bool { emptySlot == true }
     var id = UUID()
     var name: String
     var gains: [Float]
@@ -317,7 +370,8 @@ struct Patch: Codable, Identifiable {
     var programChangeNumber: Int?
     var tonicState:TonicPatchState?
     var silencePrevious = false
-    enum CodingKeys: String, CodingKey { case id,name,tempo,transpose,playIn,hearIn,layers,snapshots,visualMode,silencePrevious,volumeDB,programChangeEnabled,programChangeNumber,tonicState }
+    var conversionNotes:[String]?
+    enum CodingKeys: String, CodingKey { case id,name,tempo,transpose,playIn,hearIn,layers,snapshots,visualMode,silencePrevious,volumeDB,programChangeEnabled,programChangeNumber,tonicState,conversionNotes }
     init(name: String, layers: [Layer], snapshots: [Snapshot]) { self.name = name; self.layers = layers; self.snapshots = snapshots }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -333,6 +387,7 @@ struct Patch: Codable, Identifiable {
         programChangeNumber = try c.decodeIfPresent(Int.self,forKey:.programChangeNumber)
         tonicState = try c.decodeIfPresent(TonicPatchState.self,forKey:.tonicState)
         silencePrevious = try c.decodeIfPresent(Bool.self, forKey: .silencePrevious) ?? false
+        conversionNotes = try c.decodeIfPresent([String].self,forKey:.conversionNotes)
     }
     static func make(_ name: String = "New Patch", gains: [Float] = [0.72, 0.35, 0]) -> Patch {
         let layers = [Layer(name: "Soft Keys", instrument: 0, gain: gains[0]), Layer(name: "Warm Pad", instrument: 1, gain: gains[1]), Layer(name: "Glass Bells", instrument: 2, gain: gains[2])] + (0..<12).map { _ in Layer.empty() }
@@ -369,6 +424,7 @@ struct Setlist: Codable {
         guard (1...4).contains(version), !patches.isEmpty, patches.count <= 128, name.count <= 200 else { throw SetlistError.invalid }
         guard Set(patches.map(\.id)).count == patches.count else { throw SetlistError.invalid }
         for p in patches {
+            guard p.conversionNotes.map({$0.count<=128 && $0.allSatisfy{$0.count<=2000}}) ?? true else {throw SetlistError.invalid}
             guard p.tonicState?.valid ?? true else{throw SetlistError.invalid}
             guard p.volumeDB.isFinite,(-24...12).contains(p.volumeDB),p.programChangeNumber == nil || (0...127).contains(p.programChangeNumber!), !p.name.isEmpty, p.name.count <= 200, p.tempo.isFinite, (20...300).contains(p.tempo), (-24...24).contains(p.transpose), (0...11).contains(p.playIn), (0...11).contains(p.hearIn), (1...15).contains(p.layers.count), p.snapshots.count <= 16, (0...2).contains(p.visualMode), Set(p.layers.map(\.id)).count == p.layers.count, Set(p.snapshots.map(\.id)).count == p.snapshots.count else { throw SetlistError.invalid }
             for l in p.layers {

@@ -1,0 +1,5 @@
+# Assemble converted MainStage channels
+
+Refs #6. Import Sounds can create a new patch from all sampler channels in the retained source report. Assembly requires exactly one converted native library entry per channel, matched by source archive and channel hash. Missing or multiple converted versions cause an actionable refusal instead of an arbitrary choice. Source order, gain/pan, key ranges, channel EQ/compressor, MIDI program, effects/bypass, imported rack/macros and original sampler references remain on each layer. New layer identities prevent accidental shared editing; unused slots are empty.
+
+Conversion notes persist with the patch and are visible in Patch Settings. They explicitly identify channel-only assembly and remaining patch-level buses/sends, tempo, routing and script limitations. This workflow does not claim that independent channel strips reproduce an unimplemented bus graph. Sources and samples remain unchanged. Existing unversioned patches decode with no notes. Test coverage asserts preservation, JSON recall and refusal of missing/ambiguous channels.

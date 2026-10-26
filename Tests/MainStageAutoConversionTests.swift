@@ -15,13 +15,15 @@ import Foundation
   try FileManager.default.copyItem(at:source,to:patch.appendingPathComponent(names[0]))
   try FileManager.default.copyItem(at:audio,to:patch.appendingPathComponent("Steinway Piano_consolidated.caf"))
   setenv("STAGEKEYS_DATA_DIR",dataRoot.path,1);let store=PerformanceStore();store.importMainStagePatch(patch)
+  assert(!store.libraryImportBusy && store.librarySounds.isEmpty,"Preflight must not auto-commit sounds")
+  store.convertIncludedMainStageSounds()
   for _ in 0..<1500 where store.libraryImportBusy {try await Task.sleep(nanoseconds:20_000_000)}
   assert(!store.libraryImportBusy,"Native import did not finish")
   guard let entry=store.librarySounds.first(where:{$0.id.hasPrefix("mainstage-channel-")}),let sound=entry.sound else{fatalError(store.libraryImportProgress ?? "Native conversion added no sound")}
   assert(sound.nativeSampler?.conversionVersion==6 && entry.layer?.importedRack != nil && entry.originalInstrument?.sha256==exsHash)
   let file=dataRoot.appendingPathComponent("Imported Sounds/"+sound.fileName!),state=try PropertyListSerialization.propertyList(from:Data(contentsOf:file),options:[],format:nil) as! [String:Any],refs=state["file-references"] as! [String:String]
   assert(refs.count==1);let managedHash=try AssetDigest.sha256(URL(fileURLWithPath:refs.values.first!));assert(managedHash==hash)
-  let count=store.librarySounds.count;store.importMainStagePatch(patch)
+  let count=store.librarySounds.count;store.importMainStagePatch(patch);store.convertIncludedMainStageSounds()
   for _ in 0..<1500 where store.libraryImportBusy {try await Task.sleep(nanoseconds:20_000_000)}
   assert(store.librarySounds.count==count,"Reimport duplicated the native instrument")
   let channelRoot=root.appendingPathComponent("channel-data");setenv("STAGEKEYS_DATA_DIR",channelRoot.path,1)

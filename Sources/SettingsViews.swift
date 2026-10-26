@@ -34,6 +34,12 @@ struct SettingsEditor: View {
                             #endif
                             Toggle("Audio Running",isOn:Binding(get:{store.started},set:{if $0 {store.start()} else {store.panic();store.audio.stop();store.started=false}}))
                             Toggle("Bypass Master Limiter (Temporary)",isOn:$store.masterLimiterBypassed)
+                            TimelineView(.periodic(from:.now,by:0.1)) { _ in
+                                let reading=store.audio.outputMetrics
+                                Text("Output sample peak \(reading.peakDB,specifier:"%.1f") dBFS · RMS \(reading.rmsDB,specifier:"%.1f") dBFS").monospacedDigit()
+                                Text("Samples ≥ 0 dBFS: \(reading.overload) · invalid samples: \(reading.invalid)").font(.caption).foregroundStyle(reading.overload>0 || reading.invalid>0 ? .orange:.secondary)
+                            }
+                            Text("Measures the final mixed output after protection/headroom. Sample peak is not true peak. The system limiter does not expose gain reduction; no reduction value is inferred.").font(.caption).foregroundStyle(.secondary)
                             Text("For listening comparisons. The limiter returns on when StageKeys restarts; output headroom stays unchanged.").font(.caption).foregroundStyle(.secondary)
                             if let status=store.audioStatus {
                                 Text("Sample Rate: \(Int(status.sampleRate)) Hz")
@@ -48,6 +54,14 @@ struct SettingsEditor: View {
                             Button("Refresh Audio Devices") { store.refreshAudioDevices() }
                         }
                         Section("Shared Hall Reverb") { Slider(value:$store.reverb,in:0...65);Text("Wet Mix: \(Int(store.reverb)) %") }
+                        Section("Local Diagnostics") {
+                            Button("Copy Support Diagnostics") { store.copySupportDiagnostics() }
+                            Text("Copies app version, audio rate/buffer, reported latency, MIDI/sound counts and limiter state. No automatic upload. Device names, paths, samples, setlists and plug-in state are excluded.").font(.caption).foregroundStyle(.secondary)
+                            Button(store.audioCheckRecording ? "Stop Audio Check" : "Record 30-Second Audio Check") {
+                                if store.audioCheckRecording { store.stopAudioCheck() } else { store.startAudioCheck() }
+                            }
+                            Text("Audio checks record your performance to a local file only. Share a recording only when you choose to.").font(.caption).foregroundStyle(.secondary)
+                        }
                     case "Flex Routing":
                         Section("Stereo Output") { Text("All modules and the tonic pad feed the system stereo output. Per-module pan is available in Sound Settings.") }
                         Text("Multiple hardware outputs and category routing are not implemented.").foregroundStyle(.secondary)

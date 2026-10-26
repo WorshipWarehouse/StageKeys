@@ -1,6 +1,15 @@
 import Foundation
 @main struct LibraryBrowserTests {
     static func main() throws {
+        assert(SoundTags.inferred(name:"Sharp Piano").category=="Acoustic Piano & Keys")
+        assert(SoundTags.inferred(name:"Sharp Pad").category=="Pads")
+        assert(SoundTags.inferred(name:"WarmPad").category=="Pads")
+        assert(SoundTags.inferred(name:"Slow Arpeggio").category=="Arps & Sequences")
+        assert(SoundTags.inferred(name:"Organism").category=="Other")
+        assert(!SoundTags.inferred(name:"Monolith Pad").articulations.contains("Monophonic"))
+        let unknown=BrowserSound.library(LibrarySound(id:"unknown",name:"Unknown Texture",collection:"My Sounds",hostPath:"/fixture.patch"))
+        assert(unknown.values(.noteRange)==["Not Tagged"] && unknown.values(.timbre)==["Not Tagged"] && unknown.values(.articulation)==["Not Tagged"])
+        var missing=LibraryQuery();missing.filters[.timbre]="Not Tagged";assert(missing.results([unknown]).count==1)
         let native=LibrarySound(id:"native-felt",name:"SK App Felt Piano v1_6",collection:"Sunday App · Native",sound:ExternalSound(kind:.samplerPreset,name:"Felt",fileName:"fixture.aupreset"))
         let voiced=SundayFactoryVoicing.feltRoom(from:native)!
         assert(voiced.sound==native.sound && voiced.layer!.channelSettings.validate())

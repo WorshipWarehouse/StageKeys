@@ -256,20 +256,31 @@ struct PerformanceView: View {
     private var snapshotStrip: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 5) {
-                ForEach(Array(store.patch.snapshots.enumerated()), id: \.element.id) { i, snapshot in
-                    Button { store.recall(snapshot) } label: {
-                        VStack(spacing: 4) { Text(snapshot.name).lineLimit(1); Text(snapshot.beats != nil ? "\(snapshot.beats!, specifier: "%.1f") beats" : "Default").font(.system(size: 9)).opacity(0.65) }.frame(width: 100, height: 28)
-                    }.buttonStyle(StageButtonStyle(selected: store.activeSnapshot == snapshot.id))
+                ForEach(0..<max(5, store.patch.snapshots.count), id: \.self) { i in
+                    let snapshot = store.patch.snapshots.indices.contains(i) ? store.patch.snapshots[i] : nil
+                    let populated = snapshot.map { !$0.isEmptySlot } ?? false
+                    Button {
+                        if let snapshot, populated { store.recall(snapshot) }
+                    } label: {
+                        VStack(spacing: 4) {
+                            Text(populated ? snapshot!.name : "Snapshot").lineLimit(1)
+                            Text(populated ? (snapshot!.beats.map { String(format: "%.1f beats", $0) } ?? "Default") : "\(i + 1)").font(.system(size: 9)).opacity(0.65)
+                        }.frame(width: 100, height: 28)
+                    }.buttonStyle(StageButtonStyle(selected: populated && store.activeSnapshot == snapshot?.id))
+                        .accessibilityLabel(populated ? "Snapshot \(i + 1), \(snapshot!.name)" : "Snapshot \(i + 1), empty")
+                        .help(populated ? "Recall snapshot. Use the context menu to edit or clear." : "Empty slot. Use Capture Snapshot to save the current mix here.")
                         .contextMenu {
-                            Button("Customize…") { sheet = .snapshot(i) }
+                            if populated {
+                                Button("Customize…") { sheet = .snapshot(i) }
+                                if i > 0 { Button("Move Left") { store.setlist.patches[store.selected].snapshots.swapAt(i, i-1); store.save() } }
+                                Button("Clear", role: .destructive) { store.clearSnapshot(i) }
+                            }
                             Button("Capture Current Mix") { store.captureSnapshot(i) }
-                            Button("Move Left") { if i > 0 { store.setlist.patches[store.selected].snapshots.swapAt(i, i-1); store.save() } }.disabled(i == 0)
-                            Button("Clear", role: .destructive) { store.setlist.patches[store.selected].snapshots.remove(at: i); store.save() }
                         }
                 }
                 Menu {
-                    ForEach(store.patch.snapshots.indices, id: \.self) { i in Button("Capture into \(store.patch.snapshots[i].name)") { store.captureSnapshot(i) } }
-                    Button("New Snapshot") { store.captureSnapshot(store.patch.snapshots.count) }
+                    ForEach(0..<max(5, store.patch.snapshots.count), id: \.self) { i in Button("Capture into Slot \(i + 1)") { store.captureSnapshot(i) } }
+                    Button("Next Empty Slot") { store.saveSnapshot() }
                 } label: { Image(systemName: "square.and.arrow.down").padding(10) }.accessibilityLabel("Capture Snapshot")
             }
         }.frame(height: 54)

@@ -19,6 +19,16 @@ struct LibrarySound: Codable, Identifiable, Equatable {
 /// User-owned sounds stay outside the application bundle and survive upgrades.
 struct SoundLibrary {
     let url: URL
+    /// Compare before commit so a yielding import cannot replace later user edits.
+    func commitImport(_ entries:[LibrarySound], replacing original:[LibrarySound]) throws {
+        guard try read() == original else {
+            throw MainStagePatch.Failure.invalid("The library changed during import. No prepared sounds were committed; retry to preserve your edits.")
+        }
+        guard Set(entries.map(\.id)).count == entries.count else {
+            throw MainStagePatch.Failure.invalid("Duplicate sound identities in prepared import. No sounds were committed.")
+        }
+        try write(entries)
+    }
     func read() throws -> [LibrarySound] {
         guard FileManager.default.fileExists(atPath: url.path) else { return [] }
         let data = try Data(contentsOf: url)

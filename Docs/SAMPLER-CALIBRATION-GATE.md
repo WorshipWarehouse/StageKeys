@@ -1,0 +1,7 @@
+# Source-backed sampler calibration gate
+
+Refs #1. `Tools/verify-sampler-calibration.py evidence.json` validates a declared MainStage/StageKeys steady-level measurement matrix. Default coverage is notes 60/74/86, velocities 1–127, pedal off/on and isolated/chord gestures. A smaller explicitly requested grid is useful during calibration but does not establish full-velocity coverage.
+
+Evidence schema 1 requires matching `sources.reference`/`sources.stageKeys` instrument SHA-256, zone-map SHA-256 and original sample hash map; separate settings for host velocity curve, source gain, channel EQ bypass, bus gain, effect bypass and StageKeys output headroom; and per-measurement note, velocity, pedal, gesture, selected source zone, RMS and sample peak for both hosts. The checker refuses mismatched identities, missing/duplicate rows, silence, non-finite values and clipped/inconsistent RMS/peak pairs. It reports raw measured level error after only the explicitly declared output-headroom allowance; it never fits a compensating gain curve or modifies samples.
+
+Existing v48 evidence covers three pitches and five velocity points under one isolated reference setup, not this complete matrix. No additional source captures are claimed here. Attack/decay, source-layer transitions, soft/high-note timbre, other pedal behavior and physical latency require separate reviewed recordings. Original/private audio belongs outside the public app repo. Synthetic tests validate the checker itself, not musical equivalence.
