@@ -20,9 +20,18 @@ def evaluate(document, notes=(60, 74, 86), velocities=tuple(range(1, 128)), tole
     headroom = document['settings']['stageKeysOutputHeadroomDB']
     if isinstance(headroom, bool) or not isinstance(headroom, (int, float)) or not math.isfinite(headroom) or not -24 <= headroom <= 0:
         raise ValueError('Declare finite output headroom separately from source/channel/bus gain')
+    settings = document['settings']
     for field in ('hostVelocityCurve', 'sourceGainDB', 'channelEQBypassed', 'busGainDB', 'effectsBypassed'):
-        if field not in document['settings']:
+        if field not in settings:
             raise ValueError('Missing isolated source setting: ' + field)
+    isolation = {field: settings[field] for field in ('hostVelocityCurve', 'sourceGainDB', 'channelEQBypassed', 'busGainDB', 'effectsBypassed')}
+    for field in ('channelEQBypassed', 'effectsBypassed'):
+        if isolation[field] is not True:
+            raise ValueError('Dry level evidence cannot declare active processing: ' + field + ' must be true')
+    for field in ('hostVelocityCurve', 'sourceGainDB', 'busGainDB'):
+        value = isolation[field]
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or not -48 <= value <= 48:
+            raise ValueError('Declare a finite isolated ' + field + ' in dB within -48 to 48, never a hidden or compensating value')
     if not notes or not velocities or any(type(n) is not int or not 0 <= n <= 127 for n in notes) or any(type(v) is not int or not 1 <= v <= 127 for v in velocities):
         raise ValueError('Invalid requested MIDI matrix')
     expected = set(itertools.product(notes, velocities, (False, True), ('isolated', 'chord')))
@@ -47,7 +56,7 @@ def evaluate(document, notes=(60, 74, 86), velocities=tuple(range(1, 128)), tole
     missing = sorted(expected - measured)
     maximum = max((abs(x['errorDB']) for x in errors), default=None)
     return dict(passed=not missing and maximum is not None and maximum <= tolerance,
-                toleranceDB=tolerance, declaredHeadroomDB=headroom, measured=len(measured), expected=len(expected),
+                toleranceDB=tolerance, declaredHeadroomDB=headroom, declaredIsolation=isolation, measured=len(measured), expected=len(expected),
                 missing=[list(x) for x in missing], maximumAbsoluteErrorDB=maximum, errors=errors,
                 scope='Measured steady RMS only; attack/decay, layer transitions, timbre and physical latency require separate review')
 
