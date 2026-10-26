@@ -28,6 +28,9 @@ effect-presets.json
 sound-ratings.json
 setlist.json
 
+# Private reverse-engineering workspace: artifacts, dumps and evidence records
+Analysis/
+
 # Distribution files
 *.app/
 *.zip
