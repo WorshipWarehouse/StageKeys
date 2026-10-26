@@ -48,7 +48,14 @@ final class PluginParameterModel: ObservableObject {
         presets = Array(factory.prefix(Self.limit).map(\.name))
         currentPreset = unit.currentPreset.flatMap { current in factory.firstIndex(where: { $0.number == current.number }) }
         observer = parameterTree?.token(byAddingParameterObserver: { [weak self] address, value in
-            DispatchQueue.main.async { guard let self,self.generation==tokenGeneration else{return};self.update(address, Double(value)) }
+            guard let self else { return }
+            // AUParameterTree observers are delivered on the audio/render context.
+            // Publish the value on the main actor, but verify attachment identity
+            // there so queued events from a replaced unit cannot update this model.
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.generation == tokenGeneration else { return }
+                self.update(address, Double(value))
+            }
         })
     }
     func set(_ address: AUParameterAddress, _ value: Double) {
