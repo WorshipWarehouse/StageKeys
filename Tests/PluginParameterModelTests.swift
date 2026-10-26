@@ -15,14 +15,25 @@ final class ParameterFixtureUnit:AUAudioUnit {
 @main struct PluginParameterModelTests {
  static func main()throws {
   let first=try ParameterFixtureUnit(42),second=try ParameterFixtureUnit(99),model=PluginParameterModel()
+  // AudioToolbox coalesces parameter-tree observer notifications onto a main-queue hop, so an
+  // observed update lands about 50 ms after the write. A fixed 0.15 s drain left almost no margin
+  // and failed intermittently on loaded runner machines; wait for the condition with a bounded
+  // deadline instead, and settle generously wherever the assertion is that no update arrives.
+  func spin(_ seconds:Double){RunLoop.main.run(until:Date().addingTimeInterval(seconds))}
+  func waitUntil(_ condition:@autoclosure ()->Bool,_ timeout:Double=10){
+   let deadline=Date().addingTimeInterval(timeout)
+   while !condition(),Date()<deadline { spin(0.02) }
+  }
   model.attach(first);assert(model.items.count==1 && model.items[0].id==42)
   model.set(42,2);assert(first.current==1 && model.items[0].value==1)
   first.tree.parameter(withAddress:42)!.value=0.3
-  func drain(){RunLoop.main.run(until:Date().addingTimeInterval(0.15))}
-  drain();assert(abs(model.items[0].value-0.3)<0.00001,"Tree observer must update generic controls")
+  waitUntil(abs(model.items[0].value-0.3)<0.00001)
+  assert(abs(model.items[0].value-0.3)<0.00001,"Tree observer must update generic controls")
   first.tree.parameter(withAddress:42)!.value=0.8
-  model.attach(second);drain();assert(model.items[0].id==99 && model.items[0].value==0,"An old unit callback must not overwrite a newly attached unit")
-  model.detach();second.tree.parameter(withAddress:99)!.value=0.6;drain();assert(model.items[0].value==0,"Detached observer must not update the model")
+  model.attach(second);spin(1)
+  assert(model.items[0].id==99 && model.items[0].value==0,"An old unit callback must not overwrite a newly attached unit")
+  model.detach();second.tree.parameter(withAddress:99)!.value=0.6;spin(1)
+  assert(model.items[0].value==0,"Detached observer must not update the model")
   print("PASS: real AU parameter-tree observation, bounded writes, unit replacement and observer removal")
  }
 }
