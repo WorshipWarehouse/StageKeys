@@ -59,9 +59,8 @@ enum MainStagePatch {
                 let identity = unit.audioUnitIdentity.map{" (\($0))"} ?? ""
                 // Saved state is MainStage's plug-in blob; an installed Audio Unit alone
                 // does not reproduce it, and the saved version may differ from a newer install.
-                let base = instruments.isEmpty
-                    ? "Archive only: third-party Audio Unit \(unit.name)\(identity) has no translated state and no sampler reference was found."
-                    : "Partial: the referenced sampler can be converted, but third-party Audio Unit \(unit.name)\(identity) has no translated state."
+                var base = "Third-party Audio Unit \(unit.name)\(identity): hosted with its saved state when that component is installed. The state is restored, not translated."
+                if !instruments.isEmpty {base += " The referenced sampler can be converted, but one layer hosts one instrument, so a converted sampler layer keeps that state in the archive."}
                 return unit.pluginState.map{base+" Saved state: \($0.summary)."} ?? base
             }
             return instruments.isEmpty ? "Archive only: no supported sampler reference identified." : "Sampler candidate: original EXS and samples required; processing compatibility must be reviewed."
@@ -77,6 +76,9 @@ enum MainStagePatch {
         /// Plug-in state records. Their saved state is never translated, so telling the
         /// user which Audio Unit a channel needs is part of the import report.
         var thirdPartyAudioUnits:[Device] { devices.filter{$0.format=="PSDD"} }
+        /// A channel can be converted when its sampler can be located or its saved Audio
+        /// Unit is installed. Whether the component is actually present is decided later.
+        var isConvertible:Bool { !instruments.isEmpty || !thirdPartyAudioUnits.isEmpty }
     }
     struct Report:Codable,Equatable {
         var version=1
@@ -92,14 +94,15 @@ enum MainStagePatch {
         var errorDescription:String? {if case .invalid(let message)=self{return message};return nil}
     }
     static func assembledChannels(_ report:Report,entries:[LibrarySound])throws->Patch {
-        let channels=report.channels.filter{!$0.instruments.isEmpty}
+        let channels=report.channels.filter{!$0.instruments.isEmpty || !$0.thirdPartyAudioUnits.isEmpty}
         guard let archive=report.sourceArchiveID,!channels.isEmpty,channels.count<=15 else {
-            throw Failure.invalid("Choose a source patch with 1–15 converted sampler channels. More complex patch routing requires manual setup.")
+            throw Failure.invalid("Choose a source patch with 1–15 converted instrument channels. More complex patch routing requires manual setup.")
         }
         var layers:[Layer]=[],notes=["Converted channel strips only. Patch-level buses/sends, tempo, scripts and routing require review; this is not full MainStage topology parity."]
         for channel in channels {
             let matches=entries.filter{$0.sourceArchiveID==archive && $0.id.hasPrefix("mainstage-channel-"+channel.sha256+"-")}
-            guard matches.count==1,let entry=matches.first,var layer=entry.layer,layer.external?.kind == .samplerPreset else {
+            guard matches.count==1,let entry=matches.first,var layer=entry.layer,
+                  let kind=layer.external?.kind,kind == .samplerPreset || kind == .audioUnit else {
                 throw Failure.invalid("\(channel.name): convert the channel first and resolve multiple converted versions before assembling this patch.")
             }
             layer.id=UUID();layer.name=channel.name;layers.append(layer)
@@ -428,6 +431,39 @@ enum MainStageAudioUnit {
         return Match(identity:identity,state:restorable,exactSubtype:identity.subtype==subtype,
                      savedIdentity:saved.identity ?? device.name,savedVersion:saved.version)
     }
+    /// A channel turned into a playable layer. Nothing is loaded or rendered here: the
+    /// layer carries the installed component and the class info the rack restores.
+    struct Hosted:Equatable {
+        var layer:Layer
+        var identity:ExternalAUIdentity
+        var exactSubtype:Bool
+        var notes:[String]
+    }
+    /// Build the layer that hosts a saved Audio Unit. A plug-in that is not installed,
+    /// is unavailable, or whose state cannot be read stays an explicit failure rather
+    /// than becoming a silent substitute sound.
+    static func hostedLayer(name:String,device:MainStagePatch.Device,state:Data,
+                            installed:[ExternalAUIdentity])throws->Hosted {
+        guard let match=match(device,state:state,installed:installed) else {
+            let identity=device.audioUnitIdentity.map{" (\($0))"} ?? ""
+            throw MainStagePatch.Failure.invalid("the saved Audio Unit \(device.name)\(identity) is not installed; install that component to host this channel, or retain the source.")
+        }
+        if let reason=match.identity.unavailableReason {
+            throw MainStagePatch.Failure.invalid("\(match.identity.displayName) is installed but unavailable. \(reason)")
+        }
+        var layer=Layer(name:name,instrument:-1,gain:1)
+        layer.external=ExternalSound(kind:.audioUnit,name:device.name,component:match.identity)
+        layer.pluginState=match.state
+        var notes:[String]=[]
+        if let saved=device.pluginState {
+            notes.append("hosted \(device.name); restored \(saved.summary).")
+        }
+        if !match.exactSubtype {
+            let installedVersion=match.installedVersion.map{" (\($0))"} ?? ""
+            notes.append("the saved component \(match.savedIdentity) differs from the installed \(identityText(match.identity))\(installedVersion); parameters were applied by the plug-in, and values whose meaning changed between versions fall back to its defaults. Verify the sound before performing.")
+        }
+        return Hosted(layer:layer,identity:match.identity,exactSubtype:match.exactSubtype,notes:notes)
+    }
     private static func rewritten(_ state:Data,identity:ExternalAUIdentity)->Data? {
         guard var values=try? PropertyListSerialization.propertyList(from:state,options:[],format:nil) as? [String:Any] else{return nil}
         values["type"]=NSNumber(value:identity.type)
@@ -436,6 +472,16 @@ enum MainStageAudioUnit {
         guard let output=try? PropertyListSerialization.data(fromPropertyList:values,format:.binary,options:0),
               output.count<=2_000_000 else{return nil}
         return output
+    }
+    /// Readable component identity, so a version change names components the way the
+    /// channel strip recorded them instead of printing three decimal numbers.
+    static func identityText(_ identity:ExternalAUIdentity)->String {
+        [text(identity.type),text(identity.subtype),text(identity.manufacturer)].compactMap{$0}.joined(separator:"/")
+    }
+    private static func text(_ value:UInt32)->String? {
+        let bytes=(0..<4).map{UInt8((value >> (24-$0*8)) & 255)}
+        guard bytes.allSatisfy({(32...126).contains($0)}) else{return nil}
+        return String(bytes:bytes,encoding:.ascii)
     }
     /// Four-character component codes are stored as their big-endian text value.
     private static func code(_ text:String)->UInt32? {

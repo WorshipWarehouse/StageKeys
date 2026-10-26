@@ -87,6 +87,19 @@ import Foundation
         let foreign=[ExternalAUIdentity(type:0x61756d75,subtype:0x4f627833,manufacturer:0x11111111,name:"OB-Xd")]
         assert(MainStageAudioUnit.match(stateDevice,state:savedState ?? Data(),installed:foreign)==nil,"A different manufacturer is not the same plug-in")
         assert(MainStageAudioUnit.match(stateDevice,state:savedState ?? Data(),installed:[])==nil)
+        // The playable layer: installed component plus the saved class info it restores.
+        let hosted=try MainStageAudioUnit.hostedLayer(name:"Pad",device:stateDevice,state:savedState ?? Data(),installed:installed)
+        assert(hosted.layer.external?.kind == .audioUnit && hosted.layer.external?.component?.subtype==0x4f627833,"A hosted channel must target the installed component")
+        assert(hosted.layer.external?.name=="OB-Xd" && hosted.layer.pluginState != nil && hosted.layer.instrument == -1)
+        assert(!hosted.exactSubtype && hosted.notes.contains{$0.contains("aumu/Obxd") && $0.contains("3.24.0")},"A version change must be disclosed in the conversion notes")
+        assert(hosted.notes.contains{$0.contains("Accordion OB-Xa")},"The notes must say which saved state was restored")
+        let exactHosted=try MainStageAudioUnit.hostedLayer(name:"Pad",device:stateDevice,state:savedState ?? Data(),installed:exact)
+        assert(exactHosted.exactSubtype && !exactHosted.notes.contains{$0.contains("differs")},"An exact match needs no version warning")
+        var blockedUnit=installed;blockedUnit[0].unavailableReason="This Audio Unit has no build for this Mac's processor."
+        do{_ = try MainStageAudioUnit.hostedLayer(name:"Pad",device:stateDevice,state:savedState ?? Data(),installed:blockedUnit);assertionFailure("An unavailable component must not be hosted")}catch{assert(error.localizedDescription.contains("no build"))}
+        do{_ = try MainStageAudioUnit.hostedLayer(name:"Pad",device:stateDevice,state:savedState ?? Data(),installed:[]);assertionFailure("A missing component must not be hosted")}catch{assert(error.localizedDescription.contains("not installed"))}
+        var playable=Setlist();playable.patches=[Patch(name:"Hosted Channel",layers:[hosted.layer],snapshots:[])]
+        try playable.validate()
         let extracted=MainStageAudioUnit.state(for:stateDevice,in:stateStrip)
         let extractedState=(try? PropertyListSerialization.propertyList(from:extracted ?? Data(),options:[],format:nil)) as? [String:Any]
         assert(extractedState?["jucePluginState"] as? Data==vendor,"State extraction must preserve the vendor state")
