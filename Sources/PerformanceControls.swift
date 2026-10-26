@@ -25,6 +25,12 @@ struct VerticalFader: View {
         }
         .accessibilityElement().accessibilityLabel(label).accessibilityValue(decibels ? StageTheme.db(gain) : "\(Int(gain * 100)) percent")
         .accessibilityAdjustableAction { direction in set(position + (direction == .increment ? 0.04 : -0.04)); onEnd() }
+        #if os(macOS)
+        .focusable()
+        .onMoveCommand { direction in
+            switch direction {case .up,.right:set(position+0.01);onEnd();case .down,.left:set(position-0.01);onEnd();default:break}
+        }
+        #endif
     }
 }
 struct MasterFader: View {

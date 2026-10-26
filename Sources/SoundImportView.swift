@@ -34,6 +34,7 @@ struct SoundImportView:View {
                         ScrollView {VStack(alignment:.leading,spacing:6) {
                             ForEach(Array(report.channels.enumerated()),id:\.offset) {_,channel in
                                 Text(channel.name+": "+channel.devices.map(\.name).joined(separator:", ")).font(.caption)
+                                Text(channel.nativeInstrumentStatus).font(.caption).foregroundStyle(.secondary)
                                 if !channel.instruments.isEmpty {Text(channel.instruments.joined(separator:", ")).font(.caption).foregroundStyle(.secondary)}
                             }
                             ForEach(Array(report.blockers.enumerated()),id:\.offset){_,message in Text(message).font(.caption).foregroundStyle(.secondary)}

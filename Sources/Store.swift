@@ -298,6 +298,8 @@ final class PerformanceStore: ObservableObject {
     private var restoredAudioBuffer = false
     private var legacyVersion = 1
     private var legacyData: Data?
+    @Published private(set) var sessionRecoveryRequired = false
+    @Published private(set) var settingsRecoveryRequired = false
     var patch: Patch { setlist.patches[selected] }
     init() {
         let base = ProcessInfo.processInfo.environment["STAGEKEYS_DATA_DIR"].map { URL(fileURLWithPath: $0) } ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("StageKeys")
@@ -310,11 +312,11 @@ final class PerformanceStore: ObservableObject {
         do { librarySounds = try SoundLibrary(url: base.appendingPathComponent("sound-library.json")).read() }
         catch { message = "Could not read sound library: \(error.localizedDescription)" }
         if FileManager.default.fileExists(atPath: saveURL.path) {
-            do { let data = try Data(contentsOf: saveURL); let loaded = try JSONDecoder().decode(Setlist.self, from: data); setlist = try loaded.upgraded(); if loaded.version < 4 { legacyData = data; legacyVersion = loaded.version } }
-            catch { message = "Could not load the saved setlist: \(error.localizedDescription). The original file is preserved until you save." }
+            do { let data = try RecoverableSessionFile.read(saveURL); let loaded = try JSONDecoder().decode(Setlist.self, from: data); setlist = try loaded.upgraded(); if loaded.version < 4 { legacyData = data; legacyVersion = loaded.version } }
+            catch { sessionRecoveryRequired = true; message = "Could not load the saved setlist: \(error.localizedDescription). Automatic saves are blocked to preserve it. Open Settings to recover the previous session." }
         }
         let settingsURL = base.appendingPathComponent("settings.json")
-        if let data = try? Data(contentsOf: settingsURL), let settings = try? JSONDecoder().decode(SessionSettings.self, from: data), settings.validate() {
+        if let data = try? RecoverableSessionFile.read(settingsURL), let settings = try? JSONDecoder().decode(SessionSettings.self, from: data), settings.validate() {
             if let id=settings.selectedPatchID,let i=setlist.patches.firstIndex(where:{$0.id==id}) { selected=i }
             activeSnapshot=patch.snapshots.contains(where:{$0.id==settings.activeSnapshotID}) ? settings.activeSnapshotID : nil
             notesMode=settings.notesMode ?? false;modWheel=settings.modWheel ?? 1
@@ -331,6 +333,15 @@ final class PerformanceStore: ObservableObject {
             disableSilent = settings.disableSilent; showRanges = settings.showRanges
             tonicVelocitySelector=settings.tonicVelocitySelector ?? false;tonicTimbre=settings.tonicTimbre ?? 0;tonicLastRoot=settings.tonicLastRoot ?? 0;tonicSound=settings.tonicSound
             tonicGain = settings.tonicGain; tonicBrightness = settings.tonicBrightness; tonicShimmer = settings.tonicShimmer
+        }
+        if FileManager.default.fileExists(atPath: settingsURL.path) {
+            do {
+                let data = try RecoverableSessionFile.read(settingsURL)
+                guard try JSONDecoder().decode(SessionSettings.self, from: data).validate() else { throw SetlistError.invalid }
+            } catch {
+                settingsRecoveryRequired = true
+                message = "Saved settings could not be loaded. Automatic saves are blocked; use Settings to recover the previous copy."
+            }
         }
         audio.onError = { [weak self] in self?.message = $0 }
         do { midiOutput = try ExternalMIDIOutput() } catch { message = error.localizedDescription }
@@ -967,6 +978,7 @@ final class PerformanceStore: ObservableObject {
                 let files=try MainStagePatch.findSamplerInstruments(names,in:folder)
                 var imported=0,skipped=0,failures:[String]=[]
                 for (channelIndex,channel) in report.channels.enumerated() where !channel.instruments.isEmpty {
+                    guard channel.unsupportedInstrumentFamily == nil else { failures.append(channel.name+": "+channel.nativeInstrumentStatus);continue }
                     guard channel.instruments.count==1,let name=channel.instruments.first else{failures.append(channel.name+": layered sampler selection requires translation");continue}
                     let matches=files.filter{$0.lastPathComponent==name}
                     guard matches.count==1 else{failures.append(name+": "+(matches.isEmpty ? "instrument not found in the selected folder":"multiple matches; choose a narrower folder"));continue}
@@ -1119,6 +1131,10 @@ final class PerformanceStore: ObservableObject {
         l.id = patch.layers[index].id; l.midiDestinationID = destination.id; commitLayer(index, l)
     }
     func save() {
+        guard !sessionRecoveryRequired, !settingsRecoveryRequired else {
+            message = "Automatic saves are blocked because saved session data could not be loaded. Recover the previous session in Settings; the original files remain untouched."
+            return
+        }
         capturePluginStates()
         do { try setlist.validate(); try FileManager.default.createDirectory(at: saveURL.deletingLastPathComponent(), withIntermediateDirectories: true); if let legacyData {
                 let backup = saveURL.deletingLastPathComponent().appendingPathComponent("setlist-v\(legacyVersion)-backup.json")
@@ -1128,13 +1144,33 @@ final class PerformanceStore: ObservableObject {
             let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
             let data = try encoder.encode(setlist)
             guard data.count <= 64_000_000 else { throw SetlistError.invalid }
-            try data.write(to: saveURL, options: .atomic)
+            try RecoverableSessionFile.write(data, to: saveURL) { _ = try JSONDecoder().decode(Setlist.self, from: $0).upgraded() }
             currentSetlistID = try localSetlistLibrary().save(setlist,id:currentSetlistID).id
             refreshSetlists()
             let settings = SessionSettings(selectedPatchID:patch.id,activeSnapshotID:activeSnapshot,notesMode:notesMode,modWheel:modWheel,master: master, reverb: reverb, transition: transition, midiChannel: midiChannel, primarySourceID: primarySourceID, secondarySourceID: secondarySourceID, secondaryChannel: secondaryChannel, velocityMinimum: velocityMinimum, velocityMaximum: velocityMaximum, sourceNames: midiSourceNames, disableSilent: disableSilent, showRanges: showRanges, tonicGain: tonicGain, tonicBrightness: tonicBrightness, tonicShimmer: tonicShimmer, audioOutputUID: preferredAudioOutputUID, activeSetlistID: currentSetlistID,tonicSound:tonicSound,tonicVelocitySelector:tonicVelocitySelector,tonicTimbre:tonicTimbre,tonicLastRoot:tonicLastRoot,metronomeEnabled:metronome,audioBufferFrames:preferredBufferFrames.map{Int($0)})
             guard settings.validate() else { throw SetlistError.invalid }
-            try encoder.encode(settings).write(to: saveURL.deletingLastPathComponent().appendingPathComponent("settings.json"), options: .atomic) }
+            try RecoverableSessionFile.write(encoder.encode(settings), to: saveURL.deletingLastPathComponent().appendingPathComponent("settings.json")) {
+                guard try JSONDecoder().decode(SessionSettings.self, from: $0).validate() else { throw SetlistError.invalid }
+            } }
         catch { message = "Could not save: \(error.localizedDescription)" }
+    }
+    func recoverPreviousSession() {
+        do {
+            if sessionRecoveryRequired {
+                let data = try RecoverableSessionFile.restore(saveURL) { _ = try JSONDecoder().decode(Setlist.self, from: $0).upgraded() }
+                let recovered = try JSONDecoder().decode(Setlist.self, from: data).upgraded()
+                panic(); cancelAudition(); cancelTransition()
+                setlist = recovered; selected = 0; activeSnapshot = nil; currentSetlistID = nil
+                sessionRecoveryRequired = false
+                if started { applyPatch(); recallTonicPatch() }
+            }
+            if settingsRecoveryRequired {
+                _ = try RecoverableSessionFile.restore(saveURL.deletingLastPathComponent().appendingPathComponent("settings.json")) {
+                    guard try JSONDecoder().decode(SessionSettings.self, from: $0).validate() else { throw SetlistError.invalid }
+                }
+                message = "Previous settings restored. Restart StageKeys to load them before making further edits."
+            } else { message = "Previous session restored. The damaged file was retained alongside it." }
+        } catch { message = "Recovery could not complete: \(error.localizedDescription). Original files remain preserved." }
     }
     private func localSetlistLibrary() throws -> SetlistLibrary { try SetlistLibrary(root: saveURL.deletingLastPathComponent().appendingPathComponent("Setlists")) }
     func refreshSetlists() {
