@@ -4,11 +4,44 @@ import CryptoKit
 /// Reads documents as data. Never instantiates archived Objective-C classes,
 /// executes MIDI scripts, launches MainStage, or substitutes a synth sound.
 enum MainStagePatch {
+    /// The document a PSDD record wraps: component identity, a parameter cache and,
+    /// for JUCE-based plug-ins, the vendor's own preset bank. Only the wrapper is read;
+    /// no plug-in is loaded, no state is applied and no vendor code is executed.
+    struct PluginState:Codable,Equatable {
+        var presetName:String?
+        var componentType:String?
+        var componentSubtype:String?
+        var manufacturer:String?
+        var version:Int?
+        var stateBytes:Int
+        var stateMagic:String?
+        var programCount:Int?
+        var identity:String? {
+            guard let componentType else{return nil}
+            return [componentType,componentSubtype,manufacturer].compactMap{$0}.joined(separator:"/")
+        }
+        var summary:String {
+            var parts:[String]=[]
+            if let presetName,presetName != "" {parts.append("preset \"\(presetName)\"")}
+            if let programCount,programCount>0 {parts.append("\(programCount)-program bank")}
+            parts.append(stateBytes>0 ? "\(stateBytes) bytes" : "no vendor state")
+            return parts.joined(separator:", ")
+        }
+    }
     struct Device:Codable,Equatable {
         var name:String
         var offset:Int
         var byteCount:Int
         var format:String
+        /// Saved Audio Unit component identity when the record is a plug-in state.
+        var audioUnitType:String? = nil
+        var audioUnitSubtype:String? = nil
+        var pluginState:PluginState? = nil
+        var audioUnitIdentity:String? {
+            guard let audioUnitType else{return nil}
+            guard let audioUnitSubtype else{return audioUnitType}
+            return audioUnitType+"/"+audioUnitSubtype
+        }
     }
     struct Channel:Codable,Equatable {
         var name:String
@@ -22,6 +55,15 @@ enum MainStagePatch {
             if let family = unsupportedInstrumentFamily {
                 return "Archive only: \(family) has no native StageKeys engine. Use an installed compatible AU or retain the source."
             }
+            if let unit = thirdPartyAudioUnits.first {
+                let identity = unit.audioUnitIdentity.map{" (\($0))"} ?? ""
+                // Saved state is MainStage's plug-in blob; an installed Audio Unit alone
+                // does not reproduce it, and the saved version may differ from a newer install.
+                let base = instruments.isEmpty
+                    ? "Archive only: third-party Audio Unit \(unit.name)\(identity) has no translated state and no sampler reference was found."
+                    : "Partial: the referenced sampler can be converted, but third-party Audio Unit \(unit.name)\(identity) has no translated state."
+                return unit.pluginState.map{base+" Saved state: \($0.summary)."} ?? base
+            }
             return instruments.isEmpty ? "Archive only: no supported sampler reference identified." : "Sampler candidate: original EXS and samples required; processing compatibility must be reviewed."
         }
         var unsupportedInstrumentFamily: String? {
@@ -32,6 +74,9 @@ enum MainStagePatch {
             }
             return nil
         }
+        /// Plug-in state records. Their saved state is never translated, so telling the
+        /// user which Audio Unit a channel needs is part of the import report.
+        var thirdPartyAudioUnits:[Device] { devices.filter{$0.format=="PSDD"} }
     }
     struct Report:Codable,Equatable {
         var version=1
@@ -87,18 +132,37 @@ enum MainStagePatch {
         guard data.count>=36,data.prefix(4)==Data("OCuA".utf8) else{throw Failure.invalid("Unsupported channel-strip version; original bytes will not be treated as a sampler preset.")}
         let bytes=[UInt8](data)
         func u32(_ start:Int)->Int {(0..<4).reduce(0){$0 | Int(bytes[start+$1]) << ($1*8)}}
+        /// Four-character codes are stored little-endian in this container.
+        func fourCC(_ start:Int)->String? {
+            guard start>=0,start+4<=bytes.count else{return nil}
+            let characters=bytes[start..<start+4]
+            guard characters.allSatisfy({(32...126).contains($0)}) else{return nil}
+            return String(bytes:characters.reversed(),encoding:.ascii)
+        }
+        func state(in record:Data)->PluginState? {MainStagePatch.pluginState(in:record)}
+        // Observed container signatures: GAME is a built-in processor, MELC the sampler
+        // host, PSDD a saved Audio Unit. Arbitrary bytes often spell UCuA by accident, so
+        // an unknown signature is still skipped rather than reported as a device.
         var found:[Device]=[],position=0
         while position+172<=bytes.count {
             defer{position+=1}
             guard Array(bytes[position..<position+4])==Array("UCuA".utf8) else{continue}
             let start=position+28,size=u32(start)
             guard size>=144,size<=bytes.count-start-8 else{continue}
-            let signature=String(bytes:bytes[start+140..<start+144],encoding:.ascii)
-            guard signature=="GAME" || signature=="MELC" else{continue}
+            guard let signature=String(bytes:bytes[start+140..<start+144],encoding:.ascii),
+                  signature=="GAME" || signature=="MELC" || signature=="PSDD" else{continue}
             let nameBytes=bytes[start+128..<start+140].prefix(while:{$0 != 0})
             guard !nameBytes.isEmpty,nameBytes.allSatisfy({(32...126).contains($0)}),let name=String(bytes:nameBytes,encoding:.ascii) else{continue}
             guard found.count<128 else{throw Failure.invalid("Too many channel-strip devices.")}
-            found.append(Device(name:name,offset:position,byteCount:size+36,format:signature!))
+            let type=signature=="PSDD" ? fourCC(start+144) : nil
+            let subtype=signature=="PSDD" ? fourCC(start+148) : nil
+            let audioUnit=type?.hasPrefix("au")==true ? type : nil
+            var device=Device(name:name,offset:position,byteCount:size+36,format:signature,
+                              audioUnitType:audioUnit,audioUnitSubtype:audioUnit == nil ? nil:subtype)
+            if signature=="PSDD" {
+                device.pluginState=state(in:Data(bytes[position..<min(bytes.count,position+size+36)]))
+            }
+            found.append(device)
             position=start+size+7
         }
         return found
@@ -161,6 +225,64 @@ enum MainStagePatch {
         }
         return result
     }
+    private static func fourCC(_ value:Int)->String? {
+        let bytes=(0..<4).map{UInt8((value >> (24-$0*8)) & 255)}
+        guard bytes.allSatisfy({(32...126).contains($0)}) else{return nil}
+        return String(bytes:bytes,encoding:.ascii)
+    }
+    /// The wrapper document itself, bounded. It is the Audio Unit class-info dictionary
+    /// MainStage stored, so it can be applied later without being interpreted here.
+    static func pluginStateValues(in record:Data)->[String:Any]? {
+        let xml=record.range(of:Data("<?xml".utf8)),binary=record.range(of:Data("bplist00".utf8))
+        let origins=[xml?.lowerBound,binary?.lowerBound].compactMap{$0}.sorted()
+        guard let origin=origins.first else{return nil}
+        let end:Data.Index
+        if xml?.lowerBound==origin {
+            guard let close=record.range(of:Data("</plist>".utf8),in:origin..<record.endIndex)?.upperBound else{return nil}
+            end=close
+        } else {end=record.endIndex}
+        guard end>origin,end-origin<=8_000_000 else{return nil}
+        return try? PropertyListSerialization.propertyList(from:record.subdata(in:origin..<end),options:[],format:nil) as? [String:Any]
+    }
+    /// Persistable form of the stored class info, matching the Audio Unit restore limit.
+    static func pluginStateData(in record:Data)->Data? {
+        guard let values=pluginStateValues(in:record),
+              let data=try? PropertyListSerialization.data(fromPropertyList:values,format:.binary,options:0),
+              data.count<=2_000_000 else{return nil}
+        return data
+    }
+    /// Read the plug-in-state wrapper inside a PSDD record. The vendor payload is only
+    /// measured and counted; its contents are never interpreted as code or applied.
+    static func pluginState(in record:Data)->PluginState? {
+        guard let values=pluginStateValues(in:record) else{return nil}
+        func number(_ key:String)->Int? {(values[key] as? NSNumber).map{$0.intValue}}
+        let vendor=values["jucePluginState"] as? Data
+        let magic=vendor.flatMap{payload->String? in
+            let head=payload.prefix(4)
+            guard head.count==4,head.allSatisfy({(32...126).contains($0)}) else{return nil}
+            return String(bytes:head,encoding:.ascii)
+        }
+        var state=PluginState(presetName:(values["name"] as? String).map{String($0.prefix(200))},
+                              componentType:number("type").flatMap(fourCC),
+                              componentSubtype:number("subtype").flatMap(fourCC),
+                              manufacturer:number("manufacturer").flatMap(fourCC),
+                              version:number("version"),stateBytes:vendor?.count ?? 0,
+                              stateMagic:magic,programCount:nil)
+        if let vendor,magic=="VC2!",vendor.count<=4_000_000 {
+            // Count the vendor bank's own records without decoding them. The delimiter
+            // check keeps a <programs> wrapper from being counted as a program.
+            let payload=vendor.dropFirst(min(9,vendor.count)),needle=Data("<program".utf8)
+            var programs=0,offset=payload.startIndex
+            while programs<4096,let range=payload.range(of:needle,in:offset..<payload.endIndex) {
+                let after=range.upperBound
+                let delimiter=after<payload.endIndex ? payload[after] : UInt8(ascii:">")
+                if delimiter==UInt8(ascii:" ") || delimiter==UInt8(ascii:">") || delimiter==UInt8(ascii:"/") {programs+=1}
+                offset=after
+            }
+            state.programCount=programs
+        }
+        return state
+    }
     static func inspect(_ patch:URL)throws->Report {
         guard patch.pathExtension.lowercased()=="patch",(try patch.resourceValues(forKeys:[.isDirectoryKey,.isSymbolicLinkKey])).isDirectory==true,
               (try patch.resourceValues(forKeys:[.isSymbolicLinkKey])).isSymbolicLink != true else{throw Failure.invalid("Choose a MainStage .patch folder.")}
@@ -186,6 +308,14 @@ enum MainStagePatch {
             result.channels.append(Channel(name:name,file:filename,sha256:digest(data),instruments:instruments,devices:deviceList,hasMappings:mappings,hasMIDIState:midi))
             if let family=result.channels.last?.unsupportedInstrumentFamily {
                 result.blockers.append("\(name): \(family) has no native StageKeys engine; no substitute instrument will be created.")
+            }
+            let audioUnits=result.channels.last?.thirdPartyAudioUnits ?? []
+            if !audioUnits.isEmpty {
+                let described=audioUnits.prefix(4).map{unit in
+                    unit.name+(unit.audioUnitIdentity.map{" (\($0))"} ?? "")
+                }.joined(separator:", ")
+                let retained=audioUnits.compactMap{$0.pluginState?.summary}.first.map{" Saved state: \($0)."} ?? ""
+                result.blockers.append("\(name): third-party Audio Unit \(described) is not translated; install the same Audio Unit version or retain the source."+retained)
             }
             result.preservedFiles[filename]=digest(data)
             // Retention is lossless; playback translation must be proven separately.
@@ -253,5 +383,64 @@ enum MainStagePatch {
             try encoder.encode(report).write(to:destination.appendingPathComponent("conversion-report.json"),options:.atomic)
             return report
         }catch{try? manager.removeItem(at:destination);throw error}
+    }
+}
+
+/// Matches the Audio Unit state a MainStage channel saved against the components
+/// installed on this machine. Matching is identity-only: no plug-in is loaded here,
+/// and the saved subtype is reported so a version swap is never silent.
+enum MainStageAudioUnit {
+    struct Match:Equatable {
+        var identity:ExternalAUIdentity
+        /// Class info in the form `ExternalInstruments` persists and restores.
+        var state:Data
+        /// False when the installed component has a different subtype than the save.
+        var exactSubtype:Bool
+        var savedIdentity:String
+        var savedVersion:Int?
+        var installedVersion:String? {identity.version}
+    }
+    /// Build the state an installed component would receive. The wrapper is the class
+    /// info document MainStage stored, so it is passed through byte-identically.
+    static func state(for device:MainStagePatch.Device,in data:Data)->Data? {
+        guard device.format=="PSDD" else{return nil}
+        let end=min(data.count,device.offset+device.byteCount)
+        guard end>device.offset else{return nil}
+        return MainStagePatch.pluginStateData(in:data.subdata(in:device.offset..<end))
+    }
+    /// Prefer an exact component triple; otherwise accept the same type, manufacturer
+    /// and display name, which is what a plug-in version bump changes.
+    static func match(_ device:MainStagePatch.Device,state:Data,installed:[ExternalAUIdentity])->Match? {
+        guard device.format=="PSDD",let saved=device.pluginState,
+              let type=saved.componentType.flatMap(code),
+              let manufacturer=saved.manufacturer.flatMap(code) else{return nil}
+        let subtype=saved.componentSubtype.flatMap(code)
+        let candidates=installed.filter {
+            $0.type==type && $0.manufacturer==manufacturer &&
+            $0.name.caseInsensitiveCompare(device.name) == .orderedSame
+        }
+        guard let identity=candidates.first(where:{$0.subtype==subtype}) ?? candidates.first else{return nil}
+        let exact=identity.subtype==subtype && identity.type==type && identity.manufacturer==manufacturer
+        // The host applies class info only when its component identity matches the
+        // installed component, so a version-changed match rewrites those three keys.
+        // The vendor payload is preserved byte-for-byte.
+        guard let restorable=exact ? state : rewritten(state,identity:identity) else{return nil}
+        return Match(identity:identity,state:restorable,exactSubtype:identity.subtype==subtype,
+                     savedIdentity:saved.identity ?? device.name,savedVersion:saved.version)
+    }
+    private static func rewritten(_ state:Data,identity:ExternalAUIdentity)->Data? {
+        guard var values=try? PropertyListSerialization.propertyList(from:state,options:[],format:nil) as? [String:Any] else{return nil}
+        values["type"]=NSNumber(value:identity.type)
+        values["subtype"]=NSNumber(value:identity.subtype)
+        values["manufacturer"]=NSNumber(value:identity.manufacturer)
+        guard let output=try? PropertyListSerialization.data(fromPropertyList:values,format:.binary,options:0),
+              output.count<=2_000_000 else{return nil}
+        return output
+    }
+    /// Four-character component codes are stored as their big-endian text value.
+    private static func code(_ text:String)->UInt32? {
+        let bytes=Array(text.utf8)
+        guard bytes.count==4 else{return nil}
+        return bytes.reduce(UInt32(0)){($0 << 8) | UInt32($1)}
     }
 }
