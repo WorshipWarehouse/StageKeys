@@ -22,6 +22,17 @@ enum StageKeysSampler {
         var layerCount:Int
         var amplitudeEnvelope:EXSNative.Envelope?
     }
+    /// `true` denotes the supported twelve-timbre velocity selector; `false`
+    /// denotes a looped full-range pad; nil means the map is unsafe for Tonic.
+    static func tonicVelocitySelector(_ map:Map)->Bool? {
+        guard map.layerCount>0,map.sampleCount>0,!map.zones.isEmpty,
+              map.zones.allSatisfy({(0...127).contains($0.low) && (0...127).contains($0.high) && $0.low<=$0.high && (1...127).contains($0.velocityLow) && (1...127).contains($0.velocityHigh) && $0.velocityLow<=$0.velocityHigh && (0...127).contains($0.root)}) else{return nil}
+        let selector=map.layerCount==1 && map.zones.count==12 && map.zones.allSatisfy{$0.low==36 && $0.high==47 && $0.velocityLow==$0.velocityHigh} && Set(map.zones.map{$0.velocityLow})==Set(1...12)
+        if selector{return true}
+        let normalVelocityZones=map.zones.filter{$0.low<=47 && $0.high>=36 && $0.velocityLow<=83 && $0.velocityHigh>=83}
+        let coversEveryPadNote = !normalVelocityZones.isEmpty && normalVelocityZones.allSatisfy(\.looped) && (36...47).allSatisfy{note in normalVelocityZones.contains{$0.low<=note && $0.high>=note}}
+        return coversEveryPadNote ? false:nil
+    }
     static func map(_ sound:ExternalSound,library:URL)throws->Map {
         guard sound.kind == .samplerPreset,let name=sound.fileName,name==URL(fileURLWithPath:name).lastPathComponent else{throw ExternalInstrumentError.unsupportedFormat}
         let file=library.appendingPathComponent(name)

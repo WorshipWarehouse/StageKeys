@@ -44,6 +44,14 @@ final class AudioController {
     func removePlaybackProbe(){engine.mainMixerNode.removeTap(onBus:0)}
     #endif
     func panic(channel:Int,preserveEffectTails:Bool=false) { if preserveEffectTails {sk_release_voices(synth,Int32(channel))} else {sk_panic_channel(synth,Int32(channel))}; externalRack?.panic(channel,preserveEffectTails:preserveEffectTails) }
+    /// Mark a sampler already installed directly by a transactional pad load so
+    /// the following control/effect configuration does not detach and reload it.
+    func adoptExternalSound(_ sound:ExternalSound?,channel:Int) {
+        externalSounds[channel]=sound
+        externalStates[channel]=nil
+        samplerAttacks[channel]=0
+        samplerHostCurves[channel]=sound?.nativeSampler?.rack.mainStageAmplitudeVelocityCurve
+    }
     var running: Bool { engine.isRunning }
     init() {
         #if os(macOS)
