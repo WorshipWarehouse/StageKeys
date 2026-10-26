@@ -1,5 +1,13 @@
 name: Release regression gates
-on: [push, pull_request, workflow_dispatch]
+# One run per commit. A branch push used to start a second, identical run
+# alongside the pull_request one, which doubled macOS runner load and reported
+# two check runs with the same required name for the same commit (GitHub treats
+# duplicate names as ambiguous). main is still verified on push.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
 permissions:
   contents: read
 concurrency:

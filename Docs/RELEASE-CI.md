@@ -1,6 +1,6 @@
 # Release regression gates
 
-Refs #22. Pull requests and pushes run universal macOS and iOS Simulator unsigned Release builds, artifact/content validation, the portable parser corpus, the complete default library/conversion/persistence/routing suite, and reverb AddressSanitizer/UndefinedBehaviorSanitizer tests. Jobs have bounded timeouts and obsolete runs cancel. Build logs are retained for 14 days; private samples, user data and instrument recordings are not uploaded.
+Refs #22. Pull requests run universal macOS and iOS Simulator unsigned Release builds, artifact/content validation, the portable parser corpus, the complete default library/conversion/persistence/routing suite, and reverb AddressSanitizer/UndefinedBehaviorSanitizer tests; a push to `main` runs the same set for the merged commit. Each commit gets exactly one run, so a required check name is reported once and stays unambiguous. Jobs have bounded timeouts and obsolete runs cancel. Build logs are retained for 14 days; private samples, user data and instrument recordings are not uploaded.
 
 Run `Tools/verify-release.sh mac /private/tmp/stagekeys-release-mac` or replace `mac` with `simulator` for the same artifact gate locally. The committed Xcode project is authoritative; no project regeneration or private sound-library checkout is needed. Tests generate original fixtures at runtime. Private MainStage/Steinway comparison fixtures are deliberately absent from CI.
 
