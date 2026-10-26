@@ -71,3 +71,16 @@ An exported folder contains Instrument.aupreset and Samples. StageKeys' Import S
 `PlanFreeArchive.py catalog.json StageKeysDataDirectory captureFolder outputFolder` creates a resumable queue for the installed archive. It checks every source against its stable library identity, records original host instruments and flags rhythmic/layered sounds for separate behavior review. `volume-NN-ready.json` includes only captures that exist and have not yet been installed. Run the converter against these manifests after capture finishes; regenerate the plan after conversion. A capture-ready file is not playable until audible validation succeeds.
 
 Capture filenames include volume and archive identity to avoid collisions. Converter jobs may include `sourceArchiveID` and optional `tags`; verified conversions then appear as Playable under their original MainStage Archive entry. Source patches and native entries remain separate. This queue does not automate MainStage or recreate its private synthesizers. Tone sampling does not preserve editable synthesis, arbitrary modulation or rhythmic behavior.
+
+# Saved Audio Unit state
+
+`Tools/ApplyMainStageAUState.swift` reports the Audio Unit class info a MainStage channel strip saved. With `--apply` it instantiates the matching installed component and prints the parameters the saved state changes. It never modifies the source patch, and without `--apply` it loads no plug-in.
+
+Build with the non-UI source list and native object files used by `Tests/test-library.sh`, replacing its test main with this tool, then run:
+
+```
+ApplyMainStageAUState "/path/to/selection.patch"          # report only
+ApplyMainStageAUState "/path/to/channel.cst" --apply      # apply and list changed parameters
+```
+
+A version-changed component is reported, not hidden: the saved subtype is printed next to the installed one, and the tool warns that parameter mapping between versions is unverified. State application settles asynchronously, so the tool waits before reading values back.

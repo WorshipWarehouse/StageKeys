@@ -119,6 +119,11 @@ enum MainStageProcessing {
         var independentReverbSlots=Set<Int>()
         for (slot,device) in devices.enumerated() {
             let end=min(data.count,device.offset+device.byteCount)
+            if device.format=="PSDD" {
+                let identity=device.audioUnitIdentity.map{" (\($0))"} ?? ""
+                let retained=device.pluginState.map{"; \($0.summary)"} ?? ""
+                draft.issues.append("\(device.name)\(identity): third-party Audio Unit plug-in state is not translated\(retained); install the same Audio Unit version or retain the source.");continue
+            }
             guard let range=data.range(of:Data("GAMETSPP".utf8),in:device.offset..<end),range.upperBound+8<=end else {
                 draft.issues.append("\(device.name): no supported native effect parameter record.");continue
             }
