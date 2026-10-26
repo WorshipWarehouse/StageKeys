@@ -1,5 +1,38 @@
 import Foundation
 
+/// Last-known-good session bytes. Call only on the serialized persistence executor.
+enum RecoverableSessionFile {
+    static func previous(_ url: URL) -> URL { url.appendingPathExtension("previous") }
+    static func read(_ url: URL) throws -> Data {
+        let values = try url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey])
+        guard values.isRegularFile == true, values.isSymbolicLink != true,
+              (values.fileSize ?? Int.max) <= 64_000_000 else { throw SetlistLibraryError.unsafeFile }
+        let data = try Data(contentsOf: url)
+        guard data.count <= 64_000_000 else { throw SetlistLibraryError.oversized }
+        return data
+    }
+    static func write(_ data: Data, to url: URL, validate: (Data) throws -> Void) throws {
+        try validate(data)
+        guard data.count <= 64_000_000 else { throw SetlistLibraryError.oversized }
+        if FileManager.default.fileExists(atPath: url.path) {
+            let old = try read(url)
+            try validate(old) // Never rotate corrupt or future-version data over the recovery copy.
+            if old != data { try old.write(to: previous(url), options: .atomic) }
+        }
+        try data.write(to: url, options: .atomic)
+    }
+    static func restore(_ url: URL, validate: (Data) throws -> Void) throws -> Data {
+        let recovered = try read(previous(url))
+        try validate(recovered)
+        if FileManager.default.fileExists(atPath: url.path) {
+            let damaged = try read(url)
+            try damaged.write(to: url.appendingPathExtension("damaged-" + UUID().uuidString), options: .atomic)
+        }
+        try recovered.write(to: url, options: .atomic)
+        return recovered
+    }
+}
+
 struct SetlistLibraryDescriptor: Identifiable, Equatable {
     let id: UUID
     let name: String
