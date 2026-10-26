@@ -70,6 +70,7 @@ final class PerformanceStore: ObservableObject {
     @Published var tonicTimbre=0 {didSet{if oldValue != tonicTimbre {restartTonic()}}}
     @Published var tonicSound:ExternalSound? {didSet{if oldValue != tonicSound {restartTonic()}}}
     @Published var tonicVelocitySelector=false
+    private var tonicLoadGeneration=UUID()
     var tonicLocked:Bool {patch.tonicState != nil}
     func toggleTonicPatchLock() {
         if tonicLocked {setlist.patches[selected].tonicState=nil}
@@ -156,24 +157,66 @@ final class PerformanceStore: ObservableObject {
         if let previous=tonic {stopTonicNotes(previous)}
         tonic=root;playTonicNotes(root)
     }
-    func setTonicInstrument(_ sound:ExternalSound) {
-        guard let root=audio.externalRack?.libraryURL else{return}
+    /// Validate a library preset before selection without copying its assets.
+    /// Only the already-supported looped-note map and twelve-timbre selector are
+    /// safe on the Tonic Pad; Audio Units are intentionally excluded.
+    private func tonicEligibility(_ sound:ExternalSound)throws->Bool {
+        guard sound.kind == .samplerPreset,let root=audio.externalRack?.libraryURL else {throw ExternalInstrumentError.unsupportedFormat}
+        let map=try StageKeysSampler.map(sound,library:root)
+        guard let velocitySelector=StageKeysSampler.tonicVelocitySelector(map) else {
+            throw MainStagePatch.Failure.invalid("This pad has an unsupported key/velocity selector. Choose a looped instrument covering MIDI 36–47 at normal velocity, or the supported twelve-timbre sampler.")
+        }
+        return velocitySelector
+    }
+    private func loadTonicSound(_ sound:ExternalSound, completion:@escaping(Result<Void,Error>)->Void) {
+        guard let rack=audio.externalRack else {completion(.failure(ExternalInstrumentError.missingFile));return}
+        let channel=15,previous=tonicSound,wasEnabled=tonic != nil,oldRoot=tonic,previousVelocitySelector=tonicVelocitySelector,previousTimbre=tonicTimbre
+        let generation=UUID();tonicLoadGeneration=generation
         do {
-            let map=try StageKeysSampler.map(sound,library:root)
-            let velocitySelector=map.zones.count==12 && map.zones.allSatisfy{$0.low==36 && $0.high==47 && $0.velocityLow==$0.velocityHigh} && Set(map.zones.map(\.velocityLow))==Set(1...12)
-            guard velocitySelector || (36...47).allSatisfy({note in map.zones.contains{$0.looped && $0.low<=note && $0.high>=note && $0.velocityLow<=83 && $0.velocityHigh>=83}}) else{throw MainStagePatch.Failure.invalid("This pad has an unsupported key/velocity selector. Choose a looped instrument covering MIDI 36–47 at normal velocity, or the supported twelve-timbre sampler.")}
-            tonicVelocitySelector=velocitySelector;tonicTimbre=0;tonicSound=sound;save()
-        }catch{message=error.localizedDescription}
+            let velocitySelector=try tonicEligibility(sound)
+            rack.load(sound,channel:channel){ [weak self] result in
+                guard let self,self.tonicLoadGeneration==generation else{return}
+                switch result {
+                case .success:
+                    self.audio.adoptExternalSound(sound,channel:channel)
+                    self.tonicVelocitySelector=velocitySelector;self.tonicTimbre=0;self.tonicSound=sound
+                    if wasEnabled,let oldRoot {self.tonic=oldRoot;self.playTonicNotes(oldRoot)}
+                    self.save();completion(.success(()))
+                case .failure(let error):
+                    if let previous {
+                        rack.load(previous,channel:channel){ [weak self] restore in
+                            guard let self,self.tonicLoadGeneration==generation else{return}
+                            switch restore {
+                            case .success:
+                                self.audio.adoptExternalSound(previous,channel:channel)
+                                self.tonicVelocitySelector=previousVelocitySelector;self.tonicTimbre=previousTimbre
+                                if wasEnabled,let oldRoot {self.tonic=oldRoot;self.playTonicNotes(oldRoot)}
+                                self.message=error.localizedDescription
+                            case .failure(let restoreError):
+                                self.audio.adoptExternalSound(nil,channel:channel)
+                                self.tonicVelocitySelector=previousVelocitySelector;self.tonicTimbre=previousTimbre
+                                self.tonicSound=nil;self.tonic=nil
+                                self.message="Could not restore the previous Tonic Pad sound: "+restoreError.localizedDescription
+                            }
+                            completion(.failure(error))
+                        }
+                    } else {self.audio.adoptExternalSound(nil,channel:channel);self.tonicSound=nil;self.tonic=nil;self.tonicVelocitySelector=false;self.tonicTimbre=0;self.message=error.localizedDescription;completion(.failure(error))}
+                }
+            }
+        }catch {message=error.localizedDescription;completion(.failure(error))}
+    }
+    func setTonicInstrument(_ sound:ExternalSound) {
+        loadTonicSound(sound){_ in}
+    }
+    func tonicSoundEligibility(_ sound:ExternalSound)->String? {
+        do {_ = try tonicEligibility(sound);return nil}
+        catch {return error.localizedDescription}
     }
     func importTonicInstrument(_ url:URL,samples:URL) {
         guard ["exs","aupreset"].contains(url.pathExtension.lowercased()) else{message="Choose a sampler instrument (.aupreset or .exs).";return}
         guard let sound=importLibrarySound(url,sampleRoot:samples) else{return}
-        if let index=librarySounds.firstIndex(where:{$0.sound?.fileName==sound.fileName}) {
-            var entries=librarySounds;entries[index].collection="Tonic Pads"
-            do{try SoundLibrary(url:saveURL.deletingLastPathComponent().appendingPathComponent("sound-library.json")).write(entries);librarySounds=entries}
-            catch{message=error.localizedDescription;return}
-        }
-        setTonicInstrument(sound)
+        guard let eligibility=tonicSoundEligibility(sound) else { setTonicInstrument(sound);return }
+        message=eligibility
     }
     func useBuiltinTonic(){tonicVelocitySelector=false;tonicTimbre=0;tonicSound=nil;save()}
     let midiFX = MIDIFXProcessor()
