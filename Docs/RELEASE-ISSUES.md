@@ -27,6 +27,7 @@ Created 23 October 2026. These issues cover all 56 unchecked gates in PUBLIC-REL
 - [[P1] Finish diagnostics, onboarding, support and private beta](https://github.com/WorshipWarehouse/StageKeys/issues/23)
 - [[Later] Build an independent StageKeys AI patch builder](https://github.com/WorshipWarehouse/StageKeys/issues/24)
 - [[P1] Add user-controlled gain matching for native instruments and AUs](https://github.com/WorshipWarehouse/StageKeys/issues/25)
+- [Decide and document a project-wide license for StageKeys-authored code](https://github.com/WorshipWarehouse/StageKeys/issues/64)
 - [[P1] Verify and complete native MainStage archive conversion](https://github.com/WorshipWarehouse/StageKeys-Library/issues/1)
 - [[P1] Complete portable optional-library installation and integrity checks](https://github.com/WorshipWarehouse/StageKeys-Library/issues/2)
 - [[P1] Audit library names, source tags, presets and content provenance](https://github.com/WorshipWarehouse/StageKeys-Library/issues/3)
