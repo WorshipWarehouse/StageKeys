@@ -31,6 +31,12 @@ Created 23 October 2026. These issues cover all 56 unchecked gates in PUBLIC-REL
 - [[P1] Complete portable optional-library installation and integrity checks](https://github.com/WorshipWarehouse/StageKeys-Library/issues/2)
 - [[P1] Audit library names, source tags, presets and content provenance](https://github.com/WorshipWarehouse/StageKeys-Library/issues/3)
 
+## Verified PR stack — 23 October 2026
+
+PRs #26, #27 and #29 merged in that order after universal macOS and iOS Simulator Release builds, the complete offline library suite, private Steinway realtime checks, hosted OB-Xd state/editor/audio checks and real virtual-CoreMIDI routing tests. GitHub restacked #27; its tree was verified identical. #29 merge conflicts were resolved to the exact fully tested combined tree.
+
+Issues #2, #12 and #15 remain open for the physical device, third-party compatibility and prolonged-load gates documented in their v54 evidence files. No physical iPad execution, measured key-to-speaker latency or eight-hour soak is claimed. The subsequent dense reverb Tone/Low Cut smoothing change is a separate issue #11 follow-up; it does not close the broader effect/UI acceptance criteria.
+
 ## Focused follow-ups — 24 October 2026
 
 See [PR readiness and remaining acceptance gates](PR-READINESS-2026-10-24.md) for the audit, fixes, CI blocker and new issues #52–#56/#58.

@@ -18,6 +18,20 @@ enum MainStagePatch {
         var devices:[Device]
         var hasMappings:Bool
         var hasMIDIState:Bool
+        var nativeInstrumentStatus: String {
+            if let family = unsupportedInstrumentFamily {
+                return "Archive only: \(family) has no native StageKeys engine. Use an installed compatible AU or retain the source."
+            }
+            return instruments.isEmpty ? "Archive only: no supported sampler reference identified." : "Sampler candidate: original EXS and samples required; processing compatibility must be reviewed."
+        }
+        var unsupportedInstrumentFamily: String? {
+            for device in devices {
+                let name = device.name.lowercased().filter { $0.isLetter || $0.isNumber }
+                if let family = ["es2":"ES2", "retrosynth":"Retro Synth", "retrosyn":"Retro Synth",
+                                 "sculpture":"Sculpture", "sculpt":"Sculpture", "alchemy":"Alchemy"] [name] { return family }
+            }
+            return nil
+        }
     }
     struct Report:Codable,Equatable {
         var version=1
@@ -150,6 +164,9 @@ enum MainStagePatch {
             let mappings=data.range(of:Data("MAPlugInParameterMapping".utf8)) != nil || data.range(of:Data("MABaseplateParameterMapping".utf8)) != nil
             let midi=channel["MIDITransform"] != nil
             result.channels.append(Channel(name:name,file:filename,sha256:digest(data),instruments:instruments,devices:deviceList,hasMappings:mappings,hasMIDIState:midi))
+            if let family=result.channels.last?.unsupportedInstrumentFamily {
+                result.blockers.append("\(name): \(family) has no native StageKeys engine; no substitute instrument will be created.")
+            }
             result.preservedFiles[filename]=digest(data)
             // Retention is lossless; playback translation must be proven separately.
             // Merely finding an EXS filename is not a complete patch conversion.
