@@ -26,8 +26,8 @@ xcodebuild -project "$repo/StageKeys.xcodeproj" -scheme "$scheme" -configuration
   -derivedDataPath "$build" "${args[@]}" CODE_SIGNING_ALLOWED=NO build 2>&1 | tee "$build/build.log"
 python3 "$repo/Tools/check-distribution.py" --bundle "$bundle"
 if [[ "$platform" == mac ]]; then
-  /usr/bin/lipo -verify_arch arm64 "$bundle/Contents/MacOS/$executable"
-  /usr/bin/lipo -verify_arch x86_64 "$bundle/Contents/MacOS/$executable"
+  /usr/bin/lipo "$bundle/Contents/MacOS/$executable" -verify_arch arm64
+  /usr/bin/lipo "$bundle/Contents/MacOS/$executable" -verify_arch x86_64
   test -f "$bundle/Contents/Info.plist"
 else
   test -x "$bundle/$executable"
