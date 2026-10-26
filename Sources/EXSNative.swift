@@ -325,7 +325,9 @@ enum EXSNative {
         let controls=try voiceControls(parts,notes:&notes)
         if amplitude != nil {
             notes.insert("EXS amplitude attack, decay, sustain and release are translated using the source time curve. Velocity-dependent attack uses the source endpoints. Envelope shape and group offset interaction remain approximate; see the separate filter/modulation notes.")
-        } else if parts.contains(where:{$0.kind==4}) {notes.insert("Original EXS global parameter data is retained. The amplitude envelope layout is unsupported; a fallback envelope is used. Global filter/modulation remain unmapped.")}
+        } else if parts.contains(where:{$0.kind==4}) {
+            throw MainStagePatch.Failure.invalid("The EXS global amplitude envelope layout is unsupported. Original data is preserved; no fallback envelope or flattened instrument was created.")
+        }
         let ungrouped=zones.contains{$0.body.count>=92 && u32($0.body,88)==0xffffffff}
         var activeGroups=groups
         if groups.isEmpty || ungrouped {

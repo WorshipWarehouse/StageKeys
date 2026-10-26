@@ -15,6 +15,13 @@ struct SettingsEditor: View {
                 }.padding(12).frame(width: 210).background(StageTheme.base)
 
                 Form {
+                    if store.sessionRecoveryRequired || store.settingsRecoveryRequired {
+                        Section("Session Recovery") {
+                            Text("Saved data could not be loaded. Automatic saves are blocked to preserve the original files.").foregroundStyle(.orange)
+                            Button("Recover Previous Session") { store.recoverPreviousSession() }
+                            Text("Restores the last known good copy and retains the damaged file. If no recovery copy exists, restore a portable backup or contact support.").font(.caption)
+                        }
+                    }
                     switch section {
                     case "Audio":
                         Section("Audio Output") {

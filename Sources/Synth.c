@@ -17,7 +17,7 @@ typedef struct { float b0,b1,b2,a1,a2,z1,z2; } Biquad;
 // Independent StageKeys dense reverb network; no third-party DSP in this state.
 // DenseReverb/dense_prepare/dense_process: MIT, see Licenses/StageKeys-Dense-Reverb-MIT.txt.
 typedef struct {
- float low[8],dc[8],offset[8],feedback[8],cache[12],mix[2],crossInput;
+ float low[8],dc[8],offset[8],feedback[8],cache[12],mix[2],damping[2],crossInput;
  double oscSin[8],oscCos[8],stepSin[8],stepCos[8];
  int ready;
 } DenseReverb;
@@ -260,19 +260,20 @@ static void dense_prepare(EffectState*e,int kind,double rate){
   r->stepSin[i]=sin(step);r->stepCos[i]=cos(step);
   if(!r->ready){r->oscSin[i]=sin(i*1.71);r->oscCos[i]=cos(i*1.71);}
  }
- if(!r->ready){r->mix[0]=p[ambient?8:7];r->mix[1]=p[ambient?9:8];}
+ if(!r->ready){r->damping[0]=e->coef[0];r->damping[1]=e->coef[1];r->mix[0]=p[ambient?8:7];r->mix[1]=p[ambient?9:8];}
  memcpy(r->cache,p,12*sizeof(float));r->ready=1;
 }
 static float dense_process(SKSynth*s,int l,int k,float x,float dry,double rate){
  EffectState*e=&s->effect[l][k];DenseReverb*r=&e->reverb;float*p=e->p;
  int ambient=s->fxKind[l][k]==15,capacity=s->delayLength/14,pos=s->delayPosition[l][k]%capacity;
  float*buffer=s->delay[l][k];
+ for(int i=0;i<2;i++)r->damping[i]+=e->coef[7]*(e->coef[i]-r->damping[i]);
  x+=r->crossInput;
  int prepos=s->predelayPosition[l][k];float pre=p[ambient?0:1];
  float input=pre>0?tap_capacity(s->predelay[l][k],prepos,rate*pre*.001f,s->predelayLength):x;
  s->predelay[l][k][prepos]=x;s->predelayPosition[l][k]=(prepos+1)%s->predelayLength;
  // Low cut removes excitation mud; a separate gentle DC blocker acts in feedback.
- e->z[6]+=e->coef[0]*(input-e->z[6]);input-=e->z[6];
+ e->z[6]+=r->damping[0]*(input-e->z[6]);input-=e->z[6];
  float*chorus=buffer+12*capacity;chorus[pos]=input;
  float amount=p[ambient?6:5],hz=p[ambient?7:6],phase=s->fxPhase[l][k];
  if(amount>0 && hz>0)input=input*(1-amount)+amount*tap_capacity(chorus,pos,rate*(.016f+.006f*sinf(phase+s->stereoSide*.73f)),capacity);
@@ -287,7 +288,7 @@ static float dense_process(SKSynth*s,int l,int k,float x,float dry,double rate){
   double old=r->oscSin[i];r->oscSin[i]=old*r->stepCos[i]+r->oscCos[i]*r->stepSin[i];r->oscCos[i]=r->oscCos[i]*r->stepCos[i]-old*r->stepSin[i];
   float modulation=ambient?p[5]*rate*.00065f*r->oscSin[i]:0;
   float delayed=tap_capacity(buffer+i*capacity,pos,r->offset[i]*(1+s->stereoSide*.013f)+modulation,capacity);
-  r->low[i]+=e->coef[1]*(delayed-r->low[i]);
+  r->low[i]+=r->damping[1]*(delayed-r->low[i]);
   r->dc[i]+=e->coef[6]*(r->low[i]-r->dc[i]);
   v[i]=(r->low[i]-r->dc[i])*r->feedback[i];sum+=v[i];
   wet+=delayed*(i%2?-.35355339f:.35355339f);
@@ -297,7 +298,7 @@ static float dense_process(SKSynth*s,int l,int k,float x,float dry,double rate){
   buffer[i*capacity+pos]=fabsf(value)>8 ? 8*tanhf(value/8):value;
  }
  wet=wet*.7f+early*(ambient?.08f:.5f);
- e->z[1]+=e->coef[1]*(wet-e->z[1]);wet=e->z[1];
+ e->z[1]+=r->damping[1]*(wet-e->z[1]);wet=e->z[1];
  float slew=e->coef[7];r->mix[0]+=slew*(p[ambient?8:7]-r->mix[0]);r->mix[1]+=slew*(p[ambient?9:8]-r->mix[1]);
  e->z[5]=wet;s->fxPhase[l][k]=fmod(phase+TAU*hz/rate,TAU);s->delayPosition[l][k]=(pos+1)%capacity;
  return dry*r->mix[0]+wet*r->mix[1];
