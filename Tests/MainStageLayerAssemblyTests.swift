@@ -27,6 +27,17 @@ import Foundation
         for invalid in [Array(entries.prefix(1)),entries+[entries[0]]] {
             do {_ = try MainStagePatch.assembledChannels(report,entries:invalid);assertionFailure("Incomplete/ambiguous patch assembled")}catch{}
         }
+        // A channel can also be converted by hosting the Audio Unit it saved.
+        let hostedChannel=MainStagePatch.Channel(name:"Pad",file:"pad.cst",sha256:String(repeating:"a",count:64),instruments:[],devices:[.init(name:"OB-Xd",offset:0,byteCount:1,format:"PSDD")],hasMappings:false,hasMIDIState:false)
+        assert(hostedChannel.isConvertible,"A saved Audio Unit makes a channel convertible")
+        let hostedReport=MainStagePatch.Report(sourceArchiveID:archive,name:"Hosted Patch",channels:[hostedChannel],blockers:[],preservedFiles:[:])
+        var hostedLayer=Layer(name:"Pad",instrument:-1,gain:1)
+        hostedLayer.external=ExternalSound(kind:.audioUnit,name:"OB-Xd",component:ExternalAUIdentity(type:0x61756d75,subtype:0x4f627864,manufacturer:0x44445350,name:"OB-Xd"))
+        hostedLayer.pluginState=Data(repeating:7,count:32)
+        let hostedEntry=LibrarySound(id:"mainstage-channel-"+hostedChannel.sha256+"-fixture",name:"Pad",collection:"MainStage Patches",sound:hostedLayer.external,layer:hostedLayer,sourceArchiveID:archive,conversionNotes:["hosted OB-Xd"])
+        let hostedPatch=try MainStagePatch.assembledChannels(hostedReport,entries:[hostedEntry])
+        assert(hostedPatch.layers.first?.external?.kind == .audioUnit && hostedPatch.layers.first?.pluginState==hostedLayer.pluginState,"A hosted Audio Unit must assemble with its saved state")
+        do {_ = try MainStagePatch.assembledChannels(hostedReport,entries:[]);assertionFailure("An unconverted Audio Unit channel assembled")}catch{}
         print("PASS: layered conversion preserves source order, effects, bypass, macros/MIDI, gain/EQ and persistent warnings; missing/ambiguous channels rejected")
     }
 }
