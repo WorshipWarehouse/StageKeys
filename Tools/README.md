@@ -72,6 +72,35 @@ An exported folder contains Instrument.aupreset and Samples. StageKeys' Import S
 
 Capture filenames include volume and archive identity to avoid collisions. Converter jobs may include `sourceArchiveID` and optional `tags`; verified conversions then appear as Playable under their original MainStage Archive entry. Source patches and native entries remain separate. This queue does not automate MainStage or recreate its private synthesizers. Tone sampling does not preserve editable synthesis, arbitrary modulation or rhythmic behavior.
 
+# Sampler calibration evidence
+
+[Docs/SAMPLER-CALIBRATION-GATE.md](../Docs/SAMPLER-CALIBRATION-GATE.md) defines the steady-level gate that compares a converted sound against its MainStage reference. `Tools/verify-sampler-calibration.py` validates a declared measurement document and never adjusts audio or gain:
+
+```sh
+python3 Tools/verify-sampler-calibration.py evidence.json   # notes 60/74/86, velocities 1–127, pedal off/on, isolated/chord
+python3 Tools/verify-sampler-calibration.py smoke.json --notes 60,86 --velocities 38,127
+```
+
+The default matrix is 1524 measurements, and a document must declare exactly the grid it is checked against — a row outside it is refused rather than ignored. A smaller explicitly requested grid is useful during calibration but does not establish full-velocity coverage. Schema 1 requires matching original instrument, sample and zone-map hashes for both hosts, StageKeys output headroom declared separately from source/channel/bus gain, and a selected source zone per measurement. The report echoes the declared setup and the measured level error after only that headroom allowance, and it exits 0 only when every row is present and within 1 dB, 1 when rows are missing or the error exceeds it, and 2 when the evidence itself is invalid.
+
+Declaring the setup is not the same as being isolated, so the checker validates it instead of accepting its presence. Evidence that claims dry steady levels while channel EQ or effects are active is refused rather than re-reported as a smaller error, as is a non-finite or boolean source/channel/bus gain, or one outside a ±48 dB plausibility window. Source gain and bus gain may legitimately be nonzero; the refusal is for undeclared, hidden or compensating values.
+
+This measures steady RMS only. Attack/decay, layer transitions, timbre and physical latency need separate reviewed recordings, and passing the gate is not a parity claim. The checker's own tests are synthetic, and the evidence plus the audio it refers to stay outside this repository.
+
+# REA analysis records
+
+[Docs/REA-WORKFLOW.md](../Docs/REA-WORKFLOW.md) describes how the external [REA](https://github.com/morluto/rea) toolchain is used to derive field meaning from MainStage itself, under the evidence and licensing rules in [AGENTS.md](../AGENTS.md). Keep artifacts and records in the gitignored `Analysis/` folder:
+
+```sh
+python3 Tools/rea_probe.py probe /path/to/Selected.cst --out Analysis/evidence \
+  --application "Sunday Keys 2.5.2 (MainStage)" --application-version 2.5.2 \
+  --license-scope "Demo Mode" --authorization "user-owned local installation" \
+  --rea-command "npx -y rea-agents@6.8.0"
+python3 Tools/rea_probe.py verify Analysis/evidence/*.evidence.json
+```
+
+`probe` hashes the artifact, records bounded container-literal observations and captures REA Evidence beside the record; `verify` rejects a record with no provenance, an inference citing no observation, a malformed digest, or an artifact stored inside the repository. Neither command converts a patch, launches MainStage or claims parity.
+
 # Saved Audio Unit state
 
 `Tools/ApplyMainStageAUState.swift` reports the Audio Unit class info a MainStage channel strip saved. With `--apply` it instantiates the matching installed component and prints the parameters the saved state changes. It never modifies the source patch, and without `--apply` it loads no plug-in.
