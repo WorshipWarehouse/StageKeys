@@ -532,7 +532,9 @@ final class ExternalInstrumentRack {
                 let file = libraryURL.appendingPathComponent(name)
                 guard FileManager.default.fileExists(atPath: file.path) else { throw ExternalInstrumentError.missingFile }
                 let sampler = AVAudioUnitSampler()
-                try SamplerRendering.configure(sampler,offline:engine.isInManualRenderingMode,resident:sound.nativeSampler != nil)
+                // A single-file sample must be resident in memory. Left streaming, the sampler
+                // emits ~250 ms of digital silence every ~640 ms once the note is held.
+                try SamplerRendering.configure(sampler,offline:engine.isInManualRenderingMode,resident:sound.nativeSampler != nil || sound.kind == .sample)
                 if sound.kind == .soundBank {
                     try sampler.loadSoundBankInstrument(at: file, program: sound.program, bankMSB: sound.bankMSB, bankLSB: sound.bankLSB)
                 } else if sound.kind == .samplerPreset {
