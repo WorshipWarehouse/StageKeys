@@ -105,7 +105,7 @@ Every top-level `.patch` is read, nested template patches are skipped, and each 
 python3 Tools/catalog-tags.py catalog.json source-sound-tags.json
 ```
 
-Only `TagType` and `Sound` entries are read — no samples, presets, account tables or processing settings. When a saved copy shares a name with its template, the template's tags win. The output maps each sound to category, type, timbre, articulation, note range, source model, complexity and the Recommended flag; unknown facets are ignored, absent ones fall back to `Other`/`Sampler`, and `inferred` stays false because nothing is guessed. A catalog over 16 MB is refused.
+Only `TagType` and `Sound` entries are read — no samples, presets, account tables or processing settings. Original templates win over saved copies, and repeated tag names are listed once. A facet the export does not declare stays unknown rather than becoming an authored clear: optional keys are omitted, and a missing `Source/Model` is labelled `Not Tagged` instead of asserting a model. A value the app would refuse, such as an unrecognized Note Range or Complexity name, is dropped from that row and printed, so one bad value cannot discard a sound's metadata; entries with unusable names are skipped and counted, a malformed export exits 2 with `Unsupported catalog export`, and `inferred` stays false because every copied value was authored. A catalog over 16 MB is refused.
 
 # Velocity capture comparison
 
