@@ -41,6 +41,7 @@
 		4B70B005AA6F28A4E77CB9C7 /* Synth.c in Sources */ = {isa = PBXBuildFile; fileRef = 37F196176F4E92FA646FA2EA /* Synth.c */; };
 		4C308C0C5E3F7E9E6EC6BB9D /* PluginInterface.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C67BD4C25A3354E8DE3CFFF /* PluginInterface.swift */; };
 		4C5AA93AE12DB2A8234B7BAA /* StageKeys.icns in Resources */ = {isa = PBXBuildFile; fileRef = C77E58B7DF2BC246493953B0 /* StageKeys.icns */; };
+		AA11BB22CC33DD44EE55FF01 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AA11BB22CC33DD44EE55FF02 /* Assets.xcassets */; };
 		505732FD6179E1817782959A /* StageKeysApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7829D37C585858D39206C231 /* StageKeysApp.swift */; };
 		50F554293EBFFB230FE0FA40 /* SettingsViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2BE6DDCBC4000BC7F71BDEE /* SettingsViews.swift */; };
 		512E9B98BC21BDCB6202E78A /* SettingsViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2BE6DDCBC4000BC7F71BDEE /* SettingsViews.swift */; };
@@ -166,6 +167,7 @@
 		C5A92EE64D708FD2F3756A43 /* IBMPlexSans-SemiBold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "IBMPlexSans-SemiBold.ttf"; sourceTree = "<group>"; };
 		C5F13CB955DB56C7E098A4C8 /* CreamCoat.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = CreamCoat.c; sourceTree = "<group>"; };
 		C77E58B7DF2BC246493953B0 /* StageKeys.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; path = StageKeys.icns; sourceTree = "<group>"; };
+		AA11BB22CC33DD44EE55FF02 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		CA27432EBE775B734A1C07E5 /* SetlistLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetlistLibrary.swift; sourceTree = "<group>"; };
 		CFB410416D53204E71F7C3D6 /* EXS-Parser-MIT.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = "EXS-Parser-MIT.md"; sourceTree = "<group>"; };
 		D4B91BEF3486CE615B3CCBF7 /* Airwindows-MIT.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = "Airwindows-MIT.txt"; sourceTree = "<group>"; };
@@ -211,6 +213,7 @@
 		02ADDEE164C9CFD63F4FEFFD /* Resources */ = {
 			isa = PBXGroup;
 			children = (
+				AA11BB22CC33DD44EE55FF02 /* Assets.xcassets */,
 				C77E58B7DF2BC246493953B0 /* StageKeys.icns */,
 			);
 			path = Resources;
@@ -416,6 +419,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				AA11BB22CC33DD44EE55FF01 /* Assets.xcassets in Resources */,
 				C676D610CDA685ABB7E711AC /* Airwindows-MIT.txt in Resources */,
 				E896DBFDA10D53C590280E7F /* StageKeys-Dense-Reverb-MIT.txt in Resources */,
 				62E6379C6EF8630C450EFBCB /* EXS-Parser-MIT.md in Resources */,

@@ -144,11 +144,14 @@ Only layers still carrying default channel settings, no effects, no imported rac
 
 ```sh
 swiftc Tools/GenerateAppIcon.swift -o /tmp/GenerateAppIcon
-/tmp/GenerateAppIcon Resources/StageKeys.iconset
+/tmp/GenerateAppIcon Resources/StageKeys.iconset \
+  Resources/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png
 iconutil -c icns Resources/StageKeys.iconset -o Resources/StageKeys.icns
 ```
 
-It draws into an explicit bitmap of each named size, so `icon_16x16.png` is 16 px and `icon_512x512@2x.png` is 1024 px on any display; the earlier `lockFocus` path doubled those on a Retina screen and left the file names describing the wrong size. `Resources/StageKeys.icns` is compiled from that folder and is what the macOS target bundles, so regenerate both together when the artwork changes. The committed set is this tool's own output: a fresh run reproduces all ten files byte-for-byte.
+It draws into an explicit bitmap of each named size, so `icon_16x16.png` is 16 px and `icon_512x512@2x.png` is 1024 px on any display; the earlier `lockFocus` path doubled those on a Retina screen and left the file names describing the wrong size. `Resources/StageKeys.icns` is compiled from that folder and is what the macOS target bundles.
+
+The optional second path writes the iOS app icon: the same drawing full-bleed at 1024 px with no alpha channel, because iOS masks its own corners and rejects transparency. It is the only image in `Resources/Assets.xcassets`, the catalog the iOS target compiles, and the gradient extends to the canvas edges there so the corner the macOS rounded square cuts away is not left flat. The committed iconset and app icon are this tool's own output: a fresh run reproduces them byte-for-byte.
 
 # REA analysis records
 
