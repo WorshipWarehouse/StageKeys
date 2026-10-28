@@ -3,8 +3,11 @@ import Foundation
 let destination=URL(fileURLWithPath:CommandLine.arguments[1],isDirectory:true)
 try FileManager.default.createDirectory(at:destination,withIntermediateDirectories:true)
 func icon(_ size:Int)throws->Data {
-    let image=NSImage(size:NSSize(width:size,height:size));image.lockFocus()
-    guard let ctx=NSGraphicsContext.current?.cgContext else{fatalError("Missing graphics context")}
+    // Draw into an explicit size×size bitmap so the pixel dimensions follow the file name on any display, including Retina ones where lockFocus would render at twice the requested size.
+    guard let bitmap=NSBitmapImageRep(bitmapDataPlanes:nil,pixelsWide:size,pixelsHigh:size,bitsPerSample:8,samplesPerPixel:4,hasAlpha:true,isPlanar:false,colorSpaceName:.deviceRGB,bytesPerRow:0,bitsPerPixel:0),
+          let context=NSGraphicsContext(bitmapImageRep:bitmap) else{fatalError("Missing graphics context")}
+    NSGraphicsContext.saveGraphicsState();NSGraphicsContext.current=context
+    let ctx=context.cgContext
     ctx.scaleBy(x:CGFloat(size)/1024,y:CGFloat(size)/1024)
     ctx.setShadow(offset:CGSize(width:0,height:-18),blur:30,color:NSColor.black.withAlphaComponent(0.3).cgColor)
     let background=CGPath(roundedRect:CGRect(x:66,y:66,width:892,height:892),cornerWidth:188,cornerHeight:188,transform:nil)
@@ -30,8 +33,8 @@ func icon(_ size:Int)throws->Data {
         ctx.setFillColor(NSColor(red:0.10,green:0.11,blue:0.19,alpha:1).cgColor)
         ctx.addPath(CGPath(roundedRect:CGRect(x:CGFloat(263+i*138),y:364,width:82,height:184),cornerWidth:15,cornerHeight:15,transform:nil));ctx.fillPath();ctx.setShadow(offset:.zero,blur:0,color:nil)
     }
-    image.unlockFocus()
-    guard let tiff=image.tiffRepresentation,let bitmap=NSBitmapImageRep(data:tiff),let png=bitmap.representation(using:.png,properties:[:]) else{fatalError("PNG encoding failed")}
+    context.flushGraphics();NSGraphicsContext.restoreGraphicsState()
+    guard let png=bitmap.representation(using:.png,properties:[:]) else{fatalError("PNG encoding failed")}
     return png
 }
 for size in [16,32,128,256,512] {

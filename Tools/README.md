@@ -145,9 +145,10 @@ Only layers still carrying default channel settings, no effects, no imported rac
 ```sh
 swiftc Tools/GenerateAppIcon.swift -o /tmp/GenerateAppIcon
 /tmp/GenerateAppIcon Resources/StageKeys.iconset
+iconutil -c icns Resources/StageKeys.iconset -o Resources/StageKeys.icns
 ```
 
-It writes `icon_16x16` through `icon_512x512@2x`, and `Resources/StageKeys.icns` is the compiled iconset. Generate into a scratch folder and compare before replacing the committed files: on a Retina display the current script draws the same artwork at twice the pixel dimensions its names promise (`icon_16x16.png` comes out 32 px), so a fresh run here does not reproduce the committed, correctly sized set.
+It draws into an explicit bitmap of each named size, so `icon_16x16.png` is 16 px and `icon_512x512@2x.png` is 1024 px on any display; the earlier `lockFocus` path doubled those on a Retina screen and left the file names describing the wrong size. `Resources/StageKeys.icns` is compiled from that folder and is what the macOS target bundles, so regenerate both together when the artwork changes. The committed set is this tool's own output: a fresh run reproduces all ten files byte-for-byte.
 
 # REA analysis records
 
