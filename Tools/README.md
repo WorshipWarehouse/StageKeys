@@ -113,3 +113,18 @@ ApplyMainStageAUState "/path/to/channel.cst" --apply      # apply and list chang
 ```
 
 A version-changed component is reported, not hidden: the saved subtype is printed next to the installed one, and the tool warns that parameter mapping between versions is unverified. State application settles asynchronously, so the tool waits before reading values back.
+
+# Distribution provenance gate
+
+[Docs/DISTRIBUTION-PROVENANCE.md](../Docs/DISTRIBUTION-PROVENANCE.md) records what the app distribution excludes: the private sound library, imported MainStage/Ableton samples, user setlists and AU state. `Tools/check-distribution.py` is the enforceable read-only gate for that exclusion, and it checks either a source checkout or a built app:
+
+```sh
+python3 Tools/check-distribution.py --repo /path/to/checkout        # tracked plus would-be-committed untracked files
+python3 Tools/check-distribution.py --bundle /path/to/StageKeys.app # a built application bundle
+```
+
+It refuses private content by file name, extension or path component: sampled-audio extensions (`.wav`, `.aif`, `.aifc`, `.aiff`, `.sd2`, `.caf`, `.flac`, `.mp3`, `.m4a`, `.sf2`, `.dls`); sampler instruments, channel strips and host devices/sets (`.exs`, `.aupreset`, `.cst`, `.alp`, `.adg`, `.als`); MainStage documents (any `.patch` or `.concert` bundle); the data files the app writes for the user (`sound-library.json`, `manifest.json`, `setlist.json`, `setlist-v<N>-backup.json`); and anything under `Imported Sounds`. It exits 1 and lists the offending paths. A bundle must be an existing directory rather than a symlink, contain an `Info.plist` and carry the four retained notices (`Airwindows-MIT.txt`, `EXS-Parser-MIT.md`, `StageKeys-Dense-Reverb-MIT.txt`, `OFL.txt`); each missing notice is named in its own failure.
+
+This is a name-based backstop against accidental commits, not proof that no private content is present: a file the app renames, such as a per-identity file inside a setlist library, is invisible to it. `--repo` checks the checkout as a plain `git add -A` would commit it — tracked files plus untracked files that the checkout's `.gitignore` does not exclude — so an untracked `Song.als`, `note.aifc` or `setlist-v3-backup.json` is refused instead of passing until someone stages it; gitignored private audio stays out of scope on purpose, because committing it already needs `git add -f`. It needs a real Git repository, failing with Git's own error rather than a verdict if the path is not one. `--bundle` walks files and directories alike, so an empty `.patch` or `.concert` bundle inside a shipped app is refused as well as a populated one. One target is required: with neither flag the tool prints usage and exits 2 instead of checking nothing.
+
+`--repo` is the first step of `Tools/verify-release.sh`, which then checks the Release bundle it just built with `--bundle`, so the `builds` CI job runs both modes for `mac` and `simulator`; `Tests/test-distribution.py` exercises the refusals — untracked content, an empty MainStage document directory, a missing notice, a symlink bundle and a no-target run — against disposable synthetic checkouts in the `processing` job. `Tools/verify-public-mac.sh` runs the bundle check before signature, hardened-runtime, stapled-notarization and Gatekeeper verification. Passing this gate proves exclusion from the artifact, not redistribution rights and not a valid signature: public signing/notarization and clean-machine installation remain unverified.
