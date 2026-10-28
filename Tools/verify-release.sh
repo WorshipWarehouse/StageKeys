@@ -25,6 +25,7 @@ esac
 xcodebuild -project "$repo/StageKeys.xcodeproj" -scheme "$scheme" -configuration Release \
   -derivedDataPath "$build" "${args[@]}" CODE_SIGNING_ALLOWED=NO build 2>&1 | tee "$build/build.log"
 python3 "$repo/Tools/check-distribution.py" --bundle "$bundle"
+icon=
 if [[ "$platform" == mac ]]; then
   /usr/bin/lipo "$bundle/Contents/MacOS/$executable" -verify_arch arm64
   /usr/bin/lipo "$bundle/Contents/MacOS/$executable" -verify_arch x86_64
@@ -32,5 +33,9 @@ if [[ "$platform" == mac ]]; then
 else
   test -x "$bundle/$executable"
   test -f "$bundle/Info.plist"
+  # The iOS target ships Resources/Assets.xcassets; a build that loses it still
+  # launches, so the artifact itself has to be checked for a real compiled icon.
+  python3 "$repo/Tools/check-app-icon.py" --bundle "$bundle"
+  icon=', and a declared, compiled app icon'
 fi
-echo "PASS: $platform Release artifact, executable, platform metadata and library-free contents"
+echo "PASS: $platform Release artifact, executable, platform metadata and library-free contents$icon"

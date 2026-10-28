@@ -153,6 +153,14 @@ It draws into an explicit bitmap of each named size, so `icon_16x16.png` is 16 p
 
 The optional second path writes the iOS app icon: the same drawing full-bleed at 1024 px with no alpha channel, because iOS masks its own corners and rejects transparency. It is the only image in `Resources/Assets.xcassets`, the catalog the iOS target compiles, and the gradient extends to the canvas edges there so the corner the macOS rounded square cuts away is not left flat. The committed iconset and app icon are this tool's own output: a fresh run reproduces them byte-for-byte.
 
+`Tools/check-app-icon.py` is the release gate for what actually ships. A build that loses the iOS catalog still compiles, links and launches, and only the home screen shows the blank default tile, so the artifact is checked instead of the source:
+
+```sh
+python3 Tools/check-app-icon.py --bundle /path/to/StageKeysMobile.app
+```
+
+It requires the `CFBundleIcons` primary icon declaration with a name and fallback files, an Icon Image of that name at least 1024×1024 in `Assets.car` that is opaque, and the loose `@2x`/`@3x` fallback PNGs the declarations name. Every fallback is decoded, so a file that exists but carries a single flat colour, a wrong pixel size for its name or transparent pixels is refused rather than counted as present. `--assetutil` overrides the catalog reader for tests. It exits 1 when the artifact would ship without an icon and 2 on unusable arguments, which makes the iOS bundle check in `Tools/verify-release.sh` refuse such a build.
+
 # REA analysis records
 
 [Docs/REA-WORKFLOW.md](../Docs/REA-WORKFLOW.md) describes how the external [REA](https://github.com/morluto/rea) toolchain is used to derive field meaning from MainStage itself, under the evidence and licensing rules in [AGENTS.md](../AGENTS.md). Keep artifacts and records in the gitignored `Analysis/` folder:
