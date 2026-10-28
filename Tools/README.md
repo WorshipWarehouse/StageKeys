@@ -87,6 +87,68 @@ Declaring the setup is not the same as being isolated, so the checker validates 
 
 This measures steady RMS only. Attack/decay, layer transitions, timbre and physical latency need separate reviewed recordings, and passing the gate is not a parity claim. The checker's own tests are synthetic, and the evidence plus the audio it refers to stay outside this repository.
 
+# Preset archive audit
+
+`Tools/audit-mainstage-presets.py` inventories a captured MainStage archive without opening MainStage, loading a plug-in or changing samples:
+
+```sh
+python3 Tools/audit-mainstage-presets.py /path/to/archive /path/to/sound-library.json > audit.json
+```
+
+Every top-level `.patch` is read, nested template patches are skipped, and each channel strip is hashed and matched against the library's `mainstage-channel-<sha256>-<n>` IDs. A channel with no match is `archived-only`; an unreadable, oversized, symlinked or path-escaping document is `blocked` with its reason rather than dropped. The summary counts patches, channels, native-channel occurrences, patches with complete coverage and blocked patches, and its `limitations` block says coverage means a retained playable channel, not verified full-patch audio, routing or effect parity.
+
+# Library tag extraction
+
+`Tools/catalog-tags.py` turns an already exported personal catalog into the optional `source-sound-tags.json` described in [LIBRARY-CURATION.md](../Docs/LIBRARY-CURATION.md):
+
+```sh
+python3 Tools/catalog-tags.py catalog.json source-sound-tags.json
+```
+
+Only `TagType` and `Sound` entries are read — no samples, presets, account tables or processing settings. When a saved copy shares a name with its template, the template's tags win. The output maps each sound to category, type, timbre, articulation, note range, source model, complexity and the Recommended flag; unknown facets are ignored, absent ones fall back to `Other`/`Sampler`, and `inferred` stays false because nothing is guessed. A catalog over 16 MB is refused.
+
+# Velocity capture comparison
+
+`Tools/compare-velocity-captures.py` reproduces the host-velocity A/B analysis in [MAINSTAGE-MIGRATION.md](../Docs/MAINSTAGE-MIGRATION.md). The changed capture is the reference and the neutral one the baseline:
+
+```sh
+python3 Tools/compare-velocity-captures.py changed.wav neutral.wav --output report.json
+```
+
+It reads 16/24/32-bit integer and 32/64-bit float WAV at 44.1, 48, 88.2 or 96 kHz, keeps stereo intact, finds onsets, aligns each take by FFT cross-correlation, and reports `changedToNeutralDB`, `normalizedResidual` and `lagSamples` per note and velocity. The default sequence is notes 60/74/86 at velocities 38/64/83/102, changeable with `--notes` and `--velocities`. It needs `numpy` and never resamples or writes audio. A wrong onset count, non-WAVE or full-scale input, or a mismatched rate or channel count exits 1; invalid arguments exit 2. A paired synthetic 4 dB cut measured 4.003 dB with a 0.0007 normalized residual.
+
+# Reverb comparison corpus
+
+`Tools/render-reverb-comparison.c` renders the corpus behind [REVERB-ENGINES-v53.md](../Docs/REVERB-ENGINES-v53.md). Both DSP translation units are required:
+
+```sh
+clang -std=c11 -O3 Tools/render-reverb-comparison.c Sources/Synth.c Sources/CreamCoat.c -lm -o /tmp/render-reverb
+/tmp/render-reverb /path/to/empty-output-folder
+```
+
+It synthesizes piano-like, organ-like, pad, synth and layered chords and renders each through the legacy and Dense engines in both core settings: 20 twelve-second stereo 48 kHz `.f32` renders, about 88 MB, with no library audio. One CSV row per render goes to stdout (`instrument,kind,dense,cpuSeconds,peak,rms`), and a non-finite sample stops the run. The peak and RMS columns reproduce the recorded corpus exactly; `cpuSeconds` is process time on one machine, so the `-O3` build and this Mac's 0.058 s worst case describe a build and a host, not a realtime deadline.
+
+# Factory voicing application
+
+`Tools/ApplyFactoryVoicing.swift` applies the observed Room voicing to pristine native Felt Piano modules in one named patch, as recorded in [PIANO-FIDELITY.md](../Docs/PIANO-FIDELITY.md). Build with the non-UI source list and native object files used by `Tests/test-library.sh`, replacing its test main with this tool, then run:
+
+```
+ApplyFactoryVoicing "$HOME/Library/Application Support/StageKeys" "Piano Patch" NEW-backup.json report.json
+```
+
+Only layers still carrying default channel settings, no effects, no imported rack and no MIDI program are changed, and only when their sample file matches an `SK App Felt Piano` library entry; gains, routing and other patches are untouched. The backup path must not exist yet, and `setlist.json` is rewritten only when something changed. It reports through `fatalError`, so a missing argument or an unreadable data directory ends in a crash message and a signal exit rather than a usage line and a clean non-zero exit.
+
+# App icon generation
+
+`Tools/GenerateAppIcon.swift` draws the StageKeys icon with AppKit:
+
+```sh
+swiftc Tools/GenerateAppIcon.swift -o /tmp/GenerateAppIcon
+/tmp/GenerateAppIcon Resources/StageKeys.iconset
+```
+
+It writes `icon_16x16` through `icon_512x512@2x`, and `Resources/StageKeys.icns` is the compiled iconset. Generate into a scratch folder and compare before replacing the committed files: on a Retina display the current script draws the same artwork at twice the pixel dimensions its names promise (`icon_16x16.png` comes out 32 px), so a fresh run here does not reproduce the committed, correctly sized set.
+
 # REA analysis records
 
 [Docs/REA-WORKFLOW.md](../Docs/REA-WORKFLOW.md) describes how the external [REA](https://github.com/morluto/rea) toolchain is used to derive field meaning from MainStage itself, under the evidence and licensing rules in [AGENTS.md](../AGENTS.md). Keep artifacts and records in the gitignored `Analysis/` folder:
