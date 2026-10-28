@@ -6,6 +6,10 @@ import tempfile
 tool = Path(__file__).resolve().parents[1] / 'Tools/check-distribution.py'
 notices = ('Airwindows-MIT.txt', 'EXS-Parser-MIT.md', 'StageKeys-Dense-Reverb-MIT.txt', 'OFL.txt')
 
+# Naming no target would otherwise report PASS after checking nothing.
+bare = subprocess.run(['python3', str(tool)], capture_output=True)
+assert bare.returncode == 2 and b'--repo' in bare.stderr and not bare.stdout, bare.stdout + bare.stderr
+
 def check(bundle, expected):
     result = subprocess.run(['python3', str(tool), '--bundle', str(bundle)], capture_output=True)
     assert (result.returncode == 0) == expected, result.stdout + result.stderr
@@ -31,6 +35,10 @@ with tempfile.TemporaryDirectory() as temporary:
     child = next(iter(document.iterdir()))
     child.unlink()
     document.rmdir()
+    empty = resources / 'Empty.concert'
+    empty.mkdir()
+    check(app, False)
+    empty.rmdir()
     link = root / 'Linked.app'
     link.symlink_to(app, target_is_directory=True)
     check(link, False)
@@ -57,4 +65,28 @@ repo_check({'Set.concert/displayState.plist': b'fixture private MainStage concer
 repo_check({'Song.als': b'fixture private Ableton set'}, False)
 repo_check({'Samples/soft.sd2': b'fixture private sample'}, False)
 repo_check({'note.aifc': b'fixture private sample'}, False)
-print('PASS: missing bundles, missing notices, embedded samples, symlink bundles and private library, setlist, MainStage and Ableton content rejected')
+
+def checkout_check(staged, untracked, expected, ignore=''):
+    with tempfile.TemporaryDirectory() as temporary:
+        checkout = Path(temporary)
+        subprocess.run(['git', 'init', '-q', str(checkout)], check=True, capture_output=True)
+        (checkout / '.gitignore').write_text(ignore)
+        for name, content in untracked.items():
+            target = checkout / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(content)
+        for name, content in staged.items():
+            target = checkout / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(content)
+            subprocess.run(['git', '-C', str(checkout), 'add', '-f', name], check=True, capture_output=True)
+        result = subprocess.run(['python3', str(tool), '--repo', str(checkout)], capture_output=True)
+        message = ','.join(list(staged) + list(untracked)) + result.stdout.decode() + result.stderr.decode()
+        assert (result.returncode == 0) == expected, message
+
+# An untracked private file is what a plain `git add -A` would commit next, so it is
+# refused; an ignored one needs `git add -f` and deliberately stays out of scope.
+checkout_check({'Sources/Model.swift': b'fixture source'}, {'note.aifc': b'fixture private sample'}, False)
+checkout_check({'Sources/Model.swift': b'fixture source'}, {'Samples/soft.wav': b'fixture private sample'}, True, ignore='*.wav\n')
+checkout_check({'Sources/Model.swift': b'fixture source'}, {'Sources/Extra.swift': b'fixture source'}, True)
+print('PASS: no-target runs, missing notices, embedded samples, empty MainStage document directories, symlink bundles and private library, setlist, MainStage and Ableton content rejected')

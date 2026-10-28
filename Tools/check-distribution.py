@@ -5,12 +5,19 @@ Docs/DISTRIBUTION-PROVENANCE.md excludes the private sound library, imported
 MainStage/Ableton material, user setlists and AU state from the distribution.
 Sampled audio and instrument formats, MainStage documents and the data files the
 app writes for the user are refused by file name, extension or path component, in
-the source checkout and in a built bundle. These are name-based backstops against
-accidental commits: private content the app renames, such as a per-identity
-setlist-library file, is not detectable by name here.
+the source checkout and in a built bundle. A source checkout is checked as a
+plain `git add -A` would commit it: tracked files plus untracked files that the
+checkout's .gitignore does not exclude. That exclusion is deliberate, because
+private audio gitignored by the project needs `git add -f` to be committed at
+all. One target must be named; with neither flag the gate would check nothing.
+These are name-based backstops against accidental commits: private content the
+app renames, such as a per-identity setlist-library file, is not detectable by
+name here.
 """
 import argparse,pathlib,subprocess
 p=argparse.ArgumentParser();p.add_argument('--repo',type=pathlib.Path);p.add_argument('--bundle',type=pathlib.Path);args=p.parse_args()
+if not args.repo and not args.bundle:
+ p.error('name --repo and/or --bundle: this gate checks nothing without a target')
 # Sampled audio (.aifc, .sd2 are AIFF-C and Sound Designer II), sampler instruments,
 # channel strips and host devices/sets.
 forbidden={'.caf','.wav','.aif','.aifc','.aiff','.sd2','.flac','.mp3','.m4a','.sf2','.dls','.exs','.aupreset','.cst','.alp','.adg','.als'}
@@ -24,17 +31,21 @@ def private(path):
          or (name.startswith('setlist-v') and name.endswith('-backup.json'))
          or 'Imported Sounds' in path.parts
          or any(part.lower().endswith(document_suffixes) for part in path.parts))
+def git(repo,*list_args):
+ return [x for x in subprocess.check_output(['git','-C',str(repo),'ls-files','-z',*list_args]).decode().split('\0') if x]
 paths=[]
-if args.repo:paths += [pathlib.Path(x) for x in subprocess.check_output(['git','-C',str(args.repo),'ls-files','-z']).decode().split('\0') if x]
+if args.repo:
+ # Untracked, not ignored paths are the ones `git add -A` would stage, so they are in scope.
+ paths += [pathlib.Path(x) for x in git(args.repo)+git(args.repo,'--others','--exclude-standard')]
 if args.bundle:
  if not args.bundle.is_dir() or args.bundle.is_symlink():
   raise SystemExit('Bundle must be an existing app directory, not a symlink')
  if not (args.bundle/'Contents'/'Info.plist').is_file() and not (args.bundle/'Info.plist').is_file():
   raise SystemExit('Bundle has no application Info.plist')
- bundle_paths = [x.relative_to(args.bundle) for x in args.bundle.rglob('*') if x.is_file()]
- paths += bundle_paths
+ entries = list(args.bundle.rglob('*'))
+ paths += [x.relative_to(args.bundle) for x in entries]
  for notice in ('Airwindows-MIT.txt','EXS-Parser-MIT.md','StageKeys-Dense-Reverb-MIT.txt','OFL.txt'):
-  if not any(x.name == notice for x in bundle_paths):
+  if not any(x.is_file() and x.name == notice for x in entries):
    raise SystemExit('Required bundled license missing: '+notice)
 bad=[str(x) for x in paths if private(x)]
 if bad:raise SystemExit('Private library, user and vendor assets must not be committed or shipped:\n'+'\n'.join(bad))
