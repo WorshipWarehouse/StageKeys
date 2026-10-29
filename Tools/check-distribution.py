@@ -20,9 +20,9 @@ if not args.repo and not args.bundle:
  p.error('name --repo and/or --bundle: this gate checks nothing without a target')
 # Sampled audio (.aifc, .sd2 are AIFF-C and Sound Designer II), sampler instruments,
 # channel strips and host devices/sets.
-forbidden={'.caf','.wav','.aif','.aifc','.aiff','.sd2','.flac','.mp3','.m4a','.sf2','.dls','.exs','.aupreset','.cst','.alp','.adg','.als'}
+forbidden={'.caf','.wav','.aif','.aifc','.aiff','.sd2','.flac','.mp3','.m4a','.sf2','.dls','.exs','.aupreset','.cst','.alp','.adg','.als','.stagekeyspack'}
 # MainStage documents are bundles, so match the path component as well as a plain file name.
-document_suffixes=('.patch','.concert')
+document_suffixes=('.patch','.concert','.stagekeyspack')
 # Files the app writes into its own data directory for the user.
 user_files={'sound-library.json','manifest.json','setlist.json'}
 def private(path):

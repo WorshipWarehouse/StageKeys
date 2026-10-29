@@ -56,7 +56,7 @@ struct StageButtonStyle: ButtonStyle {
 }
 enum StageSheet: Identifiable {
     case importSounds, settings, patch, newPatch, renamePatch, patchLibrary, transpose, tempo, setlists, learn, tonic
-    case sound(Int), browser(Int), effect(Int,Int), snapshot(Int), midi(Int), note(Int)
+    case sound(Int), plugin(Int), browser(Int), effect(Int,Int), snapshot(Int), midi(Int), note(Int)
     var id: String { String(describing: self) }
 }
 struct PerformanceView: View {
@@ -105,7 +105,11 @@ struct PerformanceView: View {
         }
         .onAppear { store.start() }
         .tint(StageTheme.selected)
-        .sheet(item: $sheet) { destination in
+        .sheet(item: $sheet, onDismiss: {
+            DispatchQueue.main.async {
+                if let index=store.takePluginInterfaceRequest() { sheet = .plugin(index) }
+            }
+        }) { destination in
             Group {
                 switch destination {
                 case .importSounds: SoundImportView()
@@ -121,6 +125,7 @@ struct PerformanceView: View {
                 case .tonic: TonicSettingsEditor()
                 case .sound(let index): SoundEditor(index: index, initial: store.patch.layers[index])
                 case .browser(let index): SoundBrowser(index: index)
+                case .plugin(let index): PluginInterface(index:index)
                 case .midi(let index): MIDIEffectEditor(index: index)
                 case .effect(let index, let slot): EffectEditor(index: index, slot: slot, initial: store.patch.layers[index].effects[slot])
                 case .note(let index): SnapshotNoteEditor(index: index, initial: store.patch.snapshots[index])

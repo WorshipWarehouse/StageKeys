@@ -577,6 +577,7 @@ final class PerformanceStore: ObservableObject {
         for l in patch.layers { if let d = l.midiDestinationID { for cc: UInt8 in [64,123,120] { sendMIDI(d, 0xb0 | UInt8(l.midiOutputChannel), cc, 0) } } }
         outputNotes.removeAll(); held.removeAll(); sustain = false; metronome = false; if preserveTonic {audio.sustain(false,layers:patch.layers);for channel in 0..<15 {audio.panic(channel:channel,preserveEffectTails:preserveEffectTails)}} else {tonic = nil;audio.panic()} }
     func choose(_ index: Int) {
+        pluginInterfaceRequest=nil
         guard !patchLock, setlist.patches.indices.contains(index) else { return }
         cancelAudition(); cancelTransition(); panic(preserveTonic:true,preserveEffectTails:!setlist.patches[index].silencePrevious); capturePluginStates(); selected = index; activeSnapshot = nil
         if patch.silencePrevious { panic(preserveTonic:true) }
@@ -886,7 +887,7 @@ final class PerformanceStore: ObservableObject {
             }
         case 0xc0:
             if let index=setlist.patches.indices.first(where:{setlist.patches[$0].programChangeEnabled == true && setlist.patches[$0].programChangeNumber == Int(a)}) { choose(index) }
-            else if setlist.patches.indices.contains(Int(a)),setlist.patches[Int(a)].programChangeEnabled == nil { choose(Int(a)) }
+            // Missing legacy flags are unconfigured, never an implicit index mapping.
         default: break
         }
     }
@@ -950,6 +951,29 @@ final class PerformanceStore: ObservableObject {
     private func sendMIDI(_ destination: Int32, _ status: UInt8, _ a: UInt8, _ b: UInt8) {
         do { try midiOutput?.send(destinationID: destination, status: status, data1: a, data2: b) }
         catch { message = error.localizedDescription }
+    }
+    private struct PluginInterfaceRequest {
+        var patchID:UUID
+        var layerID:UUID
+        var index:Int
+        var sound:ExternalSound
+    }
+    private var pluginInterfaceRequest:PluginInterfaceRequest?
+    /// Called only after committing a library selection, never during audition.
+    func requestPluginInterface(_ index:Int) {
+        pluginInterfaceRequest=nil
+        guard !patchLock,patch.layers.indices.contains(index),
+              let sound=patch.layers[index].external,sound.kind == .audioUnit else{return}
+        pluginInterfaceRequest=PluginInterfaceRequest(patchID:patch.id,layerID:patch.layers[index].id,index:index,sound:sound)
+    }
+    /// Consume once after the library sheet dismisses. Never open a replacement.
+    func takePluginInterfaceRequest()->Int? {
+        guard let request=pluginInterfaceRequest else{return nil}
+        pluginInterfaceRequest=nil
+        guard !patchLock,patch.id==request.patchID,patch.layers.indices.contains(request.index),
+              patch.layers[request.index].id==request.layerID,
+              patch.layers[request.index].external==request.sound else{return nil}
+        return request.index
     }
     /// Keep Audio Unit edits made in the instrument interface. The channel editor
     /// runs inside an audition, so `capturePluginStates` deliberately skips this
