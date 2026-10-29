@@ -1,0 +1,9 @@
+# Sound catalog persistence and recovery
+
+Refs #20 and #8. Catalog saves now retain the previous validated catalog as `sound-library.json.previous`, using the same validated atomic rotation as session files. Existing catalog decoding/migration and optional user tag metadata still apply. Invalid or unreadable primary catalogs block catalog writes; an empty in-memory browser after a failed startup load cannot overwrite the original file or recovery copy.
+
+Settings shows **Sound Catalog Recovery** after startup failure, with **Recover Previous Sound Catalog**. Recovery validates the previous catalog, preserves the damaged primary under a unique `.damaged-<UUID>` filename, and restores the backup. It updates the browser without changing current patches, plug-in state, original instruments or samples. A previous backup may predate the latest edit; the damaged file is retained for investigation. Files that had no successful save under this version may have no recovery copy: restore a library backup in that case. No fallback catalog is silently substituted.
+
+Normal catalog reads check regular-file identity and the 16 MB size limit before opening, then read bounded chunks with a total byte cap. Optional source tag metadata has a separate 2 MB bound. Live and dangling catalog symlinks are rejected. Shared recovery also refuses unsafe primaries and invalid backups. Filesystem access and space to preserve the damaged file are required.
+
+`CatalogRecoveryTests` checks startup flags, refused empty overwrites, backup preservation, explicit store recovery, current-patch preservation, sample hashes, oversized damaged catalogs and symlink/invalid-backup refusal. The default release corpus includes this generated-fixture test. Installed user libraries are not used or modified by regression checks. This is one persistence gate; full schema/undo and clean-device portable restore remain open.

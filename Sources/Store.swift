@@ -380,6 +380,7 @@ final class PerformanceStore: ObservableObject {
     private var legacyData: Data?
     @Published private(set) var sessionRecoveryRequired = false
     @Published private(set) var settingsRecoveryRequired = false
+    @Published private(set) var libraryRecoveryRequired = false
     var patch: Patch { setlist.patches[selected] }
     var hasUnavailableLegacyVoices:Bool {patch.layers.contains{$0.instrument>=0 && $0.external==nil && $0.midiDestinationID==nil}}
     init() {
@@ -391,7 +392,7 @@ final class PerformanceStore: ObservableObject {
             mainStageImportReport=try? JSONDecoder().decode(MainStagePatch.Report.self,from:data)
         }
         do { librarySounds = try SoundLibrary(url: base.appendingPathComponent("sound-library.json")).read() }
-        catch { message = "Could not read sound library: \(error.localizedDescription)" }
+        catch { libraryRecoveryRequired=true;message = "Could not read sound library: \(error.localizedDescription). Catalog writes are blocked to preserve it. Open Settings to recover the previous catalog." }
         if FileManager.default.fileExists(atPath: saveURL.path) {
             do { let data = try RecoverableSessionFile.read(saveURL); let loaded = try JSONDecoder().decode(Setlist.self, from: data); setlist = try loaded.upgraded(); if loaded.version < 4 { legacyData = data; legacyVersion = loaded.version } }
             catch { sessionRecoveryRequired = true; message = "Could not load the saved setlist: \(error.localizedDescription). Automatic saves are blocked to preserve it. Open Settings to recover the previous session." }
@@ -1349,6 +1350,13 @@ final class PerformanceStore: ObservableObject {
                 guard try JSONDecoder().decode(SessionSettings.self, from: $0).validate() else { throw SetlistError.invalid }
             } }
         catch { message = "Could not save: \(error.localizedDescription)" }
+    }
+    func recoverPreviousLibrary() {
+        do {
+            librarySounds=try SoundLibrary(url:saveURL.deletingLastPathComponent().appendingPathComponent("sound-library.json")).recoverPrevious()
+            libraryRecoveryRequired=false
+            message="Previous sound catalog restored. Damaged catalog bytes were retained; samples and current patches were not changed."
+        } catch {message="Could not recover the sound catalog: \(error.localizedDescription). Existing files were retained."}
     }
     func recoverPreviousSession() {
         do {
