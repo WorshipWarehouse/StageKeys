@@ -84,6 +84,12 @@ import Foundation
         assert(MainStageAudioUnit.match(stateDevice,state:savedState ?? Data(),installed:exact)?.exactSubtype==true)
         let exactValues=(try? PropertyListSerialization.propertyList(from:MainStageAudioUnit.match(stateDevice,state:savedState ?? Data(),installed:exact)?.state ?? Data(),options:[],format:nil)) as? [String:Any]
         assert((exactValues?["subtype"] as? NSNumber)?.uint32Value==0x4f627864,"An exact match must keep the saved identity")
+        var renamed=exact;renamed[0].name="Renamed Instrument"
+        assert(MainStageAudioUnit.match(stateDevice,state:savedState ?? Data(),installed:renamed)?.exactSubtype==true,"Exact component identity must survive a display-name change")
+        var other=installed[0];other.subtype=0x4f627834
+        assert(MainStageAudioUnit.match(stateDevice,state:savedState ?? Data(),installed:installed+[other])==nil,"Ambiguous same-name versions must not pick the first installed component")
+        assert(MainStageAudioUnit.match(stateDevice,state:savedState ?? Data(),installed:[other]+installed)==nil,"Ambiguity must not depend on enumeration order")
+        assert(MainStageAudioUnit.match(stateDevice,state:savedState ?? Data(),installed:installed+renamed)?.exactSubtype==true,"An exact identity must win over name-only candidates")
         let foreign=[ExternalAUIdentity(type:0x61756d75,subtype:0x4f627833,manufacturer:0x11111111,name:"OB-Xd")]
         assert(MainStageAudioUnit.match(stateDevice,state:savedState ?? Data(),installed:foreign)==nil,"A different manufacturer is not the same plug-in")
         assert(MainStageAudioUnit.match(stateDevice,state:savedState ?? Data(),installed:[])==nil)
