@@ -1,0 +1,1126 @@
+{
+  "scope": "50 StageKeys PRs plus two merged Live PRs; source/ancestry review, not full hardware/DSP certification",
+  "main": "ab34fd910555dc2dc556382f311614b090f739dc",
+  "integration_head": "074dedd9b474c27550d47c9fe1bb6daced426ac3",
+  "integration_squash": "62dd46b",
+  "identical_tree": "88b333e9399a461f370569e7af1a57c5fe2b0b35",
+  "closed_count": 18,
+  "rows": [
+    {
+      "pr": 90,
+      "title": "Keep keyboard startup Program Change from selecting unconfigured patches",
+      "state": "OPEN",
+      "head": "9671eb9b11c2554d0b074966d0ad95b8a66ed4b6",
+      "verdict": "Retain for protected review; not an approval based solely on status",
+      "files": [
+        "Docs/PROGRAM-CHANGE-OPT-IN.md",
+        "Sources/Editors.swift",
+        "Sources/Store.swift",
+        "Tests/ProgramChangeOptInTests.swift",
+        "Tests/test-library.sh"
+      ],
+      "extra_commits_not_in_integration": []
+    },
+    {
+      "pr": 86,
+      "title": "Restore production MIDI plug-and-play regression coverage",
+      "state": "OPEN",
+      "head": "3a632ff4f0e1405076c23d39469d0534dc526594",
+      "verdict": "Retain for protected review; not an approval based solely on status",
+      "files": [
+        "Tests/PlugAndPlayTests.swift",
+        "Tests/test-library.sh"
+      ],
+      "extra_commits_not_in_integration": []
+    },
+    {
+      "pr": 84,
+      "title": "Fix ClipDist control precision without removing automation ramps",
+      "state": "OPEN",
+      "head": "64e70b8dcc77c92c2039c24bf815779a13b78e01",
+      "verdict": "Retain for protected review; not an approval based solely on status",
+      "files": [
+        "Docs/CLIP-CONTROL-PRECISION.md",
+        "Sources/Synth.c",
+        "Tests/ClipDistAutomationTests.c",
+        "Tests/MainStageEffectAudioTests.c",
+        "Tests/test-reverb.sh"
+      ],
+      "extra_commits_not_in_integration": []
+    },
+    {
+      "pr": 83,
+      "title": "Gate EQ bandwidth conversion contracts",
+      "state": "OPEN",
+      "head": "9c44dfbea26ae143e78175ebb7e588e8b80e83fa",
+      "verdict": "Retain for protected review; not an approval based solely on status",
+      "files": [
+        "Tests/test-library.sh"
+      ],
+      "extra_commits_not_in_integration": []
+    },
+    {
+      "pr": 81,
+      "title": "Integrate reviewed gates and requalify sample gain after dropout repair",
+      "state": "OPEN",
+      "head": "b048165a9d7404ed1f2acfc11572f3ddc001b5fc",
+      "verdict": "Retain for protected review; not an approval based solely on status",
+      "files": [
+        ".github/workflows/distribution.yml",
+        "Docs/LOCAL-VERIFICATION.md",
+        "Docs/RELEASE-CI.md",
+        "Docs/REVIEW-2026-10-29.json",
+        "Docs/REVIEW-2026-10-29.md",
+        "Resources/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png",
+        "Resources/Assets.xcassets/AppIcon.appiconset/Contents.json",
+        "Resources/Assets.xcassets/Contents.json",
+        "Resources/StageKeys.icns",
+        "Resources/StageKeys.iconset/icon_128x128.png",
+        "Resources/StageKeys.iconset/icon_128x128@2x.png",
+        "Resources/StageKeys.iconset/icon_16x16.png",
+        "Resources/StageKeys.iconset/icon_16x16@2x.png",
+        "Resources/StageKeys.iconset/icon_256x256.png",
+        "Resources/StageKeys.iconset/icon_256x256@2x.png",
+        "Resources/StageKeys.iconset/icon_32x32.png",
+        "Resources/StageKeys.iconset/icon_32x32@2x.png",
+        "Resources/StageKeys.iconset/icon_512x512.png",
+        "Resources/StageKeys.iconset/icon_512x512@2x.png",
+        "StageKeys.xcodeproj/project.pbxproj",
+        "Tests/run-local-library.py",
+        "Tests/test-app-icon.py",
+        "Tests/test-library.sh",
+        "Tools/GenerateAppIcon.swift",
+        "Tools/README.md",
+        "Tools/check-app-icon.py",
+        "Tools/verify-release.sh",
+        "project.yml"
+      ],
+      "extra_commits_not_in_integration": []
+    },
+    {
+      "pr": 80,
+      "title": "Keep imported single-file samples resident so playback never streams gaps",
+      "state": "MERGED",
+      "head": "56d2f6324906cf1c4c66f7035d411cfe7c9ba21f",
+      "verdict": "Keep; no full-PR revert justified by this audit",
+      "files": [
+        "Sources/ExternalInstruments.swift",
+        "Tests/ImportedSampleContinuityTests.swift",
+        "Tests/test-library.sh"
+      ],
+      "extra_commits_not_in_integration": []
+    },
+    {
+      "pr": 78,
+      "title": "Test the MainStage archive audit against its documented refusals",
+      "state": "MERGED",
+      "head": "2b04400a78c9d9dff40ecbb38897f04a0c2ce163",
+      "verdict": "Keep; no full-PR revert justified by this audit",
+      "files": [
+        ".github/workflows/distribution.yml",
+        "Tests/test-audit-mainstage-presets.py"
+      ],
+      "extra_commits_not_in_integration": []
+    },
+    {
+      "pr": 77,
+      "title": "Run the orphaned DSP and import regressions in the default library gate",
+      "state": "OPEN",
+      "head": "38259f32d116302e2ebd5794e139b357abfb5915",
+      "verdict": "Already incorporated in pending #81; avoid duplicate merge after #81 lands",
+      "files": [
+        "Docs/LOCAL-VERIFICATION.md",
+        "Tests/test-library.sh"
+      ],
+      "extra_commits_not_in_integration": []
+    },
+    {
+      "pr": 76,
+      "title": "Document the remaining Tools/ scripts, fix the icon generator, and gate the iOS app icon",
+      "state": "OPEN",
+      "head": "f3a7b37582272dfa405272804991329f3dfd8b70",
+      "verdict": "Already incorporated in pending #81; avoid duplicate merge after #81 lands",
+      "files": [
+        ".github/workflows/distribution.yml",
+        "Docs/RELEASE-CI.md",
+        "Resources/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png",
+        "Resources/Assets.xcassets/AppIcon.appiconset/Contents.json",
+        "Resources/Assets.xcassets/Contents.json",
+        "Resources/StageKeys.icns",
+        "Resources/StageKeys.iconset/icon_128x128.png",
+        "Resources/StageKeys.iconset/icon_128x128@2x.png",
+        "Resources/StageKeys.iconset/icon_16x16.png",
+        "Resources/StageKeys.iconset/icon_16x16@2x.png",
+        "Resources/StageKeys.iconset/icon_256x256.png",
+        "Resources/StageKeys.iconset/icon_256x256@2x.png",
+        "Resources/StageKeys.iconset/icon_32x32.png",
+        "Resources/StageKeys.iconset/icon_32x32@2x.png",
+        "Resources/StageKeys.iconset/icon_512x512.png",
+        "Resources/StageKeys.iconset/icon_512x512@2x.png",
+        "StageKeys.xcodeproj/project.pbxproj",
+        "Tests/test-app-icon.py",
+        "Tools/GenerateAppIcon.swift",
+        "Tools/README.md",
+        "Tools/check-app-icon.py",
+        "Tools/verify-release.sh",
+        "project.yml"
+      ],
+      "extra_commits_not_in_integration": []
+    },
+    {
+      "pr": 75,
+      "title": "Document the distribution provenance gate and close its three false-PASS gaps",
+      "state": "MERGED",
+      "head": "5151652eda86609ef9cc133f2a6fee5ffdff9514",
+      "verdict": "Keep; no full-PR revert justified by this audit",
+      "files": [
+        "Tests/test-distribution.py",
+        "Tools/README.md",
+        "Tools/check-distribution.py"
+      ],
+      "extra_commits_not_in_integration": []
+    },
+    {
+      "pr": 74,
+      "title": "Keep undeclared catalog metadata unknown in the tag extractor",
+      "state": "MERGED",
+      "head": "6eaf7236a8dea28ee2135719274c3e6984269a19",
+      "verdict": "Keep; no full-PR revert justified by this audit",
+      "files": [
+        ".github/workflows/distribution.yml",
+        "Docs/LIBRARY-CURATION.md",
+        "Tests/test-catalog-tags.py",
+        "Tools/catalog-tags.py"
+      ],
+      "extra_commits_not_in_integration": []
+    },
+    {
+      "pr": 73,
+      "title": "Refuse private setlist, MainStage and Ableton content in the distribution gate",
+      "state": "MERGED",
+      "head": "26a7d7a540054ca973c15c9b7c8856efcd8016e3",
+      "verdict": "Keep; no full-PR revert justified by this audit",
+      "files": [
+        "Docs/DISTRIBUTION-PROVENANCE.md",
+        "Tests/test-distribution.py",
+        "Tools/check-distribution.py"
+      ],
+      "extra_commits_not_in_integration": []
+    },
+    {
+      "pr": 72,
+      "title": "Document the sampler calibration gate and REA evidence probe in Tools/README.md",
+      "state": "MERGED",
+      "head": "aaa0a3860e125c3f795f6fa4a0bfc0116e123da1",
+      "verdict": "Keep; no full-PR revert justified by this audit",
+      "files": [
+        "Tools/README.md"
+      ],
+      "extra_commits_not_in_integration": []
+    },
+    {
+      "pr": 71,
+      "title": "Refuse sampler calibration evidence that is not dry and isolated",
+      "state": "MERGED",
+      "head": "d54de3f067ce9d76e3838e13edebb54b796aee4f",
+      "verdict": "Keep; no full-PR revert justified by this audit",
+      "files": [
+        "Docs/SAMPLER-CALIBRATION-GATE.md",
+        "Tests/test-sampler-calibration.py",
+        "Tools/verify-sampler-calibration.py"
+      ],
+      "extra_commits_not_in_integration": []
+    },
+    {
+      "pr": 70,
+      "title": "Convert a saved MainStage Audio Unit into a hosted layer",
+      "state": "MERGED",
+      "head": "2739bf51bba5e600859dc1776e94b65ddc529ff4",
+      "verdict": "Keep hosted-AU work; harden ambiguous/renamed component matching in this follow-up",
+      "files": [
+        "Docs/MAINSTAGE-PREFLIGHT.md",
+        "Sources/MainStagePatch.swift",
+        "Sources/SoundImportView.swift",
+        "Sources/Store.swift",
+        "Tests/MainStageAudioUnitImportTests.swift",
+        "Tests/MainStageLayerAssemblyTests.swift",
+        "Tests/MainStagePatchTests.swift",
+        "Tests/test-library.sh"
+      ],
+      "extra_commits_not_in_integration": []
+    },
+    {
+      "pr": 69,
+      "title": "Run the release gates once per commit instead of twice",
+      "state": "MERGED",
+      "head": "ff2a28080337d1089f5b1c596ad2ef157f6014be",
+      "verdict": "Keep; no full-PR revert justified by this audit",
+      "files": [
+        ".github/workflows/distribution.yml",
+        "Docs/RELEASE-CI.md"
+      ],
+      "extra_commits_not_in_integration": []
+    },
+    {
+      "pr": 68,
+      "title": "Add a read-only evidence probe for MainStage analysis",
+      "state": "MERGED",
+      "head": "1b2c0847e88f59f448ff2f890a8ed3c597e0fdfc",
+      "verdict": "Keep; no full-PR revert justified by this audit",
+      "files": [
+        ".gitignore",
+        "Docs/REA-WORKFLOW.md",
+        "Tools/rea_probe.py"
+      ],
+      "extra_commits_not_in_integration": []
+    },
+    {
+      "pr": 67,
+      "title": "Report and match saved third-party Audio Unit state in MainStage imports",
+      "state": "MERGED",
+      "head": "b82822a96a348d7b005a36e4bb8fdb46f78841db",
+      "verdict": "Keep hosted-AU work; harden ambiguous/renamed component matching in this follow-up",
+      "files": [
+        "Docs/MAINSTAGE-PREFLIGHT.md",
+        "Sources/MainStagePatch.swift",
+        "Sources/MainStageProcessing.swift",
+        "Tests/MainStagePatchTests.swift",
+        "Tools/ApplyMainStageAUState.swift",
+        "Tools/README.md"
+      ],
+      "extra_commits_not_in_integration": []
+    },
+    {
+      "pr": 66,
+      "title": "Wait for AU parameter-tree observer updates instead of a fixed 0.15 s drain",
+      "state": "MERGED",
+      "head": "b6c16f710438f5c9405696575bac82df3f47b16e",
+      "verdict": "Keep; no full-PR revert justified by this audit",
+      "files": [
+        "Tests/PluginParameterModelTests.swift"
+      ],
+      "extra_commits_not_in_integration": []
+    },
+    {
+      "pr": 65,
+      "title": "Refresh StageKeys README with real UI screenshot",
+      "state": "MERGED",
+      "head": "5befe0da58e4c51eb133137ab64c8615aaf9b046",
+      "verdict": "Keep; no full-PR revert justified by this audit",
+      "files": [
+        "AGENTS.md",
+        "Docs/RELEASE-ISSUES.md",
+        "Docs/images/stagekeys-performance-screenshot.png",
+        "README.md",
+        "Tools/verify-release.sh"
+      ],
+      "extra_commits_not_in_integration": []
+    },
+    {
+      "pr": 63,
+      "title": "Add an eligible user-library sound picker for Tonic Pad",
+      "state": "MERGED",
+      "head": "90050b9c45082fede43130f4ae8a6d9b5a5a780b",
+      "verdict": "Keep scoped picker; #54 still tracks remaining pad lifecycle/workflows",
+      "files": [
+        "Sources/AudioController.swift",
+        "Sources/PatchWorkflowViews.swift",
+        "Sources/StageKeysSampler.swift",
+        "Sources/Store.swift",
+        "Tests/StageKeysSamplerTests.swift",
+        "Tests/TonicPadTests.swift"
+      ],
+      "extra_commits_not_in_integration": []
+    },
+    {
+      "pr": 62,
+      "title": "Integrate the locally verified release stack and repair sampler startup",
+      "state": "MERGED",
+      "head": "074dedd9b474c27550d47c9fe1bb6daced426ac3",
+      "verdict": "Keep integration; verified head tree equals squash tree",
+      "files": [
+        "Docs/CLIPDIST-AUTOMATION.md",
+        "Docs/EFFECT-STRESS.md",
+        "Docs/GETTING-STARTED.md",
+        "Docs/INDEPENDENT-PATCH-BUILDER.md",
+        "Docs/LAYERED-MAINSTAGE.md",
+        "Docs/LOCAL-VERIFICATION.md",
+        "Docs/MAINSTAGE-PREFLIGHT.md",
+        "Docs/MODWHEEL-HANDOFF.md",
+        "Docs/OUTPUT-METERING.md",
+        "Docs/PLUGIN-PLATFORMS.md",
+        "Docs/PLUGIN-RECOVERY.md",
+        "Docs/PR-READINESS-2026-10-24.md",
+        "Docs/RELEASE-ISSUES.md",
+        "Docs/SAMPLER-CALIBRATION-GATE.md",
+        "Docs/SAMPLER-STARTUP.md",
+        "Docs/SHIMMER-AUTOMATION.md",
+        "Docs/SNAPSHOT-SLOTS.md",
+        "Docs/SOUND-SLOT-REGRESSIONS.md",
+        "Docs/TRANSACTIONAL-IMPORT.md",
+        "Sources/AudioController.swift",
+        "Sources/AudioDiagnosticRecorder.swift",
+        "Sources/Editors.swift",
+        "Sources/ExternalInstruments.swift",
+        "Sources/ExternalSound.swift",
+        "Sources/LibraryBrowserModel.swift",
+        "Sources/MIDIControlTarget.swift",
+        "Sources/MainStagePatch.swift",
+        "Sources/Models.swift",
+        "Sources/PerformanceControls.swift",
+        "Sources/PluginInterface.swift",
+        "Sources/SetlistLibrary.swift",
+        "Sources/SettingsViews.swift",
+        "Sources/SoundBrowser.swift",
+        "Sources/SoundImportView.swift",
+        "Sources/SoundLibrary.swift",
+        "Sources/StageKeysApp.swift",
+        "Sources/Store.swift",
+        "Sources/Synth.c",
+        "Sources/Synth.h",
+        "StageKeys.xcodeproj/project.pbxproj",
+        "Tests/AllSoundSlotsTests.swift",
+        "Tests/AudioUnitCatalogTests.swift",
+        "Tests/ClipDistAutomationTests.c",
+        "Tests/EffectStressTests.swift",
+        "Tests/LibraryBrowserTests.swift",
+        "Tests/MainStageAutoConversionTests.swift",
+        "Tests/MainStageLayerAssemblyTests.swift",
+        "Tests/MainStagePreflightTests.swift",
+        "Tests/ModulationWheelTests.swift",
+        "Tests/OutputMeterTests.swift",
+        "Tests/PatchDraftPlanTests.swift",
+        "Tests/PluginRecoveryTests.swift",
+        "Tests/SamplerStartupTests.swift",
+        "Tests/SetlistPathAliasTests.swift",
+        "Tests/ShimmerAutomationTests.c",
+        "Tests/SnapshotSlotTests.swift",
+        "Tests/SupportDiagnosticsTests.swift",
+        "Tests/TransactionalImportTests.swift",
+        "Tests/run-local-library.py",
+        "Tests/test-library.sh",
+        "Tests/test-reverb.sh",
+        "Tests/test-sampler-calibration.py",
+        "Tools/verify-sampler-calibration.py",
+        "project.yml"
+      ],
+      "extra_commits_not_in_integration": []
+    },
+    {
+      "pr": 61,
+      "title": "Stop reloading resident samplers when configuring empty slots",
+      "state": "CLOSED",
+      "head": "c7b6ace275351467658aaf2213af286bcfbef280",
+      "verdict": "Keep closed: original features included via #62; no missing feature commit found",
+      "files": [
+        "Docs/SAMPLER-STARTUP.md",
+        "Sources/AudioController.swift",
+        "Sources/ExternalInstruments.swift",
+        "Sources/Store.swift",
+        "Tests/SamplerStartupTests.swift",
+        "Tests/test-library.sh"
+      ],
+      "extra_commits_not_in_integration": [
+        {
+          "sha": "0f3845ba38ce75d30b877938f77f10f1c4493cf2",
+          "title": "Merge main into PR #61 and retain regression coverage"
+        },
+        {
+          "sha": "0b4a98ad295070076720d7a3b7b274bcad443a53",
+          "title": "Fix lipo architecture verification argument order"
+        },
+        {
+          "sha": "c7b6ace275351467658aaf2213af286bcfbef280",
+          "title": "Merge branch 'main' into codex/issue-60-sampler-startup"
+        }
+      ]
+    },
+    {
+      "pr": 59,
+      "title": "Keep valid saved setlists visible across macOS path aliases",
+      "state": "CLOSED",
+      "head": "36a71aed79ebef37aa7fbf118f7f06cd693de9b4",
+      "verdict": "Keep closed: original features included via #62; no missing feature commit found",
+      "files": [
+        "Sources/PluginParameterModel.swift",
+        "Sources/SetlistLibrary.swift",
+        "Tests/SetlistPathAliasTests.swift",
+        "Tests/test-library.sh"
+      ],
+      "extra_commits_not_in_integration": [
+        {
+          "sha": "a29479d3ccff4dd44708de978dbb00c3610e5ddd",
+          "title": "Merge main into PR #59 and retain regression coverage"
+        },
+        {
+          "sha": "58e51c071510ce7b459b017b69383ef0c79d9a4e",
+          "title": "Dispatch Audio Unit observer updates safely"
+        },
+        {
+          "sha": "9a7adaf8b0746ec9e20744defaed6021fd5ee08c",
+          "title": "Fix lipo architecture verification argument order"
+        },
+        {
+          "sha": "36a71aed79ebef37aa7fbf118f7f06cd693de9b4",
+          "title": "Merge branch 'main' into codex/setlist-path-aliases"
+        }
+      ]
+    },
+    {
+      "pr": 57,
+      "title": "Keep five snapshot positions and preserve cleared slots",
+      "state": "CLOSED",
+      "head": "8db55276af740172b9cd6ba4fd4f68d4f9b839bd",
+      "verdict": "Keep closed: original features included via #62; no missing feature commit found",
+      "files": [
+        "Docs/PR-READINESS-2026-10-24.md",
+        "Docs/RELEASE-ISSUES.md",
+        "Docs/SNAPSHOT-SLOTS.md",
+        "Sources/Models.swift",
+        "Sources/StageKeysApp.swift",
+        "Sources/Store.swift",
+        "Tests/SnapshotSlotTests.swift",
+        "Tests/test-library.sh"
+      ],
+      "extra_commits_not_in_integration": [
+        {
+          "sha": "30676e6a9eb94f12dd947524ab0989729a125566",
+          "title": "Merge main into PR #57 and retain regression coverage"
+        },
+        {
+          "sha": "f97911d543902fdfaf1b553843c92c735062ac4d",
+          "title": "Fix lipo architecture verification argument order"
+        },
+        {
+          "sha": "8db55276af740172b9cd6ba4fd4f68d4f9b839bd",
+          "title": "Merge branch 'main' into codex/persistent-snapshot-slots"
+        }
+      ]
+    },
+    {
+      "pr": 51,
+      "title": "[codex] Define validated local patch drafts for the later builder (#24)",
+      "state": "CLOSED",
+      "head": "55c9b7e9b1cc675bcb8b88585cdb3d5119aca1aa",
+      "verdict": "Keep closed: original features included via #62; no missing feature commit found",
+      "files": [
+        "Docs/INDEPENDENT-PATCH-BUILDER.md",
+        "Sources/Models.swift",
+        "Tests/PatchDraftPlanTests.swift",
+        "Tests/test-library.sh"
+      ],
+      "extra_commits_not_in_integration": [
+        {
+          "sha": "9be7cb336baaeeaf3d7a1db2d0dbb948029d3207",
+          "title": "Merge main into PR #51 and retain regression coverage"
+        },
+        {
+          "sha": "6367b79177b496e8378c5b3a8c91a2eda0d03680",
+          "title": "Fix lipo architecture verification argument order"
+        },
+        {
+          "sha": "55c9b7e9b1cc675bcb8b88585cdb3d5119aca1aa",
+          "title": "Merge branch 'main' into codex/issue-24-validated-patch-drafts"
+        }
+      ]
+    },
+    {
+      "pr": 50,
+      "title": "[codex] Add keyboard audio controls and flexible editor sizing (#19)",
+      "state": "MERGED",
+      "head": "2988a93177e16c6bff35f7d116c9c52d45dc48d4",
+      "verdict": "Keep; no full-PR revert justified by this audit",
+      "files": [
+        "Sources/Editors.swift",
+        "Sources/PerformanceControls.swift"
+      ],
+      "extra_commits_not_in_integration": []
+    },
+    {
+      "pr": 49,
+      "title": "[codex] Guard sound edits and verify all 15 playback slots (#16)",
+      "state": "CLOSED",
+      "head": "1db2730747342cdba57e729972590a2066975ee3",
+      "verdict": "Keep closed: original features included via #62; no missing feature commit found",
+      "files": [
+        "Docs/SOUND-SLOT-REGRESSIONS.md",
+        "Sources/Store.swift",
+        "Tests/AllSoundSlotsTests.swift",
+        "Tests/test-library.sh"
+      ],
+      "extra_commits_not_in_integration": [
+        {
+          "sha": "c877d19b0175c5d52c74143b6e6ba4817e4a7fa0",
+          "title": "Merge main into PR #49 and retain regression coverage"
+        },
+        {
+          "sha": "06dda46a840dc0cd253a4505f30c60f1cfa2a1ee",
+          "title": "Fix lipo architecture verification argument order"
+        },
+        {
+          "sha": "1db2730747342cdba57e729972590a2066975ee3",
+          "title": "Merge branch 'main' into codex/issue-16-safe-sound-edits"
+        }
+      ]
+    },
+    {
+      "pr": 48,
+      "title": "[codex] Smooth imported ClipDist gain and mix automation (#10)",
+      "state": "CLOSED",
+      "head": "3a8ca171d766df8d128167f5cd7476f952fa4352",
+      "verdict": "Keep closed: original features included via #62; no missing feature commit found",
+      "files": [
+        "Docs/CLIPDIST-AUTOMATION.md",
+        "Sources/Synth.c",
+        "Tests/ClipDistAutomationTests.c",
+        "Tests/test-reverb.sh"
+      ],
+      "extra_commits_not_in_integration": [
+        {
+          "sha": "98b70fba5540ce218782a597447f195725e8bb87",
+          "title": "Merge main into PR #48 and retain regression coverage"
+        },
+        {
+          "sha": "a74eb06219ce347b8d6d99a63e510f85f31b2010",
+          "title": "Fix lipo architecture verification argument order"
+        },
+        {
+          "sha": "3a8ca171d766df8d128167f5cd7476f952fa4352",
+          "title": "Merge branch 'main' into codex/issue-10-clipdist-transitions"
+        }
+      ]
+    },
+    {
+      "pr": 47,
+      "title": "[codex] Smooth Shimmer mix and damping automation (#9)",
+      "state": "CLOSED",
+      "head": "900a84413271b440b2dc7ec612473ab48087d32d",
+      "verdict": "Keep closed: original features included via #62; no missing feature commit found",
+      "files": [
+        "Docs/SHIMMER-AUTOMATION.md",
+        "Sources/Synth.c",
+        "Tests/ShimmerAutomationTests.c",
+        "Tests/test-reverb.sh"
+      ],
+      "extra_commits_not_in_integration": [
+        {
+          "sha": "8066833d6643c8d77c934869bdcfd88591cd9613",
+          "title": "Merge main into PR #47 and retain regression coverage"
+        },
+        {
+          "sha": "28000896eb02aede476118d01bf8a4ba1479699e",
+          "title": "Fix lipo architecture verification argument order"
+        },
+        {
+          "sha": "900a84413271b440b2dc7ec612473ab48087d32d",
+          "title": "Merge branch 'main' into codex/issue-9-shimmer-transitions"
+        }
+      ]
+    },
+    {
+      "pr": 46,
+      "title": "[codex] Keep mod-wheel drags synchronized with hardware CC1 (#18)",
+      "state": "CLOSED",
+      "head": "62aa00d47fbfa3a992e342800003550110df384b",
+      "verdict": "Keep closed: original features included via #62; no missing feature commit found",
+      "files": [
+        "Docs/MODWHEEL-HANDOFF.md",
+        "Sources/MIDIControlTarget.swift",
+        "Sources/PerformanceControls.swift",
+        "Tests/ModulationWheelTests.swift",
+        "Tests/test-library.sh"
+      ],
+      "extra_commits_not_in_integration": [
+        {
+          "sha": "8339c6c5a1d0b4febe726a85b90e58f738722a60",
+          "title": "Merge main into PR #46 and retain regression coverage"
+        },
+        {
+          "sha": "30223ba8b1cd8738289e518983b732c14409aa25",
+          "title": "Fix lipo architecture verification argument order"
+        },
+        {
+          "sha": "62aa00d47fbfa3a992e342800003550110df384b",
+          "title": "Merge branch 'main' into codex/issue-18-modwheel-ownership"
+        }
+      ]
+    },
+    {
+      "pr": 45,
+      "title": "[codex] Assemble converted channels while preserving processing (#6)",
+      "state": "CLOSED",
+      "head": "bd66c8f98c835be32d0c33f13f4495d5ea2b4b74",
+      "verdict": "Keep closed: original features included via #62; no missing feature commit found",
+      "files": [
+        "Docs/LAYERED-MAINSTAGE.md",
+        "Sources/Editors.swift",
+        "Sources/MainStagePatch.swift",
+        "Sources/Models.swift",
+        "Sources/SoundImportView.swift",
+        "Sources/Store.swift",
+        "Tests/MainStageLayerAssemblyTests.swift",
+        "Tests/test-library.sh"
+      ],
+      "extra_commits_not_in_integration": [
+        {
+          "sha": "46a6c3c6e7518e849acd11bf9edbdc587108fcfb",
+          "title": "Merge main into PR #45 and retain regression coverage"
+        },
+        {
+          "sha": "3420287a5cf2c6504eca0a78796951d921cb5368",
+          "title": "Fix lipo architecture verification argument order"
+        },
+        {
+          "sha": "bd66c8f98c835be32d0c33f13f4495d5ea2b4b74",
+          "title": "Merge branch 'main' into codex/issue-6-layered-channel-assembly"
+        }
+      ]
+    },
+    {
+      "pr": 44,
+      "title": "[codex] Require source-backed velocity and loudness evidence (#1)",
+      "state": "CLOSED",
+      "head": "5c150b49265ba25d62687b08442b5521c9705c6c",
+      "verdict": "Keep closed: original features included via #62; no missing feature commit found",
+      "files": [
+        "Docs/SAMPLER-CALIBRATION-GATE.md",
+        "Tests/test-sampler-calibration.py",
+        "Tools/verify-sampler-calibration.py"
+      ],
+      "extra_commits_not_in_integration": [
+        {
+          "sha": "7ce17e4983aa859cd11c63d6ddc7afb0f3c63e4c",
+          "title": "Merge branch 'main' into codex/issue-1-calibration-evidence"
+        },
+        {
+          "sha": "1775021e25ad3ec0e99c1d2fb8017c94b35558a5",
+          "title": "Fix lipo architecture verification argument order"
+        },
+        {
+          "sha": "5c150b49265ba25d62687b08442b5521c9705c6c",
+          "title": "Merge branch 'main' into codex/issue-1-calibration-evidence"
+        }
+      ]
+    },
+    {
+      "pr": 43,
+      "title": "[codex] Fix false arp tags and make unknown metadata filterable (#17)",
+      "state": "CLOSED",
+      "head": "da340429aeb6dc00cd5268093942b14574a7279d",
+      "verdict": "Keep closed: original features included via #62; no missing feature commit found",
+      "files": [
+        "Sources/LibraryBrowserModel.swift",
+        "Tests/LibraryBrowserTests.swift"
+      ],
+      "extra_commits_not_in_integration": [
+        {
+          "sha": "ee67ec50f858af9e50ede87ed2f6bfe92847c5df",
+          "title": "Merge branch 'main' into codex/issue-17-trustworthy-tags"
+        },
+        {
+          "sha": "fddf6b6f6874481d71b7a8da6fd3fe07d23b63ef",
+          "title": "Fix lipo architecture verification argument order"
+        },
+        {
+          "sha": "da340429aeb6dc00cd5268093942b14574a7279d",
+          "title": "Merge branch 'main' into codex/issue-17-trustworthy-tags"
+        }
+      ]
+    },
+    {
+      "pr": 42,
+      "title": "[codex] Meter actual protected stereo output and expose overload (#3)",
+      "state": "CLOSED",
+      "head": "de9be5fad3a83295e9e2d6102f260b208055f3fb",
+      "verdict": "Keep closed: original features included via #62; no missing feature commit found",
+      "files": [
+        "Docs/OUTPUT-METERING.md",
+        "Sources/AudioController.swift",
+        "Sources/AudioDiagnosticRecorder.swift",
+        "Sources/SettingsViews.swift",
+        "Sources/Synth.c",
+        "Sources/Synth.h",
+        "Tests/OutputMeterTests.swift",
+        "Tests/test-library.sh"
+      ],
+      "extra_commits_not_in_integration": [
+        {
+          "sha": "5bb0178766c11036f3406f6e214e29ca7c990ebc",
+          "title": "Merge main into PR #42 and retain regression coverage"
+        },
+        {
+          "sha": "c3422198781012f1a5bc609c39424a0558a5ca8c",
+          "title": "Fix lipo architecture verification argument order"
+        },
+        {
+          "sha": "de9be5fad3a83295e9e2d6102f260b208055f3fb",
+          "title": "Merge branch 'main' into codex/issue-3-output-meter"
+        }
+      ]
+    },
+    {
+      "pr": 41,
+      "title": "[codex] Guard mobile AU editor lifecycle and define VST3 scope (#14)",
+      "state": "CLOSED",
+      "head": "7476891f4fe61345bbc9cd52b5f73011672a03b5",
+      "verdict": "Keep closed: original features included via #62; no missing feature commit found",
+      "files": [
+        "Docs/PLUGIN-PLATFORMS.md",
+        "Sources/ExternalInstruments.swift",
+        "Sources/ExternalSound.swift",
+        "Sources/PluginInterface.swift",
+        "Sources/SoundBrowser.swift",
+        "Tests/AudioUnitCatalogTests.swift"
+      ],
+      "extra_commits_not_in_integration": [
+        {
+          "sha": "d7a68cee1b83ecf08c9c6105da73311c21109658",
+          "title": "Merge branch 'main' into codex/issue-14-platform-plugin-scope"
+        },
+        {
+          "sha": "af32a5840ac74b5c5845cb92b8b7896446e64945",
+          "title": "Fix lipo architecture verification argument order"
+        },
+        {
+          "sha": "7476891f4fe61345bbc9cd52b5f73011672a03b5",
+          "title": "Merge branch 'main' into codex/issue-14-platform-plugin-scope"
+        }
+      ]
+    },
+    {
+      "pr": 40,
+      "title": "[codex] Stress every effect and record worst render durations (#4)",
+      "state": "CLOSED",
+      "head": "8ae66963048f9fb71e8ce7314c8d1de31f3b79ba",
+      "verdict": "Keep closed: original features included via #62; no missing feature commit found",
+      "files": [
+        "Docs/EFFECT-STRESS.md",
+        "Tests/EffectStressTests.swift",
+        "Tests/test-library.sh"
+      ],
+      "extra_commits_not_in_integration": [
+        {
+          "sha": "a0c40927ae2d8f2995d620790d05bb7a27bb13c2",
+          "title": "Merge main into PR #40 and retain regression coverage"
+        },
+        {
+          "sha": "a2936949be7f5bfd20e0c8eeaca89b4d1a7510fb",
+          "title": "Fix lipo architecture verification argument order"
+        },
+        {
+          "sha": "8ae66963048f9fb71e8ce7314c8d1de31f3b79ba",
+          "title": "Merge branch 'main' into codex/issue-4-effect-stress"
+        }
+      ]
+    },
+    {
+      "pr": 39,
+      "title": "[codex] Bound plugin loading and block interrupted retries (#13)",
+      "state": "CLOSED",
+      "head": "e2e0f4c65a042f1bb0006a08a711de845b0c5ce1",
+      "verdict": "Keep closed: original features included via #62; no missing feature commit found",
+      "files": [
+        "Docs/PLUGIN-RECOVERY.md",
+        "Sources/ExternalInstruments.swift",
+        "Sources/ExternalSound.swift",
+        "Sources/SoundBrowser.swift",
+        "Tests/PluginRecoveryTests.swift",
+        "Tests/test-library.sh"
+      ],
+      "extra_commits_not_in_integration": [
+        {
+          "sha": "f9e5581fc4a23ceedcacbe357931f78f12ddabda",
+          "title": "Merge main into PR #39 and retain regression coverage"
+        },
+        {
+          "sha": "aa2f29375b493f3816ad26e4ceebf209f278249f",
+          "title": "Fix lipo architecture verification argument order"
+        },
+        {
+          "sha": "e2e0f4c65a042f1bb0006a08a711de845b0c5ce1",
+          "title": "Merge branch 'main' into codex/issue-13-plugin-load-recovery"
+        }
+      ]
+    },
+    {
+      "pr": 38,
+      "title": "[codex] Make bulk catalog imports cancellable and transactional (#8)",
+      "state": "CLOSED",
+      "head": "64d98c89beac4e763f5975200c933d4b7a7c7f54",
+      "verdict": "Keep closed: original features included via #62; no missing feature commit found",
+      "files": [
+        "Docs/TRANSACTIONAL-IMPORT.md",
+        "Sources/SoundImportView.swift",
+        "Sources/SoundLibrary.swift",
+        "Sources/Store.swift",
+        "Tests/TransactionalImportTests.swift",
+        "Tests/test-library.sh"
+      ],
+      "extra_commits_not_in_integration": [
+        {
+          "sha": "a2019af39715b261eaaf21ed6735a5821b787f77",
+          "title": "Merge main into PR #38 and retain regression coverage"
+        },
+        {
+          "sha": "a55c68ef28048b5230fda9e08d7326aac585d59e",
+          "title": "Fix lipo architecture verification argument order"
+        },
+        {
+          "sha": "64d98c89beac4e763f5975200c933d4b7a7c7f54",
+          "title": "Merge branch 'main' into codex/issue-8-transactional-import"
+        }
+      ]
+    },
+    {
+      "pr": 37,
+      "title": "[codex] Report unsupported MainStage engines and refuse guessed envelopes (#7)",
+      "state": "MERGED",
+      "head": "ab7d161cec69f6833a6d753a0a56c4ed73a5f6ad",
+      "verdict": "Keep; no full-PR revert justified by this audit",
+      "files": [
+        "Docs/MAINSTAGE-COMPATIBILITY-v1.md",
+        "Sources/EXSNative.swift",
+        "Sources/MainStagePatch.swift",
+        "Sources/SoundImportView.swift",
+        "Sources/Store.swift",
+        "Tests/MainStagePatchTests.swift"
+      ],
+      "extra_commits_not_in_integration": []
+    },
+    {
+      "pr": 36,
+      "title": "[codex] Review MainStage channels before converting sounds (#5)",
+      "state": "CLOSED",
+      "head": "5e94c994276974c89c8a62d3d8dda60f8d8f8b31",
+      "verdict": "Keep closed: original features included via #62; no missing feature commit found",
+      "files": [
+        "Docs/MAINSTAGE-PREFLIGHT.md",
+        "Sources/SoundImportView.swift",
+        "Sources/Store.swift",
+        "Tests/MainStageAutoConversionTests.swift",
+        "Tests/MainStagePreflightTests.swift",
+        "Tests/test-library.sh"
+      ],
+      "extra_commits_not_in_integration": [
+        {
+          "sha": "ce02cbe03340d5c3a72a228a6ddc471bedb5070e",
+          "title": "Merge main into PR #36 and retain regression coverage"
+        },
+        {
+          "sha": "ed027b914a6cf8683b4615d16b82f6bab1a7bfb4",
+          "title": "Fix lipo architecture verification argument order"
+        },
+        {
+          "sha": "5e94c994276974c89c8a62d3d8dda60f8d8f8b31",
+          "title": "Merge branch 'main' into codex/issue-5-review-before-conversion"
+        }
+      ]
+    },
+    {
+      "pr": 35,
+      "title": "[codex] Report gain-match repeatability and make trims reversible (#25)",
+      "state": "MERGED",
+      "head": "456a6b701b9834acd3373f9c6c5649ceeae44a61",
+      "verdict": "Keep; no full-PR revert justified by this audit",
+      "files": [
+        "Sources/AudioDiagnosticRecorder.swift",
+        "Sources/SoundSettingsControls.swift",
+        "Tests/InstrumentGainMatchTests.swift"
+      ],
+      "extra_commits_not_in_integration": []
+    },
+    {
+      "pr": 34,
+      "title": "[codex] Add private support diagnostics and beta setup guide (#23)",
+      "state": "CLOSED",
+      "head": "97762614ea6d964460ad481182c84d0ab678a5ef",
+      "verdict": "Keep closed: original features included via #62; no missing feature commit found",
+      "files": [
+        "Docs/GETTING-STARTED.md",
+        "Sources/AudioDiagnosticRecorder.swift",
+        "Sources/SettingsViews.swift",
+        "Sources/Store.swift",
+        "Tests/SupportDiagnosticsTests.swift",
+        "Tests/test-library.sh"
+      ],
+      "extra_commits_not_in_integration": [
+        {
+          "sha": "0e532eb6a3a7edd7568e7fd9684e1991c55a6df7",
+          "title": "Merge main into PR #34 and preserve both release test lists"
+        },
+        {
+          "sha": "a541352ca70de8dc577597fcc014321e0ea972e9",
+          "title": "Fix macOS lipo architecture verification argument order"
+        },
+        {
+          "sha": "99352897a3870a35357a077d1e38af0fe0eaf8c8",
+          "title": "Restore executable release verification script"
+        },
+        {
+          "sha": "97762614ea6d964460ad481182c84d0ab678a5ef",
+          "title": "Merge branch 'main' into codex/issue-23-private-diagnostics"
+        }
+      ]
+    },
+    {
+      "pr": 33,
+      "title": "[codex] Prevent corrupt-session autosave loss and add recovery (#20)",
+      "state": "MERGED",
+      "head": "e87c8dad8fb68973540f7f235e0cf8dbd8745644",
+      "verdict": "Keep; no full-PR revert justified by this audit",
+      "files": [
+        "Docs/SESSION-RECOVERY.md",
+        "Sources/SetlistLibrary.swift",
+        "Sources/SettingsViews.swift",
+        "Sources/Store.swift",
+        "Tests/SessionRecoveryTests.swift",
+        "Tests/test-library.sh"
+      ],
+      "extra_commits_not_in_integration": []
+    },
+    {
+      "pr": 32,
+      "title": "[codex] Enforce distribution provenance and public signing gates (#21)",
+      "state": "MERGED",
+      "head": "052b5fd45f27b97e1e0b34ba0272394cca97478b",
+      "verdict": "Keep; no full-PR revert justified by this audit",
+      "files": [
+        "Docs/DISTRIBUTION-PROVENANCE.md",
+        "Tests/test-distribution.py",
+        "Tools/check-distribution.py",
+        "Tools/verify-public-mac.sh"
+      ],
+      "extra_commits_not_in_integration": []
+    },
+    {
+      "pr": 31,
+      "title": "[codex] Add release build and audio regression gates (#22)",
+      "state": "MERGED",
+      "head": "6cbd47f07a60c7c103180a14262bf2101c50db9b",
+      "verdict": "Keep; no full-PR revert justified by this audit",
+      "files": [
+        ".github/workflows/distribution.yml",
+        "Docs/RELEASE-CI.md",
+        "Tools/verify-release.sh"
+      ],
+      "extra_commits_not_in_integration": []
+    },
+    {
+      "pr": 30,
+      "title": "[codex] Smooth dense reverb Tone and Low Cut changes",
+      "state": "MERGED",
+      "head": "b1b9dd2e14bf465453af928313885de0abe8a1b8",
+      "verdict": "Keep; no full-PR revert justified by this audit",
+      "files": [
+        "Docs/RELEASE-ISSUES.md",
+        "Docs/REVERB-ENGINES-v53.md",
+        "Sources/Synth.c",
+        "Tests/DenseReverbAutomationTests.c",
+        "Tests/test-reverb.sh"
+      ],
+      "extra_commits_not_in_integration": []
+    },
+    {
+      "pr": 29,
+      "title": "Finish external MIDI routing, loop prevention and controller setup",
+      "state": "MERGED",
+      "head": "c457e7ea6922eb939c25125d8462a998c1b65235",
+      "verdict": "Keep; no full-PR revert justified by this audit",
+      "files": [
+        "Docs/MIDI-ROUTING-AND-CONTROLS-v54.md",
+        "Sources/ExternalMIDIOutput.swift",
+        "Sources/MIDIControlLearnView.swift",
+        "Sources/MIDIControlTarget.swift",
+        "Sources/MIDIInput.swift",
+        "Sources/SessionSettings.swift",
+        "Sources/SettingsViews.swift",
+        "Sources/SoundBrowser.swift",
+        "Sources/Store.swift",
+        "StageKeys.xcodeproj/xcshareddata/xcschemes/StageKeysMac.xcscheme",
+        "Tests/ExternalMIDITests.swift",
+        "Tests/MIDISetupTests.swift",
+        "Tests/ManualMIDIDestinationRefreshTests.swift",
+        "Tests/test-library.sh"
+      ],
+      "extra_commits_not_in_integration": []
+    },
+    {
+      "pr": 27,
+      "title": "Issue 12: Audio Unit discovery, generic editor and saved plug-in state",
+      "state": "MERGED",
+      "head": "de6c415837648fbc78dc58ddf52b2734527f6e5d",
+      "verdict": "Keep; no full-PR revert justified by this audit",
+      "files": [
+        "Docs/AUDIO-UNIT-DISCOVERY-v54.md",
+        "Sources/AudioController.swift",
+        "Sources/ExternalInstruments.swift",
+        "Sources/ExternalSound.swift",
+        "Sources/LibraryBrowserModel.swift",
+        "Sources/Models.swift",
+        "Sources/PluginInterface.swift",
+        "Sources/PluginParameterModel.swift",
+        "Sources/SoundBrowser.swift",
+        "Sources/Store.swift",
+        "StageKeys.xcodeproj/project.pbxproj",
+        "Tests/AudioUnitCatalogTests.swift",
+        "Tests/AudioUnitTests.swift",
+        "Tests/PluginParameterModelTests.swift",
+        "Tests/test-library.sh"
+      ],
+      "extra_commits_not_in_integration": []
+    },
+    {
+      "pr": 26,
+      "title": "Issue 2: guard sampler region bounds and add loop, streaming and latency regressions",
+      "state": "MERGED",
+      "head": "69b78d352486a6d4d231fbdedf4f4276984b8e08",
+      "verdict": "Keep; no full-PR revert justified by this audit",
+      "files": [
+        "Docs/STREAMING-LOOPS-LATENCY-v54.md",
+        "Sources/AudioController.swift",
+        "Sources/AudioDevices.swift",
+        "Sources/ExternalInstruments.swift",
+        "Sources/StageKeysSampler.swift",
+        "Tests/SamplerBoundaryRegressionTests.swift",
+        "Tests/SamplerStreamingStressTests.swift",
+        "Tests/test-library.sh"
+      ],
+      "extra_commits_not_in_integration": []
+    }
+  ],
+  "focused_results": [
+    {
+      "test": "MainStagePatchTests",
+      "passed": true
+    },
+    {
+      "test": "MainStageAudioUnitImportTests",
+      "passed": true
+    },
+    {
+      "test": "MainStageLayerAssemblyTests",
+      "passed": true
+    },
+    {
+      "test": "PluginParameterModelTests",
+      "passed": true
+    },
+    {
+      "test": "SamplerStartupTests",
+      "passed": true
+    },
+    {
+      "test": "SnapshotSlotTests",
+      "passed": true
+    },
+    {
+      "test": "SetlistPathAliasTests",
+      "passed": true
+    },
+    {
+      "test": "StoreTests",
+      "passed": true
+    }
+  ],
+  "negative_regression": "MainStagePatchTests with renamed exact identity fails against the old compiled matcher; passes with the fix"
+}

@@ -412,17 +412,23 @@ enum MainStageAudioUnit {
         return MainStagePatch.pluginStateData(in:data.subdata(in:device.offset..<end))
     }
     /// Prefer an exact component triple; otherwise accept the same type, manufacturer
-    /// and display name, which is what a plug-in version bump changes.
+    /// and display name only when there is a single candidate. A name is not a unique component identity.
     static func match(_ device:MainStagePatch.Device,state:Data,installed:[ExternalAUIdentity])->Match? {
         guard device.format=="PSDD",let saved=device.pluginState,
               let type=saved.componentType.flatMap(code),
               let manufacturer=saved.manufacturer.flatMap(code) else{return nil}
         let subtype=saved.componentSubtype.flatMap(code)
-        let candidates=installed.filter {
-            $0.type==type && $0.manufacturer==manufacturer &&
-            $0.name.caseInsensitiveCompare(device.name) == .orderedSame
+        let family=installed.filter { $0.type==type && $0.manufacturer==manufacturer }
+        let identity:ExternalAUIdentity
+        if let exact=family.first(where:{$0.subtype==subtype}) {
+            // Component identity survives display-name changes between releases.
+            identity=exact
+        } else {
+            let candidates=family.filter{$0.name.caseInsensitiveCompare(device.name) == .orderedSame}
+            // Enumeration order is not evidence of a compatible replacement.
+            guard candidates.count==1,let only=candidates.first else{return nil}
+            identity=only
         }
-        guard let identity=candidates.first(where:{$0.subtype==subtype}) ?? candidates.first else{return nil}
         let exact=identity.subtype==subtype && identity.type==type && identity.manufacturer==manufacturer
         // The host applies class info only when its component identity matches the
         // installed component, so a version-changed match rewrites those three keys.
@@ -446,7 +452,7 @@ enum MainStageAudioUnit {
                             installed:[ExternalAUIdentity])throws->Hosted {
         guard let match=match(device,state:state,installed:installed) else {
             let identity=device.audioUnitIdentity.map{" (\($0))"} ?? ""
-            throw MainStagePatch.Failure.invalid("the saved Audio Unit \(device.name)\(identity) is not installed; install that component to host this channel, or retain the source.")
+            throw MainStagePatch.Failure.invalid("the saved Audio Unit \(device.name)\(identity) is not installed or cannot be matched unambiguously; install that exact component to host this channel, or retain the source.")
         }
         if let reason=match.identity.unavailableReason {
             throw MainStagePatch.Failure.invalid("\(match.identity.displayName) is installed but unavailable. \(reason)")
