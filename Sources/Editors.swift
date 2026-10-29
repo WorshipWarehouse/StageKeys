@@ -81,7 +81,7 @@ struct SoundEditor: View {
                             }.buttonStyle(StageButtonStyle()).popover(item:$processingPreview) {preview in
                                 VStack(alignment:.leading,spacing:12) {
                                     Text("Supported MainStage Processing").font(.headline)
-                                    Text("This appends supported effects and macros, and applies the source key range, transpose and sustain filter to the draft. It does not convert the complete patch.").font(.caption)
+                                    Text("This appends supported effects and macros, and applies the source fader, pan, key range, transpose and sustain filter to the draft. It does not convert the complete patch.").font(.caption)
                                     ScrollView {VStack(alignment:.leading,spacing:8) {
                                         ForEach(Array(preview.effects.enumerated()),id:\.offset){index,effect in
                                             VStack(alignment:.leading,spacing:4) {
@@ -101,6 +101,11 @@ struct SoundEditor: View {
                                             }.frame(maxWidth:.infinity,alignment:.leading).padding(10).background(StageTheme.panel,in:RoundedRectangle(cornerRadius:6))
                                         }
                                         if let low=preview.low,let high=preview.high {Text("Note Range: \(low)–\(high)").font(.caption)}
+                                        if let gain=preview.gain {
+                                            if gain==0 {Text("Source Fader: −∞ dB").font(.caption)}
+                                            else {Text("Source Fader: \(20*log10(gain)+(preview.faderBoostDB ?? 0),specifier: "%.2f") dB").font(.caption)}
+                                            if preview.faderBoostDB != nil {Text("Source boost is applied after effects using Output Trim; existing trim is retained.").font(.caption).foregroundStyle(.secondary)}
+                                        }
                                         if let curve=preview.amplitudeVelocityCurve {Text("Source amplitude velocity curve: \(curve)").font(.caption)}
                                         if let transpose=preview.transpose {Text("MIDI Transpose: \(transpose)").font(.caption)}
                                         ForEach(preview.macros){macro in Text(macro.name+(macro.midiCC.map{" · CC\($0)"} ?? "")).font(.caption)}
