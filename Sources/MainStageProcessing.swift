@@ -1,4 +1,5 @@
 import Foundation
+import CoreFoundation
 
 /// Data-only decoder: UID references become ordinary dictionaries; archived
 /// application classes are never instantiated and MIDI scripts are never run.
@@ -14,6 +15,7 @@ enum MainStageProcessing {
         var transpose:Int?
         var blockSustain:Bool?
         var gain:Float?
+        var faderBoostDB:Float?
         var pan:Float?
         var muted:Bool?
         var amplitudeVelocityCurve:Int?
@@ -25,6 +27,13 @@ enum MainStageProcessing {
             if let transpose {layer.transpose=transpose}
             if let blockSustain {layer.blockSustain=blockSustain}
             if let gain {layer.gain=gain}
+            if let faderBoostDB {
+                let combined=(layer.channelSettings.outputTrimDB ?? 0)+faderBoostDB
+                guard combined.isFinite,(-24...12).contains(combined) else {
+                    throw MainStagePatch.Failure.invalid("The source fader boost plus the destination output trim exceeds the supported range. Reset the destination trim before importing.")
+                }
+                layer.channelSettings.outputTrimDB=combined
+            }
             if let pan {layer.pan=pan}
             if let muted {layer.muted=muted}
             return layer
@@ -51,15 +60,25 @@ enum MainStageProcessing {
         draft.blockSustain=source["Channel_filterSustainPedal"] as? Bool
         draft.muted=source["Channel_isMuted"] as? Bool
         if let pan=source["Channel_pan"] as? NSNumber,pan.floatValue.isFinite,(-1...1).contains(pan.floatValue) {draft.pan=pan.floatValue}
-        if let volume=source["volume"] as? NSNumber {
-            if volume.int64Value==0 {draft.gain=0}
-            else if volume.int64Value==1509949440 {draft.gain=1}
-        }
-        if let volume=source["volume"] as? NSNumber,![Int64(0),1509949440].contains(volume.int64Value) {
-            draft.issues.append("The source channel fader is retained in the archived patch; its non-unity taper requires calibration. Native import uses unity gain instead of adding the previous automatic −6 dB attenuation.")
+        if let value=source["volume"] {
+            if let volume=value as? NSNumber,CFGetTypeID(volume) != CFBooleanGetTypeID(),
+               let amplitude=channelFaderAmplitude(volume.doubleValue) {
+                draft.gain=Float(min(1,amplitude))
+                draft.faderBoostDB=amplitude>1 ? Float(20*log10(amplitude)):nil
+            } else {
+                draft.issues.append("The source channel fader has an unrecognized encoding or range. Its value is archived; the destination gain is unchanged. Review its level before performing.")
+            }
         }
         if let expression=source["Channel_expressionValue"] as? Int,expression != 127 {draft.issues.append("Source expression \(expression) is retained; channel expression response requires translation.")}
         if let sends=source["Channel_sends"] as? [[String:Any]],sends.contains(where:{!$0.isEmpty}) {draft.issues.append("Source bus sends are retained in the patch archive; auxiliary routing is not flattened into insert effects.")}
+    }
+    /// Observed MainStage 4.3.1 channel `volume`: Q24 square-root amplitude,
+    /// unity at 90 and maximum at 127. This is not the mixer slider's AX value.
+    /// Keep silence exact, reject unknown encodings, and never infer a new taper.
+    static func channelFaderAmplitude(_ raw:Double)->Double? {
+        guard raw.isFinite,raw.rounded()==raw,(0...2_130_706_432).contains(raw) else{return nil}
+        let root=raw/1_509_949_440
+        return root*root
     }
     static func archives(_ data:Data)throws->[[String:Any]] {
         var result:[[String:Any]]=[],position=0

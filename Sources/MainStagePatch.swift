@@ -93,6 +93,16 @@ enum MainStagePatch {
         case invalid(String)
         var errorDescription:String? {if case .invalid(let message)=self{return message};return nil}
     }
+    /// Channel metadata carries fader/pan/ranges independently of CST bytes.
+    /// Include its verified digest and channel filename so edited settings and
+    /// identical strips in distinct channels cannot reuse an unrelated sound.
+    static func conversionID(_ report:Report,channel:Channel,variant:String)throws->String {
+        guard let metadata=report.preservedFiles["data.plist"] else {
+            throw Failure.invalid("The source patch has no metadata integrity record. Import it again before converting.")
+        }
+        let context=digest(Data((metadata+"/"+channel.file).utf8))
+        return "mainstage-channel-"+channel.sha256+"-v2-"+context+"-"+variant
+    }
     static func assembledChannels(_ report:Report,entries:[LibrarySound])throws->Patch {
         let channels=report.channels.filter{!$0.instruments.isEmpty || !$0.thirdPartyAudioUnits.isEmpty}
         guard let archive=report.sourceArchiveID,!channels.isEmpty,channels.count<=15 else {

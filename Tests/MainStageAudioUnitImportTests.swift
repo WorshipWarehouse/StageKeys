@@ -31,7 +31,7 @@ import Foundation
         let patch=root.appendingPathComponent("AU Pad.patch",isDirectory:true)
         try FileManager.default.createDirectory(at:patch,withIntermediateDirectories:true)
         try strip.write(to:patch.appendingPathComponent("Pad.cst"))
-        let document:[String:Any]=["patch":["engineNode":["name":"AU Fixture"]],"channels":[["Filename":"Pad.cst","Channel_name":"Pad"]]]
+        let document:[String:Any]=["patch":["engineNode":["name":"AU Fixture"]],"channels":[["Filename":"Pad.cst","Channel_name":"Pad","volume":535_750_245]]]
         try PropertyListSerialization.data(fromPropertyList:document,format:.binary,options:0).write(to:patch.appendingPathComponent("data.plist"))
 
         setenv("STAGEKEYS_DATA_DIR",root.appendingPathComponent("missing-data").path,1)
@@ -68,10 +68,29 @@ import Foundation
         store.assembleConvertedMainStagePatch()
         guard let assembled=store.setlist.patches.last,assembled.layers.first?.external?.kind == .audioUnit else{fatalError(store.message ?? "No patch was assembled")}
         assert(assembled.layers.first?.pluginState==layer.pluginState,"The assembled patch must keep the plug-in state")
+        assert(abs(layer.gain-pow(10,-18.0/20))<0.00001 && assembled.layers.first?.gain==layer.gain,"Native AU conversion and patch assembly must preserve the saved channel fader")
+        let reloaded=PerformanceStore()
+        assert(reloaded.librarySounds.first(where:{$0.id==entry.id})?.layer?.gain==layer.gain,"Imported source gain must survive a new store")
         let count=store.librarySounds.count
         store.importMainStagePatch(patch);store.importMainStageSamplers(patch,installedAudioUnits:installed)
         for _ in 0..<1500 where store.libraryImportBusy {try await Task.sleep(nanoseconds:20_000_000)}
         assert(store.librarySounds.count==count,"Reimporting must not duplicate the hosted Audio Unit: \(count) -> \(store.librarySounds.count) \(store.librarySounds.map{String($0.id.suffix(12))})")
+        let repeated=try MainStagePatch.assembledChannels(store.mainStageImportReport!,entries:store.librarySounds)
+        assert(repeated.layers.first?.gain==layer.gain,"Unchanged reimport must remain assemblable from its current archive")
+        var changedDocument=document
+        changedDocument["channels"]=[["Filename":"Pad.cst","Channel_name":"Pad","volume":1_509_949_440]]
+        let changedBytes=try PropertyListSerialization.data(fromPropertyList:changedDocument,format:.binary,options:0)
+        try changedBytes.write(to:patch.appendingPathComponent("data.plist"))
+        store.importMainStagePatch(patch);store.importMainStageSamplers(patch,installedAudioUnits:installed)
+        for _ in 0..<1500 where store.libraryImportBusy {try await Task.sleep(nanoseconds:20_000_000)}
+        assert(!store.libraryImportBusy && store.librarySounds.count==count+1,"A metadata-only fader edit must import as a new version")
+        let updated=try MainStagePatch.assembledChannels(store.mainStageImportReport!,entries:store.librarySounds)
+        assert(updated.layers.first?.gain==1 && updated.layers.first?.pluginState==layer.pluginState)
+        assert(store.librarySounds.first(where:{$0.id==entry.id})?.layer?.gain==layer.gain,"Old imported sounds must not be overwritten")
+        let sourceAfter=try Data(contentsOf:patch.appendingPathComponent("data.plist"))
+        let stripAfter=try Data(contentsOf:patch.appendingPathComponent("Pad.cst"))
+        assert(sourceAfter==changedBytes && stripAfter==strip,"Conversion must preserve original source bytes")
         print("PASS: a saved third-party Audio Unit converts to a hosted layer with its state and version warning, assembles into a patch, is not duplicated on reimport, and is refused when the component is missing")
+        print("PASS: unchanged reimport assembles, metadata-only edits retain new gain and original source/state, previous versions remain untouched")
     }
 }
