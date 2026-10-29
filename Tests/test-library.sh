@@ -38,7 +38,7 @@ sources=(
     "$repo/Sources/SnapshotMorph.swift"
     "$repo/Sources/Store.swift"
 )
-if (( $# )); then tests=("$@"); else tests=(SamplerStartupTests SetlistPathAliasTests StoreTests SnapshotSlotTests SessionRecoveryTests SupportDiagnosticsTests TransactionalImportTests MainStagePreflightTests PluginRecoveryTests EffectStressTests OutputMeterTests MainStageLayerAssemblyTests ModulationWheelTests AllSoundSlotsTests PatchDraftPlanTests ManualMIDIDestinationRefreshTests PluginParameterModelTests PrimaVerbModelTests EffectPresetTests DenseHostedTests ReverbTransitionTests LibraryBrowserTests SoundRatingTests LibraryNoteRangeTests SoundLibraryTests ImportedSampleContinuityTests ImportedSoundRetentionTests MainStagePatchTests StageKeysSamplerTests SamplerAttackTests AudioDiagnosticRecorderTests InstrumentGainMatchTests EXSEnvelopeTests EXSVoiceControlsTests EXSSplitRegionTests LibraryBackupTests TonicPadTests MainStageProcessingTests MainStageControllerDefaultsTests MainStageAudioUnitImportTests EXSReferenceIdentityTests EXSCrossfadeNeutralTests SamplerHostVelocityTests NativeSamplerGroupTests PianoFidelityTests SamplerBoundaryRegressionTests SamplerStreamingStressTests AudioUnitCatalogTests MIDISetupTests); fi
+if (( $# )); then tests=("$@"); else tests=(SamplerStartupTests SetlistPathAliasTests StoreTests SnapshotSlotTests SessionRecoveryTests SupportDiagnosticsTests TransactionalImportTests MainStagePreflightTests PluginRecoveryTests EffectStressTests OutputMeterTests MainStageLayerAssemblyTests ModulationWheelTests AllSoundSlotsTests PatchDraftPlanTests ManualMIDIDestinationRefreshTests PluginParameterModelTests PrimaVerbModelTests EffectPresetTests DenseHostedTests ReverbTransitionTests LibraryBrowserTests SoundRatingTests LibraryNoteRangeTests SoundLibraryTests ImportedSampleContinuityTests ImportedSoundRetentionTests MainStagePatchTests StageKeysSamplerTests SamplerAttackTests AudioDiagnosticRecorderTests InstrumentGainMatchTests EXSEnvelopeTests EXSVoiceControlsTests EXSSplitRegionTests LibraryBackupTests TonicPadTests MainStageProcessingTests MainStageControllerDefaultsTests MainStageAudioUnitImportTests EXSReferenceIdentityTests EXSCrossfadeNeutralTests SamplerHostVelocityTests NativeSamplerGroupTests PianoFidelityTests SamplerBoundaryRegressionTests SamplerStreamingStressTests AudioUnitCatalogTests MIDISetupTests BuiltinEffectUnitTests NativeCreamCoatTests ParallelAudioTests PianoHeldNoteTests ModelTests GrooveTests MIDIFXTests SnapshotMorphTests EXSAmplitudeUpgradeTests EXSResponseUpgradeTests EXSVoiceUpgradeTests EXSCaptureCompatibilityTests EXSImportTests ModernEXSImportTests ModernEXSPlaybackTests MainStageAutoConversionTests MainStagePackTests ReferencedMainStageImportTests ImportedAttackAuditTests); fi
 for test in "${tests[@]}"; do
     xcrun swiftc -DDEBUG -import-objc-header "$repo/Sources/Bridge.h" \
         -module-cache-path "$build/modules" "${sources[@]}" "$repo/Tests/$test.swift" \
@@ -49,3 +49,14 @@ for test in "${tests[@]}"; do
         STAGEKEYS_DATA_DIR="$build/data-$test" "$build/$test"
     fi
 done
+# Native C regressions. They include ../Sources/Synth.h and link the objects built
+# above, so they need no Swift sources, fixtures or audio hardware.
+for test in AudioEffectsTests ChannelDSPTests ChannelPanicTests RackTests SynthTests; do
+    xcrun clang -I "$repo/Sources" -std=c11 -O1 -g \
+        "$repo/Tests/$test.c" "$build/Synth.o" "$build/CreamCoat.o" \
+        -framework CoreMIDI -o "$build/$test"
+    STAGEKEYS_DATA_DIR="$build/data-$test" "$build/$test"
+done
+# AudioDeviceTests and LivePatchContentTests stay on demand: both need a live
+# output device, which hosted runners provide only intermittently (see
+# Docs/LOCAL-VERIFICATION.md).
