@@ -30,8 +30,24 @@ struct SoundLibrary {
         try write(entries)
     }
     func read() throws -> [LibrarySound] {
-        guard FileManager.default.fileExists(atPath: url.path) else { return [] }
-        let data = try Data(contentsOf: url)
+        guard FileManager.default.fileExists(atPath: url.path) ||
+            (try? url.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) == true else { return [] }
+        return try decoded(Self.boundedRead(url,limit:16_000_000))
+    }
+    private static func boundedRead(_ url:URL,limit:Int)throws->Data {
+        let values=try url.resourceValues(forKeys:[.isRegularFileKey,.isSymbolicLinkKey,.fileSizeKey])
+        guard values.isRegularFile==true,values.isSymbolicLink != true else{throw SetlistLibraryError.unsafeFile}
+        guard (values.fileSize ?? Int.max)<=limit else{throw CocoaError(.fileReadTooLarge)}
+        let handle=try FileHandle(forReadingFrom:url);defer{try? handle.close()}
+        var data=Data()
+        while data.count<=limit {
+            guard let chunk=try handle.read(upToCount:min(1_048_576,limit+1-data.count)),!chunk.isEmpty else{break}
+            data.append(chunk)
+        }
+        guard data.count<=limit else{throw CocoaError(.fileReadTooLarge)}
+        return data
+    }
+    private func decoded(_ data:Data)throws->[LibrarySound] {
         guard data.count <= 16_000_000 else { throw CocoaError(.fileReadTooLarge) }
         var entries = try JSONDecoder().decode([LibrarySound].self, from: data)
         for i in entries.indices where entries[i].id.hasPrefix("ableton-samples-") {
@@ -75,7 +91,7 @@ struct SoundLibrary {
         }
         // Optional personal metadata, never a bundled catalog or sound asset.
         let metadataURL=url.deletingLastPathComponent().appendingPathComponent("source-sound-tags.json")
-        if let data=try? Data(contentsOf:metadataURL),data.count<=2_000_000,
+        if let data=try? Self.boundedRead(metadataURL,limit:2_000_000),
            let metadata=try? JSONDecoder().decode([String:SoundTags].self,from:data) {
             for i in entries.indices where entries[i].collection.hasPrefix("Sunday App") && entries[i].layer != nil {
                 guard let authored=metadata[entries[i].name] else{continue}
@@ -106,11 +122,16 @@ struct SoundLibrary {
     }
     func write(_ entries: [LibrarySound]) throws {
         try Self.validate(entries)
+        _ = try read() // A failed startup read must never become an empty overwrite.
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         let bytes = try encoder.encode(entries)
         guard bytes.count <= 16_000_000 else { throw CocoaError(.fileWriteOutOfSpace) }
-        try bytes.write(to: url, options: .atomic)
+        try RecoverableSessionFile.write(bytes,to:url) { _ = try decoded($0) }
+    }
+    func recoverPrevious()throws->[LibrarySound] {
+        let data=try RecoverableSessionFile.restore(url) { _ = try decoded($0) }
+        return try decoded(data)
     }
     static func validate(_ entries: [LibrarySound]) throws {
         guard entries.count <= 4096, Set(entries.map(\.id)).count == entries.count else { throw SetlistError.invalid }

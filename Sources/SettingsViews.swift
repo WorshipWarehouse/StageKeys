@@ -15,6 +15,13 @@ struct SettingsEditor: View {
                 }.padding(12).frame(width: 210).background(StageTheme.base)
 
                 Form {
+                    if store.libraryRecoveryRequired {
+                        Section("Sound Catalog Recovery") {
+                            Text("The saved sound catalog could not be loaded. Catalog writes are blocked to preserve it.").foregroundStyle(.orange)
+                            Button("Recover Previous Sound Catalog") { store.recoverPreviousLibrary() }
+                            Text("Restores the previous catalog and retains the damaged file. Samples and current patches stay unchanged. If no valid copy exists, restore your library backup.").font(.caption)
+                        }
+                    }
                     if store.sessionRecoveryRequired || store.settingsRecoveryRequired {
                         Section("Session Recovery") {
                             Text("Saved data could not be loaded. Automatic saves are blocked to preserve the original files.").foregroundStyle(.orange)
