@@ -66,6 +66,8 @@ import CoreMIDI
     store.beginMIDILearn(.sustain);send(a,0xb0,32,127);wait { store.sustain }
     store.beginMIDILearn(.modulation);send(a,0xb0,32,100)
     wait { store.assignedCC(.modulation) == 32 };assert(!store.sustain,"Rebinding a held pedal must release it")
+    assert(store.message == "CC 32 moved from Sustain Pedal to Modulation Wheel.",store.message ?? "Missing rebind feedback")
+    store.message = nil // Acknowledge expected feedback; later errors must still fail.
     store.beginMIDILearn(.sustain);send(a,0xb0,33,127);wait { store.sustain }
     send(a,0xb0,64,127);store.clearMIDILearn(.sustain)
     RunLoop.current.run(until:Date().addingTimeInterval(0.1));assert(store.sustain)
