@@ -6,7 +6,7 @@ Choose Import Samples to add your licensed audio/sampler files. Choose Add Sound
 
 Tonic Pad also starts without a sound. Open Tonic Pad Settings → Choose Sound, or import a supported looped sampler instrument. Turning on an empty pad explains what is missing instead of generating a fallback tone.
 
-Existing imported sounds, plug-in references, effects, tags, snapshots and samples are retained. Obsolete factory-voice indices in older user documents remain as metadata, but are unavailable; replace them using Add Sound. No instrument is substituted and the original samples are not rewritten.
+Existing imported sounds, plug-in references, effects, tags, snapshots and samples are retained. Obsolete factory-voice indices in older user documents remain as metadata, but are unavailable; replace them using Add Sound. No instrument is substituted and the original samples are not rewritten. Older catalog entries that kept an explicit sample reference separately from their saved layer retain that reference when added; no name-based matching is used.
 
 The C synthesis routines remain implementation/DSP-test code because the same core supplies effects and clock processing. No Swift product note route calls those musical generators. Test-only FixtureSupport.swift creates explicit synthetic samples and setlists at runtime; neither app target compiles it or bundles those files.
 

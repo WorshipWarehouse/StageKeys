@@ -1286,7 +1286,7 @@ final class PerformanceStore: ObservableObject {
     }
     func addLibrarySound(_ entry: LibrarySound, index: Int) {
         guard patch.layers.indices.contains(index) else{return}
-        if var layer = entry.layer { layer.id = patch.layers[index].id; commitLayer(index, layer); return }
+        if var layer = entry.layer { if layer.external==nil {layer.external=entry.sound};layer.id = patch.layers[index].id; commitLayer(index, layer); return }
         if let sound = entry.sound { addExternal(sound, index: index); return }
         #if os(macOS)
         if let path = entry.hostPath, NSWorkspace.shared.open(URL(fileURLWithPath: path)) {

@@ -84,7 +84,7 @@ struct BrowserSound: Identifiable {
     }
     static func library(_ entry:LibrarySound)->BrowserSound {
         var sound=BrowserSound(id:entry.id,name:entry.name,collection:entry.collection,tags:entry.tags ?? .inferred(name:entry.name,source:entry.hostPath != nil ? "MainStage" : entry.sound?.kind == .audioUnit ? "Audio Unit" : "Sampler"),entry:entry)
-        if let layer=entry.layer,!layer.loaded,layer.instrument>=0 {sound.unavailableReason="Legacy voice unavailable. Import a replacement sound; saved settings are retained."}
+        if let layer=entry.layer,entry.sound==nil,!layer.loaded,layer.instrument>=0 {sound.unavailableReason="Legacy voice unavailable. Import a replacement sound; saved settings are retained."}
         return sound
     }
 }

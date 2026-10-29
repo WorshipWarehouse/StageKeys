@@ -35,6 +35,10 @@ import Foundation
   let unavailable=BrowserSound.library(loaded.librarySounds.first{$0.id==oldEntry.id}!)
   assert(!unavailable.playable && unavailable.unavailableReason != nil)
   try loaded.audio.prepareOffline();loaded.start();defer{loaded.audio.stop()}
+  var separate=oldEntry;separate.id="legacy-owned-reference";separate.sound=entry.sound
+  assert(BrowserSound.library(separate).playable,"An explicitly stored user sample reference must remain addable")
+  loaded.addLibrarySound(separate,index:2)
+  assert(loaded.patch.layers[2].external==entry.sound && loaded.patch.layers[2].effects==old.effects,"Adding an older catalog entry must keep its explicit sample and edits")
   loaded.noteOn(60,velocity:1)
   var energy=0.0
   for _ in 0..<40 {let block=try loaded.audio.offlineBlock();for frame in 0..<Int(block.frameLength){let value=Double(block.floatChannelData![0][frame]);energy+=value*value}}
