@@ -52,3 +52,38 @@ enum TestFixtures {
         }catch{fatalError("Synthetic loop fixture failed: \(error)")}
     }
 }
+
+extension TestFixtures {
+    /// Minimal original legacy/modern EXS with one pitched sample, no proprietary content.
+    static func exs(in folder:URL,name:String="Fixture.exs",modern:Bool=false)throws->URL {
+        let source=URL(fileURLWithPath:ProcessInfo.processInfo.environment["STAGEKEYS_DATA_DIR"]!).appendingPathComponent("Generated Fixture 0.wav")
+        _ = sound()
+        try FileManager.default.createDirectory(at:folder,withIntermediateDirectories:true)
+        let wave=folder.appendingPathComponent("Fixture.wav")
+        if !FileManager.default.fileExists(atPath:wave.path){try FileManager.default.copyItem(at:source,to:wave)}
+        func put(_ body:inout [UInt8],_ offset:Int,_ value:UInt32){for i in 0..<4{body[offset+i]=UInt8(truncatingIfNeeded:value >> (i*8))}}
+        func chunk(_ kind:UInt32,_ name:String,_ body:[UInt8])->Data {
+            var header=[UInt8](repeating:0,count:84)
+            put(&header,0,(kind << 24) | (modern ? 0x40000000:0) | 0x101);put(&header,4,UInt32(body.count))
+            header.replaceSubrange(16..<20,with:Array("JBOS".utf8))
+            header.replaceSubrange(20..<20+name.utf8.count,with:Array(name.utf8))
+            return Data(header+body)
+        }
+        var sample=[UInt8](repeating:0,count:592)
+        sample.replaceSubrange(80..<80+folder.path.utf8.count,with:Array(folder.path.utf8))
+        sample.replaceSubrange(336..<347,with:Array("Fixture.wav".utf8))
+        var zone=[UInt8](repeating:0,count:96);zone[1]=60;zone[7]=127;zone[10]=127
+        put(&zone,16,479999);put(&zone,88,0xffffffff)
+        let bytes=chunk(3,"Sample",sample)+chunk(1,"Zone",zone)
+        let file=folder.appendingPathComponent(name);try bytes.write(to:file);return file
+    }
+    static func mainStageStrip(_ instruments:[String])->Data {
+        var strip=Data(repeating:0,count:36);strip.replaceSubrange(0..<4,with:Data("OCuA".utf8))
+        var device=Data(repeating:0,count:180)
+        device.replaceSubrange(0..<4,with:Data("UCuA".utf8));device.replaceSubrange(156..<161,with:Data("EXS24".utf8));device.replaceSubrange(168..<172,with:Data("MELC".utf8))
+        for name in instruments {device.append(Data("MELCPMAS1MAS".utf8));device.append(Data(name.utf8));device.append(0);device.append(Data(repeating:0,count:100))}
+        let count=device.count-36
+        for i in 0..<4{device[28+i]=UInt8(truncatingIfNeeded:count >> (i*8))}
+        strip.append(device);return strip
+    }
+}
