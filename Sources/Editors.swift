@@ -427,8 +427,8 @@ struct PatchEditor: View {
                     row("Instantly Silence Previous Patch","") { Toggle("Instantly Silence Previous Patch",isOn:$store.setlist.patches[store.selected].silencePrevious).labelsHidden().toggleStyle(.switch) }
                     row("Respond to Program Change","Set a MIDI Program Change number for this Patch") {
                         VStack {
-                            Toggle("Respond to Program Change",isOn:Binding(get:{store.patch.programChangeEnabled ?? true},set:{store.setlist.patches[store.selected].programChangeEnabled=$0;if $0 && store.patch.programChangeNumber == nil {store.setlist.patches[store.selected].programChangeNumber=store.selected}})).labelsHidden().toggleStyle(.switch)
-                            if store.patch.programChangeEnabled != false { Stepper("\((store.patch.programChangeNumber ?? store.selected)+1)",value:Binding(get:{store.patch.programChangeNumber ?? store.selected},set:{store.setlist.patches[store.selected].programChangeEnabled=true;store.setlist.patches[store.selected].programChangeNumber=$0}),in:0...127) }
+                            Toggle("Respond to Program Change",isOn:Binding(get:{store.patch.programChangeEnabled ?? false},set:{store.setlist.patches[store.selected].programChangeEnabled=$0;if $0 && store.patch.programChangeNumber == nil {store.setlist.patches[store.selected].programChangeNumber=store.selected}})).labelsHidden().toggleStyle(.switch)
+                            if store.patch.programChangeEnabled == true { Stepper("\((store.patch.programChangeNumber ?? store.selected)+1)",value:Binding(get:{store.patch.programChangeNumber ?? store.selected},set:{store.setlist.patches[store.selected].programChangeEnabled=true;store.setlist.patches[store.selected].programChangeNumber=$0}),in:0...127) }
                         }.frame(width:145)
                     }
                     row("Visual state when Patch is selected","Have this Patch recall a specific visual state when it is selected") {

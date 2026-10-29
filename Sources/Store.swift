@@ -886,7 +886,7 @@ final class PerformanceStore: ObservableObject {
             }
         case 0xc0:
             if let index=setlist.patches.indices.first(where:{setlist.patches[$0].programChangeEnabled == true && setlist.patches[$0].programChangeNumber == Int(a)}) { choose(index) }
-            else if setlist.patches.indices.contains(Int(a)),setlist.patches[Int(a)].programChangeEnabled == nil { choose(Int(a)) }
+            // Missing legacy flags are unconfigured, never an implicit index mapping.
         default: break
         }
     }
