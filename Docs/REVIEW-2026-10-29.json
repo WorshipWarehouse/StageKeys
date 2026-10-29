@@ -1,0 +1,584 @@
+{
+  "date": "2026-10-29",
+  "main_reviewed": "ab34fd9",
+  "integrated_pr_heads": {
+    "76": "f3a7b375",
+    "77": "38259f32"
+  },
+  "program_results": [
+    {
+      "test": "SamplerStartupTests",
+      "passed": true
+    },
+    {
+      "test": "SetlistPathAliasTests",
+      "passed": true
+    },
+    {
+      "test": "StoreTests",
+      "passed": true
+    },
+    {
+      "test": "SnapshotSlotTests",
+      "passed": true
+    },
+    {
+      "test": "SessionRecoveryTests",
+      "passed": true
+    },
+    {
+      "test": "SupportDiagnosticsTests",
+      "passed": true
+    },
+    {
+      "test": "TransactionalImportTests",
+      "passed": true
+    },
+    {
+      "test": "MainStagePreflightTests",
+      "passed": true
+    },
+    {
+      "test": "PluginRecoveryTests",
+      "passed": true
+    },
+    {
+      "test": "EffectStressTests",
+      "passed": true
+    },
+    {
+      "test": "OutputMeterTests",
+      "passed": true
+    },
+    {
+      "test": "MainStageLayerAssemblyTests",
+      "passed": true
+    },
+    {
+      "test": "ModulationWheelTests",
+      "passed": true
+    },
+    {
+      "test": "AllSoundSlotsTests",
+      "passed": true
+    },
+    {
+      "test": "PatchDraftPlanTests",
+      "passed": true
+    },
+    {
+      "test": "ManualMIDIDestinationRefreshTests",
+      "passed": true
+    },
+    {
+      "test": "PluginParameterModelTests",
+      "passed": true
+    },
+    {
+      "test": "PrimaVerbModelTests",
+      "passed": true
+    },
+    {
+      "test": "EffectPresetTests",
+      "passed": true
+    },
+    {
+      "test": "DenseHostedTests",
+      "passed": true
+    },
+    {
+      "test": "ReverbTransitionTests",
+      "passed": true
+    },
+    {
+      "test": "LibraryBrowserTests",
+      "passed": true
+    },
+    {
+      "test": "SoundRatingTests",
+      "passed": true
+    },
+    {
+      "test": "LibraryNoteRangeTests",
+      "passed": true
+    },
+    {
+      "test": "SoundLibraryTests",
+      "passed": true
+    },
+    {
+      "test": "ImportedSampleContinuityTests",
+      "passed": true
+    },
+    {
+      "test": "ImportedSoundRetentionTests",
+      "passed": true
+    },
+    {
+      "test": "MainStagePatchTests",
+      "passed": true
+    },
+    {
+      "test": "StageKeysSamplerTests",
+      "passed": true
+    },
+    {
+      "test": "SamplerAttackTests",
+      "passed": true
+    },
+    {
+      "test": "AudioDiagnosticRecorderTests",
+      "passed": true
+    },
+    {
+      "test": "InstrumentGainMatchTests",
+      "passed": true
+    },
+    {
+      "test": "EXSEnvelopeTests",
+      "passed": true
+    },
+    {
+      "test": "EXSVoiceControlsTests",
+      "passed": true
+    },
+    {
+      "test": "EXSSplitRegionTests",
+      "passed": true
+    },
+    {
+      "test": "LibraryBackupTests",
+      "passed": true
+    },
+    {
+      "test": "TonicPadTests",
+      "passed": true
+    },
+    {
+      "test": "MainStageProcessingTests",
+      "passed": true
+    },
+    {
+      "test": "MainStageControllerDefaultsTests",
+      "passed": true
+    },
+    {
+      "test": "MainStageAudioUnitImportTests",
+      "passed": true
+    },
+    {
+      "test": "EXSReferenceIdentityTests",
+      "passed": true
+    },
+    {
+      "test": "EXSCrossfadeNeutralTests",
+      "passed": true
+    },
+    {
+      "test": "SamplerHostVelocityTests",
+      "passed": true
+    },
+    {
+      "test": "NativeSamplerGroupTests",
+      "passed": true
+    },
+    {
+      "test": "PianoFidelityTests",
+      "passed": true
+    },
+    {
+      "test": "SamplerBoundaryRegressionTests",
+      "passed": true
+    },
+    {
+      "test": "SamplerStreamingStressTests",
+      "passed": true
+    },
+    {
+      "test": "AudioUnitCatalogTests",
+      "passed": true
+    },
+    {
+      "test": "MIDISetupTests",
+      "passed": true
+    },
+    {
+      "test": "BuiltinEffectUnitTests",
+      "passed": true
+    },
+    {
+      "test": "NativeCreamCoatTests",
+      "passed": true
+    },
+    {
+      "test": "ParallelAudioTests",
+      "passed": true
+    },
+    {
+      "test": "PianoHeldNoteTests",
+      "passed": true
+    },
+    {
+      "test": "ModelTests",
+      "passed": true
+    },
+    {
+      "test": "GrooveTests",
+      "passed": true
+    },
+    {
+      "test": "MIDIFXTests",
+      "passed": true
+    },
+    {
+      "test": "SnapshotMorphTests",
+      "passed": true
+    },
+    {
+      "test": "EXSAmplitudeUpgradeTests",
+      "passed": true
+    },
+    {
+      "test": "EXSResponseUpgradeTests",
+      "passed": true
+    },
+    {
+      "test": "EXSVoiceUpgradeTests",
+      "passed": true
+    },
+    {
+      "test": "EXSCaptureCompatibilityTests",
+      "passed": true
+    },
+    {
+      "test": "EXSImportTests",
+      "passed": true
+    },
+    {
+      "test": "ModernEXSImportTests",
+      "passed": true
+    },
+    {
+      "test": "ModernEXSPlaybackTests",
+      "passed": true
+    },
+    {
+      "test": "MainStageAutoConversionTests",
+      "passed": true
+    },
+    {
+      "test": "MainStagePackTests",
+      "passed": true
+    },
+    {
+      "test": "ReferencedMainStageImportTests",
+      "passed": true
+    },
+    {
+      "test": "ImportedAttackAuditTests",
+      "passed": true
+    },
+    {
+      "test": "AudioEffectsTests",
+      "passed": true
+    },
+    {
+      "test": "ChannelDSPTests",
+      "passed": true
+    },
+    {
+      "test": "ChannelPanicTests",
+      "passed": true
+    },
+    {
+      "test": "RackTests",
+      "passed": true
+    },
+    {
+      "test": "SynthTests",
+      "passed": true
+    }
+  ],
+  "fixture_skips": [
+    "SKIP: private piano fixture unset",
+    "SKIP: private sampler/source unset",
+    "SKIP: private response fixture unset",
+    "SKIP: private v2 sampler/source fixture unset",
+    "SKIP EXS test: provide scratch directory, installed EXS, and explicit sample root",
+    "SKIP: provide private EXS fixture and selected sample root",
+    "SKIP: provide private EXS fixture and selected sample root",
+    "SKIP: private bundled MainStage fixture unset",
+    "SKIP: private MainStage pack unset",
+    "SKIP: provide private source patch and selected sample root",
+    "SKIP: optional installed-sound audit fixture unset"
+  ],
+  "repeat_results": [
+    {
+      "run": 1,
+      "test": "ImportedSampleContinuityTests",
+      "passed": true,
+      "output": "longest silent run 50 frames, rms 0.016306917210757565\nPASS sustained imported sample renders without silent gaps: longest run 50 frames, rms 0.016306917210757565\n"
+    },
+    {
+      "run": 1,
+      "test": "PatchGainTests",
+      "passed": true,
+      "output": "RMS 0.016317609424419875, 0.03255791290967605, 0.008178177384528305 ratios 1.9952624225060807, 0.5011872249062033\nPASS imported instrument patch gain \u00b16 dB: ratios 1.9952624225060807, 0.5011872249062033\n"
+    },
+    {
+      "run": 2,
+      "test": "ImportedSampleContinuityTests",
+      "passed": true,
+      "output": "longest silent run 50 frames, rms 0.016306917210757565\nPASS sustained imported sample renders without silent gaps: longest run 50 frames, rms 0.016306917210757565\n"
+    },
+    {
+      "run": 2,
+      "test": "PatchGainTests",
+      "passed": true,
+      "output": "RMS 0.016317609424419875, 0.03255791290967605, 0.008178177384528305 ratios 1.9952624225060807, 0.5011872249062033\nPASS imported instrument patch gain \u00b16 dB: ratios 1.9952624225060807, 0.5011872249062033\n"
+    },
+    {
+      "run": 3,
+      "test": "ImportedSampleContinuityTests",
+      "passed": true,
+      "output": "longest silent run 50 frames, rms 0.016306917210757565\nPASS sustained imported sample renders without silent gaps: longest run 50 frames, rms 0.016306917210757565\n"
+    },
+    {
+      "run": 3,
+      "test": "PatchGainTests",
+      "passed": true,
+      "output": "RMS 0.016317609424419875, 0.03255791290967605, 0.008178177384528305 ratios 1.9952624225060807, 0.5011872249062033\nPASS imported instrument patch gain \u00b16 dB: ratios 1.9952624225060807, 0.5011872249062033\n"
+    },
+    {
+      "run": 4,
+      "test": "ImportedSampleContinuityTests",
+      "passed": true,
+      "output": "longest silent run 50 frames, rms 0.016306917210757565\nPASS sustained imported sample renders without silent gaps: longest run 50 frames, rms 0.016306917210757565\n"
+    },
+    {
+      "run": 4,
+      "test": "PatchGainTests",
+      "passed": true,
+      "output": "RMS 0.016317609424419875, 0.03255791290967605, 0.008178177384528305 ratios 1.9952624225060807, 0.5011872249062033\nPASS imported instrument patch gain \u00b16 dB: ratios 1.9952624225060807, 0.5011872249062033\n"
+    },
+    {
+      "run": 5,
+      "test": "ImportedSampleContinuityTests",
+      "passed": true,
+      "output": "longest silent run 50 frames, rms 0.016306917210757565\nPASS sustained imported sample renders without silent gaps: longest run 50 frames, rms 0.016306917210757565\n"
+    },
+    {
+      "run": 5,
+      "test": "PatchGainTests",
+      "passed": true,
+      "output": "RMS 0.016317609424419875, 0.03255791290967605, 0.008178177384528305 ratios 1.9952624225060807, 0.5011872249062033\nPASS imported instrument patch gain \u00b16 dB: ratios 1.9952624225060807, 0.5011872249062033\n"
+    },
+    {
+      "run": 6,
+      "test": "ImportedSampleContinuityTests",
+      "passed": true,
+      "output": "longest silent run 50 frames, rms 0.016306917210757565\nPASS sustained imported sample renders without silent gaps: longest run 50 frames, rms 0.016306917210757565\n"
+    },
+    {
+      "run": 6,
+      "test": "PatchGainTests",
+      "passed": true,
+      "output": "RMS 0.016317609424419875, 0.03255791290967605, 0.008178177384528305 ratios 1.9952624225060807, 0.5011872249062033\nPASS imported instrument patch gain \u00b16 dB: ratios 1.9952624225060807, 0.5011872249062033\n"
+    },
+    {
+      "run": 7,
+      "test": "ImportedSampleContinuityTests",
+      "passed": true,
+      "output": "longest silent run 50 frames, rms 0.016306917210757565\nPASS sustained imported sample renders without silent gaps: longest run 50 frames, rms 0.016306917210757565\n"
+    },
+    {
+      "run": 7,
+      "test": "PatchGainTests",
+      "passed": true,
+      "output": "RMS 0.016317609424419875, 0.03255791290967605, 0.008178177384528305 ratios 1.9952624225060807, 0.5011872249062033\nPASS imported instrument patch gain \u00b16 dB: ratios 1.9952624225060807, 0.5011872249062033\n"
+    },
+    {
+      "run": 8,
+      "test": "ImportedSampleContinuityTests",
+      "passed": true,
+      "output": "longest silent run 50 frames, rms 0.016306917210757565\nPASS sustained imported sample renders without silent gaps: longest run 50 frames, rms 0.016306917210757565\n"
+    },
+    {
+      "run": 8,
+      "test": "PatchGainTests",
+      "passed": true,
+      "output": "RMS 0.016317609424419875, 0.03255791290967605, 0.008178177384528305 ratios 1.9952624225060807, 0.5011872249062033\nPASS imported instrument patch gain \u00b16 dB: ratios 1.9952624225060807, 0.5011872249062033\n"
+    },
+    {
+      "run": 9,
+      "test": "ImportedSampleContinuityTests",
+      "passed": true,
+      "output": "longest silent run 50 frames, rms 0.016306917210757565\nPASS sustained imported sample renders without silent gaps: longest run 50 frames, rms 0.016306917210757565\n"
+    },
+    {
+      "run": 9,
+      "test": "PatchGainTests",
+      "passed": true,
+      "output": "RMS 0.016317609424419875, 0.03255791290967605, 0.008178177384528305 ratios 1.9952624225060807, 0.5011872249062033\nPASS imported instrument patch gain \u00b16 dB: ratios 1.9952624225060807, 0.5011872249062033\n"
+    },
+    {
+      "run": 10,
+      "test": "ImportedSampleContinuityTests",
+      "passed": true,
+      "output": "longest silent run 50 frames, rms 0.016306917210757565\nPASS sustained imported sample renders without silent gaps: longest run 50 frames, rms 0.016306917210757565\n"
+    },
+    {
+      "run": 10,
+      "test": "PatchGainTests",
+      "passed": true,
+      "output": "RMS 0.016317609424419875, 0.03255791290967605, 0.008178177384528305 ratios 1.9952624225060807, 0.5011872249062033\nPASS imported instrument patch gain \u00b16 dB: ratios 1.9952624225060807, 0.5011872249062033\n"
+    },
+    {
+      "run": 11,
+      "test": "ImportedSampleContinuityTests",
+      "passed": true,
+      "output": "longest silent run 50 frames, rms 0.016306917210757565\nPASS sustained imported sample renders without silent gaps: longest run 50 frames, rms 0.016306917210757565\n"
+    },
+    {
+      "run": 11,
+      "test": "PatchGainTests",
+      "passed": true,
+      "output": "RMS 0.016317609424419875, 0.03255791290967605, 0.008178177384528305 ratios 1.9952624225060807, 0.5011872249062033\nPASS imported instrument patch gain \u00b16 dB: ratios 1.9952624225060807, 0.5011872249062033\n"
+    },
+    {
+      "run": 12,
+      "test": "ImportedSampleContinuityTests",
+      "passed": true,
+      "output": "longest silent run 50 frames, rms 0.016306917210757565\nPASS sustained imported sample renders without silent gaps: longest run 50 frames, rms 0.016306917210757565\n"
+    },
+    {
+      "run": 12,
+      "test": "PatchGainTests",
+      "passed": true,
+      "output": "RMS 0.016317609424419875, 0.03255791290967605, 0.008178177384528305 ratios 1.9952624225060807, 0.5011872249062033\nPASS imported instrument patch gain \u00b16 dB: ratios 1.9952624225060807, 0.5011872249062033\n"
+    },
+    {
+      "run": 13,
+      "test": "ImportedSampleContinuityTests",
+      "passed": true,
+      "output": "longest silent run 50 frames, rms 0.016306917210757565\nPASS sustained imported sample renders without silent gaps: longest run 50 frames, rms 0.016306917210757565\n"
+    },
+    {
+      "run": 13,
+      "test": "PatchGainTests",
+      "passed": true,
+      "output": "RMS 0.016317609424419875, 0.03255791290967605, 0.008178177384528305 ratios 1.9952624225060807, 0.5011872249062033\nPASS imported instrument patch gain \u00b16 dB: ratios 1.9952624225060807, 0.5011872249062033\n"
+    },
+    {
+      "run": 14,
+      "test": "ImportedSampleContinuityTests",
+      "passed": true,
+      "output": "longest silent run 50 frames, rms 0.016306917210757565\nPASS sustained imported sample renders without silent gaps: longest run 50 frames, rms 0.016306917210757565\n"
+    },
+    {
+      "run": 14,
+      "test": "PatchGainTests",
+      "passed": true,
+      "output": "RMS 0.016317609424419875, 0.03255791290967605, 0.008178177384528305 ratios 1.9952624225060807, 0.5011872249062033\nPASS imported instrument patch gain \u00b16 dB: ratios 1.9952624225060807, 0.5011872249062033\n"
+    },
+    {
+      "run": 15,
+      "test": "ImportedSampleContinuityTests",
+      "passed": true,
+      "output": "longest silent run 50 frames, rms 0.016306917210757565\nPASS sustained imported sample renders without silent gaps: longest run 50 frames, rms 0.016306917210757565\n"
+    },
+    {
+      "run": 15,
+      "test": "PatchGainTests",
+      "passed": true,
+      "output": "RMS 0.016317609424419875, 0.03255791290967605, 0.008178177384528305 ratios 1.9952624225060807, 0.5011872249062033\nPASS imported instrument patch gain \u00b16 dB: ratios 1.9952624225060807, 0.5011872249062033\n"
+    },
+    {
+      "run": 16,
+      "test": "ImportedSampleContinuityTests",
+      "passed": true,
+      "output": "longest silent run 50 frames, rms 0.016306917210757565\nPASS sustained imported sample renders without silent gaps: longest run 50 frames, rms 0.016306917210757565\n"
+    },
+    {
+      "run": 16,
+      "test": "PatchGainTests",
+      "passed": true,
+      "output": "RMS 0.016317609424419875, 0.03255791290967605, 0.008178177384528305 ratios 1.9952624225060807, 0.5011872249062033\nPASS imported instrument patch gain \u00b16 dB: ratios 1.9952624225060807, 0.5011872249062033\n"
+    },
+    {
+      "run": 17,
+      "test": "ImportedSampleContinuityTests",
+      "passed": true,
+      "output": "longest silent run 50 frames, rms 0.016306917210757565\nPASS sustained imported sample renders without silent gaps: longest run 50 frames, rms 0.016306917210757565\n"
+    },
+    {
+      "run": 17,
+      "test": "PatchGainTests",
+      "passed": true,
+      "output": "RMS 0.016317609424419875, 0.03255791290967605, 0.008178177384528305 ratios 1.9952624225060807, 0.5011872249062033\nPASS imported instrument patch gain \u00b16 dB: ratios 1.9952624225060807, 0.5011872249062033\n"
+    },
+    {
+      "run": 18,
+      "test": "ImportedSampleContinuityTests",
+      "passed": true,
+      "output": "longest silent run 50 frames, rms 0.016306917210757565\nPASS sustained imported sample renders without silent gaps: longest run 50 frames, rms 0.016306917210757565\n"
+    },
+    {
+      "run": 18,
+      "test": "PatchGainTests",
+      "passed": true,
+      "output": "RMS 0.016317609424419875, 0.03255791290967605, 0.008178177384528305 ratios 1.9952624225060807, 0.5011872249062033\nPASS imported instrument patch gain \u00b16 dB: ratios 1.9952624225060807, 0.5011872249062033\n"
+    },
+    {
+      "run": 19,
+      "test": "ImportedSampleContinuityTests",
+      "passed": true,
+      "output": "longest silent run 50 frames, rms 0.016306917210757565\nPASS sustained imported sample renders without silent gaps: longest run 50 frames, rms 0.016306917210757565\n"
+    },
+    {
+      "run": 19,
+      "test": "PatchGainTests",
+      "passed": true,
+      "output": "RMS 0.016317609424419875, 0.03255791290967605, 0.008178177384528305 ratios 1.9952624225060807, 0.5011872249062033\nPASS imported instrument patch gain \u00b16 dB: ratios 1.9952624225060807, 0.5011872249062033\n"
+    },
+    {
+      "run": 20,
+      "test": "ImportedSampleContinuityTests",
+      "passed": true,
+      "output": "longest silent run 50 frames, rms 0.016306917210757565\nPASS sustained imported sample renders without silent gaps: longest run 50 frames, rms 0.016306917210757565\n"
+    },
+    {
+      "run": 20,
+      "test": "PatchGainTests",
+      "passed": true,
+      "output": "RMS 0.016317609424419875, 0.03255791290967605, 0.008178177384528305 ratios 1.9952624225060807, 0.5011872249062033\nPASS imported instrument patch gain \u00b16 dB: ratios 1.9952624225060807, 0.5011872249062033\n"
+    }
+  ],
+  "live_focused_results": [
+    {
+      "test": "ImportedSampleContinuityTests",
+      "passed": true
+    },
+    {
+      "test": "SamplerStartupTests",
+      "passed": true
+    },
+    {
+      "test": "SamplerBoundaryRegressionTests",
+      "passed": true
+    },
+    {
+      "test": "SamplerStreamingStressTests",
+      "passed": true
+    },
+    {
+      "test": "LiveMetronomeTests",
+      "passed": true
+    }
+  ],
+  "limits": [
+    "Private fixtures unset",
+    "No new physical iPad or long soak test",
+    "No source listening parity claim"
+  ]
+}

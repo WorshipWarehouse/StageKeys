@@ -20,3 +20,12 @@ for test in tests:
   env=os.environ.copy();env['STAGEKEYS_DATA_DIR']=str(b/f'data-{test}-{uuid.uuid4().hex}');run([b/test],env);results.append({'test':test,'passed':True})
  except subprocess.CalledProcessError:results.append({'test':test,'passed':False});(b/'results.json').write_text(json.dumps(results,indent=2));raise
 (b/'results.json').write_text(json.dumps(results,indent=2))
+
+# Keep the documented fast runner equivalent to the shell gate's C coverage.
+if not a.tests:
+ for test in re.search(r'for test in (AudioEffectsTests .*?); do', s).group(1).split():
+  run(['xcrun','clang','-I',r/'Sources','-std=c11','-O1','-g',r/f'Tests/{test}.c',b/'Synth.o',b/'CreamCoat.o','-framework','CoreMIDI','-o',b/test])
+  try:run([b/test]);results.append({'test':test,'passed':True})
+  except subprocess.CalledProcessError:
+   results.append({'test':test,'passed':False});(b/'results.json').write_text(json.dumps(results,indent=2));raise
+  (b/'results.json').write_text(json.dumps(results,indent=2))

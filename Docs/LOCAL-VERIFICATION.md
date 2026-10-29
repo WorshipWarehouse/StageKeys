@@ -10,11 +10,11 @@ An optional trailing list selects tests. The runner reads the same Sources and d
 
 The default list also covers the native C DSP regressions (`AudioEffectsTests`, `ChannelDSPTests`, `ChannelPanicTests`, `RackTests`, `SynthTests`), which link the C objects built by the same script and need no Swift sources or audio hardware.
 
-Three tests stay on demand. `AudioDeviceTests` and `LivePatchContentTests` need a live output device, which hosted runners provide only intermittently: the first asserts the real device inventory and buffer status, the second asserts captured audio through a running engine. `PatchGainTests` is excluded because its measurement window is not deterministic: it asserts patch gain through a streamed external sample, and the stream's onset moves. In 40 local runs it failed 3 times, and it failed once in two hosted runs of identical code, because between 17 and 25 of the 80 measured blocks carried digital silence; whenever every block carried signal the ratios were exactly 1.99526 and 0.50119. Run all three on a Mac:
+Two tests stay on demand: `AudioDeviceTests` and `LivePatchContentTests` require a live output device, which hosted runners may not provide. Run them on a Mac with `Tests/test-library.sh AudioDeviceTests LivePatchContentTests`.
 
-```
-Tests/test-library.sh AudioDeviceTests LivePatchContentTests PatchGainTests
-```
+`PatchGainTests` is back in the default gate after #80 made single-file samples resident before loading. The earlier failure was periodic silent gaps during sustained playback, not moving note onset. On 29 October, 20 consecutive continuity runs and 20 gain runs passed: longest digital-silence run 50 frames (initial onset), +6 dB ratio 1.9952624 and −6 dB ratio 0.5011872. These synthetic offline measurements do not substitute for hardware latency or full library listening checks.
+
+The fast Python runner executes the same five C regressions after the default Swift list. An explicit Swift test selection remains a focused run.
 
 `PianoHeldNoteTests` runs by default but returns immediately unless `STAGEKEYS_PIANO_PRESET` names a private Steinway preset, the same way `EXSImportTests` skips without its fixture arguments.
 
