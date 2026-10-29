@@ -35,17 +35,7 @@ struct SoundLibrary {
         return try decoded(Self.boundedRead(url,limit:16_000_000))
     }
     private static func boundedRead(_ url:URL,limit:Int)throws->Data {
-        let values=try url.resourceValues(forKeys:[.isRegularFileKey,.isSymbolicLinkKey,.fileSizeKey])
-        guard values.isRegularFile==true,values.isSymbolicLink != true else{throw SetlistLibraryError.unsafeFile}
-        guard (values.fileSize ?? Int.max)<=limit else{throw CocoaError(.fileReadTooLarge)}
-        let handle=try FileHandle(forReadingFrom:url);defer{try? handle.close()}
-        var data=Data()
-        while data.count<=limit {
-            guard let chunk=try handle.read(upToCount:min(1_048_576,limit+1-data.count)),!chunk.isEmpty else{break}
-            data.append(chunk)
-        }
-        guard data.count<=limit else{throw CocoaError(.fileReadTooLarge)}
-        return data
+        try RecoverableSessionFile.read(url,limit:limit)
     }
     private func decoded(_ data:Data)throws->[LibrarySound] {
         guard data.count <= 16_000_000 else { throw CocoaError(.fileReadTooLarge) }
@@ -127,10 +117,10 @@ struct SoundLibrary {
         let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         let bytes = try encoder.encode(entries)
         guard bytes.count <= 16_000_000 else { throw CocoaError(.fileWriteOutOfSpace) }
-        try RecoverableSessionFile.write(bytes,to:url) { _ = try decoded($0) }
+        try RecoverableSessionFile.write(bytes,to:url,limit:16_000_000) { _ = try decoded($0) }
     }
     func recoverPrevious()throws->[LibrarySound] {
-        let data=try RecoverableSessionFile.restore(url) { _ = try decoded($0) }
+        let data=try RecoverableSessionFile.restore(url,limit:16_000_000) { _ = try decoded($0) }
         return try decoded(data)
     }
     static func validate(_ entries: [LibrarySound]) throws {

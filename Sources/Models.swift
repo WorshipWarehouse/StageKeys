@@ -462,12 +462,25 @@ struct EffectPreset: Codable, Equatable, Identifiable {
 }
 enum EffectPresetArchive {
     static func load(_ url:URL)->[EffectPreset] {
-        guard let data=try? Data(contentsOf:url),let presets=try? JSONDecoder().decode([EffectPreset].self,from:data),presets.count<=128,presets.allSatisfy({$0.validate()}),Set(presets.map(\.id)).count==presets.count else{return []}
+        (try? read(url)) ?? []
+    }
+    private static func decoded(_ data:Data)throws->[EffectPreset] {
+        guard data.count<=4_000_000 else{throw SetlistLibraryError.oversized}
+        let presets=try JSONDecoder().decode([EffectPreset].self,from:data)
+        guard presets.count<=128,presets.allSatisfy({$0.validate()}),Set(presets.map(\.id)).count==presets.count else{throw SetlistError.invalid}
         return presets
+    }
+    static func read(_ url:URL)throws->[EffectPreset] {
+        guard FileManager.default.fileExists(atPath:url.path) || (try? url.resourceValues(forKeys:[.isSymbolicLinkKey]).isSymbolicLink)==true else{return []}
+        return try decoded(RecoverableSessionFile.read(url,limit:4_000_000))
+    }
+    static func recover(_ url:URL)throws->[EffectPreset] {
+        try decoded(RecoverableSessionFile.restore(url,limit:4_000_000){_ = try decoded($0)})
     }
     static func save(_ presets:[EffectPreset],to url:URL)throws {
         guard presets.count<=128,presets.allSatisfy({$0.validate()}),Set(presets.map(\.id)).count==presets.count else{throw CocoaError(.fileWriteInvalidFileName)}
+        _ = try read(url)
         try FileManager.default.createDirectory(at:url.deletingLastPathComponent(),withIntermediateDirectories:true)
-        try JSONEncoder().encode(presets).write(to:url,options:.atomic)
+        try RecoverableSessionFile.write(JSONEncoder().encode(presets),to:url,limit:4_000_000){_ = try decoded($0)}
     }
 }

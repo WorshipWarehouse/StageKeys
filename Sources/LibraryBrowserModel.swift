@@ -148,8 +148,20 @@ struct LibraryQuery {
 enum SoundRatingArchive {
     static func valid(_ ratings:[String:Int])->Bool {ratings.count<=8192 && ratings.allSatisfy{!$0.key.isEmpty && $0.key.count<=512 && (1...5).contains($0.value)}}
     static func load(_ url:URL)->[String:Int] {
-        guard let data=try? Data(contentsOf:url),data.count<=4_000_000,let ratings=try? JSONDecoder().decode([String:Int].self,from:data),valid(ratings) else{return [:]}
+        (try? read(url)) ?? [:]
+    }
+    private static func decoded(_ data:Data)throws->[String:Int] {
+        guard data.count<=4_000_000 else{throw SetlistLibraryError.oversized}
+        let ratings=try JSONDecoder().decode([String:Int].self,from:data)
+        guard valid(ratings) else{throw SetlistError.invalid}
         return ratings
+    }
+    static func read(_ url:URL)throws->[String:Int] {
+        guard FileManager.default.fileExists(atPath:url.path) || (try? url.resourceValues(forKeys:[.isSymbolicLinkKey]).isSymbolicLink)==true else{return [:]}
+        return try decoded(RecoverableSessionFile.read(url,limit:4_000_000))
+    }
+    static func recover(_ url:URL)throws->[String:Int] {
+        try decoded(RecoverableSessionFile.restore(url,limit:4_000_000){_ = try decoded($0)})
     }
     static func setting(_ value:Int,for id:String,in ratings:[String:Int])->[String:Int]? {
         guard !id.isEmpty,id.count<=512,(0...5).contains(value) else{return nil}
@@ -158,9 +170,10 @@ enum SoundRatingArchive {
     }
     static func save(_ ratings:[String:Int],to url:URL)throws {
         guard valid(ratings) else{throw CocoaError(.fileWriteInvalidFileName)}
+        _ = try read(url)
         let data=try JSONEncoder().encode(ratings)
         guard data.count<=4_000_000 else{throw CocoaError(.fileWriteOutOfSpace)}
         try FileManager.default.createDirectory(at:url.deletingLastPathComponent(),withIntermediateDirectories:true)
-        try data.write(to:url,options:.atomic)
+        try RecoverableSessionFile.write(data,to:url,limit:4_000_000){_ = try decoded($0)}
     }
 }

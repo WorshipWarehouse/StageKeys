@@ -381,13 +381,17 @@ final class PerformanceStore: ObservableObject {
     @Published private(set) var sessionRecoveryRequired = false
     @Published private(set) var settingsRecoveryRequired = false
     @Published private(set) var libraryRecoveryRequired = false
+    @Published private(set) var ratingsRecoveryRequired = false
+    @Published private(set) var presetsRecoveryRequired = false
     var patch: Patch { setlist.patches[selected] }
     var hasUnavailableLegacyVoices:Bool {patch.layers.contains{$0.instrument>=0 && $0.external==nil && $0.midiDestinationID==nil}}
     init() {
         let base = ProcessInfo.processInfo.environment["STAGEKEYS_DATA_DIR"].map { URL(fileURLWithPath: $0) } ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("StageKeys")
         saveURL = base.appendingPathComponent("setlist.json")
-        soundRatings=SoundRatingArchive.load(base.appendingPathComponent("sound-ratings.json"))
-        effectPresets=EffectPresetArchive.load(base.appendingPathComponent("effect-presets.json"))
+        do {soundRatings=try SoundRatingArchive.read(base.appendingPathComponent("sound-ratings.json"))}
+        catch {ratingsRecoveryRequired=true;message="Saved ratings could not be read. Writes are blocked; recover the previous ratings in Settings."}
+        do {effectPresets=try EffectPresetArchive.read(base.appendingPathComponent("effect-presets.json"))}
+        catch {presetsRecoveryRequired=true;message="Personal effect presets could not be read. Writes are blocked; recover the previous presets in Settings."}
         if let data=try? Data(contentsOf:base.appendingPathComponent("mainstage-import-report.json")),data.count<=2_000_000 {
             mainStageImportReport=try? JSONDecoder().decode(MainStagePatch.Report.self,from:data)
         }
@@ -1350,6 +1354,18 @@ final class PerformanceStore: ObservableObject {
                 guard try JSONDecoder().decode(SessionSettings.self, from: $0).validate() else { throw SetlistError.invalid }
             } }
         catch { message = "Could not save: \(error.localizedDescription)" }
+    }
+    func recoverPreviousRatings() {
+        do {
+            soundRatings=try SoundRatingArchive.recover(saveURL.deletingLastPathComponent().appendingPathComponent("sound-ratings.json"))
+            ratingsRecoveryRequired=false;message="Previous ratings restored; damaged bytes retained."
+        } catch {message="Could not recover ratings: \(error.localizedDescription). Existing files were retained."}
+    }
+    func recoverPreviousPresets() {
+        do {
+            effectPresets=try EffectPresetArchive.recover(saveURL.deletingLastPathComponent().appendingPathComponent("effect-presets.json"))
+            presetsRecoveryRequired=false;message="Previous personal effect presets restored; damaged bytes retained. Active effects were not changed."
+        } catch {message="Could not recover effect presets: \(error.localizedDescription). Existing files were retained."}
     }
     func recoverPreviousLibrary() {
         do {
