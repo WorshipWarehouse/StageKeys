@@ -24,9 +24,14 @@ enum RecoverableSessionFile {
     static func restore(_ url: URL, validate: (Data) throws -> Void) throws -> Data {
         let recovered = try read(previous(url))
         try validate(recovered)
-        if FileManager.default.fileExists(atPath: url.path) {
-            let damaged = try read(url)
-            try damaged.write(to: url.appendingPathExtension("damaged-" + UUID().uuidString), options: .atomic)
+        if FileManager.default.fileExists(atPath: url.path) ||
+            (try? url.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) == true {
+            // A damaged session may exceed the normal read limit. Preserve it
+            // on disk without loading it into memory before restoring the
+            // bounded, validated backup. Never copy a directory or follow a link.
+            let values = try url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
+            guard values.isRegularFile == true, values.isSymbolicLink != true else { throw SetlistLibraryError.unsafeFile }
+            try FileManager.default.copyItem(at: url, to: url.appendingPathExtension("damaged-" + UUID().uuidString))
         }
         try recovered.write(to: url, options: .atomic)
         return recovered
