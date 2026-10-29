@@ -580,5 +580,304 @@
     "Private fixtures unset",
     "No new physical iPad or long soak test",
     "No source listening parity claim"
-  ]
+  ],
+  "final_default_results": [
+    {
+      "test": "SamplerStartupTests",
+      "passed": true
+    },
+    {
+      "test": "SetlistPathAliasTests",
+      "passed": true
+    },
+    {
+      "test": "StoreTests",
+      "passed": true
+    },
+    {
+      "test": "SnapshotSlotTests",
+      "passed": true
+    },
+    {
+      "test": "SessionRecoveryTests",
+      "passed": true
+    },
+    {
+      "test": "SupportDiagnosticsTests",
+      "passed": true
+    },
+    {
+      "test": "TransactionalImportTests",
+      "passed": true
+    },
+    {
+      "test": "MainStagePreflightTests",
+      "passed": true
+    },
+    {
+      "test": "PluginRecoveryTests",
+      "passed": true
+    },
+    {
+      "test": "EffectStressTests",
+      "passed": true
+    },
+    {
+      "test": "OutputMeterTests",
+      "passed": true
+    },
+    {
+      "test": "MainStageLayerAssemblyTests",
+      "passed": true
+    },
+    {
+      "test": "ModulationWheelTests",
+      "passed": true
+    },
+    {
+      "test": "AllSoundSlotsTests",
+      "passed": true
+    },
+    {
+      "test": "PatchDraftPlanTests",
+      "passed": true
+    },
+    {
+      "test": "ManualMIDIDestinationRefreshTests",
+      "passed": true
+    },
+    {
+      "test": "PluginParameterModelTests",
+      "passed": true
+    },
+    {
+      "test": "PrimaVerbModelTests",
+      "passed": true
+    },
+    {
+      "test": "EffectPresetTests",
+      "passed": true
+    },
+    {
+      "test": "DenseHostedTests",
+      "passed": true
+    },
+    {
+      "test": "ReverbTransitionTests",
+      "passed": true
+    },
+    {
+      "test": "LibraryBrowserTests",
+      "passed": true
+    },
+    {
+      "test": "SoundRatingTests",
+      "passed": true
+    },
+    {
+      "test": "LibraryNoteRangeTests",
+      "passed": true
+    },
+    {
+      "test": "SoundLibraryTests",
+      "passed": true
+    },
+    {
+      "test": "ImportedSampleContinuityTests",
+      "passed": true
+    },
+    {
+      "test": "ImportedSoundRetentionTests",
+      "passed": true
+    },
+    {
+      "test": "MainStagePatchTests",
+      "passed": true
+    },
+    {
+      "test": "StageKeysSamplerTests",
+      "passed": true
+    },
+    {
+      "test": "SamplerAttackTests",
+      "passed": true
+    },
+    {
+      "test": "AudioDiagnosticRecorderTests",
+      "passed": true
+    },
+    {
+      "test": "InstrumentGainMatchTests",
+      "passed": true
+    },
+    {
+      "test": "PatchGainTests",
+      "passed": true
+    },
+    {
+      "test": "EXSEnvelopeTests",
+      "passed": true
+    },
+    {
+      "test": "EXSVoiceControlsTests",
+      "passed": true
+    },
+    {
+      "test": "EXSSplitRegionTests",
+      "passed": true
+    },
+    {
+      "test": "LibraryBackupTests",
+      "passed": true
+    },
+    {
+      "test": "TonicPadTests",
+      "passed": true
+    },
+    {
+      "test": "MainStageProcessingTests",
+      "passed": true
+    },
+    {
+      "test": "MainStageControllerDefaultsTests",
+      "passed": true
+    },
+    {
+      "test": "MainStageAudioUnitImportTests",
+      "passed": true
+    },
+    {
+      "test": "EXSReferenceIdentityTests",
+      "passed": true
+    },
+    {
+      "test": "EXSCrossfadeNeutralTests",
+      "passed": true
+    },
+    {
+      "test": "SamplerHostVelocityTests",
+      "passed": true
+    },
+    {
+      "test": "NativeSamplerGroupTests",
+      "passed": true
+    },
+    {
+      "test": "PianoFidelityTests",
+      "passed": true
+    },
+    {
+      "test": "SamplerBoundaryRegressionTests",
+      "passed": true
+    },
+    {
+      "test": "SamplerStreamingStressTests",
+      "passed": true
+    },
+    {
+      "test": "AudioUnitCatalogTests",
+      "passed": true
+    },
+    {
+      "test": "MIDISetupTests",
+      "passed": true
+    },
+    {
+      "test": "BuiltinEffectUnitTests",
+      "passed": true
+    },
+    {
+      "test": "NativeCreamCoatTests",
+      "passed": true
+    },
+    {
+      "test": "ParallelAudioTests",
+      "passed": true
+    },
+    {
+      "test": "PianoHeldNoteTests",
+      "passed": true
+    },
+    {
+      "test": "ModelTests",
+      "passed": true
+    },
+    {
+      "test": "GrooveTests",
+      "passed": true
+    },
+    {
+      "test": "MIDIFXTests",
+      "passed": true
+    },
+    {
+      "test": "SnapshotMorphTests",
+      "passed": true
+    },
+    {
+      "test": "EXSAmplitudeUpgradeTests",
+      "passed": true
+    },
+    {
+      "test": "EXSResponseUpgradeTests",
+      "passed": true
+    },
+    {
+      "test": "EXSVoiceUpgradeTests",
+      "passed": true
+    },
+    {
+      "test": "EXSCaptureCompatibilityTests",
+      "passed": true
+    },
+    {
+      "test": "EXSImportTests",
+      "passed": true
+    },
+    {
+      "test": "ModernEXSImportTests",
+      "passed": true
+    },
+    {
+      "test": "ModernEXSPlaybackTests",
+      "passed": true
+    },
+    {
+      "test": "MainStageAutoConversionTests",
+      "passed": true
+    },
+    {
+      "test": "MainStagePackTests",
+      "passed": true
+    },
+    {
+      "test": "ReferencedMainStageImportTests",
+      "passed": true
+    },
+    {
+      "test": "ImportedAttackAuditTests",
+      "passed": true
+    },
+    {
+      "test": "AudioEffectsTests",
+      "passed": true
+    },
+    {
+      "test": "ChannelDSPTests",
+      "passed": true
+    },
+    {
+      "test": "ChannelPanicTests",
+      "passed": true
+    },
+    {
+      "test": "RackTests",
+      "passed": true
+    },
+    {
+      "test": "SynthTests",
+      "passed": true
+    }
+  ],
+  "remaining_regression_issue": 82
 }
