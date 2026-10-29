@@ -92,6 +92,15 @@ import Foundation
         let sourceAfter=try Data(contentsOf:patch.appendingPathComponent("data.plist"))
         let stripAfter=try Data(contentsOf:patch.appendingPathComponent("Pad.cst"))
         assert(sourceAfter==changedBytes && stripAfter==strip,"Conversion must preserve original source bytes")
+        let importedBefore=store.librarySounds
+        let retainedMetadata=dataRoot.appendingPathComponent("MainStage Sources/"+store.mainStageImportReport!.sourceArchiveID!+"/Source.patch/data.plist")
+        let retainedBytes=try Data(contentsOf:retainedMetadata)
+        try Data("changed after preflight".utf8).write(to:retainedMetadata)
+        store.importMainStageSamplers(patch,installedAudioUnits:installed)
+        for _ in 0..<1500 where store.libraryImportBusy {try await Task.sleep(nanoseconds:20_000_000)}
+        assert(store.libraryImportProgress?.contains("changed or has no integrity record")==true,"Duplicate reuse must not bypass retained metadata verification")
+        assert(store.librarySounds==importedBefore,"A failed duplicate integrity check must not alter the catalog")
+        try retainedBytes.write(to:retainedMetadata)
         print("PASS: a saved third-party Audio Unit converts to a hosted layer with its state and version warning, assembles into a patch, is not duplicated on reimport, and is refused when the component is missing")
         print("PASS: unchanged reimport assembles, metadata-only edits retain new gain and original source/state, previous versions remain untouched")
     }

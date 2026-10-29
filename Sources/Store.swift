@@ -1136,12 +1136,12 @@ final class PerformanceStore: ObservableObject {
                     libraryImportProgress="Importing MainStage channel: "+channel.name
                     await Task.yield();try checkLibraryImportCancellation()
                     do {
+                        let processing=try mainStageProcessing(channelIndex)
                         let id=try MainStagePatch.conversionID(report,channel:channel,variant:AssetDigest.sha256(file))
                         if let existing=entries.firstIndex(where:{$0.id==id}) {
                             entries[existing].sourceArchiveID=report.sourceArchiveID
                             skipped+=1;continue
                         }
-                        let processing=try mainStageProcessing(channelIndex)
                         let (sound,notes,template)=try prepareLibrarySound(file,sampleRoot:folder)
                         var layer=template ?? Layer(name:channel.name,instrument:-1,gain:1)
                         layer.name=channel.name;layer.external=sound
@@ -1167,6 +1167,7 @@ final class PerformanceStore: ObservableObject {
                             let data=try MainStagePatch.verifiedRead(root.appendingPathComponent(channel.file),in:root,sha256:channel.sha256)
                             guard let state=MainStageAudioUnit.state(for:unit,in:data) else{throw MainStagePatch.Failure.invalid("its saved Audio Unit state could not be read; retain the source or re-save the strip.")}
                             let hosted=try MainStageAudioUnit.hostedLayer(name:channel.name,device:unit,state:state,installed:installed)
+                            let processing=try mainStageProcessing(channelIndex)
                             // Use original strip/metadata bytes, not reserialized plug-in
                             // state, while including separately saved channel settings.
                             let id=try MainStagePatch.conversionID(report,channel:channel,variant:"audio-unit")
@@ -1174,7 +1175,6 @@ final class PerformanceStore: ObservableObject {
                                 entries[existing].sourceArchiveID=archiveID
                                 skipped+=1;continue
                             }
-                            let processing=try mainStageProcessing(channelIndex)
                             let layer=try processing.applying(to:hosted.layer)
                             entries.append(LibrarySound(id:id,name:channel.name,collection:"MainStage Patches",sound:layer.external,layer:layer,sourceArchiveID:archiveID,conversionNotes:hosted.notes+processing.issues))
                             imported+=1
