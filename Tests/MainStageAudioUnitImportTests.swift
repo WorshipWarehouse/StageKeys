@@ -85,7 +85,9 @@ import Foundation
         for _ in 0..<1500 where store.libraryImportBusy {try await Task.sleep(nanoseconds:20_000_000)}
         assert(!store.libraryImportBusy && store.librarySounds.count==count+1,"A metadata-only fader edit must import as a new version")
         let updated=try MainStagePatch.assembledChannels(store.mainStageImportReport!,entries:store.librarySounds)
-        assert(updated.layers.first?.gain==1 && updated.layers.first?.pluginState==layer.pluginState)
+        assert(updated.layers.first?.gain==1,"Metadata-only source fader edit was not applied")
+        let updatedState=(try PropertyListSerialization.propertyList(from:updated.layers.first!.pluginState!,options:[],format:nil)) as! [String:Any]
+        assert(NSDictionary(dictionary:updatedState).isEqual(NSDictionary(dictionary:restored!)),"Reimport must preserve all plugin-state values; plist serialization order need not be byte-identical")
         assert(store.librarySounds.first(where:{$0.id==entry.id})?.layer?.gain==layer.gain,"Old imported sounds must not be overwritten")
         let sourceAfter=try Data(contentsOf:patch.appendingPathComponent("data.plist"))
         let stripAfter=try Data(contentsOf:patch.appendingPathComponent("Pad.cst"))
