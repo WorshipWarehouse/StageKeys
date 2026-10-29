@@ -39,6 +39,15 @@ with tempfile.TemporaryDirectory() as temporary:
     empty.mkdir()
     check(app, False)
     empty.rmdir()
+    for name in ('Personal.stagekeyspack', 'Personal.STAGEKEYSPACK'):
+        pack=resources / name
+        pack.write_bytes(b'synthetic personal pack')
+        check(app, False)
+        pack.unlink()
+    pack=resources / 'Empty.stagekeyspack'
+    pack.mkdir()
+    check(app, False)
+    pack.rmdir()
     link = root / 'Linked.app'
     link.symlink_to(app, target_is_directory=True)
     check(link, False)
@@ -57,6 +66,10 @@ def repo_check(files, expected):
         assert (result.returncode == 0) == expected, message
 
 repo_check({'Sources/Model.swift': b'fixture source'}, True)
+repo_check({'Personal.stagekeyspack': b'fixture personal pack'}, False)
+repo_check({'Personal.STAGEKEYSPACK': b'fixture personal pack'}, False)
+repo_check({'Personal.stagekeyspack/README.txt': b'fixture nested pack'}, False)
+repo_check({'Docs/stagekeyspack.md': b'fixture format documentation'}, True)
 repo_check({'setlist.json': b'fixture user setlist'}, False)
 repo_check({'setlist-v3-backup.json': b'fixture pre-migration setlist backup'}, False)
 repo_check({'sound-library.json': b'fixture private library index'}, False)
@@ -89,4 +102,5 @@ def checkout_check(staged, untracked, expected, ignore=''):
 checkout_check({'Sources/Model.swift': b'fixture source'}, {'note.aifc': b'fixture private sample'}, False)
 checkout_check({'Sources/Model.swift': b'fixture source'}, {'Samples/soft.wav': b'fixture private sample'}, True, ignore='*.wav\n')
 checkout_check({'Sources/Model.swift': b'fixture source'}, {'Sources/Extra.swift': b'fixture source'}, True)
-print('PASS: no-target runs, missing notices, embedded samples, empty MainStage document directories, symlink bundles and private library, setlist, MainStage and Ableton content rejected')
+checkout_check({'Sources/Model.swift': b'fixture source'}, {'Personal.stagekeyspack': b'fixture pack'}, False)
+print('PASS: portable packs, no-target runs, missing notices, embedded samples, empty MainStage document directories, symlink bundles and private library, setlist, MainStage and Ableton content rejected')
