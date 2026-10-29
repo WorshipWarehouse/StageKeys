@@ -49,8 +49,11 @@ struct PluginInterface: View {
         #endif
         .background(StageTheme.base)
         .onAppear { let token=UUID();requestGeneration=token;open(token:token) }
+        .onChange(of:store.patch.id) { _ in dismiss() }
+        .onChange(of:currentSound) { _ in dismiss() }
         .onDisappear { requestGeneration=nil;parameters.detach();controller=nil;generic=false }
     }
+    private var currentSound:ExternalSound? {store.patch.layers.indices.contains(index) ? store.patch.layers[index].external:nil}
     @ViewBuilder private var content: some View {
         if let controller {
             ScrollView([.horizontal, .vertical]) { HostedPluginView(controller: controller).frame(width: size.width, height: size.height) }
@@ -103,7 +106,7 @@ struct PluginInterface: View {
     /// then fall back to the generic editor when no custom view is provided.
     private func open(token:UUID,attempt: Int = 0) {
         guard requestGeneration==token,controller == nil else { return }
-        guard attempt < 40 else { status = "The instrument is still loading or unavailable."; return }
+        guard attempt < 120 else { status = "The instrument is still loading or unavailable."; return }
         guard let unit = store.audio.externalRack?.unit(channel: index) else {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { open(token:token,attempt: attempt + 1) }
             return

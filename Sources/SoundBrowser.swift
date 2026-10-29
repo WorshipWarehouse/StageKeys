@@ -202,6 +202,7 @@ struct SoundBrowser: View {
         else if let entry=selection.entry {store.addLibrarySound(entry,index:index)}
         else if let external=selection.external {store.addExternal(external,index:index)}
         else if let destination=selection.destination {store.addMIDIDestination(destination,index:index)}
+        store.requestPluginInterface(index)
         dismiss()
     }
 }
