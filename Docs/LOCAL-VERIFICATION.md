@@ -21,3 +21,5 @@ The fast Python runner executes the same five C regressions after the default Sw
 Release checks still include universal Mac and iOS Simulator builds, `Tests/test-reverb.sh` with ASan/UBSan, applicable Python corpus/evidence checks, and source/bundle content validation. A simulator build is not physical iPad qualification. Local checks do not alter GitHub billing or report hosted CI as green.
 
 The PR matrix records the exact commit SHA for each revision. Completed DSP/build results may be reused only for byte-identical complete input sets; cache entries retain the originating PR/SHA and input SHA-256. Distinct code, test, target or resource inputs run again. Logs retain failures and fresh-directory retries. Final merged application sources are also tested as an integration.
+
+CI now uses the shared-core runner for the same default Swift/C list. Results distinguish exercised passes, explicit private-fixture skips (`passed: null`) and failures; compile errors/crashes/timeouts fail and retain partial JSON. See `CI-PROCESS-AUDIT.md` for coverage, runtime evidence and unchanged required gates.
