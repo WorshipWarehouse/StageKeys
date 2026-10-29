@@ -4,13 +4,13 @@ import AVFoundation
     static func main() throws {
         precondition(Thread.isMainThread)
         let store = PerformanceStore()
-        store.setlist = Setlist()
+        store.setlist = TestFixtures.setlist()
         try store.audio.prepareOffline()
         store.start()
         assert(store.started)
         let auditionEncoder=JSONEncoder();auditionEncoder.outputFormatting = .sortedKeys
         let savedBeforeAudition=try auditionEncoder.encode(store.setlist)
-        let token=store.auditionLibrarySound(0,Layer(name:"Audition Bells",instrument:2,gain:0.6))!
+        let token=store.auditionLibrarySound(0,TestFixtures.layer(2,gain:0.6,name:"Audition Bells"))!
         assert(store.playbackLayer(0).name == "Audition Bells")
         assert((try! auditionEncoder.encode(store.setlist)) == savedBeforeAudition)
         store.endAudition(token)
@@ -106,7 +106,7 @@ import AVFoundation
         try store.setlist.validate()
         assert(store.message == nil, store.message ?? "")
         let beforePreview=store.patch.layers[0]
-        var libraryPreview=Layer(name:"Library Preview",instrument:1,gain:0.5);libraryPreview.low=36;libraryPreview.high=48
+        var libraryPreview=TestFixtures.layer(1,gain:0.5,name:"Library Preview");libraryPreview.low=36;libraryPreview.high=48
         store.previewLibraryRange(0,libraryPreview)
         assert(store.displayedLayers[0].low==36 && store.displayedLayers[0].high==48)
         assert(store.patch.layers[0]==beforePreview,"Library selection committed a sound")

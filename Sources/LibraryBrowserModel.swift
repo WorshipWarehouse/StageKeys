@@ -51,7 +51,6 @@ struct BrowserSound: Identifiable {
     let name:String
     let collection:String
     let tags:SoundTags
-    var builtin:Int?
     var entry:LibrarySound?
     var external:ExternalSound?
     var destination:ExternalMIDIDestination?
@@ -62,7 +61,7 @@ struct BrowserSound: Identifiable {
     var unavailableReason:String?
     var validationNote:String?
     var ratingID:String {entry?.id ?? id}
-    var playable:Bool {(builtin != nil || entry?.sound != nil || entry?.layer != nil || external != nil || destination != nil) && unavailableReason == nil}
+    var playable:Bool {(entry?.sound != nil || entry?.layer?.loaded == true || external != nil || destination != nil) && unavailableReason == nil}
     func values(_ facet:LibraryFacet)->[String] {
         switch facet {
         case .noteRange:return tags.noteRanges?.isEmpty == false ? tags.noteRanges!:["Not Tagged"]
@@ -84,7 +83,9 @@ struct BrowserSound: Identifiable {
         return BrowserSound(id:original.id,name:original.name,collection:original.collection,tags:tags,entry:converted)
     }
     static func library(_ entry:LibrarySound)->BrowserSound {
-        BrowserSound(id:entry.id,name:entry.name,collection:entry.collection,tags:entry.tags ?? .inferred(name:entry.name,source:entry.hostPath != nil ? "MainStage" : entry.sound?.kind == .audioUnit ? "Audio Unit" : "Sampler"),entry:entry)
+        var sound=BrowserSound(id:entry.id,name:entry.name,collection:entry.collection,tags:entry.tags ?? .inferred(name:entry.name,source:entry.hostPath != nil ? "MainStage" : entry.sound?.kind == .audioUnit ? "Audio Unit" : "Sampler"),entry:entry)
+        if let layer=entry.layer,entry.sound==nil,!layer.loaded,layer.instrument>=0 {sound.unavailableReason="Legacy voice unavailable. Import a replacement sound; saved settings are retained."}
+        return sound
     }
 }
 enum LibrarySort:String,CaseIterable {case name="Name",recommended="Recommended",rating="Rating",recent="Recently Added",random="Random"}

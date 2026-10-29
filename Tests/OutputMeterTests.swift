@@ -14,7 +14,7 @@ import AVFoundation
         buffer.floatChannelData![0][0] = .nan;buffer.floatChannelData![1][0] = .infinity
         meter.append(buffer);assert(meter.read().invalid==2 && meter.read().rms.isFinite)
         let audio=AudioController();try audio.prepareOffline();defer{audio.stop()}
-        let layer=Layer(name:"Meter Probe",instrument:0,gain:0.1)
+        let layer=TestFixtures.layer(gain:0.1,name:"Meter Probe")
         audio.configure(0,layer);audio.gain(0,0.1,seconds:0);audio.master(1);audio.space(0)
         audio.noteOn(key:60,pitch:60,instrument:0,layer:0,velocity:0.7)
         for _ in 0..<100{_ = try audio.offlineBlock()}

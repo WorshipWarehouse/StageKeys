@@ -82,11 +82,11 @@ final class PerformanceStore: ObservableObject {
         tonicVelocitySelector=state.velocitySelector;tonicTimbre=state.timbre;tonicSound=state.sound
         tonicGain=state.gain;tonicBrightness=state.brightness;tonicShimmer=state.shimmer
         tonicLastRoot=state.root
-        if state.enabled {if let previous=tonic,previous != state.root {stopTonicNotes(previous)};if tonic != state.root {tonic=state.root;playTonicNotes(state.root)}}
+        if state.enabled && tonicSound != nil {if let previous=tonic,previous != state.root {stopTonicNotes(previous)};if tonic != state.root {tonic=state.root;playTonicNotes(state.root)}}
         else if let previous=tonic {stopTonicNotes(previous);tonic=nil}
     }
-    var tonicNames:[String] {tonicVelocitySelector ? ["Warm","Bright","Dark","Choir","Organ","Guitar","Strings","Pure","Evolving","Rev Piano","Simple","Classic"]:[tonicSound?.name ?? "Warm"]}
-    var tonicLabel:String {"\(tonicTimbre+1). \(tonicNames[min(max(0,tonicTimbre),tonicNames.count-1)])"}
+    var tonicNames:[String] {tonicVelocitySelector ? ["Warm","Bright","Dark","Choir","Organ","Guitar","Strings","Pure","Evolving","Rev Piano","Simple","Classic"]:[tonicSound?.name ?? "Choose Sound"]}
+    var tonicLabel:String {tonicSound == nil ? "Choose Sound":"\(tonicTimbre+1). \(tonicNames[min(max(0,tonicTimbre),tonicNames.count-1)])"}
 
     @Published var tonicGain: Float = 0.32 { didSet { audio.gain(15, tonicGain) } }
     @Published var master: Float = 0.7 { didSet { audio.master(master) } }
@@ -127,7 +127,7 @@ final class PerformanceStore: ObservableObject {
     }
     private func updateShimmer() {configureTonic()}
     private func configureTonic() {
-        var layer=Layer(name:"Tonic Pad",instrument:tonicSound == nil ? 1:-1,gain:tonicGain)
+        var layer=Layer(name:"Tonic Pad",instrument:-1,gain:tonicGain)
         layer.external=tonicSound
         var tone=AudioEffect();tone.kind=1;tone.parameters=[200*pow(100,max(0,min(1,tonicBrightness))),0.707,1]
         var shimmer=AudioEffect();shimmer.kind=10
@@ -142,7 +142,7 @@ final class PerformanceStore: ObservableObject {
     private func playTonicNotes(_ root:Int) {
         configureTonic()
         if tonicSound != nil {audio.noteOn(key:9000+root,pitch:36+root,instrument:-1,layer:15,velocity:tonicVelocitySelector ? Float(tonicTimbre+1)/127:0.65)}
-        else {for interval in [0,7,12] {audio.noteOn(key:9100+root+interval,pitch:36+root+interval,instrument:1,layer:15,velocity:0.65)}}
+
     }
     private func restartTonic() {
         guard started else{return}
@@ -218,7 +218,7 @@ final class PerformanceStore: ObservableObject {
         guard let eligibility=tonicSoundEligibility(sound) else { setTonicInstrument(sound);return }
         message=eligibility
     }
-    func useBuiltinTonic(){tonicVelocitySelector=false;tonicTimbre=0;tonicSound=nil;save()}
+    func clearTonicSound(){if let root=tonic{stopTonicNotes(root)};tonic=nil;audio.panic(channel:15);tonicVelocitySelector=false;tonicTimbre=0;tonicSound=nil;save()}
     let midiFX = MIDIFXProcessor()
     private var midiOutput: ExternalMIDIOutput?
     private var outputNotes: [Int: [Int: Int]] = [:]
@@ -381,6 +381,7 @@ final class PerformanceStore: ObservableObject {
     @Published private(set) var sessionRecoveryRequired = false
     @Published private(set) var settingsRecoveryRequired = false
     var patch: Patch { setlist.patches[selected] }
+    var hasUnavailableLegacyVoices:Bool {patch.layers.contains{$0.instrument>=0 && $0.external==nil && $0.midiDestinationID==nil}}
     init() {
         let base = ProcessInfo.processInfo.environment["STAGEKEYS_DATA_DIR"].map { URL(fileURLWithPath: $0) } ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("StageKeys")
         saveURL = base.appendingPathComponent("setlist.json")
@@ -761,12 +762,6 @@ final class PerformanceStore: ObservableObject {
         configureMIDI(index, layer)
         audio.configure(index, layer); audio.gain(index, layer.loaded && !layer.muted ? layer.gain : 0); updateToneFilters(); save()
     }
-    func addSound(_ index: Int, _ instrument: Int) {
-        guard patch.layers.indices.contains(index),(0...2).contains(instrument) else{return}
-        let name = ["Soft Keys", "Warm Pad", "Glass Bells"][instrument]
-        var l = Layer(name: name, instrument: instrument, gain: 0.65)
-        l.id = patch.layers[index].id; commitLayer(index, l)
-    }
     func removeSound(_ index: Int) {
         guard patch.layers.indices.contains(index) else{return}
         var l = Layer.empty(); l.id = patch.layers[index].id; commitLayer(index, l)
@@ -830,6 +825,7 @@ final class PerformanceStore: ObservableObject {
     }
     func toggleTonic(_ root: Int) {
         guard started,(0..<12).contains(root) else{return}
+        guard tonicSound != nil else {message="Choose or import a pad sound before turning on Tonic Pad.";return}
         if tonic==root {stopTonicNotes(root);tonicLastRoot=root;tonic=nil;return}
         if let previous=tonic {stopTonicNotes(previous)}
         tonicLastRoot=root;tonic=root;playTonicNotes(root)
@@ -1290,7 +1286,7 @@ final class PerformanceStore: ObservableObject {
     }
     func addLibrarySound(_ entry: LibrarySound, index: Int) {
         guard patch.layers.indices.contains(index) else{return}
-        if var layer = entry.layer { layer.id = patch.layers[index].id; commitLayer(index, layer); return }
+        if var layer = entry.layer { if layer.external==nil {layer.external=entry.sound};layer.id = patch.layers[index].id; commitLayer(index, layer); return }
         if let sound = entry.sound { addExternal(sound, index: index); return }
         #if os(macOS)
         if let path = entry.hostPath, NSWorkspace.shared.open(URL(fileURLWithPath: path)) {

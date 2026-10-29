@@ -112,7 +112,7 @@ final class AudioController {
     func stop() { stopAudioCheck();sk_panic(synth); engine.stop() }
     func noteOn(key: Int, pitch: Int, instrument: Int, layer: Int, velocity: Float,sourceID:Int32? = nil) {
         if externalSounds[layer] != nil { externalRack?.noteOn(channel: layer, key: key, pitch: pitch, velocity: velocity,sourceID:sourceID) }
-        else if instrument >= 0 { sk_note_on(synth, Int32(key), Int32(pitch), Int32(instrument), Int32(layer), velocity) }
+        // Synth.c remains the effect/clock core; product notes require user content.
     }
     func noteOff(key: Int, channel: Int, force: Bool = false) {
         sk_note_off_channel(synth, Int32(key), Int32(channel), force ? 1 : 0)

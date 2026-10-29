@@ -181,7 +181,7 @@ struct ImportedRackControls: View {
 
 struct ImportedBranchControls:View {
     @Binding var branch:ImportedBranch
-    private var rackLayer:Binding<Layer>{Binding(get:{var layer=Layer(name:branch.name,instrument:0,gain:0.5);layer.importedRack=branch.rack;return layer},set:{if let rack=$0.importedRack{branch.rack=rack}})}
+    private var rackLayer:Binding<Layer>{Binding(get:{var layer=Layer(name:branch.name,instrument:-1,gain:0.5);layer.importedRack=branch.rack;return layer},set:{if let rack=$0.importedRack{branch.rack=rack}})}
     var body:some View {
         DisclosureGroup(branch.name) {
             Toggle("Branch On",isOn:Binding(get:{branch.enabled ?? true},set:{branch.enabled=$0}))
@@ -208,7 +208,7 @@ struct ImportedBranchControls:View {
 
 struct ImportedAudioBranchControls:View {
     @Binding var branch:ImportedAudioBranch
-    private var rackLayer:Binding<Layer>{Binding(get:{var layer=Layer(name:branch.name,instrument:0,gain:0.5);layer.importedRack=branch.rack;return layer},set:{if let rack=$0.importedRack{branch.rack=rack}})}
+    private var rackLayer:Binding<Layer>{Binding(get:{var layer=Layer(name:branch.name,instrument:-1,gain:0.5);layer.importedRack=branch.rack;return layer},set:{if let rack=$0.importedRack{branch.rack=rack}})}
     var body:some View {
         DisclosureGroup(branch.name) {
             Toggle("Branch On",isOn:$branch.enabled)

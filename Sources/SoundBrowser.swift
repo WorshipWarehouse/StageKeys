@@ -16,11 +16,11 @@ struct SoundBrowser: View {
     /// Shared with Settings so a setup change reaches the library immediately.
     private var destinations:[ExternalMIDIDestination] { store.midiDestinations }
     private var collections:[String] {
-        let builtins=["All Sounds","StageKeys","My Sounds","Sunday Free","Sunday App","MainStage Archive","Audio Units","External MIDI"]
-        return builtins + Set(store.librarySounds.map(\.collection).filter{$0 != "Tonic Pads"}).subtracting(builtins).sorted{$0.localizedStandardCompare($1) == .orderedAscending}
+        let standard=["All Sounds","My Sounds","Audio Units","External MIDI"]
+        return standard + Set(store.librarySounds.map(\.collection).filter{$0 != "Tonic Pads"}).subtracting(standard).sorted{$0.localizedStandardCompare($1) == .orderedAscending}
     }
     private var sounds:[BrowserSound] {
-        var result=["Soft Keys","Warm Pad","Glass Bells"].enumerated().map {i,name in var tags=SoundTags.inferred(name:name,source:"StageKeys Synth");tags.noteRanges=[LibraryNoteRange.full.rawValue];return BrowserSound(id:"builtin-\(i)",name:name,collection:"StageKeys",tags:tags,builtin:i)}
+        var result:[BrowserSound]=[]
         let entries=store.librarySounds
         let entryOrder=Dictionary(entries.enumerated().map{($0.element.id,$0.offset+1)},uniquingKeysWith:{first,_ in first})
         result += entries.map {entry in
@@ -142,9 +142,11 @@ struct SoundBrowser: View {
                         VStack(spacing:14) {
                             Image(systemName:"tray.and.arrow.down").font(.system(size:38)).foregroundStyle(StageTheme.selected)
                             Text("No Sounds found").font(StageTheme.font(17,weight:.semibold))
-                            Text(collection == "My Sounds" && query.search.isEmpty && query.filters.isEmpty ? "Import a sound or save a module to My Sounds to add it to any patch later." : "Change the search or filters to find more sounds.").multilineTextAlignment(.center).foregroundStyle(.secondary)
+                            Text(query.search.isEmpty && query.filters.isEmpty ? "StageKeys ships without sounds. Import samples, choose Audio Units, or select an external MIDI destination." : "Change the search or filters to find more sounds.").multilineTextAlignment(.center).foregroundStyle(.secondary)
                             if !query.search.isEmpty || !query.filters.isEmpty {Button("Clear Filters"){query.filters=[:];query.search=""}}
-                            Button("Import Sounds"){importHub=true}.buttonStyle(StageButtonStyle())
+                            Button("Import Samples"){importHub=true}.buttonStyle(StageButtonStyle())
+                            Button("Add Audio Unit"){collection="Audio Units";query=LibraryQuery()}.buttonStyle(StageButtonStyle())
+                            Button("MIDI Routing"){collection="External MIDI";query=LibraryQuery()}.buttonStyle(StageButtonStyle())
                         }.frame(maxWidth:.infinity).padding(24)
                     }
                 }.padding(.horizontal,6)
@@ -184,13 +186,13 @@ struct SoundBrowser: View {
     private func auditionSelection() {
         store.endAudition(auditionToken);auditionToken=nil
         guard let selection,selection.playable,selection.destination == nil else{return}
-        var layer=selection.entry?.layer ?? Layer(name:selection.name,instrument:selection.builtin ?? -1,gain:0.6)
+        var layer=selection.entry?.layer ?? Layer(name:selection.name,instrument:-1,gain:0.6)
         layer.external=layer.external ?? selection.entry?.sound ?? selection.external
         auditionToken=store.auditionLibrarySound(index,layer)
     }
     private func previewRange() {
         guard let selection,selection.playable else{store.previewLibraryRange(index,nil);return}
-        var preview=selection.entry?.layer ?? Layer(name:selection.name,instrument:selection.builtin ?? -1,gain:0.5)
+        var preview=selection.entry?.layer ?? Layer(name:selection.name,instrument:-1,gain:0.5)
         preview.external=preview.external ?? selection.entry?.sound ?? selection.external
         preview.midiDestinationID=preview.midiDestinationID ?? selection.destination?.id
         store.previewLibraryRange(index,preview)
@@ -198,8 +200,7 @@ struct SoundBrowser: View {
     private func clearHiddenSelection(){if !results.contains(where:{$0.id == selectedID}){selectedID=nil}}
     private func addSelection(){
         guard let selection,selection.playable else{return}
-        if let builtin=selection.builtin {store.addSound(index,builtin)}
-        else if let entry=selection.entry {store.addLibrarySound(entry,index:index)}
+        if let entry=selection.entry {store.addLibrarySound(entry,index:index)}
         else if let external=selection.external {store.addExternal(external,index:index)}
         else if let destination=selection.destination {store.addMIDIDestination(destination,index:index)}
         store.requestPluginInterface(index)

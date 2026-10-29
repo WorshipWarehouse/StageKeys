@@ -55,10 +55,10 @@ struct TonicSettingsEditor:View {
         EditorFrame(title:"Tonic Pad Settings",width:700,height:520) {
             ScrollView {VStack(alignment:.leading,spacing:20) {
                 HStack(spacing:10) {
-                    Text("Pad Instrument: \(store.tonicSound?.name ?? "Built-in Warm")").font(.headline)
+                    Text("Pad Instrument: \(store.tonicSound?.name ?? "No sound selected")").font(.headline)
                     Spacer()
                     Button("Choose Sound…"){selectingSound=true}.buttonStyle(StageButtonStyle())
-                    Button("Built-in Warm"){store.useBuiltinTonic()}.buttonStyle(StageButtonStyle())
+
                 }
                 if let selectedLibrarySoundID,
                    let selected=store.librarySounds.first(where:{$0.id==selectedLibrarySoundID}),
@@ -70,8 +70,8 @@ struct TonicSettingsEditor:View {
                     Picker("Pad Sound",selection:$store.tonicTimbre){ForEach(Array(store.tonicNames.enumerated()),id:\.offset){index,name in Text("\(index+1). \(name)").tag(index)}}
                     Button("Import Pad Instrument"){instrument=nil;choosing=true}.buttonStyle(StageButtonStyle())
                 }
-                Text(store.tonicSound == nil ? "Built-in pad · no sound library required":"User-library sampler · existing sample assets are used in place").font(.caption).foregroundStyle(.secondary)
-                if store.tonicSound != nil {Button("Use Built-in Pad"){store.useBuiltinTonic()}.buttonStyle(StageButtonStyle())}
+                Text(store.tonicSound == nil ? "Choose Sound or import a looped sampler instrument. StageKeys includes no pad sounds.":"User-library sampler · existing sample assets are used in place").font(.caption).foregroundStyle(.secondary)
+                if store.tonicSound != nil {Button("Clear Pad Sound"){store.clearTonicSound()}.buttonStyle(StageButtonStyle())}
                 HStack(spacing:18) {
                     EffectKnob(descriptor:.init(index:0,name:"Brightness",minimum:0,maximum:1,defaultValue:0.7,unit:"%"),value:$store.tonicBrightness)
                     EffectKnob(descriptor:.init(index:1,name:"Shimmer",minimum:0,maximum:1,defaultValue:0,unit:"%"),value:$store.tonicShimmer)

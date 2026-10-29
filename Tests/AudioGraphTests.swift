@@ -5,6 +5,7 @@ import Foundation
 struct AudioGraphTests {
     static func main() throws {
         let audio = AudioController()
+        audio.configure(0,TestFixtures.layer(0,gain:0.7));audio.configure(1,TestFixtures.layer(1,gain:0.4))
         try audio.prepareOffline()
         audio.gain(0, 0.7, seconds: 0)
         audio.gain(1, 0.4, seconds: 0)

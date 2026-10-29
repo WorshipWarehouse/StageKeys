@@ -2,7 +2,7 @@ import Foundation
 @main struct ReverbTransitionTests {
  @MainActor static func main()throws {
   let store=PerformanceStore();try store.audio.prepareOffline();defer{store.audio.stop()}
-  var layer=Layer(name:"Tail test",instrument:0,gain:0.2);var fx=AudioEffect.factoryDefault(kind:15);var p=fx.values;p[8]=0;p[9]=1;p[2]=0.9;fx.parameters=p;layer.effects[0]=fx
+  var layer=TestFixtures.layer(gain:0.2,name:"Tail test");var fx=AudioEffect.factoryDefault(kind:15);var p=fx.values;p[8]=0;p[9]=1;p[2]=0.9;fx.parameters=p;layer.effects[0]=fx
   let first=Patch(name:"A",layers:[layer]+(0..<14).map{_ in Layer.empty()},snapshots:[])
   var second=first.duplicate();second.name="B"
   store.setlist.patches=[first,second];store.selected=0;store.audio.master(1);store.audio.space(0);store.start()

@@ -2,14 +2,17 @@ import Foundation
 @main struct TonicPadTests {
     static func main()throws {
         let store=PerformanceStore();assert(store.librarySounds.isEmpty && store.tonicSound==nil)
+        store.toggleTonic(7);assert(store.tonic==nil)
+        store.setlist=TestFixtures.setlist()
         try store.audio.prepareOffline();store.start();assert(store.started,store.message ?? "Audio failed")
         for i in store.patch.layers.indices {store.setGain(i,0)}
         store.master=0.3;store.reverb=0;store.tonicGain=0.3
-        store.selectTonicRoot(7);assert(store.tonic==nil && store.tonicLastRoot==7,"Key selection must not engage bypassed pad");store.toggleTonic(7);assert(store.tonic==7)
+        store.selectTonicRoot(7);assert(store.tonic==nil && store.tonicLastRoot==7,"Key selection must not engage bypassed pad");store.toggleTonic(7);assert(store.tonic==nil && store.message != nil,"No pad may play without a user sound")
+        store.message=nil;let fixture=TestFixtures.padSound();assert(store.tonicSoundEligibility(fixture)==nil,store.tonicSoundEligibility(fixture) ?? "");store.setTonicInstrument(fixture);store.toggleTonic(7);assert(store.tonic==7,store.message ?? "Pad did not start")
         store.selectTonicRoot(7);assert(store.tonic==7,"Repeated root selection must not stop the pad")
         var energy:Double=0
         for _ in 0..<100 {let buffer=try store.audio.offlineBlock();for i in 0..<Int(buffer.frameLength){let v=buffer.floatChannelData![0][i];assert(v.isFinite);energy+=Double(v*v)}}
-        assert(energy>0.001,"Library-free tonic must be audible")
+        assert(energy>0.001,"Explicit synthetic pad must be audible")
         store.tonicShimmer=0.7;assert(store.tonic==7,"Changing shimmer must not stop/retrigger tonic selection")
         let invalidTonic=ExternalSound(kind:.audioUnit,name:"Unsupported AU",component:ExternalAUIdentity(type:0x61756d75,subtype:1,manufacturer:1,name:"Unsupported AU"))
         assert(store.tonicSoundEligibility(invalidTonic) != nil,"Audio Units and unsupported maps must be rejected for Tonic Pad selection")
@@ -53,6 +56,6 @@ import Foundation
             print("PASS: all twelve original tonic velocity-selected timbres render through production Store routing")
         }
         store.panic();assert(store.tonic==nil)
-        print("PASS: library-free tonic audio, same-key selection, power key memory, stable shimmer and settings persistence")
+        print("PASS: no empty-pad sound, explicit synthetic tonic audio, same-key selection, power key memory, stable shimmer and settings persistence")
     }
 }

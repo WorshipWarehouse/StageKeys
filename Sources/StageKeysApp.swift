@@ -72,6 +72,12 @@ struct PerformanceView: View {
             let wide = g.size.width >= 850
             VStack(spacing: 8) {
                 toolbar
+                if store.patch.layers.allSatisfy({!$0.loaded}) {
+                    HStack {Text("StageKeys ships without sounds. Add your samples, Audio Units or external MIDI.").font(.caption)
+                        Button("Import Samples"){sheet = .importSounds}.buttonStyle(StageButtonStyle())
+                        Button("Add Sound"){sheet = .browser(0)}.buttonStyle(StageButtonStyle())}
+                }
+                if store.hasUnavailableLegacyVoices {Text("This patch contains unavailable legacy voices. Add replacement sounds; saved settings are retained.").font(.caption)}
                 if !wide { compactNavigation }
                 if store.editRanges { LayerRangeEditor() } else { HStack(spacing: 10) {
                     if wide { sidebar.frame(width: 299) }
