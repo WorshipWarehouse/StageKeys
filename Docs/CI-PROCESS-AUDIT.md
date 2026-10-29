@@ -33,3 +33,7 @@ The old #81 auto-merge is paused to serialize landing. Once the new integration 
 Do not infer physical iPad/AUv3, original-preset sonic parity, physical keyboard startup/latency, slow-storage budgets, signing/notarization or long live soaks from these checks. Those stay in the release issues. Keep nightly/private hardware runs explicit and separate. Future additions should include a deterministic failure reproduction and their runtime cost; avoid adding repeated full-core compilation, arbitrary fixed sleeps, silent skips or assertions that merely mirror implementation.
 
 Exact PR heads, baseline job times and combined local outcomes are in `CI-PROCESS-AUDIT.json`.
+
+## Hosted portability finding
+
+Initial hosted run `40902393376` passed both release builds but correctly failed the library job while importing an ephemeral Bridge.pch as source (invalid UTF-8) on the runner toolchain. Its failed result artifact remains. The Swift driver `-disable-bridging-pch` flag keeps the reusable module tied to the original text header instead of a temporary PCH. Four representative shared-module tests pass locally with this flag (startup, Program Change, AU handoff and MainStage parsing); the revised hosted run must rerun the full list. No product assertion or required check is bypassed.

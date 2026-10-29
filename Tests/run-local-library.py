@@ -98,8 +98,10 @@ def main():
     try:
         for name in ['Synth', 'CreamCoat']:
             run_command(['xcrun', 'clang', '-std=c11', '-O2', '-c', source / f'Sources/{name}.c', '-o', build / f'{name}.o'])
+        # A reusable module must reference the source header, not an ephemeral
+        # driver-generated PCH (older runner toolchains try to parse that as text).
         common = ['xcrun', 'swiftc', '-DDEBUG', '-module-cache-path', build / 'modules',
-                  '-import-objc-header', source / 'Sources/Bridge.h']
+                  '-import-objc-header', source / 'Sources/Bridge.h', '-disable-bridging-pch']
         run_command(common + ['-enable-testing', '-emit-library', '-emit-module', '-parse-as-library',
                     '-module-name', 'StageKeysVerificationCore'] + [source / x for x in sources] +
                     [build / 'Synth.o', build / 'CreamCoat.o', '-framework', 'CoreMIDI', '-lz',
