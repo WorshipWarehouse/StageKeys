@@ -1,28 +1,36 @@
 import Foundation
 
-/// Last-known-good session bytes. Call only on the serialized persistence executor.
+/// Last-known-good session and metadata bytes. Call only on the serialized persistence executor.
 enum RecoverableSessionFile {
     static func previous(_ url: URL) -> URL { url.appendingPathExtension("previous") }
-    static func read(_ url: URL) throws -> Data {
-        let values = try url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey])
+    static func read(_ url: URL, limit:Int = 64_000_000) throws -> Data {
+        // Atomic restoration changes the file behind a reusable URL. Do not
+        // reject restored bytes using a cached oversized-file measurement.
+        var current=url;current.removeAllCachedResourceValues()
+        let values = try current.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey])
         guard values.isRegularFile == true, values.isSymbolicLink != true,
-              (values.fileSize ?? Int.max) <= 64_000_000 else { throw SetlistLibraryError.unsafeFile }
-        let data = try Data(contentsOf: url)
-        guard data.count <= 64_000_000 else { throw SetlistLibraryError.oversized }
+              (values.fileSize ?? Int.max) <= limit else { throw SetlistLibraryError.unsafeFile }
+        let handle=try FileHandle(forReadingFrom:url);defer{try? handle.close()}
+        var data=Data()
+        while data.count<=limit {
+            guard let chunk=try handle.read(upToCount:min(1_048_576,limit+1-data.count)),!chunk.isEmpty else{break}
+            data.append(chunk)
+        }
+        guard data.count <= limit else { throw SetlistLibraryError.oversized }
         return data
     }
-    static func write(_ data: Data, to url: URL, validate: (Data) throws -> Void) throws {
+    static func write(_ data: Data, to url: URL, limit:Int = 64_000_000, validate: (Data) throws -> Void) throws {
         try validate(data)
-        guard data.count <= 64_000_000 else { throw SetlistLibraryError.oversized }
+        guard data.count <= limit else { throw SetlistLibraryError.oversized }
         if FileManager.default.fileExists(atPath: url.path) {
-            let old = try read(url)
+            let old = try read(url,limit:limit)
             try validate(old) // Never rotate corrupt or future-version data over the recovery copy.
             if old != data { try old.write(to: previous(url), options: .atomic) }
         }
         try data.write(to: url, options: .atomic)
     }
-    static func restore(_ url: URL, validate: (Data) throws -> Void) throws -> Data {
-        let recovered = try read(previous(url))
+    static func restore(_ url: URL, limit:Int = 64_000_000, validate: (Data) throws -> Void) throws -> Data {
+        let recovered = try read(previous(url),limit:limit)
         try validate(recovered)
         if FileManager.default.fileExists(atPath: url.path) ||
             (try? url.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) == true {

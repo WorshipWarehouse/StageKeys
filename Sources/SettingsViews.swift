@@ -15,6 +15,14 @@ struct SettingsEditor: View {
                 }.padding(12).frame(width: 210).background(StageTheme.base)
 
                 Form {
+                    if store.ratingsRecoveryRequired || store.presetsRecoveryRequired {
+                        Section("Personal Metadata Recovery") {
+                            Text("Some saved ratings or personal effect presets could not be loaded. Their writes are blocked to preserve the original files.").foregroundStyle(.orange)
+                            if store.ratingsRecoveryRequired {Button("Recover Previous Ratings") {store.recoverPreviousRatings()}}
+                            if store.presetsRecoveryRequired {Button("Recover Previous Effect Presets") {store.recoverPreviousPresets()}}
+                            Text("Restores the previous validated copy and retains damaged bytes. Current patches and active effects stay unchanged. If no valid recovery copy exists, restore your backup.").font(.caption)
+                        }
+                    }
                     if store.libraryRecoveryRequired {
                         Section("Sound Catalog Recovery") {
                             Text("The saved sound catalog could not be loaded. Catalog writes are blocked to preserve it.").foregroundStyle(.orange)
