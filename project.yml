@@ -49,6 +49,7 @@ targets:
         buildPhase: resources
       - path: Resources/Fonts
         buildPhase: resources
+      - path: Resources/Assets.xcassets
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: studio.stagekeys.mobile
