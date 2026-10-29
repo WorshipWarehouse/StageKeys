@@ -3,7 +3,7 @@ import Foundation
 @main
 struct ModelTests {
     static func main() throws {
-        let original = Setlist()
+        let original = TestFixtures.setlist()
         try original.validate()
         let data = try JSONEncoder().encode(original)
         let decoded = try JSONDecoder().decode(Setlist.self, from: data)

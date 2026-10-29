@@ -132,7 +132,7 @@ struct SoundLibrary {
             }
             if let source=entry.sourceArchiveID {guard !source.isEmpty,source.count<=256 else{throw SetlistError.invalid}}
             if let layer = entry.layer {
-                guard layer.loaded else { throw SetlistError.invalid }
+                guard layer.loaded || layer.instrument >= 0 else { throw SetlistError.invalid } // Retain legacy metadata; it is not a playable source.
                 var validation = Setlist(); validation.patches = [Patch(name:"Saved Sound",layers:[layer],snapshots:[])]; try validation.validate()
             } else if let sound = entry.sound {
                 var layer = Layer(name:entry.name,instrument:-1,gain:0.5); layer.external=sound

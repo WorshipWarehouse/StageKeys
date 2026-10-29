@@ -40,3 +40,5 @@ Issues #2, #12 and #15 remain open for the physical device, third-party compatib
 ## Focused follow-ups — 24 October 2026
 
 See [PR readiness and remaining acceptance gates](PR-READINESS-2026-10-24.md) for the audit, fixes, CI blocker and new issues #52–#56/#58.
+
+- [[P0] Library-free first launch and removal of factory voices](https://github.com/WorshipWarehouse/StageKeys/issues/89) — blank startup, explicit user-content routes and synthetic-only regression fixtures.

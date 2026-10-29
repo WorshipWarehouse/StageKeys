@@ -2,7 +2,7 @@ import Foundation
 import CoreMIDI
 @main struct ProgramChangeOptInTests {
  static func main() throws {
-  let store=PerformanceStore();store.setlist=Setlist();store.primarySourceID = -1;store.midiChannel = -1;store.secondarySourceID = -2
+  let store=PerformanceStore();store.setlist=TestFixtures.setlist();store.primarySourceID = -1;store.midiChannel = -1;store.secondarySourceID = -2
   try store.audio.prepareOffline();store.start();defer{store.audio.stop()}
   var client=MIDIClientRef(),source=MIDIEndpointRef()
   assert(MIDIClientCreateWithBlock("StageKeys Program Change Contract" as CFString,&client,nil)==noErr)

@@ -18,7 +18,7 @@ import Foundation
   let legacy=ChannelSettings();let bytes=try JSONEncoder().encode(legacy);var json=try JSONSerialization.jsonObject(with:bytes) as! [String:Any];json.removeValue(forKey:"outputTrimDB")
   let decoded=try JSONDecoder().decode(ChannelSettings.self,from:JSONSerialization.data(withJSONObject:json));assert(decoded.outputTrimDB==nil && decoded.validate())
   var invalid=legacy;invalid.outputTrimDB = .nan;assert(!invalid.validate());invalid.outputTrimDB=13;assert(!invalid.validate())
-  let base=Layer(name:"Probe",instrument:0,gain:0.2)
+  let base=TestFixtures.layer(gain:0.2,name:"Probe")
   let a=try await InstrumentGainMatch.measure(base,modulation:0.5);var changed=base;changed.gain=0.8;changed.channelSettings.outputTrimDB = -12
   assert(a.probeNotes == [48,60,72] && a.repeatabilityDB != nil)
   let preserved=try InstrumentGainMatch.retarget(a,to:-30);assert(preserved.probeNotes==a.probeNotes && preserved.repeatabilityDB==a.repeatabilityDB)

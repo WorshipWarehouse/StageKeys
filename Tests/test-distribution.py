@@ -48,6 +48,17 @@ with tempfile.TemporaryDirectory() as temporary:
     pack.mkdir()
     check(app, False)
     pack.rmdir()
+    seeded=resources / 'factory.txt'
+    seeded.write_text('builtin-0')
+    check(app, False)
+    seeded.unlink()
+    seeded=app / 'Contents' / 'MacOS' / 'StageKeys'
+    seeded.parent.mkdir()
+    seeded.write_bytes(b'synthetic executable: Soft Keys / Warm Pad / Glass Bells')
+    check(app, False)
+    seeded.write_bytes(b'x'*(1024*1024-3)+b'builtin-0')
+    check(app, False)
+    seeded.unlink()
     link = root / 'Linked.app'
     link.symlink_to(app, target_is_directory=True)
     check(link, False)
@@ -66,6 +77,11 @@ def repo_check(files, expected):
         assert (result.returncode == 0) == expected, message
 
 repo_check({'Sources/Model.swift': b'fixture source'}, True)
+repo_check({'Sources/Browser.swift': b'let id = "builtin-0"'}, False)
+repo_check({'Sources/Models.swift': b'let names = ["Soft Keys", "Warm Pad", "Glass Bells"]'}, False)
+repo_check({'Sources/Audio.swift': b'sk_note_on(pointer, 0, 60, 1, 0, 1)'}, False)
+repo_check({'Tests/Fixture.swift': b'let names = ["Soft Keys", "Warm Pad", "Glass Bells"]'}, True)
+repo_check({'Sources/Synth.c': b'void sk_note_on(void) {}'}, True)
 repo_check({'Personal.stagekeyspack': b'fixture personal pack'}, False)
 repo_check({'Personal.STAGEKEYSPACK': b'fixture personal pack'}, False)
 repo_check({'Personal.stagekeyspack/README.txt': b'fixture nested pack'}, False)

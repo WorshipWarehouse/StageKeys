@@ -12,7 +12,7 @@ import uuid
 
 def plan(source):
     text = (source / 'Tests/test-library.sh').read_text()
-    sources = re.findall(r'"\$repo/(Sources/[^"\n]+\.swift)"', text)
+    sources = re.findall(r'"\$repo/((?:Sources/[^"\n]+|Tests/FixtureSupport)\.swift)"', text)
     swift = re.search(r'else tests=\((.*?)\); fi', text)
     native = re.search(r'^for test in ([A-Za-z0-9_ ]+); do', text, re.M)
     if not sources or swift is None or native is None:

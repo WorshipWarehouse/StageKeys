@@ -6,7 +6,7 @@ import Foundation
         store.reverb=0;store.master=0.2
         for i in 0..<15 {store.removeSound(i)}
         for index in 0..<15 {
-            store.addSound(index,index%3);store.setRange(index,low:48,high:84)
+            store.addLibrarySound(LibrarySound(id:"fixture-\(index)",name:"Synthetic Fixture",collection:"Fixtures",layer:TestFixtures.layer(index%3)),index:index);store.setRange(index,low:48,high:84)
             var layer=store.patch.layers[index];layer.pan=Float(index-7)/10
             layer.effects[0]=AudioEffect.factoryDefault(kind:9);layer.effects[0].parameters=[Float(-index)]
             store.commitLayer(index,layer)
@@ -27,7 +27,7 @@ import Foundation
         assert(store.patch.snapshots[0].sounds![0].effects==settings[14])
         let encoder=JSONEncoder();encoder.outputFormatting = .sortedKeys
         let bytes=try encoder.encode(store.setlist)
-        for index in [-1,15,100] {store.setGain(index,.nan);store.removeSound(index);store.addSound(index,0);store.mute(index);store.setRange(index,low:0,high:127)}
+        for index in [-1,15,100] {store.setGain(index,.nan);store.removeSound(index);store.addLibrarySound(LibrarySound(id:"invalid-fixture",name:"Fixture",collection:"Fixtures",layer:TestFixtures.layer()),index:index);store.mute(index);store.setRange(index,low:0,high:127)}
         store.setGain(0,.infinity);store.setRange(0,low:90,high:10);store.setEffect(0,100,AudioEffect())
         assert(try! encoder.encode(store.setlist)==bytes)
         try store.setlist.validate()

@@ -286,7 +286,7 @@ struct Layer: Codable, Identifiable, Equatable {
     var midiProgram: MIDIProgram?
     var midiDestinationID: Int32?
     var midiOutputChannel = 0
-    var loaded: Bool { instrument >= 0 || external != nil || midiDestinationID != nil }
+    var loaded: Bool { external != nil || midiDestinationID != nil }
     static func empty() -> Layer { Layer(name: "Add Sound", instrument: -1, gain: 0) }
     enum CodingKeys: String, CodingKey { case id,name,instrument,gain,muted,low,high,octave,transpose,pan,blockSustain,octaveEffect,effects,channelSettings,external,importedRack,pluginState,midiEffectEnabled,midiProgram,midiDestinationID,midiOutputChannel }
     init(name: String, instrument: Int, gain: Float) { self.name = name; self.instrument = instrument; self.gain = gain; if instrument != 1 { channelSettings.attack = 0.006; channelSettings.release = 0.3 } }
@@ -389,10 +389,11 @@ struct Patch: Codable, Identifiable {
         silencePrevious = try c.decodeIfPresent(Bool.self, forKey: .silencePrevious) ?? false
         conversionNotes = try c.decodeIfPresent([String].self,forKey:.conversionNotes)
     }
-    static func make(_ name: String = "New Patch", gains: [Float] = [0.72, 0.35, 0]) -> Patch {
-        let layers = [Layer(name: "Soft Keys", instrument: 0, gain: gains[0]), Layer(name: "Warm Pad", instrument: 1, gain: gains[1]), Layer(name: "Glass Bells", instrument: 2, gain: gains[2])] + (0..<12).map { _ in Layer.empty() }
-        let scenes: [(String,[Float])] = [("Start Here",[0.65,0.2,0]),("Lift",[0.75,0.5,0.15]),("Build",[0.75,0.65,0.24]),("Full",[0.85,0.7,0.4]),("Reflection",[0.35,0.65,0])]
-        return Patch(name: name, layers: layers, snapshots: scenes.map { Snapshot(name: $0.0, gains: $0.1 + Array(repeating: 0, count: 12)) })
+    static func make(_ name:String = "New Patch") -> Patch {
+        var patch=Patch(name:name,layers:(0..<15).map{_ in Layer.empty()},
+                        snapshots:(0..<5).map{Snapshot(emptySlot:true,name:"Snapshot \($0+1)",gains:Array(repeating:0,count:15))})
+        patch.programChangeEnabled=false
+        return patch
     }
     func duplicate() -> Patch {
         var p = self; p.id = UUID(); p.name += " Copy"
@@ -403,9 +404,9 @@ struct Patch: Codable, Identifiable {
 }
 struct Setlist: Codable {
     var version = 4
-    var name = "Sunday Morning"
-    var patches = [Patch.make("Opening • Piano + Pad"), Patch.make("Reflection • Soft Pad", gains: [0.35, 0.6, 0]), Patch.make("Celebration • Glass Keys", gains: [0.75, 0.3, 0.45])]
-    var assignments: [Int: Int] = [20: 0, 21: 1, 22: 2]
+    var name = "My Setlist"
+    var patches = [Patch.make()]
+    var assignments: [Int: Int] = [:]
     var controlAssignments: [Int:MIDIControlTarget]?
     func upgraded() throws -> Setlist {
         try validate()

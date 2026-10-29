@@ -4,17 +4,13 @@ StageKeys is an independent native music-performance app for macOS and iPhone/iP
 
 **StageKeys is an ongoing compatibility project, not a 1:1 Sunday Keys clone.** Similar controls or processor names do not establish identical behavior or sound. See [current parity and evidence](Docs/PARITY-STATUS.md), [conversion status](Docs/CONVERSION-STATUS.md), and [open release issues](Docs/RELEASE-ISSUES.md).
 
-## UI
-
-![StageKeys running on macOS, showing the performance workspace, sound modules, Tonic Pad, snapshots and on-screen keyboard](Docs/images/stagekeys-performance-screenshot.png)
-
-*StageKeys macOS performance workspace. Captured from the running app.*
+**StageKeys ships without sounds.** Start with a blank patch, then import your licensed samples/sampler instruments, add an installed Audio Unit, or route MIDI to external hardware/apps. Tonic Pad also requires a user-selected sound. No demo setlist or playable factory voices are included. See [first-run setup](Docs/FIRST-RUN.md).
 
 ## What it does
 
 - **Live performance:** 15 sound positions, layered keyboard ranges, per-sound level controls, snapshots, setlists, and an on-screen keyboard.
 - **MIDI:** connected-device routing, MIDI effects, sustain, modulation, MIDI Learn, and external MIDI destinations.
-- **Sound processing:** built-in instruments and effects, supported Audio Unit instruments, and selected imported sampler instruments.
+- **Sound processing:** native effects, supported Audio Unit instruments, and selected imported sampler instruments.
 - **Selective conversion:** inspect and translate supported sampler/MainStage content while retaining source archives and reporting unsupported behavior rather than silently dropping it.
 
 The app has substantial working functionality, but complete UI/DSP parity, unsupported synthesizers and processing chains, physical iPhone/iPad operation, hardware latency, prolonged live-use testing, and public distribution qualification remain incomplete or unverified. Read the [parity status](Docs/PARITY-STATUS.md) and [public-release checklist](Docs/PUBLIC-RELEASE-CHECKLIST.md) before relying on compatibility claims.

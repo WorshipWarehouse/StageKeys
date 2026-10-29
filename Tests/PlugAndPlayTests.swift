@@ -2,7 +2,7 @@ import Foundation
 import CoreMIDI
 @main struct PlugAndPlayTests {
  static func main() throws {
-    let store=PerformanceStore(); store.setlist=Setlist(); store.primarySourceID = -1; store.midiChannel = -1; store.secondarySourceID = -2
+    let store=PerformanceStore(); store.setlist=TestFixtures.setlist(); store.primarySourceID = -1; store.midiChannel = -1; store.secondarySourceID = -2
     try store.audio.prepareOffline(); store.start()
     var client=MIDIClientRef(), a=MIDIEndpointRef(), b=MIDIEndpointRef()
     assert(MIDIClientCreateWithBlock("StageKeys End to End MIDI" as CFString,&client,nil)==noErr)
