@@ -24,6 +24,13 @@ struct SoundImportView:View {
                     Text("Update source filters, velocity response, level and envelope curves. Original samples and effects stay intact; edited settings are protected.").font(.caption).foregroundStyle(.secondary)
                 }
                 if let report=store.mainStageImportReport {
+                    if store.mainStageOutcomes.contains(where:{[.converted,.duplicate].contains($0.state)}) {
+                        Button("Create Patch from Ready Channels") {store.assembleConvertedMainStagePatch(readyOnly:true)}.buttonStyle(StageButtonStyle()).disabled(store.patchLock)
+                    }
+                    ForEach(store.mainStageOutcomes) {outcome in
+                        VStack(alignment:.leading,spacing:4) {Text("\(outcome.name) · \(outcome.state.rawValue)").font(.headline);Text(outcome.detail).font(.caption)}.frame(maxWidth:.infinity,alignment:.leading)
+                    }
+                    if !store.mainStageSearches.isEmpty {DisclosureGroup("Searched Locations") {ForEach(store.mainStageSearches){search in Text("\(search.location): \(search.detail)").font(.caption).textSelection(.enabled)}}}
                     Button("Create Patch from All Converted Channels") {store.assembleConvertedMainStagePatch()}.buttonStyle(StageButtonStyle()).disabled(store.patchLock)
                     Text("Requires one converted version of every convertible channel. Preserves channel order, effects, macros and MIDI; patch-level routing limitations remain in Conversion Notes.").font(.caption).foregroundStyle(.secondary)
                     if report.channels.contains(where:\.isConvertible) {
@@ -58,7 +65,7 @@ struct SoundImportView:View {
             case .success(let url):
                 switch choice {
                 case .file:
-                    if ["patch","cst"].contains(url.pathExtension.lowercased()) {store.importMainStagePatch(url);status=nil}
+                    if ["patch","cst"].contains(url.pathExtension.lowercased()) {store.importMainStageAutomatically(url);status=nil}
                     else if ["exs","aupreset"].contains(url.pathExtension.lowercased()) {
                         pending=url;status="Choose the folder containing this instrument’s samples. Imports preserve sample maps and translated rack effects, macros and MIDI settings. Conversion notes describe remaining approximations."
                         // Present the second picker after the first has dismissed.
@@ -72,12 +79,16 @@ struct SoundImportView:View {
                 case .mainStageSamples:
                     store.importMainStageSamplers(url);status=nil
                 case .mainStage:
-                    store.importMainStagePatch(url);status=nil
+                    store.importMainStageAutomatically(url);status=nil
                 case .library:
                     store.importSamplerLibrary(url);status=store.message;store.message=nil
                 }
             case .failure(let error):status=error.localizedDescription;pending=nil
             }
+        }.onDrop(of:[UTType.fileURL],isTargeted:nil){providers in
+            guard let provider=providers.first else{return false}
+            _ = provider.loadObject(ofClass:URL.self){url,_ in guard let url,["patch","cst"].contains(url.pathExtension.lowercased()) else{return};DispatchQueue.main.async{store.importMainStageAutomatically(url)}}
+            return true
         }
     }
 

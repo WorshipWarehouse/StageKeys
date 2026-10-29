@@ -103,14 +103,18 @@ enum MainStagePatch {
         let context=digest(Data((metadata+"/"+channel.file).utf8))
         return "mainstage-channel-"+channel.sha256+"-v2-"+context+"-"+variant
     }
-    static func assembledChannels(_ report:Report,entries:[LibrarySound])throws->Patch {
-        let channels=report.channels.filter{!$0.instruments.isEmpty || !$0.thirdPartyAudioUnits.isEmpty}
+    static func assembledChannels(_ report:Report,entries:[LibrarySound],selected:Set<Int>?=nil)throws->Patch {
+        let channels=report.channels.enumerated().filter{(selected?.contains($0.offset) ?? true) && $0.element.isConvertible}.map(\.element)
         guard let archive=report.sourceArchiveID,!channels.isEmpty,channels.count<=15 else {
             throw Failure.invalid("Choose a source patch with 1–15 converted instrument channels. More complex patch routing requires manual setup.")
         }
         var layers:[Layer]=[],notes=["Converted channel strips only. Patch-level buses/sends, tempo, scripts and routing require review; this is not full MainStage topology parity."]
         for channel in channels {
-            let matches=entries.filter{$0.sourceArchiveID==archive && $0.id.hasPrefix("mainstage-channel-"+channel.sha256+"-")}
+            let modernPrefix=try? conversionID(report,channel:channel,variant:"")
+            let matches=entries.filter{entry in
+                guard entry.sourceArchiveID==archive,entry.id.hasPrefix("mainstage-channel-"+channel.sha256+"-") else{return false}
+                return !entry.id.contains("-v2-") || modernPrefix.map{entry.id.hasPrefix($0)} == true
+            }
             guard matches.count==1,let entry=matches.first,var layer=entry.layer,
                   let kind=layer.external?.kind,kind == .samplerPreset || kind == .audioUnit else {
                 throw Failure.invalid("\(channel.name): convert the channel first and resolve multiple converted versions before assembling this patch.")
@@ -505,4 +509,52 @@ enum MainStageAudioUnit {
         guard bytes.count==4 else{return nil}
         return bytes.reduce(UInt32(0)){($0 << 8) | UInt32($1)}
     }
+}
+
+/// Explainable, bounded discovery. Filename collisions with different bytes are
+/// never resolved by search order alone. Equivalent copies may be tried against
+/// their own sample root without changing the original files.
+enum MainStageDiscovery {
+    struct Location {var instruments:URL;var samples:URL;var label:String}
+    struct Candidate {var file:URL;var samples:URL;var sha256:String}
+    struct Search:Codable,Identifiable {var id:String;var location:String;var detail:String}
+    struct Result {var candidates:[String:[Candidate]];var searches:[Search]}
+    static func locations(source:URL,retained:URL)->[Location] {
+        var values=[Location(instruments:retained,samples:retained,label:"Retained source"),
+                    Location(instruments:source.pathExtension.lowercased()=="cst" ? source.deletingLastPathComponent():source,samples:source.pathExtension.lowercased()=="cst" ? source.deletingLastPathComponent():source,label:"Selected source")]
+        #if os(macOS)
+        for root in [URL(fileURLWithPath:"/Library/Application Support/Logic"),FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Music/Audio Music Apps")] {
+            values.append(Location(instruments:root.appendingPathComponent("Sampler Instruments"),samples:root,label:root.lastPathComponent+" / Sampler Instruments"))
+        }
+        #endif
+        return values
+    }
+    static func find(_ names:Set<String>,locations:[Location])->Result {
+        var result=Result(candidates:[:],searches:[])
+        guard !names.isEmpty else{return result}
+        for (index,location) in locations.prefix(16).enumerated() {
+            let access=location.instruments.startAccessingSecurityScopedResource();defer{if access{location.instruments.stopAccessingSecurityScopedResource()}}
+            do {
+                var directory:ObjCBool=false
+                guard FileManager.default.fileExists(atPath:location.instruments.path,isDirectory:&directory),directory.boolValue else{throw MainStagePatch.Failure.invalid("Location unavailable")}
+                let files=try MainStagePatch.findSamplerInstruments(names,in:location.instruments).sorted{$0.path<$1.path}
+                for file in files {
+                    let candidate=Candidate(file:file,samples:location.samples,sha256:try AssetDigest.sha256(file))
+                    if !(result.candidates[file.lastPathComponent] ?? []).contains(where:{$0.file.standardizedFileURL==file.standardizedFileURL && $0.samples.standardizedFileURL==location.samples.standardizedFileURL}) {
+                        result.candidates[file.lastPathComponent,default:[]].append(candidate)
+                    }
+                }
+                result.searches.append(Search(id:String(index),location:location.label,detail:"\(location.instruments.path): \(files.count) matching instrument(s)"))
+            } catch {result.searches.append(Search(id:String(index),location:location.label,detail:"\(location.instruments.path): \(error.localizedDescription)"))}
+        }
+        return result
+    }
+}
+struct MainStageChannelOutcome:Identifiable,Codable {
+    enum State:String,Codable {case pending,prepared,converted,duplicate,needsSamples,unsupported,failed,cancelled}
+    var id:Int
+    var name:String
+    var state:State
+    var detail:String
+    var soundIDs:[String]=[]
 }

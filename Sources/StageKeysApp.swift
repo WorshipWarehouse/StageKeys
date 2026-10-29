@@ -1,5 +1,6 @@
 import SwiftUI
 import CoreText
+import UniformTypeIdentifiers
 
 @main
 struct StageKeysApp: App {
@@ -140,6 +141,11 @@ struct PerformanceView: View {
             }.environmentObject(store).preferredColorScheme(.dark).font(StageTheme.font(14))
         }
         .alert("StageKeys", isPresented: Binding(get: { store.message != nil }, set: { if !$0 { store.message = nil } })) { Button("OK") { store.message = nil } } message: { Text(store.message ?? "") }
+        .onDrop(of:[UTType.fileURL],isTargeted:nil){providers in
+            guard !store.libraryImportBusy,let provider=providers.first else{return false}
+            _ = provider.loadObject(ofClass:URL.self){url,_ in guard let url,["patch","cst"].contains(url.pathExtension.lowercased()) else{return};DispatchQueue.main.async{store.importMainStageAutomatically(url);sheet = .importSounds}}
+            return true
+        }
         .fileImporter(isPresented: $importing, allowedContentTypes: [.json]) { result in
             switch result { case .success(let url): store.load(url); case .failure(let error): store.message = error.localizedDescription }
         }
