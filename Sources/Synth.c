@@ -56,7 +56,7 @@ typedef struct {
  double oscSin[8],oscCos[8],stepSin[8],stepCos[8];
  int ready;
 } DenseReverb;
-typedef struct { DenseReverb reverb; float p[32],z[12],coef[8],shiftPhase,stereo; int custom; Biquad eq[8];float shimmerControl[4],clipControl[3];int shimmerReady,clipReady; } EffectState;
+typedef struct { DenseReverb reverb; float p[32],z[12],coef[8],shiftPhase,stereo; int custom; Biquad eq[8];float shimmerControl[4];double clipControl[3];int shimmerReady,clipReady; } EffectState;
 struct SKSynth {
  double rate;
  int delayLength,predelayLength;
@@ -492,6 +492,8 @@ static float effectProcess(SKSynth*s,int l,int k,float x){
   y=x*p[9]+wet*p[10];s->fxPhase[l][k]=fmod(phase+TAU*p[6]/rate,TAU);break;
  }
  case 17:{
+  // Keep smoothing state precise: float increments can round to zero before
+  // reaching the target, leaving a persistent gain error after automation.
   if(!e->clipReady){e->clipControl[0]=e->coef[5];e->clipControl[1]=e->coef[4];e->clipControl[2]=p[3];e->clipReady=1;}
   e->clipControl[0]+=e->coef[6]*(e->coef[5]-e->clipControl[0]);
   e->clipControl[1]+=e->coef[6]*(e->coef[4]-e->clipControl[1]);
