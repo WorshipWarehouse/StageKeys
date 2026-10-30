@@ -73,6 +73,18 @@ struct PerformanceView: View {
             let wide = g.size.width >= 850
             VStack(spacing: 8) {
                 toolbar
+                if store.audioIsStarting {
+                    HStack(spacing: 8) { ProgressView().controlSize(.small); Text(store.audioStatusText).font(.caption).foregroundStyle(.secondary); Spacer() }.padding(.horizontal, 4)
+                }
+                if store.audioFailed, let failure = store.audioFailureMessage {
+                    HStack(alignment: .top, spacing: 10) {
+                        Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                        Text(failure).font(.caption).fixedSize(horizontal: false, vertical: true)
+                        Spacer(minLength: 8)
+                        Button("Retry") { store.start() }.buttonStyle(StageButtonStyle())
+                        Button("Audio Settings") { sheet = .settings }.buttonStyle(StageButtonStyle())
+                    }.padding(10).background(StageTheme.panel, in: RoundedRectangle(cornerRadius: 8))
+                }
                 if store.patch.layers.allSatisfy({!$0.loaded}) {
                     HStack {Text("StageKeys ships without sounds. Add your samples, Audio Units or external MIDI.").font(.caption)
                         Button("Import Samples"){sheet = .importSounds}.buttonStyle(StageButtonStyle())
@@ -201,7 +213,9 @@ struct PerformanceView: View {
                     MasterFader(gain: $store.master).frame(width: 180, height: 38)
                 }
                 Button { sheet = .importSounds } label: { Image(systemName:"plus.circle.fill").frame(width:30,height:36) }.buttonStyle(.plain).accessibilityLabel("Import Sounds")
-                Button { if store.started { sheet = .settings } else { store.start() } } label: { Image(systemName: store.started ? "speaker.wave.2" : "power").frame(width: 24, height: 24) }.buttonStyle(StageButtonStyle()).accessibilityLabel(store.started ? "Audio Settings" : "Start Audio")
+                Button { if store.started { sheet = .settings } else { store.start() } } label: {
+                    Group { if store.audioIsStarting { ProgressView().controlSize(.small) } else { Image(systemName: store.started ? "speaker.wave.2" : "power") } }.frame(width: 24, height: 24)
+                }.buttonStyle(StageButtonStyle()).accessibilityLabel(store.started ? "Audio Settings" : store.audioIsStarting ? "Starting Audio" : "Start Audio").disabled(store.audioIsStarting)
                 Button { menuExpanded.toggle() } label: { Image(systemName:"line.3.horizontal").frame(width:40,height:36) }.buttonStyle(.plain).accessibilityLabel("Main Menu")
 
             }.foregroundStyle(StageTheme.selected.opacity(0.85)).padding(.vertical, 3)

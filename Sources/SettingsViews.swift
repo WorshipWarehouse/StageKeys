@@ -47,7 +47,12 @@ struct SettingsEditor: View {
                             #else
                             Text(store.audioStatus?.name ?? "System Output")
                             #endif
-                            Toggle("Audio Running",isOn:Binding(get:{store.started},set:{if $0 {store.start()} else {store.panic();store.audio.stop();store.started=false}}))
+                            HStack { Text("Audio Status"); Spacer(); Text(store.audioStatusText).foregroundStyle(store.audioFailed ? .orange : .secondary) }
+                            if store.audioFailed, let failure = store.audioFailureMessage {
+                                Text(failure).font(.caption).foregroundStyle(.orange)
+                                Button("Retry Audio") { store.start() }
+                            }
+                            Toggle("Audio Running",isOn:Binding(get:{store.started},set:{if $0 {store.start()} else {store.stopAudio()}})).disabled(store.audioIsStarting)
                             Toggle("Bypass Master Limiter (Temporary)",isOn:$store.masterLimiterBypassed)
                             TimelineView(.periodic(from:.now,by:0.1)) { _ in
                                 let reading=store.audio.outputMetrics
