@@ -12,10 +12,23 @@ final class PerformanceStore: ObservableObject {
     @Published var setlist = Setlist()
     @Published var selected = 0
     @Published private(set) var effectPresets:[EffectPreset]=[]
-    @Published var started = false
+    @Published private(set) var started = false
+    @Published private(set) var audioStartup: AudioStartupState = .stopped
     @Published var audioOutputs: [AudioOutputDevice] = []
     @Published var audioStatus: AudioDeviceStatus?
     @Published var message: String?
+    var audioIsStarting: Bool { audioStartup.isStarting }
+    var audioFailed: Bool { audioStartup.isFailed }
+    var audioFailureMessage: String? { audioStartup.failure?.message }
+    var audioStatusText: String {
+        switch audioStartup {
+        case .stopped: return "Stopped"
+        case .starting(let attempt): return "Starting (attempt \(attempt) of \(audioRetryPolicy.maximumAttempts))…"
+        case .retrying(let attempt, let delay, _): return "Starting (attempt \(attempt) of \(audioRetryPolicy.maximumAttempts), retrying in \(String(format: "%.2f", delay)) s)…"
+        case .running: return "Running"
+        case .failed: return "Failed"
+        }
+    }
     @Published private(set) var audioCheckRecording=false
     @Published var masterLimiterBypassed=false {didSet{audio.bypassMasterLimiter(masterLimiterBypassed)}}
     func startAudioCheck() {
@@ -456,6 +469,10 @@ final class PerformanceStore: ObservableObject {
     @Published var archivedSetlists: [SetlistTrashEntry] = []
     @Published var currentSetlistID: UUID?
     private let saveURL: URL
+    private let audioRetryPolicy = AudioStartupRetryPolicy()
+    private var audioStartGeneration = UUID()
+    private var audioAttempt = 0
+    private var lastAudioOutputName: String?
     private var preferredAudioOutputUID: String?
     private var preferredBufferFrames: UInt32?
     private var restoredAudioOutput = false
@@ -567,26 +584,81 @@ final class PerformanceStore: ObservableObject {
         #endif
         #if os(iOS)
         notifications.append(NotificationCenter.default.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] _ in
-            self?.audio.stop(); self?.started = false; self?.panic()
+            self?.stopAudio()
         })
         #endif
         notifications.append(NotificationCenter.default.addObserver(forName: .AVAudioEngineConfigurationChange, object: nil, queue: .main) { [weak self] _ in
             guard let self else { return }
-            if self.started && !self.audio.running {
-                self.panic(); self.started = false
-                self.start()
-            }
+            if AudioStartupRecovery.shouldRestartAfterConfigurationChange(started: self.started, engineRunning: self.audio.running) { self.handleAudioConfigurationChange() }
         })
     }
     func start() {
-        guard !started else { return }
+        guard !audioStartup.isStarting, audioStartup != .running else { return }
+        audioAttempt = 0
+        let generation = UUID()
+        audioStartGeneration = generation
+        attemptAudioStart(generation: generation)
+    }
+    private func startIfStopped() {
+        if audioStartup == .stopped { start() }
+    }
+    private func attemptAudioStart(generation: UUID) {
+        guard audioStartGeneration == generation else { return }
+        audioAttempt += 1
+        audioStartup = .starting(attempt: audioAttempt)
         do {
             if !restoredAudioOutput, !audio.offline {
                 restoredAudioOutput = true
                 if let uid = preferredAudioOutputUID { try? audio.deviceController.select(uid: uid) }
             }
-            try audio.start(); audio.master(master);audio.space(reverb); started = true; applyPatch(); recallTonicPatch(); audio.clock(patch.tempo,metronome); audio.metronome(metronome, settings: metronomeSettings); refreshAudioDevices(); restoreAudioBuffer() }
-        catch { started = false; message = "Audio could not start: \(error.localizedDescription)" }
+            try audio.start()
+        } catch {
+            handleAudioStartFailure(error, generation: generation)
+            return
+        }
+        audio.master(master);audio.space(reverb)
+        started = true
+        audioStartup = .running
+        applyPatch(); recallTonicPatch(); audio.clock(patch.tempo,metronome); audio.metronome(metronome, settings: metronomeSettings); refreshAudioDevices(); restoreAudioBuffer()
+    }
+    private func handleAudioStartFailure(_ error: Error, generation: UUID) {
+        started = false
+        audio.stop(); panic()
+        rememberAudioOutputName()
+        let failure = AudioStartupClassifier.classify(error, routeName: lastAudioOutputName)
+        if failure.recoverable, let delay = audioRetryPolicy.delay(afterFailedAttempt: audioAttempt) {
+            audioStartup = .retrying(attempt: audioAttempt + 1, delay: delay, failure: failure)
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                guard let self, self.audioStartGeneration == generation else { return }
+                self.attemptAudioStart(generation: generation)
+            }
+        } else {
+            audioStartup = .failed(failure)
+        }
+    }
+    func stopAudio() {
+        audioStartGeneration = UUID()
+        audioAttempt = 0
+        panic(); audio.stop()
+        started = false
+        audioStartup = .stopped
+    }
+    private func rememberAudioOutputName() {
+        if let name = audioStatus?.name, !name.isEmpty { lastAudioOutputName = name; return }
+        if let status = try? audio.deviceController.status(), !status.name.isEmpty { lastAudioOutputName = status.name }
+    }
+    private func handleAudioConfigurationChange() {
+        guard started || audioStartup == .running else { return }
+        let generation = UUID()
+        audioStartGeneration = generation
+        audio.stop(); panic()
+        started = false
+        audioAttempt = 0
+        audioStartup = .stopped
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+            guard let self, self.audioStartGeneration == generation, self.audioStartup == .stopped else { return }
+            self.start()
+        }
     }
     /// Re-apply the saved hardware buffer once the engine is running. A device that
     /// no longer supports the saved size keeps its current buffer instead of failing.
@@ -600,18 +672,35 @@ final class PerformanceStore: ObservableObject {
     }
     func refreshAudioDevices() {
         guard !audio.offline else { return }
-        do { audioOutputs=try AudioDeviceController.availableOutputs(); audioStatus=try audio.deviceController.status() }
+        do {
+            audioOutputs=try AudioDeviceController.availableOutputs(); audioStatus=try audio.deviceController.status()
+            if let name=audioStatus?.name, !name.isEmpty { lastAudioOutputName=name }
+        }
         catch { message=error.localizedDescription }
     }
     func selectAudioOutput(_ id: UInt32) {
+        let retryStart = audioStartup.isFailed
         panic()
-        do { try audio.deviceController.select(deviceID:id); preferredAudioOutputUID = try audio.deviceController.outputUID(); restoredAudioOutput = true; refreshAudioDevices(); save() }
-        catch { message=error.localizedDescription; refreshAudioDevices() }
+        do {
+            try audio.deviceController.select(deviceID:id); preferredAudioOutputUID = try audio.deviceController.outputUID(); restoredAudioOutput = true; refreshAudioDevices(); save()
+            if retryStart { start() }
+        }
+        catch {
+            message=error.localizedDescription; refreshAudioDevices()
+            if started && !audio.running { started=false; audioStartup = .stopped; start() }
+        }
     }
     func setAudioBuffer(_ frames: UInt32) {
+        let retryStart = audioStartup.isFailed
         panic()
-        do { try audio.deviceController.buffer(frameCount:frames); preferredBufferFrames=frames; refreshAudioDevices(); save() }
-        catch { message=error.localizedDescription; refreshAudioDevices() }
+        do {
+            try audio.deviceController.buffer(frameCount:frames); preferredBufferFrames=frames; refreshAudioDevices(); save()
+            if retryStart { start() }
+        }
+        catch {
+            message=error.localizedDescription; refreshAudioDevices()
+            if started && !audio.running { started=false; audioStartup = .stopped; start() }
+        }
     }
     func refreshMIDIDestinations() { midiDestinations = midiOutput?.refresh() ?? [] }
     /// Short middle C, for verifying a hardware or virtual output by listening or
@@ -634,14 +723,14 @@ final class PerformanceStore: ObservableObject {
     }
     func noteOff(_ note: Int, hardware: Bool = false) { let key = note + (hardware ? 128 : 0); held.remove(key); for i in patch.layers.indices { midiFX.noteOff(channel: i, key: key) } }
     func isNoteHeld(_ note: Int) -> Bool { held.contains(note) || hardwareNotes.keys.contains { $0.note == note } }
-    func refreshMIDI() { midi.start(); if !started { start() } }
+    func refreshMIDI() { midi.start(); startIfStopped() }
     func automaticMIDI() { primarySourceID = -1; midiChannel = -1; secondarySourceID = -2; velocityMinimum = 0; velocityMaximum = 127; refreshMIDI(); save() }
     #if os(macOS)
     func openAudioMIDISetup() { NSWorkspace.shared.open(URL(fileURLWithPath:"/System/Applications/Utilities/Audio MIDI Setup.app")) }
     #endif
     func releaseScreenNotes() { for key in held.filter({ (0...127).contains($0) }) { noteOff(key) }; screenSustain = false; applySustain() }
     private func hardwareOn(source: Int32, channel: Int, note: Int, velocity: Float) {
-        if !started { start(); if !started { return } }
+        if !started { startIfStopped(); if !started { return } }
         let input = HardwareNote(source: source, channel: channel, note: note)
         if let old = hardwareNotes.removeValue(forKey: input) { releaseKey(old) }
         if nextHardwareKey >= Int(Int32.max)-1 { panic(); nextHardwareKey = 1024 }
