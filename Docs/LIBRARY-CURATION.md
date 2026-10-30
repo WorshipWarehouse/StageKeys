@@ -11,3 +11,15 @@ Direct channel imports previously loaded only the ExternalSound reference, disca
 The module's Rack FX link opens the existing sound settings rack editor. The library footer reports the processor count recursively, including bypassed processors. Imported effects remain in their original graph, separate from the three performance effect slots; they are not applied twice. Import reports no longer incorrectly claim that all effects and macros are discarded.
 
 Remaining differences: inferred free-preset taxonomy is not authored Sunday metadata; source-native raw instruments still require reconstruction of their channel processing to match factory variants; unsupported Live processors and current DSP approximations remain documented per sound. Exact audible parity is not established by these metadata and routing fixes.
+
+## Library workflow update (30 October 2026)
+
+The library now distinguishes the two module outcomes in its header, primary button and accessibility labels: an empty module says **Add Sound**, a loaded module says **Replace Sound**. Cancel ends any audition and range preview before closing; it does not commit or discard the saved patch, and tag edits made through the context menu are already persisted. The same cleanup runs if the sheet is dismissed another way. A selection is committed only after the preview is ended, so a replacement cannot restore stale Audio Unit state.
+
+Active filters appear as removable chips, including when the result list is empty, with a separate **Clear Filters** action. Each facet column scrolls independently and shows a no-values message when the other filters exclude every value; fixed Note Range choices and the Not Tagged choice remain available.
+
+Re-selecting the current order keeps its chosen direction, and **Random** keeps its seed until another order is selected. Ties remain deterministic by name and then identity.
+
+Tag provenance is recorded per facet for edits made after this version. `authoredFacets` marks explicit Note Range/Complexity edits and metadata loaded from the authored source-tag file; inferred name tags remain **Suggested**, and an absent optional facet remains **Not Tagged**. Legacy libraries without provenance keep their previous Suggested/unknown interpretation rather than being retroactively labelled authored. The footer shows the groups for the selected sound.
+
+This update does not establish visual layout at real window sizes, physical Mac/iPad interaction, vendor-library compatibility, or audible/DSP parity. Those checks still require the relevant Mac or device qualification.

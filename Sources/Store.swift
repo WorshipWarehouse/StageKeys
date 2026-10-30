@@ -332,7 +332,7 @@ final class PerformanceStore: ObservableObject {
     func setSoundComplexity(_ id:String,_ value:String?) {
         guard value.map({["Simple","Moderate","Complex"].contains($0)}) ?? true,let index=librarySounds.firstIndex(where:{$0.id==id}) else{return}
         var updated=librarySounds;var tags=updated[index].tags ?? BrowserSound.library(updated[index]).tags
-        tags.complexity=value;updated[index].tags=tags
+        tags.complexity=value;tags.markAuthored(.complexity);updated[index].tags=tags
         do {try SoundLibrary(url:saveURL.deletingLastPathComponent().appendingPathComponent("sound-library.json")).write(updated);librarySounds=updated}
         catch {message="Could not save sound tags: \(error.localizedDescription)"}
     }
@@ -340,6 +340,7 @@ final class PerformanceStore: ObservableObject {
         guard values.count<=4,Set(values).count==values.count,values.allSatisfy({LibraryNoteRange(rawValue:$0) != nil}),let index=librarySounds.firstIndex(where:{$0.id==id}) else{return}
         var updated=librarySounds;var tags=updated[index].tags ?? BrowserSound.library(updated[index]).tags
         tags.noteRanges=LibraryNoteRange.allCases.map(\.rawValue).filter{values.contains($0)}
+        tags.markAuthored(.noteRange)
         updated[index].tags=tags
         do {try SoundLibrary(url:saveURL.deletingLastPathComponent().appendingPathComponent("sound-library.json")).write(updated);librarySounds=updated}
         catch {message="Could not save Note Range tags: \(error.localizedDescription)"}
