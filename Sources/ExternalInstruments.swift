@@ -96,6 +96,22 @@ final class ExternalInstrumentRack {
         var parallelTopology=""
         var pitches: [Int: UInt8] = [:]
     }
+    /// A replaced graph keeps its output connected long enough to render its
+    /// effect tail. It receives no new input, and is detached only while the
+    /// engine is already stopped for another graph transaction.
+    private final class RetiredTail {
+        let channel:Int
+        let nodes:[AVAudioNode]
+        let mixer:AVAudioMixerNode
+        var muteWorkItem:DispatchWorkItem?
+        var silent=false
+        init(channel:Int,nodes:[AVAudioNode],mixer:AVAudioMixerNode) {
+            self.channel=channel;self.nodes=nodes;self.mixer=mixer
+        }
+    }
+    private var retiredTails:[RetiredTail]=[]
+    private let maxRetiredTails=2
+    private let retiredTailLifetime:TimeInterval=20
     static func supportsEffect(kind: Int) -> Bool { (0...17).contains(kind) }
     /// Legacy names accepted by the adapter; the descriptor API exposes all built-in controls.
     static func supportedEffectParameters(kind: Int) -> Set<String> {
@@ -177,9 +193,19 @@ final class ExternalInstrumentRack {
                 var nodes:[AVAudioNode]=[],parallel:[ImportedBranchVoice]=[]
                 do {for plan in branches ?? [] {parallel.append(try makeBranch(plan,state:state,format:voice.filter.inputFormat(forBus:0),tempo:tempo,nodes:&nodes))}}
                 catch {for node in nodes.reversed(){engine.disconnectNodeOutput(node);engine.detach(node)};throw error}
-                voice.parallel.forEach{$0.panic()}
+                voice.parallel.forEach{$0.panic(preserveEffectTails:true)}
                 for (controller,value) in controllerValues[channel] ?? [:] {parallel.forEach{$0.control(UInt8(controller),UInt8(value))}}
-                for node in voice.parallelNodes.reversed(){engine.disconnectNodeOutput(node);engine.detach(node)}
+                if !voice.parallel.isEmpty,let mix=voice.parallelNodes.last as? AVAudioMixerNode,mix.engine === engine {
+                    let tailMixer=AVAudioMixerNode();engine.attach(tailMixer)
+                    engine.disconnectNodeOutput(mix)
+                    engine.connect(mix,to:tailMixer,format:nil)
+                    // Bypass the filter/compressor shared with the new branch
+                    // set; their old tails continue through the shared built-in FX.
+                    engine.connect(tailMixer,to:voice.mixer,format:nil)
+                    enqueueRetiredTail(channel:channel,nodes:voice.parallelNodes+[tailMixer],mixer:tailMixer)
+                } else {
+                    for node in voice.parallelNodes.reversed(){engine.disconnectNodeOutput(node);engine.detach(node)}
+                }
                 engine.disconnectNodeOutput(voice.unit)
                 if parallel.isEmpty {engine.connect(voice.unit,to:voice.filter,format:nil)}
                 else {
@@ -210,9 +236,13 @@ final class ExternalInstrumentRack {
         if voice.audioGraph?.topology != plan.audioTopology {
             try editGraph {
                 let graph=ImportedAudioGraph(engine:engine,rack:plan,format:voice.compressor.outputFormat(forBus:0),tempo:tempo)
+                let hadGraph=voice.audioGraph != nil
                 engine.disconnectNodeOutput(voice.compressor)
-                if let old=voice.audioGraph {for node in old.nodes.reversed(){engine.disconnectNodeOutput(node);engine.detach(node)}}
-                for node in voice.imported {engine.disconnectNodeOutput(node);engine.detach(node)}
+                if let old=voice.audioGraph {retireGraph(old,channel:channel,destination:voice.mixer)}
+                else if !voice.imported.isEmpty {retireImported(voice.imported,channel:channel,destination:voice.mixer)}
+                // The old graph/imported chain now has no input. Keep its output
+                // tail, and attach the new graph to the same downstream built-in FX.
+                if hadGraph {for node in voice.imported where node.engine === engine {engine.disconnectNodeOutput(node);engine.detach(node)}}
                 voice.imported=[];voice.audioGraph=graph
                 connectEffects(voice);voices[channel]=voice
             }
@@ -679,6 +709,11 @@ final class ExternalInstrumentRack {
     private func finishGraphChanges() throws {
         guard var edit = pendingGraphEdit else { return }
         pendingGraphEdit = nil
+        // Retired graphs must not reload their samplers during a later patch
+        // transaction. Their effects can still decay into the output without
+        // delaying the newly playable instrument.
+        let active=Set(activeSamplers().map{ObjectIdentifier($0)})
+        edit.samplers=edit.samplers.filter{active.contains(ObjectIdentifier($0.0))}
         edit.samplers += samplerState().filter { candidate in !edit.samplers.contains(where: { $0.0 === candidate.0 }) }
         var failure: Error?
         do { try restoreSamplers(edit.samplers) } catch { failure = error }
@@ -696,8 +731,78 @@ final class ExternalInstrumentRack {
         if pendingGraphEdit == nil {
             pendingGraphEdit = GraphEdit(mixers: mixerState(), samplers: samplerState(), wasRunning: engine.isRunning)
             if engine.isRunning { engine.stop() }
+            purgeSilentRetiredTails()
         }
         try operation()
+    }
+    private func activeSamplers()->[AVAudioUnitSampler] {
+        var result:[AVAudioUnitSampler]=[]
+        func append(_ branch:ImportedBranchVoice) {
+            if let sampler=branch.sampler {result.append(sampler)}
+            for child in branch.children {append(child)}
+        }
+        for voice in voices.values {
+            if let sampler=voice.unit as? AVAudioUnitSampler {result.append(sampler)}
+            for branch in voice.parallel {append(branch)}
+        }
+        return result
+    }
+    private func enqueueRetiredTail(channel:Int,nodes:[AVAudioNode],mixer:AVAudioMixerNode) {
+        precondition(Thread.isMainThread)
+        precondition(graphBatchDepth > 0,"Tail retirement must run inside a graph transaction")
+        var seen=Set<ObjectIdentifier>()
+        let unique=nodes.filter{seen.insert(ObjectIdentifier($0)).inserted}
+        let tail=RetiredTail(channel:channel,nodes:unique,mixer:mixer)
+        let work=DispatchWorkItem { [weak tail] in
+            guard let tail else{return}
+            tail.silent=true;tail.mixer.outputVolume=0
+        }
+        tail.muteWorkItem=work
+        retiredTails.append(tail)
+        // Repeated switches must not accumulate graphs or CPU. The oldest tail
+        // is already silent enough to drop when this bound is exceeded.
+        while retiredTails.count>maxRetiredTails {
+            detachRetiredTail(retiredTails.removeFirst())
+        }
+        DispatchQueue.main.asyncAfter(deadline:.now()+retiredTailLifetime,execute:work)
+    }
+    private func detachRetiredTail(_ tail:RetiredTail) {
+        tail.muteWorkItem?.cancel()
+        tail.mixer.outputVolume=0
+        for node in tail.nodes.reversed() where node.engine === engine {
+            engine.disconnectNodeOutput(node)
+            engine.detach(node)
+        }
+    }
+    private func purgeSilentRetiredTails() {
+        let silent=retiredTails.filter(\.silent)
+        retiredTails.removeAll{$0.silent}
+        for tail in silent {detachRetiredTail(tail)}
+    }
+    /// Panic with preserved effects leaves the retired dry/effect graph ringing;
+    /// explicit Panic must suppress it without waiting for the next graph edit.
+    private func silenceRetiredTail(_ tail:RetiredTail) {
+        tail.mixer.outputVolume=0;tail.silent=true
+        for node in tail.nodes {if let effect=node as? AVAudioUnitEffect {effect.auAudioUnit.reset()}}
+    }
+    /// Keep a replaced imported rack's reverb alive through a dedicated tail
+    /// mixer. Its input was disconnected first, so it only renders silence plus
+    /// the existing effect state.
+    private func retireGraph(_ graph:ImportedAudioGraph,channel:Int,destination:AVAudioNode) {
+        guard graph.output.engine === engine else{return}
+        let mixer=AVAudioMixerNode();engine.attach(mixer)
+        engine.disconnectNodeOutput(graph.output)
+        engine.connect(graph.output,to:mixer,format:nil)
+        engine.connect(mixer,to:destination,format:nil)
+        enqueueRetiredTail(channel:channel,nodes:graph.nodes+[mixer as AVAudioNode],mixer:mixer)
+    }
+    private func retireImported(_ units:[AVAudioUnitEffect],channel:Int,destination:AVAudioNode) {
+        guard let last=units.last,last.engine === engine else{return}
+        let mixer=AVAudioMixerNode();engine.attach(mixer)
+        engine.disconnectNodeOutput(last)
+        engine.connect(last,to:mixer,format:nil)
+        engine.connect(mixer,to:destination,format:nil)
+        enqueueRetiredTail(channel:channel,nodes:units.map{$0 as AVAudioNode}+[mixer as AVAudioNode],mixer:mixer)
     }
     private func install(_ unit: AVAudioUnit, channel: Int, configure: (() throws -> Void)? = nil) throws {
         try editGraph {
@@ -706,8 +811,7 @@ final class ExternalInstrumentRack {
                 try configure?()
                 if let sampler = unit as? AVAudioUnitSampler { rememberSampler(sampler) }
             } catch { engine.detach(unit); throw error }
-            panic(channel)
-            detach(channel)
+            retire(channel)
             let mixer = AVAudioMixerNode()
             let filter = AVAudioUnitEQ(numberOfBands: 1)
             filter.bands[0].filterType = .resonantLowPass
@@ -730,11 +834,15 @@ final class ExternalInstrumentRack {
             voices[channel] = voice
         }
     }
-    private func detach(_ channel: Int) {
-        guard let old = voices.removeValue(forKey: channel) else { return }
-        for node in [old.unit as AVAudioNode, old.filter, old.eq, old.compressor, old.mixer,old.builtin] + old.imported.map({$0 as AVAudioNode}) + old.parallelNodes + (old.audioGraph?.nodes ?? []) {
-            engine.disconnectNodeOutput(node); engine.detach(node)
-        }
+    private func retire(_ channel: Int) {
+        guard voices[channel] != nil else { return }
+        panic(channel,preserveEffectTails:true)
+        guard let old=voices.removeValue(forKey:channel) else{return}
+        var nodes:[AVAudioNode]=[old.unit,old.filter,old.eq,old.compressor,old.mixer,old.builtin]
+        nodes += old.imported.map{$0 as AVAudioNode}
+        nodes += old.parallelNodes
+        nodes += old.audioGraph?.nodes ?? []
+        enqueueRetiredTail(channel:channel,nodes:nodes,mixer:old.mixer)
     }
     func remove(_ channel: Int) throws {
         precondition(Thread.isMainThread)
@@ -742,8 +850,7 @@ final class ExternalInstrumentRack {
         // Cancel any pending load even when no voice is installed. Empty slots
         // do not change the graph and must not reload every resident sampler.
         guard voices[channel] != nil else { return }
-        panic(channel)
-        try editGraph { detach(channel) }
+        try editGraph { retire(channel) }
     }
     private func midi(_ channel: Int, _ status: UInt8, _ data1: UInt8, _ data2: UInt8) {
         guard let unit = voices[channel]?.unit else { return }
@@ -827,6 +934,9 @@ final class ExternalInstrumentRack {
     }
     func panic(_ channel: Int? = nil,preserveEffectTails:Bool=false) {
         precondition(Thread.isMainThread)
+        if !preserveEffectTails {
+            for tail in retiredTails where channel.map({$0 == tail.channel}) ?? true {silenceRetiredTail(tail)}
+        }
         for index in channel.map({ [$0] }) ?? Array(voices.keys) {
             controllerValues[index,default:[:]][64]=0
             voices[index]?.parallel.forEach{$0.panic(preserveEffectTails:preserveEffectTails)}
@@ -844,6 +954,10 @@ final class ExternalInstrumentRack {
     }
     func unit(channel: Int) -> AVAudioUnit? { voices[channel]?.unit }
     func state(channel: Int) -> [String: Any]? { voices[channel]?.unit.auAudioUnit.fullStateForDocument }
+    #if DEBUG
+    var debugRetiredTailCount:Int {retiredTails.count}
+    func debugExpireRetiredTails() {for tail in retiredTails {silenceRetiredTail(tail)}}
+    #endif
     func restoreState(_ state: [String: Any], channel: Int) {
         precondition(Thread.isMainThread)
         voices[channel]?.unit.auAudioUnit.fullStateForDocument = state
