@@ -17,6 +17,10 @@ struct ExternalGraphTailTests {
         audio.master(1)
         audio.space(0)
 
+        stage("start offline engine")
+        try audio.prepareOffline()
+        stage("offline engine started")
+
         stage("import tones")
         let piano = try importTone(folder.appendingPathComponent("Piano.wav"), frequency: 261.626, rack: rack)
         let organ = try importTone(folder.appendingPathComponent("Organ.wav"), frequency: 329.628, rack: rack)
@@ -68,9 +72,6 @@ struct ExternalGraphTailTests {
         try load(piano, channel: 0)
         try rack.configureImported(channel: 0, rack: ImportedRack(effects: [reverb()]), tempo: 120)
         rack.volume(channel: 0, gain: 1, pan: 0)
-        stage("start offline engine")
-        try audio.prepareOffline()
-        stage("offline engine started")
         try play(0)
         let graphBefore = try render(40)
         stage("replace graph")
@@ -128,6 +129,7 @@ struct ExternalGraphTailTests {
     }
 
     private static func importTone(_ url: URL, frequency: Double, rack: ExternalInstrumentRack) throws -> ExternalSound {
+        stage("write tone \(url.lastPathComponent)")
         let format = AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 1)!
         let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 48_000)!
         buffer.frameLength = 48_000
@@ -136,6 +138,7 @@ struct ExternalGraphTailTests {
         }
         let file = try AVAudioFile(forWriting: url, settings: format.settings)
         try file.write(from: buffer)
+        stage("import tone \(url.lastPathComponent)")
         return try rack.importSound(url)
     }
 }
