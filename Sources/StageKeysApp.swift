@@ -141,6 +141,10 @@ struct PerformanceView: View {
             }.environmentObject(store).preferredColorScheme(.dark).font(StageTheme.font(14))
         }
         .alert("StageKeys", isPresented: Binding(get: { store.message != nil }, set: { if !$0 { store.message = nil } })) { Button("OK") { store.message = nil } } message: { Text(store.message ?? "") }
+        .onOpenURL {url in
+            if url.pathExtension.lowercased()=="stagekeyspack" {store.importLibraryBackup(url);sheet = .importSounds}
+            else if ["patch","cst"].contains(url.pathExtension.lowercased()) {store.importMainStageAutomatically(url);sheet = .importSounds}
+        }
         .onDrop(of:[UTType.fileURL],isTargeted:nil){providers in
             guard !store.libraryImportBusy,let provider=providers.first else{return false}
             _ = provider.loadObject(ofClass:URL.self){url,_ in guard let url,["patch","cst"].contains(url.pathExtension.lowercased()) else{return};DispatchQueue.main.async{store.importMainStageAutomatically(url);sheet = .importSounds}}

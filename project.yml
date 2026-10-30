@@ -21,6 +21,9 @@ targets:
       path: Resources/Info-macOS.plist
       properties:
         CFBundleIconFile: StageKeys
+        CFBundleDocumentTypes: [{"CFBundleTypeName": "StageKeys Personal Sound Pack", "CFBundleTypeRole": "Viewer", "LSHandlerRank": "Owner", "LSItemContentTypes": ["studio.stagekeys.personal-pack"]}]
+        UTExportedTypeDeclarations: [{"UTTypeIdentifier": "studio.stagekeys.personal-pack", "UTTypeDescription": "StageKeys Personal Sound Pack", "UTTypeConformsTo": ["public.data"], "UTTypeTagSpecification": {"public.filename-extension": ["stagekeyspack"], "public.mime-type": "application/vnd.stagekeys.personal-pack"}}]
+        LSSupportsOpeningDocumentsInPlace: true
     sources:
       - path: Sources
       - path: Licenses
@@ -43,6 +46,12 @@ targets:
     type: application
     platform: iOS
     deploymentTarget: '16.0'
+    info:
+      path: Resources/Info-iOS.plist
+      properties:
+        CFBundleDocumentTypes: [{"CFBundleTypeName": "StageKeys Personal Sound Pack", "CFBundleTypeRole": "Viewer", "LSHandlerRank": "Owner", "LSItemContentTypes": ["studio.stagekeys.personal-pack"]}]
+        UTExportedTypeDeclarations: [{"UTTypeIdentifier": "studio.stagekeys.personal-pack", "UTTypeDescription": "StageKeys Personal Sound Pack", "UTTypeConformsTo": ["public.data"], "UTTypeTagSpecification": {"public.filename-extension": ["stagekeyspack"], "public.mime-type": "application/vnd.stagekeys.personal-pack"}}]
+        LSSupportsOpeningDocumentsInPlace: true
     sources:
       - path: Sources
       - path: Licenses

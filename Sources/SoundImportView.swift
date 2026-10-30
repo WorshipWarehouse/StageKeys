@@ -8,6 +8,7 @@ struct SoundImportView:View {
     @State private var choice:ImportChoice = .file
     @State private var pending:URL?
     @State private var status:String?
+    @State private var portableSelection:Set<String>?
     var body:some View {
         EditorFrame(title:"Import Sounds",width:650,height:720) {
             ScrollView {
@@ -17,7 +18,17 @@ struct SoundImportView:View {
                 Button{choice = .file;choosing=true}label:{HStack{Image(systemName:"plus.circle.fill").font(.title);VStack(alignment:.leading,spacing:4){Text("Choose a Sound File").font(.headline);Text("StageKeys Sampler · EXS · AUPRESET · audio · sound banks").font(.caption)};Spacer();Image(systemName:"chevron.right")}.padding(20).frame(maxWidth:.infinity,alignment:.leading)}.buttonStyle(.plain).background(StageTheme.panel,in:RoundedRectangle(cornerRadius:10))
                 Button{choice = .library;choosing=true}label:{HStack{Image(systemName:"folder.badge.plus").font(.title);VStack(alignment:.leading,spacing:4){Text("Import a Sampler Library Folder").font(.headline);Text("Add EXS and AUPRESET instruments with their original samples").font(.caption)};Spacer();Image(systemName:"chevron.right")}.padding(20).frame(maxWidth:.infinity,alignment:.leading)}.buttonStyle(.plain).background(StageTheme.panel,in:RoundedRectangle(cornerRadius:10))
                 Button{choice = .mainStage;choosing=true}label:{HStack{Image(systemName:"pianokeys").font(.title);VStack(alignment:.leading,spacing:4){Text("Convert a MainStage Patch or Channel Strip").font(.headline);Text("Convert included EXS sounds without opening MainStage; preserve source processing").font(.caption)};Spacer();Image(systemName:"chevron.right")}.padding(20).frame(maxWidth:.infinity,alignment:.leading)}.buttonStyle(.plain).background(StageTheme.panel,in:RoundedRectangle(cornerRadius:10))
-                Button("Install a Separate Sound Library") {choice = .backup;choosing=true}.buttonStyle(StageButtonStyle())
+                Button("Install a Personal Sound Pack or Library") {choice = .backup;choosing=true}.buttonStyle(StageButtonStyle())
+                #if os(macOS)
+                DisclosureGroup("Transfer Native Sounds to Your Other Devices") {
+                    ForEach(store.librarySounds) {entry in
+                        if let reason=LibraryBackup.portabilityIssue(entry) {Text("\(entry.name): \(reason)").font(.caption).foregroundStyle(.secondary)}
+                        else {Toggle(entry.name,isOn:Binding(get:{portableSelection?.contains(entry.id) ?? true},set:{value in var selected=portableSelection ?? Set(store.librarySounds.filter{LibraryBackup.portabilityIssue($0)==nil}.map(\.id));if value{selected.insert(entry.id)}else{selected.remove(entry.id)};portableSelection=selected}))}
+                    }
+                    Button("Save Selected Personal Sound Pack…") {store.exportPersonalSoundLibrary(ids:portableSelection)}.buttonStyle(StageButtonStyle())
+                    Text("For personal device transfer. Current sound processing travels; session files, ratings and plug-in snapshots are excluded.").font(.caption)
+                }
+                #endif
                 Text("Choose a downloaded StageKeys-Library pack. Sounds and rack processing install separately; the app ships without sampled content.").font(.caption).foregroundStyle(.secondary)
                 if store.librarySounds.contains(where:{$0.originalInstrument?.file.hasSuffix(".exs")==true && $0.sound?.nativeSampler != nil && ($0.sound?.nativeSampler?.conversionVersion ?? 1)<6}) {
                     Button("Update Converted Sampler Playback") {store.updateSamplerEnvelopes()}.buttonStyle(StageButtonStyle())
@@ -60,12 +71,13 @@ struct SoundImportView:View {
             }.overlay(alignment:.bottom) {
                 if store.libraryImportBusy {Button("Cancel Import Before Commit") {store.cancelLibraryImport()}.buttonStyle(StageButtonStyle()).padding().background(StageTheme.base)}
             }
-        }.fileImporter(isPresented:$choosing,allowedContentTypes:choice == .file ? [.audio,.data] : choice == .mainStage ? [.package,.folder,.data] : [.folder]) {result in
+        }.fileImporter(isPresented:$choosing,allowedContentTypes:choice == .file ? [.audio,.data] : choice == .mainStage ? [.package,.folder,.data] : choice == .backup ? [.folder,.data]:[.folder]) {result in
             switch result {
             case .success(let url):
                 switch choice {
                 case .file:
-                    if ["patch","cst"].contains(url.pathExtension.lowercased()) {store.importMainStageAutomatically(url);status=nil}
+                    if url.pathExtension.lowercased()=="stagekeyspack" {store.importLibraryBackup(url);status=nil}
+                    else if ["patch","cst"].contains(url.pathExtension.lowercased()) {store.importMainStageAutomatically(url);status=nil}
                     else if ["exs","aupreset"].contains(url.pathExtension.lowercased()) {
                         pending=url;status="Choose the folder containing this instrument’s samples. Imports preserve sample maps and translated rack effects, macros and MIDI settings. Conversion notes describe remaining approximations."
                         // Present the second picker after the first has dismissed.

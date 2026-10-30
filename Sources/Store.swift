@@ -1051,14 +1051,48 @@ final class PerformanceStore: ObservableObject {
             return try installLibrarySound(url,sampleRoot:sampleRoot)
         }catch{message=error.localizedDescription;return nil}
     }
+    @Published var portableImportIssues:[String]=[]
+    #if os(macOS)
+    func exportPersonalSoundLibrary(ids:Set<String>?=nil) {
+        guard !libraryImportBusy else{return}
+        let entries=librarySounds.filter{ids?.contains($0.id) ?? (LibraryBackup.portabilityIssue($0)==nil)}
+        guard !entries.isEmpty,entries.allSatisfy({LibraryBackup.portabilityIssue($0)==nil}) else{message="Select native sampler sounds for personal device transfer.";return}
+        let panel=NSSavePanel();panel.nameFieldStringValue="Personal Sounds.stagekeyspack";panel.canCreateDirectories=true
+        panel.allowedContentTypes=[UTType(exportedAs:"studio.stagekeys.personal-pack")]
+        guard panel.runModal() == .OK,let destination=panel.url else{return}
+        libraryImportBusy=true
+        let root=saveURL.deletingLastPathComponent()
+        Task { @MainActor in
+            defer{libraryImportBusy=false}
+            do {try await Task.detached {try LibraryBackup.exportArchive(entries,library:root,to:destination)}.value;message="Created a personal pack with \(entries.count) native sounds. Session files and plug-in snapshots are excluded."}
+            catch{message="Could not create personal pack: \(error.localizedDescription)"}
+        }
+    }
+    #endif
     func importLibraryBackup(_ folder:URL) {
         guard !libraryImportBusy else{return}
         libraryImportCancelRequested=false;libraryImportBusy=true
         Task { @MainActor in
             let access=folder.startAccessingSecurityScopedResource()
             defer{libraryImportBusy=false;if access{folder.stopAccessingSecurityScopedResource()}}
+            let extracted=FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            defer{try? FileManager.default.removeItem(at:extracted)}
+            var preparedAssets=Set<URL>(),committed=false
+            defer{if !committed{for asset in preparedAssets{try? FileManager.default.removeItem(at:asset)}}}
             do {
-                let pack=try LibraryBackup.read(folder)
+                portableImportIssues=[]
+                let root:URL
+                if folder.pathExtension.lowercased()=="stagekeyspack" {
+                    libraryImportProgress="Verifying personal sound pack…"
+                    root=try await Task.detached {try PersonalSoundArchive.unpack(folder,to:extracted)}.value
+                } else{root=folder}
+                try checkLibraryImportCancellation()
+                let pack=try LibraryBackup.read(root)
+                portableImportIssues=pack.sounds.compactMap{entry in
+                    guard let sound=entry.sound ?? entry.layer?.external else{return entry.name+": unconverted host preset"}
+                    return sound.kind == .samplerPreset ? nil:entry.name+": "+(LibraryBackup.portabilityIssue(entry) ?? "This device cannot install this entry.")
+                }
+                guard portableImportIssues.isEmpty else{throw MainStagePatch.Failure.invalid("Pack not installed: "+portableImportIssues.prefix(12).joined(separator:"; "))}
                 let library=SoundLibrary(url:saveURL.deletingLastPathComponent().appendingPathComponent("sound-library.json"))
                 let original=try library.read()
                 var entries=original,imported=0,skipped=0,failures:[String]=[]
@@ -1070,12 +1104,15 @@ final class PerformanceStore: ObservableObject {
                     libraryImportProgress="Preparing library sound: "+entry.name;await Task.yield();try checkLibraryImportCancellation()
                     let temp=FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString+".aupreset")
                     defer{try? FileManager.default.removeItem(at:temp)}
+                    let assetsBefore=managedImportAssets()
+                    var createdSound:ExternalSound?,createdOriginal:StageKeysSampler.Original?
                     do {
                         var installed:ExternalSound
                         if let file=sound.fileName,let cached=installedPresets[file] {installed=cached}
                         else {
                             try LibraryBackup.preset(sound,pack:pack,to:temp)
                             installed=try rack.importPreset(temp,sampleRoot:pack.root)
+                            createdSound=installed
                             if let file=sound.fileName {installedPresets[file]=installed}
                         }
                         installed.name=sound.name
@@ -1084,13 +1121,16 @@ final class PerformanceStore: ObservableObject {
                         if let original=entry.originalInstrument {
                             let source=try LibraryBackup.asset(original.file,in:pack.root,manifest:pack.manifest)
                             entry.originalInstrument=try StageKeysSampler.retainOriginal(source,library:saveURL.deletingLastPathComponent())
+                            createdOriginal=entry.originalInstrument
                         }
                         entries.append(entry);imported+=1
-                    }catch{failures.append(entry.name+": "+error.localizedDescription)}
+                        preparedAssets.formUnion(assetsForImportedSound(createdSound,original:createdOriginal).subtracting(assetsBefore))
+                    }catch{for asset in assetsForImportedSound(createdSound,original:createdOriginal).subtracting(assetsBefore){try? FileManager.default.removeItem(at:asset)};failures.append(entry.name+": "+error.localizedDescription)}
                 }
                 try checkLibraryImportCancellation()
                 guard failures.isEmpty else {throw MainStagePatch.Failure.invalid("Import not committed: "+failures.prefix(6).joined(separator:"; "))}
                 try library.commitImport(entries,replacing:original);librarySounds=entries
+                committed=true
                 libraryImportProgress="Imported \(imported) library sounds with their rack processing; \(skipped) existing/archive entries skipped. "+failures.prefix(6).joined(separator:"; ")
             }catch{libraryImportProgress=error.localizedDescription}
         }

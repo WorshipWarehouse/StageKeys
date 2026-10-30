@@ -17,6 +17,6 @@ Users can create a patch from ready channels in original order; omitted channels
 - #8: persisted resumable work, cross-process transaction ownership and clean-host/relocation evidence beyond the generated baseline. Generated CI playback is evidence for that corpus only.
 - #10: matched MainStage measurements for EQ/compressor transfer/transients and each delay/reverb/distortion response; control translation is not sonic parity.
 - #85: remembered authorized folders, batch/whole-concert selection, supported multi-instrument decomposition and cold-user UI qualification.
-- #87: personal portable writer/archive, document handling and precommit device eligibility; physical iPad round-trip/latency/memory is a separate required gate.
+- #87: personal native writer/archive, document registration and ineligible-entry precommit refusal are implemented in the portable follow-up; physical iPad round-trip/latency/memory remains a separate required gate. See PERSONAL-SOUND-PACKS.md.
 
 No vendor sample data is added to app/repository distributions. Generated `MainStageGuidedImportTests` builds original legacy/modern EXS, renders converted audio, checks original hashes, partial outcomes, same-CST identity, duplicate retry, strict/cancelled asset rollback and missing/ambiguous discovery. It reports whether MainStage is installed without launching it.
