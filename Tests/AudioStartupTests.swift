@@ -14,7 +14,7 @@ import Foundation
         assert(!busy.message.contains("/Users/"), "Raw descriptions and paths must not leak into the message")
 
         let unavailable = AudioStartupClassifier.classify(
-            NSError(domain: NSOSStatusErrorDomain, code: -10802), routeName: route)
+            NSError(domain: NSOSStatusErrorDomain, code: -10876), routeName: route) // kAudioUnitErr_NoConnection
         assert(unavailable.kind == .outputUnavailable)
         assert(unavailable.recoverable)
         assert(unavailable.message.contains(route))
