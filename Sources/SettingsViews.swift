@@ -81,9 +81,42 @@ struct SettingsEditor: View {
                         Section("Stereo Output") { Text("All modules and the tonic pad feed the system stereo output. Per-module pan is available in Sound Settings.") }
                         Text("Multiple hardware outputs and category routing are not implemented.").foregroundStyle(.secondary)
                     case "Metronome":
-                        Toggle("Metronome", isOn: $store.metronome)
-                        Stepper("\(Int(store.patch.tempo)) BPM", value: Binding(get: { store.patch.tempo }, set: { store.updateTempo($0) }), in: 20...300)
-                        Text("Fixed synthesized click; follows the patch tempo and master volume. Accent patterns and alternate click sounds are not implemented.").font(.caption).foregroundStyle(.secondary)
+                        Section("Metronome") {
+                            Toggle("Metronome", isOn: $store.metronome)
+                            Stepper("\(Int(store.patch.tempo)) BPM", value: Binding(get: { store.patch.tempo }, set: { store.updateTempo($0) }), in: 20...300)
+                            Toggle("Show in toolbar", isOn: $store.metronomeSettings.visible)
+                            Picker("Click sound", selection: $store.metronomeSettings.preset) {
+                                ForEach(MetronomeSettings.presets.indices, id: \.self) { Text(MetronomeSettings.presets[$0]).tag($0) }
+                            }
+                            Toggle("Master volume controls the metronome", isOn: $store.metronomeSettings.followsMaster)
+                            Text("When off, the click keeps its own level while the master fader moves the performance. The metronome is mixed after the shared hall reverb.").font(.caption).foregroundStyle(.secondary)
+                        }
+                        Section("Level") {
+                            HStack {
+                                Slider(value: $store.metronomeSettings.level, in: 0...1).accessibilityLabel("Metronome level")
+                                Text(store.metronomeSettings.levelDBFS.map { String(format: "%.1f dBFS", $0) } ?? "Off").monospacedDigit().frame(width: 84)
+                            }
+                            Text("The engine bounds the click at its own peak before the output headroom. This is not a measured acoustic level.").font(.caption).foregroundStyle(.secondary)
+                        }
+                        Section("Beats") {
+                            Toggle("Downbeat accent", isOn: $store.metronomeSettings.downbeatEnabled)
+                            if store.metronomeSettings.downbeatEnabled {
+                                HStack {
+                                    Slider(value: $store.metronomeSettings.downbeatVelocity, in: 0...1).accessibilityLabel("Downbeat velocity")
+                                    Text("Downbeat \(store.metronomeSettings.downbeatVelocityLabel)").monospacedDigit().frame(width: 108)
+                                }
+                            }
+                            HStack {
+                                Slider(value: $store.metronomeSettings.beatVelocity, in: 0...1).accessibilityLabel("Beat velocity")
+                                Text("Beat \(store.metronomeSettings.beatVelocityLabel)").monospacedDigit().frame(width: 108)
+                            }
+                            Stepper("Accent every \(store.metronomeSettings.accentEvery == 0 ? "off" : "\(store.metronomeSettings.accentEvery) beats")", value: $store.metronomeSettings.accentEvery, in: 0...16)
+                            Picker("Subdivision", selection: $store.metronomeSettings.subdivision) {
+                                ForEach(MetronomeSettings.subdivisionLabels.indices, id: \.self) { index in Text(MetronomeSettings.subdivisionLabels[index]).tag(index + 1) }
+                            }
+                            Stepper("Beats per bar: \(store.metronomeSettings.beatsPerBar)", value: $store.metronomeSettings.beatsPerBar, in: 1...16)
+                            Text("4/4 is the current performance time signature. Beats per bar only controls which beat receives the downbeat accent.").font(.caption).foregroundStyle(.secondary)
+                        }
                     case "MIDI":
                         Section("MIDI Keyboards · Automatic Connection") {
                             Text(store.midiStatus).font(.headline)

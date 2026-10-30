@@ -18,7 +18,7 @@ class RunnerTests(unittest.TestCase):
         sources, swift, native = runner.plan(repo)
         self.assertIn('Sources/EQBandwidth.swift', sources)
         self.assertIn('PluginInterfaceRequestTests', swift)
-        self.assertEqual(set(native), {'DelayIndependentLevelsTests', 'AudioEffectsTests', 'ChannelDSPTests', 'ChannelPanicTests', 'RackTests', 'SynthTests'})
+        self.assertEqual(set(native), {'DelayIndependentLevelsTests', 'AudioEffectsTests', 'ChannelDSPTests', 'ChannelPanicTests', 'RackTests', 'SynthTests', 'MetronomeTests'})
         for name in sources:
             self.assertTrue((repo / name).is_file(), name)
         for names, suffix in [(swift, '.swift'), (native, '.c')]:
@@ -80,6 +80,22 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(runner.fixture_args('EXSImportTests', Path('/tmp/build'), env),
                          [Path('/tmp/build/exs-scratch'), '/fixture/source.exs', '/fixture/samples'])
         self.assertEqual(runner.fixture_args('Other', Path('/tmp/build'), env), [])
+
+    def test_path_taking_tests_receive_a_private_scratch_location(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            build = Path(temporary)
+            self.assertEqual(runner.scratch_args('AudioGraphTests', build),
+                             [build / 'scratch/AudioGraphTests/rendered.wav'])
+            self.assertTrue((build / 'scratch/AudioGraphTests').is_dir())
+            self.assertEqual(runner.scratch_args('SetlistLibraryTests', build),
+                             [build / 'scratch/SetlistLibraryTests'])
+            self.assertTrue((build / 'scratch/SetlistLibraryTests').is_dir())
+            self.assertEqual(runner.scratch_args('MIDIInputTests', build), [])
+            self.assertEqual(runner.scratch_args('ExternalAudioTests', build),
+                             [build / 'scratch/ExternalAudioTests'])
+            self.assertEqual(runner.scratch_args('SamplerInterchangeTests', build),
+                             [build / 'scratch/SamplerInterchangeTests'])
+            self.assertEqual(runner.scratch_args('EXSImportTests', build), [])
 
 
 if __name__ == '__main__':
