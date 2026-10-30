@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 
 @main struct TransactionalImportTests {
     @MainActor static func main() async throws {
@@ -15,6 +16,34 @@ import Foundation
         assert(try! Data(contentsOf:library.url)==editedBytes)
         try library.commitImport([edited,b],replacing:[edited])
         assert(try! library.read()==[edited,b])
+        // A separately opened descriptor models another app process holding the transaction.
+        let lockURL=library.url.appendingPathExtension("lock")
+        let descriptor=open(lockURL.path,O_RDWR | O_NOFOLLOW)
+        assert(descriptor >= 0 && flock(descriptor,LOCK_EX | LOCK_NB)==0)
+        let lockedBytes=try Data(contentsOf:library.url)
+        for operation in [0,1,2] {
+            do {
+                switch operation {
+                case 0:try library.commitImport([a],replacing:[edited,b])
+                case 1:try library.write([a])
+                default:_ = try library.recoverPrevious()
+                }
+                assertionFailure("Concurrent writer or recovery bypassed the transaction lock")
+            } catch {}
+            assert(try! Data(contentsOf:library.url)==lockedBytes)
+        }
+        assert(try! library.read()==[edited,b]) // Readers remain available.
+        flock(descriptor,LOCK_UN);close(descriptor)
+        try library.commitImport([edited,b],replacing:[edited,b])
+        // Never follow a lock symlink, even if it points at an ordinary writable file.
+        try FileManager.default.removeItem(at:lockURL)
+        let target=root.appendingPathComponent("unrelated-lock-target")
+        try Data("untouched".utf8).write(to:target)
+        try FileManager.default.createSymbolicLink(at:lockURL,withDestinationURL:target)
+        do {try library.write([a]);assertionFailure("Symlink lock accepted")} catch {}
+        assert(try! Data(contentsOf:target)==Data("untouched".utf8))
+        assert(try! Data(contentsOf:library.url)==lockedBytes)
+        try FileManager.default.removeItem(at:lockURL)
         let before=try Data(contentsOf:library.url),store=PerformanceStore()
         let folder=root.appendingPathComponent("Source")
         try FileManager.default.createDirectory(at:folder,withIntermediateDirectories:true)
