@@ -101,7 +101,9 @@ final class PerformanceStore: ObservableObject {
     @Published var editRanges = false
     @Published var showRanges = true
     @Published var keyboardBase = 48
-    @Published var metronome = false { didSet { audio.clock(patch.tempo, metronome) } }
+    @Published var metronome = false { didSet { applyMetronome() } }
+    @Published var metronomeSettings = MetronomeSettings() { didSet { applyMetronome() } }
+    private func applyMetronome() { audio.metronome(metronome, settings: metronomeSettings) }
     @Published var midiChannel = -1 { didSet { if oldValue != midiChannel { panic() } } }
     @Published var primarySourceID: Int32 = -1 { didSet { if oldValue != primarySourceID { panic() } } }
     @Published var secondarySourceID: Int32 = -2 { didSet { if oldValue != secondarySourceID { panic() } } }
@@ -502,6 +504,7 @@ final class PerformanceStore: ObservableObject {
             velocityMinimum = settings.velocityMinimum ?? 0; velocityMaximum = settings.velocityMaximum ?? 127
             midiSourceNames = settings.sourceNames ?? [:]
             metronome = settings.metronomeEnabled ?? false
+            metronomeSettings = settings.metronomeSettings ?? MetronomeSettings()
             preferredBufferFrames = settings.audioBufferFrames.map { UInt32(max(0, min(8192, $0))) }
             disableSilent = settings.disableSilent; showRanges = settings.showRanges
             tonicVelocitySelector=settings.tonicVelocitySelector ?? false;tonicTimbre=settings.tonicTimbre ?? 0;tonicLastRoot=settings.tonicLastRoot ?? 0;tonicSound=settings.tonicSound
@@ -582,7 +585,7 @@ final class PerformanceStore: ObservableObject {
                 restoredAudioOutput = true
                 if let uid = preferredAudioOutputUID { try? audio.deviceController.select(uid: uid) }
             }
-            try audio.start(); audio.master(master);audio.space(reverb); started = true; applyPatch(); recallTonicPatch(); audio.clock(patch.tempo,metronome); refreshAudioDevices(); restoreAudioBuffer() }
+            try audio.start(); audio.master(master);audio.space(reverb); started = true; applyPatch(); recallTonicPatch(); audio.clock(patch.tempo,metronome); audio.metronome(metronome, settings: metronomeSettings); refreshAudioDevices(); restoreAudioBuffer() }
         catch { started = false; message = "Audio could not start: \(error.localizedDescription)" }
     }
     /// Re-apply the saved hardware buffer once the engine is running. A device that
@@ -1532,7 +1535,7 @@ final class PerformanceStore: ObservableObject {
             try RecoverableSessionFile.write(data, to: saveURL) { _ = try JSONDecoder().decode(Setlist.self, from: $0).upgraded() }
             currentSetlistID = try localSetlistLibrary().save(setlist,id:currentSetlistID).id
             refreshSetlists()
-            let settings = SessionSettings(selectedPatchID:patch.id,activeSnapshotID:activeSnapshot,notesMode:notesMode,modWheel:modWheel,master: master, reverb: reverb, transition: transition, midiChannel: midiChannel, primarySourceID: primarySourceID, secondarySourceID: secondarySourceID, secondaryChannel: secondaryChannel, velocityMinimum: velocityMinimum, velocityMaximum: velocityMaximum, sourceNames: midiSourceNames, disableSilent: disableSilent, showRanges: showRanges, tonicGain: tonicGain, tonicBrightness: tonicBrightness, tonicShimmer: tonicShimmer, audioOutputUID: preferredAudioOutputUID, activeSetlistID: currentSetlistID,tonicSound:tonicSound,tonicVelocitySelector:tonicVelocitySelector,tonicTimbre:tonicTimbre,tonicLastRoot:tonicLastRoot,metronomeEnabled:metronome,audioBufferFrames:preferredBufferFrames.map{Int($0)})
+            let settings = SessionSettings(selectedPatchID:patch.id,activeSnapshotID:activeSnapshot,notesMode:notesMode,modWheel:modWheel,master: master, reverb: reverb, transition: transition, midiChannel: midiChannel, primarySourceID: primarySourceID, secondarySourceID: secondarySourceID, secondaryChannel: secondaryChannel, velocityMinimum: velocityMinimum, velocityMaximum: velocityMaximum, sourceNames: midiSourceNames, disableSilent: disableSilent, showRanges: showRanges, tonicGain: tonicGain, tonicBrightness: tonicBrightness, tonicShimmer: tonicShimmer, audioOutputUID: preferredAudioOutputUID, activeSetlistID: currentSetlistID,tonicSound:tonicSound,tonicVelocitySelector:tonicVelocitySelector,tonicTimbre:tonicTimbre,tonicLastRoot:tonicLastRoot,metronomeEnabled:metronome,audioBufferFrames:preferredBufferFrames.map{Int($0)},metronomeSettings:metronomeSettings)
             guard settings.validate() else { throw SetlistError.invalid }
             try RecoverableSessionFile.write(encoder.encode(settings), to: saveURL.deletingLastPathComponent().appendingPathComponent("settings.json")) {
                 guard try JSONDecoder().decode(SessionSettings.self, from: $0).validate() else { throw SetlistError.invalid }
