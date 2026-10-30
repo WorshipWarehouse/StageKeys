@@ -89,7 +89,7 @@ struct SoundImportView:View {
                     pending=nil
                 case .backup:store.importLibraryBackup(url)
                 case .mainStageSamples:
-                    store.importMainStageSamplers(url);status=nil
+                    store.rememberMainStageSampleFolder(url);store.importMainStageSamplers(url);status=nil
                 case .mainStage:
                     store.importMainStageAutomatically(url);status=nil
                 case .library:
