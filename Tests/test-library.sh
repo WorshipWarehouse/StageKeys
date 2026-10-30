@@ -40,15 +40,20 @@ sources=(
     "$repo/Sources/SnapshotMorph.swift"
     "$repo/Sources/Store.swift"
 )
-if (( $# )); then tests=("$@"); else tests=(MainStageTapeDelayTests PersonalSoundPackTests MainStageGuidedImportTests MetadataRecoveryTests CatalogRecoveryTests MainStageFaderTests NoFactorySoundsTests SamplerStartupTests SetlistPathAliasTests StoreTests SnapshotSlotTests SessionRecoveryTests SupportDiagnosticsTests TransactionalImportTests MainStagePreflightTests PluginRecoveryTests EffectStressTests OutputMeterTests MainStageLayerAssemblyTests ModulationWheelTests AllSoundSlotsTests PatchDraftPlanTests ManualMIDIDestinationRefreshTests PluginParameterModelTests PrimaVerbModelTests EffectPresetTests DenseHostedTests ReverbTransitionTests LibraryBrowserTests SoundRatingTests LibraryNoteRangeTests SoundLibraryTests ImportedSampleContinuityTests ImportedSoundRetentionTests MainStagePatchTests StageKeysSamplerTests SamplerAttackTests AudioDiagnosticRecorderTests InstrumentGainMatchTests PatchGainTests EXSEnvelopeTests EXSVoiceControlsTests EXSSplitRegionTests LibraryBackupTests TonicPadTests MainStageProcessingTests MainStageControllerDefaultsTests MainStageAudioUnitImportTests EXSReferenceIdentityTests EXSCrossfadeNeutralTests SamplerHostVelocityTests NativeSamplerGroupTests PianoFidelityTests SamplerBoundaryRegressionTests SamplerStreamingStressTests AudioUnitCatalogTests MIDISetupTests BuiltinEffectUnitTests NativeCreamCoatTests ParallelAudioTests PianoHeldNoteTests ModelTests GrooveTests MIDIFXTests SnapshotMorphTests EXSAmplitudeUpgradeTests EXSResponseUpgradeTests EXSVoiceUpgradeTests EXSCaptureCompatibilityTests EXSImportTests ModernEXSImportTests ModernEXSPlaybackTests MainStageAutoConversionTests MainStagePackTests ReferencedMainStageImportTests ImportedAttackAuditTests EQBandwidthTests PlugAndPlayTests ProgramChangeOptInTests PluginInterfaceRequestTests); fi
+if (( $# )); then tests=("$@"); else tests=(MainStageTapeDelayTests PersonalSoundPackTests MainStageGuidedImportTests MetadataRecoveryTests CatalogRecoveryTests MainStageFaderTests NoFactorySoundsTests SamplerStartupTests SetlistPathAliasTests StoreTests SnapshotSlotTests SessionRecoveryTests SupportDiagnosticsTests TransactionalImportTests MainStagePreflightTests PluginRecoveryTests EffectStressTests OutputMeterTests MainStageLayerAssemblyTests ModulationWheelTests AllSoundSlotsTests PatchDraftPlanTests ManualMIDIDestinationRefreshTests PluginParameterModelTests PrimaVerbModelTests EffectPresetTests DenseHostedTests ReverbTransitionTests LibraryBrowserTests SoundRatingTests LibraryNoteRangeTests SoundLibraryTests ImportedSampleContinuityTests ImportedSoundRetentionTests MainStagePatchTests StageKeysSamplerTests SamplerAttackTests AudioDiagnosticRecorderTests InstrumentGainMatchTests PatchGainTests EXSEnvelopeTests EXSVoiceControlsTests EXSSplitRegionTests LibraryBackupTests TonicPadTests MainStageProcessingTests MainStageControllerDefaultsTests MainStageAudioUnitImportTests EXSReferenceIdentityTests EXSCrossfadeNeutralTests SamplerHostVelocityTests NativeSamplerGroupTests PianoFidelityTests SamplerBoundaryRegressionTests SamplerStreamingStressTests AudioUnitCatalogTests MIDISetupTests BuiltinEffectUnitTests NativeCreamCoatTests ParallelAudioTests PianoHeldNoteTests ModelTests GrooveTests MIDIFXTests SnapshotMorphTests EXSAmplitudeUpgradeTests EXSResponseUpgradeTests EXSVoiceUpgradeTests EXSCaptureCompatibilityTests EXSImportTests ModernEXSImportTests ModernEXSPlaybackTests MainStageAutoConversionTests MainStagePackTests ReferencedMainStageImportTests ImportedAttackAuditTests EQBandwidthTests PlugAndPlayTests ProgramChangeOptInTests PluginInterfaceRequestTests AudioGraphTests SetlistLibraryTests MIDIInputTests ExternalMIDITests); fi
 for test in "${tests[@]}"; do
+    args=()
+    case "$test" in
+        AudioGraphTests) mkdir -p "$build/scratch/$test"; args=("$build/scratch/$test/rendered.wav") ;;
+        ExternalAudioTests|SamplerInterchangeTests|SetlistLibraryTests) mkdir -p "$build/scratch/$test"; args=("$build/scratch/$test") ;;
+    esac
     xcrun swiftc -DDEBUG -import-objc-header "$repo/Sources/Bridge.h" \
         -module-cache-path "$build/modules" "${sources[@]}" "$repo/Tests/$test.swift" \
         "$build/Synth.o" "$build/CreamCoat.o" -framework CoreMIDI -lz -o "$build/$test"
     if [[ "$test" == EXSImportTests && -n "${STAGEKEYS_EXS_FIXTURE:-}" && -n "${STAGEKEYS_EXS_ROOT:-}" ]]; then
         STAGEKEYS_DATA_DIR="$build/data-$test" "$build/$test" "$build/exs-scratch" "$STAGEKEYS_EXS_FIXTURE" "$STAGEKEYS_EXS_ROOT"
     else
-        STAGEKEYS_DATA_DIR="$build/data-$test" "$build/$test"
+        STAGEKEYS_DATA_DIR="$build/data-$test" "$build/$test" ${args[@]+"${args[@]}"}
     fi
 done
 # Native C regressions. They include ../Sources/Synth.h and link the objects built
@@ -59,6 +64,6 @@ for test in DelayIndependentLevelsTests AudioEffectsTests ChannelDSPTests Channe
         -framework CoreMIDI -o "$build/$test"
     STAGEKEYS_DATA_DIR="$build/data-$test" "$build/$test"
 done
-# AudioDeviceTests and LivePatchContentTests stay on demand: both need a live
-# output device, which hosted runners provide only intermittently (see
-# Docs/LOCAL-VERIFICATION.md).
+# Tests that need hardware, private content or a specific installed third-party
+# Audio Unit stay on demand; Docs/LOCAL-VERIFICATION.md classifies each one and
+# Tests/test-library-gate.py fails when a test program is neither gated nor listed.
