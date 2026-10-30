@@ -9,6 +9,9 @@ import Foundation
         store.master=0.3;store.reverb=0;store.tonicGain=0.3
         store.selectTonicRoot(7);assert(store.tonic==nil && store.tonicLastRoot==7,"Key selection must not engage bypassed pad");store.toggleTonic(7);assert(store.tonic==nil && store.message != nil,"No pad may play without a user sound")
         store.message=nil;let fixture=TestFixtures.padSound();assert(store.tonicSoundEligibility(fixture)==nil,store.tonicSoundEligibility(fixture) ?? "");store.setTonicInstrument(fixture);store.toggleTonic(7);assert(store.tonic==7,store.message ?? "Pad did not start")
+        let baselineSound=store.tonicSound,baselineSelector=store.tonicVelocitySelector,baselineTimbre=store.tonicTimbre
+        store.auditionTonicInstrument(fixture);store.restoreTonicInstrument(baselineSound,velocitySelector:baselineSelector,timbre:baselineTimbre)
+        assert(!store.tonicSoundLoading && store.tonicSound==baselineSound && store.tonicVelocitySelector==baselineSelector && store.tonicTimbre==baselineTimbre,"Cancel must finish loading and restore the prior Tonic Pad sound and selector")
         store.selectTonicRoot(7);assert(store.tonic==7,"Repeated root selection must not stop the pad")
         var energy:Double=0
         for _ in 0..<100 {let buffer=try store.audio.offlineBlock();for i in 0..<Int(buffer.frameLength){let v=buffer.floatChannelData![0][i];assert(v.isFinite);energy+=Double(v*v)}}

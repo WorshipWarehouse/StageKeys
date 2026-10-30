@@ -83,6 +83,7 @@ final class PerformanceStore: ObservableObject {
     @Published var tonicTimbre=0 {didSet{if oldValue != tonicTimbre {restartTonic()}}}
     @Published var tonicSound:ExternalSound? {didSet{if oldValue != tonicSound {restartTonic()}}}
     @Published var tonicVelocitySelector=false
+    @Published private(set) var tonicSoundLoading=false
     private var tonicLoadGeneration=UUID()
     var tonicLocked:Bool {patch.tonicState != nil}
     func toggleTonicPatchLock() {
@@ -183,10 +184,11 @@ final class PerformanceStore: ObservableObject {
         }
         return velocitySelector
     }
-    private func loadTonicSound(_ sound:ExternalSound, completion:@escaping(Result<Void,Error>)->Void) {
-        guard let rack=audio.externalRack else {completion(.failure(ExternalInstrumentError.missingFile));return}
+    private func loadTonicSound(_ sound:ExternalSound,persist:Bool=true,completion:@escaping(Result<Void,Error>)->Void) {
+        guard let rack=audio.externalRack else {tonicSoundLoading=false;completion(.failure(ExternalInstrumentError.missingFile));return}
         let channel=15,previous=tonicSound,wasEnabled=tonic != nil,oldRoot=tonic,previousVelocitySelector=tonicVelocitySelector,previousTimbre=tonicTimbre
         let generation=UUID();tonicLoadGeneration=generation
+        tonicSoundLoading=true
         do {
             let velocitySelector=try tonicEligibility(sound)
             rack.load(sound,channel:channel){ [weak self] result in
@@ -196,7 +198,7 @@ final class PerformanceStore: ObservableObject {
                     self.audio.adoptExternalSound(sound,channel:channel)
                     self.tonicVelocitySelector=velocitySelector;self.tonicTimbre=0;self.tonicSound=sound
                     if wasEnabled,let oldRoot {self.tonic=oldRoot;self.playTonicNotes(oldRoot)}
-                    self.save();completion(.success(()))
+                    self.tonicSoundLoading=false;if persist {self.save()};completion(.success(()))
                 case .failure(let error):
                     if let previous {
                         rack.load(previous,channel:channel){ [weak self] restore in
@@ -213,16 +215,32 @@ final class PerformanceStore: ObservableObject {
                                 self.tonicSound=nil;self.tonic=nil
                                 self.message="Could not restore the previous Tonic Pad sound: "+restoreError.localizedDescription
                             }
+                            self.tonicSoundLoading=false
                             completion(.failure(error))
                         }
-                    } else {self.audio.adoptExternalSound(nil,channel:channel);self.tonicSound=nil;self.tonic=nil;self.tonicVelocitySelector=false;self.tonicTimbre=0;self.message=error.localizedDescription;completion(.failure(error))}
+                    } else {self.audio.adoptExternalSound(nil,channel:channel);self.tonicSound=nil;self.tonic=nil;self.tonicVelocitySelector=false;self.tonicTimbre=0;self.message=error.localizedDescription;self.tonicSoundLoading=false;completion(.failure(error))}
                 }
             }
-        }catch {message=error.localizedDescription;completion(.failure(error))}
+        }catch {tonicSoundLoading=false;message=error.localizedDescription;completion(.failure(error))}
     }
     func setTonicInstrument(_ sound:ExternalSound) {
         loadTonicSound(sound){_ in}
     }
+    /// Preview a validated library sound without committing it to session storage.
+    /// The picker restores its captured baseline on Cancel.
+    func auditionTonicInstrument(_ sound:ExternalSound) {
+        loadTonicSound(sound,persist:false){_ in}
+    }
+    func restoreTonicInstrument(_ sound:ExternalSound?,velocitySelector:Bool,timbre:Int) {
+        tonicLoadGeneration=UUID();tonicSoundLoading=false
+        guard let sound else {resetTonicSound(persist:false);return}
+        loadTonicSound(sound,persist:false){[weak self] result in
+            guard case .success = result,let self else{return}
+            self.tonicVelocitySelector=velocitySelector
+            self.tonicTimbre=min(max(0,timbre),self.tonicNames.count-1)
+        }
+    }
+    func commitTonicInstrumentSelection(){save()}
     func tonicSoundEligibility(_ sound:ExternalSound)->String? {
         do {_ = try tonicEligibility(sound);return nil}
         catch {return error.localizedDescription}
@@ -233,7 +251,8 @@ final class PerformanceStore: ObservableObject {
         guard let eligibility=tonicSoundEligibility(sound) else { setTonicInstrument(sound);return }
         message=eligibility
     }
-    func clearTonicSound(){if let root=tonic{stopTonicNotes(root)};tonic=nil;audio.panic(channel:15);tonicVelocitySelector=false;tonicTimbre=0;tonicSound=nil;save()}
+    private func resetTonicSound(persist:Bool){if let root=tonic{stopTonicNotes(root)};tonic=nil;audio.panic(channel:15);tonicVelocitySelector=false;tonicTimbre=0;tonicSound=nil;if persist{save()}}
+    func clearTonicSound(){resetTonicSound(persist:true)}
     let midiFX = MIDIFXProcessor()
     private var midiOutput: ExternalMIDIOutput?
     private var outputNotes: [Int: [Int: Int]] = [:]
