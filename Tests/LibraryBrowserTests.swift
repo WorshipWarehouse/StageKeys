@@ -51,16 +51,16 @@ import Foundation
         stable.order(by:.random);let seed=stable.shuffleSeed
         stable.order(by:.random);assert(stable.shuffleSeed==seed,"Random must stay stable until another order is chosen")
         let suggested=BrowserSound(id:"suggested",name:"Warm Pad",collection:"Fixture",tags:.inferred(name:"Warm Pad"))
-        assert(suggested.tagOrigin(.category)==.suggested)
-        assert(suggested.tagOrigin(.noteRange)==.unknown)
-        assert(suggested.tagOrigin(.library)==nil)
+        assert(suggested.tagOrigin(.category) == .suggested)
+        assert(suggested.tagOrigin(.noteRange) == .unknown)
+        assert(suggested.tagOrigin(.library) == nil)
         var edited=suggested;edited.tags.markAuthored(.noteRange);edited.tags.noteRanges=[]
-        assert(edited.tagOrigin(.noteRange)==.authored)
+        assert(edited.tagOrigin(.noteRange) == .authored)
         assert(edited.values(.noteRange)==["Not Tagged"])
         assert(edited.tagOriginSummary?.contains("Note Range")==true)
         assert(edited.tagOriginDetail?.contains("Note Range")==true)
         var notTagged=SoundTags.inferred(name:"Warm Pad");notTagged.inferred=false;notTagged.sourceModel="Not Tagged"
-        assert(BrowserSound(id:"not-tagged",name:"Warm Pad",collection:"Fixture",tags:notTagged).tagOrigin(.source)==.unknown)
+        assert(BrowserSound(id:"not-tagged",name:"Warm Pad",collection:"Fixture",tags:notTagged).tagOrigin(.source) == .unknown)
         var none=LibraryQuery();none.search="missing";assert(none.options(.timbre,in:sounds)==["All"])
         assert(SoundLibrary.cleanImportedName("Classic Pluck Synth- Sunday Sounds-1")=="Classic Pluck Synth")
         assert(SoundLibrary.cleanImportedName("Synth Brass Pad- Sundy Sounds")=="Synth Brass Pad")
@@ -74,9 +74,10 @@ import Foundation
         try library.write([tagged]);let read=try library.read();assert(read == [tagged])
         var provenance=tagged;provenance.tags!.authoredFacets=[LibraryFacet.noteRange.rawValue]
         try library.write([provenance]);let stored=try library.read()
-        assert(stored.first?.tags?.authoredFacets==[LibraryFacet.noteRange.rawValue])
+        assert(stored.first?.tags?.authoredFacets == [LibraryFacet.noteRange.rawValue])
         let provenanceData=try JSONEncoder().encode(provenance.tags)
-        assert(try JSONDecoder().decode(SoundTags.self,from:provenanceData).authoredFacets==[LibraryFacet.noteRange.rawValue])
+        let decodedProvenance=try JSONDecoder().decode(SoundTags.self,from:provenanceData)
+        assert(decodedProvenance.authoredFacets == [LibraryFacet.noteRange.rawValue])
         provenance.tags!.authoredFacets=["Bogus"]
         do{try library.write([provenance]);fatalError("Invalid authored facet accepted")}catch{}
         tagged.tags!.timbres=Array(repeating:"x",count:65)
