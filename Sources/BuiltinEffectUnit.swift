@@ -60,6 +60,7 @@ final class BuiltinEffectUnit: AUAudioUnit {
             let channel=side==0 ? delay?.leftChannel:delay?.rightChannel
             sk_imported_delay_channel(pointer,Int32(slot),channel != nil ? 1:0,(channel?.feedback ?? 0)*(channel?.feedbackPolarity ?? 1),(channel?.crossFeedback ?? 0)*(channel?.crossPolarity ?? 1),channel?.mix ?? 0,Int32(channel?.input ?? (side==0 ? 1:2)))
             sk_imported_delay(pointer,Int32(slot),delay != nil && setting.enabled ? 1:0,leftSeconds,rightSeconds,delay?.pingPong == true ? 1:0,channel?.lowCut ?? delay?.lowCut ?? 20,channel?.highCut ?? delay?.highCut ?? 20000)
+            sk_imported_delay_levels(pointer,Int32(slot),delay?.dryGain != nil && setting.enabled ? 1:0,delay?.dryGain ?? 1,delay?.wetGain ?? 0)
             if setting.enabled {for (index,value) in setting.values.enumerated(){sk_effect_parameter(pointer,0,Int32(slot),Int32(index),value)}}
         }
     }

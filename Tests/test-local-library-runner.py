@@ -18,7 +18,7 @@ class RunnerTests(unittest.TestCase):
         sources, swift, native = runner.plan(repo)
         self.assertIn('Sources/EQBandwidth.swift', sources)
         self.assertIn('PluginInterfaceRequestTests', swift)
-        self.assertEqual(set(native), {'AudioEffectsTests', 'ChannelDSPTests', 'ChannelPanicTests', 'RackTests', 'SynthTests'})
+        self.assertEqual(set(native), {'DelayIndependentLevelsTests', 'AudioEffectsTests', 'ChannelDSPTests', 'ChannelPanicTests', 'RackTests', 'SynthTests'})
         for name in sources:
             self.assertTrue((repo / name).is_file(), name)
         for names, suffix in [(swift, '.swift'), (native, '.c')]:

@@ -119,6 +119,10 @@ struct ImportedRackControls: View {
                     EffectKnob(descriptor:.init(index:4,name:side+" High Cut",minimum:20,maximum:20000,defaultValue:20000,unit:"Hz"),value:channelBinding(index,right,\.highCut))
                 }
             }else{
+                if delay.dryGain != nil {
+                    EffectKnob(descriptor:.init(index:4,name:"Dry",minimum:0,maximum:1,defaultValue:1,unit:"%"),value:Binding(get:{layer.importedRack?.effects[index].importedDelay?.dryGain ?? 1},set:{layer.importedRack?.effects[index].importedDelay?.dryGain=$0}))
+                    EffectKnob(descriptor:.init(index:5,name:"Wet",minimum:0,maximum:1,defaultValue:0,unit:"%"),value:Binding(get:{layer.importedRack?.effects[index].importedDelay?.wetGain ?? 0},set:{layer.importedRack?.effects[index].importedDelay?.wetGain=$0}))
+                }
                 Toggle("Ping Pong",isOn:Binding(get:{layer.importedRack?.effects[index].importedDelay?.pingPong ?? false},set:{layer.importedRack?.effects[index].importedDelay?.pingPong=$0}))
                 EffectKnob(descriptor:.init(index:26,name:"Low Cut",minimum:20,maximum:delay.highCut,defaultValue:20,unit:"Hz"),value:Binding(get:{layer.importedRack?.effects[index].importedDelay?.lowCut ?? 20},set:{layer.importedRack?.effects[index].importedDelay?.lowCut=$0}))
                 EffectKnob(descriptor:.init(index:27,name:"High Cut",minimum:delay.lowCut,maximum:20000,defaultValue:20000,unit:"Hz"),value:Binding(get:{layer.importedRack?.effects[index].importedDelay?.highCut ?? 20000},set:{layer.importedRack?.effects[index].importedDelay?.highCut=$0}))
@@ -146,7 +150,7 @@ struct ImportedRackControls: View {
                         } else {
                         LazyVGrid(columns:[GridItem(.adaptive(minimum:140))],spacing:8) {
                             if effect.importedDelay != nil { delayControls(index) }
-                            ForEach(AudioEffectCatalog.descriptors(for:effect.kind).filter{!(effect.kind==16 && [9,10].contains($0.index)) && (effect.importedDelay == nil || effect.importedDelay?.leftChannel == nil && ![1,2].contains($0.index))}) { parameter in
+                            ForEach(AudioEffectCatalog.descriptors(for:effect.kind).filter{!(effect.kind==16 && [9,10].contains($0.index)) && !(effect.importedDelay?.dryGain != nil && $0.index==3) && (effect.importedDelay == nil || effect.importedDelay?.leftChannel == nil && ![1,2].contains($0.index))}) { parameter in
                                 EffectKnob(descriptor:parameter,value:Binding(get:{layer.importedRack?.effects[index].values[parameter.index] ?? parameter.defaultValue},set:{value in guard var imported=layer.importedRack else{return};var values=imported.effects[index].values;values[parameter.index]=value;imported.effects[index].parameters=values;layer.importedRack=imported}))
                             }
                         }

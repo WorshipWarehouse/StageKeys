@@ -173,6 +173,16 @@ enum MainStageProcessing {
                 guard values.count>=25 else{draft.issues.append("Truncated Compressor parameters.");continue}
                 effect.kind=6;effect.parameters=[0,values[2],values[3],values[1],values[0],values[24]/100,values[4]]
                 draft.issues.append("Compressor threshold, ratio, attack, release, manual makeup and mix are translated. Circuit model, knee, automatic gain/release, sidechain and limiter behavior are not identical to Apple's compressor; review the native response.")
+            case "Tape Delay":
+                guard values.count>=21,values.prefix(21).allSatisfy(\.isFinite),[0,1].contains(values[6]),[1,2,4,8,16,32,64].contains(values[7]),(-99...100).contains(values[8]),(20...300).contains(values[15]) else{draft.issues.append("Tape Delay has an unverified time/tempo encoding.");continue}
+                guard [0,1,2,10,11,13,14,16,17,18].allSatisfy({abs(values[$0])<0.000001}) else{draft.issues.append("Tape Delay modulation, freeze, diffuse head, non-default clip threshold or stereo spread is unsupported; no flattened substitute was created.");continue}
+                let beats=4/Double(values[7])*(1+Double(values[8])/100),synced=values[6]==1
+                let time=synced ? beats:beats*60/Double(values[15])
+                var delay=ImportedDelay(left:time,right:time,leftSynced:synced,rightSynced:synced,lowCut:values[5],highCut:values[4])
+                delay.dryGain=values[19]/100;delay.wetGain=values[20]/100
+                guard delay.validate(),(0...95).contains(values[3]) else{draft.issues.append("Tape Delay levels, feedback, time or filters exceed the supported native range.");continue}
+                effect.kind=3;effect.importedDelay=delay;effect.parameters=[values[3]/100,1,values[4],1]
+                draft.issues.append("Tape Delay clean static timing, note deviation, filters, feedback and independent dry/wet levels are active. Native feedback filtering/saturation is independent; Apple tape color, modulation, smoothing and exact transient response are not matched.")
             case "St-Delay":
                 guard values.count>=26 else{draft.issues.append("Truncated Stereo Delay parameters.");continue}
                 guard [values[15],values[16]].allSatisfy({$0.isFinite && (0...4).contains($0) && $0.rounded()==$0}),[0,1].contains(values[10]),[1,-1].contains(values[17]),[1,-1].contains(values[18]),[1,-1].contains(values[19]),[1,-1].contains(values[20]),values[21]==0 else{draft.issues.append("Stereo Delay has unsupported sync/phase/tempo-freeze state.");continue}
@@ -248,6 +258,9 @@ enum MainStageProcessing {
             case "Comp":
                 let mapping:[Int:(Int,Float)]=[0:(4,1),1:(3,1),2:(1,1),3:(2,1),4:(6,1),24:(5,0.01)]
                 guard let mapped=mapping[sourceParameter] else{continue};parameter=mapped.0;scale=mapped.1
+            case "Tape Delay":
+                guard [3,19,20].contains(sourceParameter) else{draft.issues.append("A Tape Delay macro targets an untranslated control; its source mapping remains archived.");continue}
+                parameter=sourceParameter==3 ? 0:sourceParameter==19 ? 4:5;scale=0.01
             case "SilvVerb":
                 let independent=independentReverbSlots.contains(slot)
                 guard independent ? sourceParameter != 0 : ![10,11].contains(sourceParameter) else{draft.issues.append("A SilverVerb macro targets an inactive mix mode; its mapping remains archived.");continue}
@@ -257,8 +270,11 @@ enum MainStageProcessing {
             case "Chorus":guard (0...2).contains(sourceParameter) else{continue};parameter=[1,4,0][sourceParameter];scale=sourceParameter==2 ? 1:0.01
             default:continue
             }
-            guard let descriptor=AudioEffectCatalog.descriptors(for:draft.effects[target.effect].kind).first(where:{$0.index==parameter}),low*scale>=descriptor.minimum,high*scale<=descriptor.maximum else{continue}
-            guard abs(draft.effects[target.effect].values[parameter]-Float(saved)*scale)<0.001 else {
+            guard let descriptor=draft.effects[target.effect].macroDescriptor(parameter),low*scale>=descriptor.minimum,high*scale<=descriptor.maximum else{continue}
+            let actual:Float
+            if target.name=="Tape Delay",[4,5].contains(parameter) {actual=(parameter==4 ? draft.effects[target.effect].importedDelay?.dryGain:draft.effects[target.effect].importedDelay?.wetGain) ?? -1}
+            else{actual=draft.effects[target.effect].values[parameter]}
+            guard abs(actual-Float(saved)*scale)<0.001 else {
                 draft.issues.append("A Smart Control saved value does not match the native parameter's units; its mapping was retained as source data rather than guessed.");continue
             }
             let flipped=row["rangeIsFlipped"] as? Bool == true

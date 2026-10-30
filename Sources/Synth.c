@@ -56,7 +56,7 @@ typedef struct {
  double oscSin[8],oscCos[8],stepSin[8],stepCos[8];
  int ready;
 } DenseReverb;
-typedef struct { DenseReverb reverb; float p[32],z[12],coef[8],shiftPhase,stereo; int custom; Biquad eq[8];float shimmerControl[4];double clipControl[3];int shimmerReady,clipReady; } EffectState;
+typedef struct { DenseReverb reverb; float p[32],z[12],coef[8],shiftPhase,stereo; int custom; Biquad eq[8];float shimmerControl[4],delayLevels[2];double clipControl[3];int shimmerReady,clipReady; } EffectState;
 struct SKSynth {
  double rate;
  int delayLength,predelayLength;
@@ -529,6 +529,9 @@ void sk_imported_delay(SKSynth*s,int slot,int enabled,float leftSeconds,float ri
 void sk_imported_delay_channel(SKSynth*s,int slot,int enabled,float feedback,float crossFeedback,float mix,int input){
  if(slot>=0&&slot<3&&isfinite(feedback)&&isfinite(crossFeedback)&&isfinite(mix))enqueue(s,(Command){.kind=21,.key=slot,.instrument=enabled,.value=feedback,.a=crossFeedback,.b=mix,.d=input});
 }
+void sk_imported_delay_levels(SKSynth*s,int slot,int enabled,float dry,float wet){
+ if(slot>=0&&slot<3&&isfinite(dry)&&isfinite(wet))enqueue(s,(Command){.kind=23,.key=slot,.instrument=enabled,.value=dry,.a=wet});
+}
 void sk_effect_parameter(SKSynth*s,int l,int slot,int index,float value){if(l>=0&&l<BUSES&&slot>=0&&slot<3&&index>=0&&index<32&&isfinite(value))enqueue(s,(Command){.kind=17,.layer=l,.key=slot,.pitch=index,.value=value});}
 static void commands(SKSynth *s) {
  unsigned r=atomic_load_explicit(&s->read,memory_order_relaxed);
@@ -564,6 +567,7 @@ static void commands(SKSynth *s) {
   else if(c.kind==20){s->compressorInput[c.layer]=powf(10,c.value/20);s->compressorWet[c.layer]=c.a;}
   else if(c.kind==21){EffectState*e=&s->effect[0][c.key];e->p[30]=c.instrument?1:0;e->p[4]=bounded(c.value,-.95f,.95f);e->p[5]=bounded(c.a,-(.95f-fabsf(e->p[4])),.95f-fabsf(e->p[4]));e->p[6]=bounded(c.b,0,1);e->p[7]=bounded(c.d,0,4);}
   else if(c.kind==19){EffectState*e=&s->effect[0][c.key];e->p[24]=c.instrument?1:0;e->p[25]=bounded(c.value,.001f,16);e->p[26]=bounded(c.a,.001f,16);e->p[27]=c.b;e->p[28]=bounded(c.d,20,20000);e->p[29]=bounded(c.seconds,e->p[28],20000);e->coef[4]=1-exp(-TAU*e->p[28]/s->rate);e->coef[5]=1-exp(-TAU*e->p[29]/s->rate);}
+  else if(c.kind==23){EffectState*e=&s->effect[0][c.key];int ready=e->p[31]>0;e->p[31]=c.instrument?1:0;e->p[8]=bounded(c.value,0,1);e->p[9]=bounded(c.a,0,1);e->coef[6]=1-exp(-1/(.02*s->rate));if(!ready){e->delayLevels[0]=e->p[8];e->delayLevels[1]=e->p[9];}}
   else if(c.kind==17){int kind=s->fxKind[c.layer][c.key];if(c.pitch<effectCount[kind]){EffectState*e=&s->effect[c.layer][c.key];e->custom=1;
    if(((kind==13&&c.pitch==10)||(kind==15&&c.pitch==11))&&e->p[c.pitch]!=c.value){clear_delay(s,c.layer,c.key);memset(e->z,0,sizeof(e->z));memset(&e->reverb,0,sizeof(e->reverb));s->delayPosition[c.layer][c.key]=0;s->fxPhase[c.layer][c.key]=0;}
    e->p[c.pitch]=bounded(c.value,effectMin[kind][c.pitch],effectMax[kind][c.pitch]);effectCoefficients(e,kind,s->rate);}}
@@ -605,7 +609,7 @@ void sk_process_effects_stereo(SKSynth*l,SKSynth*r,float*left,float*right,uint32
     if(b->p[28]>20){b->z[2]+=b->coef[4]*(dr-b->z[2]);dr-=b->z[2];}
     if(a->p[29]<20000){a->z[3]+=a->coef[5]*(dl-a->z[3]);dl=a->z[3];}
     if(b->p[29]<20000){b->z[3]+=b->coef[5]*(dr-b->z[3]);dr=b->z[3];}
-    float feedback=a->p[0],mix=a->p[3];
+    float feedback=a->p[0],mix=a->p[3],dryLeft=x,dryRight=y;
     float il=a->p[27]>0?(x+y)*.5f:x,ir=a->p[27]>0?0:y;
     if(a->p[30]>0 && b->p[30]>0){
      int li=(int)a->p[7],ri=(int)b->p[7];
@@ -619,6 +623,7 @@ void sk_process_effects_stereo(SKSynth*l,SKSynth*r,float*left,float*right,uint32
      r->delay[0][k][rp]=fminf(16,fmaxf(-16,ir+(a->p[27]>0?dl:dr)*feedback));
      x=x*(1-mix)+dl*mix;y=y*(1-mix)+dr*mix;
     }
+    if(a->p[31]>0 && b->p[31]>0){for(int i=0;i<2;i++){a->delayLevels[i]+=a->coef[6]*(a->p[8+i]-a->delayLevels[i]);b->delayLevels[i]+=b->coef[6]*(b->p[8+i]-b->delayLevels[i]);}x=dryLeft*a->delayLevels[0]+dl*a->delayLevels[1];y=dryRight*b->delayLevels[0]+dr*b->delayLevels[1];}
     l->delayPosition[0][k]=(lp+1)%l->delayLength;r->delayPosition[0][k]=(rp+1)%r->delayLength;
    }else{
     if(l->fxKind[0][k])x=effectProcess(l,0,k,x);
