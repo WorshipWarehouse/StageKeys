@@ -1325,7 +1325,7 @@ final class PerformanceStore: ObservableObject {
                         // One layer hosts one instrument: a channel that also saved an Audio
                         // Unit keeps that state in the archive instead of losing it silently.
                         let audioUnitNotes=channel.thirdPartyAudioUnits.first.map{["the channel also saved \($0.name); this layer hosts the converted sampler only, so its plug-in state stays in the archive."]} ?? []
-                        let entry=LibrarySound(id:id,name:channel.name,collection:"MainStage Patches",sound:sound,layer:layer,sourceArchiveID:report.sourceArchiveID,conversionNotes:(notes ?? [])+processing.issues+applied.notes+audioUnitNotes,originalInstrument:original)
+                        let entry=LibrarySound(id:id,name:channel.name,collection:"MainStage Patches",sound:sound,layer:layer,sourceArchiveID:report.sourceArchiveID,conversionNotes:(notes ?? [])+processing.issues+applied.notes+applied.omitted+audioUnitNotes,originalInstrument:original)
                         entries.append(entry)
                         outcome(channelIndex,.prepared,"Converted with source settings; review compatibility notes.",id)
                         preparedAssets.formUnion(assetsForImportedSound(createdSound,original:createdOriginal).subtracting(assetsBefore))
@@ -1354,7 +1354,7 @@ final class PerformanceStore: ObservableObject {
                                 skipped+=1;continue
                             }
                             let applied=try processing.applying(to:hosted.layer,selection:mainStageSelection(channelIndex))
-                            entries.append(LibrarySound(id:id,name:channel.name,collection:"MainStage Patches",sound:applied.layer.external,layer:applied.layer,sourceArchiveID:archiveID,conversionNotes:hosted.notes+processing.issues+applied.notes))
+                            entries.append(LibrarySound(id:id,name:channel.name,collection:"MainStage Patches",sound:applied.layer.external,layer:applied.layer,sourceArchiveID:archiveID,conversionNotes:hosted.notes+processing.issues+applied.notes+applied.omitted))
                             outcome(channelIndex,.prepared,"Hosted instrument requires its installed Audio Unit.",id)
                             imported+=1
                         }catch{outcome(channelIndex,.failed,error.localizedDescription);failures.append(channel.name+": "+error.localizedDescription)}

@@ -196,6 +196,6 @@ struct MainStageEffectSelectionSheet:View {
     }
     private func apply() {
         do {try store.setMainStageEffectSelection(selection,for:request.channel);dismiss()}
-        catch {error=error.localizedDescription}
+        catch {self.error=error.localizedDescription}
     }
 }
