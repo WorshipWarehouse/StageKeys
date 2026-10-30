@@ -37,9 +37,11 @@ import Foundation
   old.tags!.noteRanges=nil;try library.write([native,old]);loaded=try library.read()
   let curated=loaded.first{$0.id==old.id}!
   assert(curated.tags!.recommended==true && curated.tags!.noteRanges==tags.noteRanges && curated.layer==old.layer)
+  assert(curated.tags!.authoredFacets?.contains(LibraryFacet.noteRange.rawValue)==true)
   var edited=curated;edited.tags!.recommended=false;edited.tags!.noteRanges=[]
   try library.write([native,edited]);loaded=try library.read()
   assert(loaded.first{$0.id==old.id}!.tags!.recommended==false && loaded.first{$0.id==old.id}!.tags!.noteRanges==[])
+  assert(loaded.first{$0.id==old.id}!.tags!.authoredFacets?.contains(LibraryFacet.noteRange.rawValue)==true)
   authored.noteRanges=["invalid"];try JSONEncoder().encode([old.name:authored]).write(to:metadataURL)
   loaded=try library.read();assert(loaded.count==2,"Invalid optional metadata must not hide the library")
   var imported=LibrarySound(id:"ableton-samples-fixture",name:"Warm Pad- Sunday Sounds",collection:"My Sounds",layer:Layer(name:"Warm Pad- Sunday Sounds",instrument:1,gain:0.27))
@@ -51,7 +53,7 @@ import Foundation
   assert(loaded[0].layer!.importedRack==originalRack && loaded[0].layer!.gain==0.27)
   loaded[0].tags!.noteRanges=[];loaded[0].tags!.recommended=true;try library.write(loaded)
   loaded=try library.read();assert(loaded[0].tags!.noteRanges==[] && loaded[0].tags!.recommended==true)
-  let legacy=try JSONDecoder().decode(SoundTags.self,from:Data("{\"category\":\"Keys\",\"type\":\"Piano\",\"timbres\":[],\"articulations\":[],\"sourceModel\":\"Sampler\",\"inferred\":false}".utf8));assert(legacy.noteRanges==nil && legacy.types==nil)
+  let legacy=try JSONDecoder().decode(SoundTags.self,from:Data("{\"category\":\"Keys\",\"type\":\"Piano\",\"timbres\":[],\"articulations\":[],\"sourceModel\":\"Sampler\",\"inferred\":false}".utf8));assert(legacy.noteRanges==nil && legacy.types==nil && legacy.authoredFacets==nil)
   print("PASS: overlapping range/type filters, fixed range choices, unknown metadata, toggle, legacy migration, explicit clear and audio-range preservation")
  }
 }
