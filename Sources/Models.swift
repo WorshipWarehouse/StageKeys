@@ -71,8 +71,10 @@ struct ImportedDelay: Codable, Equatable {
     var rightChannel:Channel?
     var lowCut: Float = 20
     var highCut: Float = 20000
+    var dryGain:Float?
+    var wetGain:Float?
     func validate() -> Bool {
-        (leftChannel?.valid ?? true) && (rightChannel?.valid ?? true) && (leftChannel == nil) == (rightChannel == nil) && !(leftChannel != nil && pingPong) && left.isFinite && right.isFinite && (0.001...5.334).contains(left) && (0.001...5.334).contains(right) && lowCut.isFinite && highCut.isFinite && (20...20000).contains(lowCut) && (lowCut...20000).contains(highCut)
+        (dryGain == nil)==(wetGain == nil) && ([dryGain,wetGain].compactMap{$0}.allSatisfy{$0.isFinite && (0...1).contains($0)}) && (leftChannel?.valid ?? true) && (rightChannel?.valid ?? true) && (leftChannel == nil) == (rightChannel == nil) && !(leftChannel != nil && pingPong) && left.isFinite && right.isFinite && (0.001...5.334).contains(left) && (0.001...5.334).contains(right) && lowCut.isFinite && highCut.isFinite && (20...20000).contains(lowCut) && (lowCut...20000).contains(highCut)
     }
     func seconds(_ value:Double,synced:Bool,tempo:Float)->Float {Float(min(16,max(0.001,synced ? value*60/Double(tempo) : value)))}
 }
@@ -107,6 +109,10 @@ struct AudioEffect: Codable, Equatable {
     }
     var renderValues:[Float] { kind == 13 ? values+[reverbCore == "dense-v1" ? 2:usesCreamCoat ? 1:0]:kind == 15 ? values+[reverbCore == "dense-v1" ? 1:0]:values }
     var title: String { AudioEffectCatalog.names.indices.contains(kind) ? AudioEffectCatalog.names[kind] : "No Effect" }
+    func macroDescriptor(_ index:Int)->AudioEffectParameterDescriptor? {
+        if kind==3,importedDelay?.dryGain != nil,[4,5].contains(index) {return .init(index:index,name:index==4 ? "Dry":"Wet",minimum:0,maximum:1,defaultValue:1,unit:"%")}
+        return AudioEffectCatalog.descriptors(for:kind).first{$0.index==index}
+    }
     var values: [Float] {
         if let parameters { if kind == 15 && parameters.count == 10 {return parameters+[1]}; return (kind == 13 || kind == 10) && parameters.count == 9 ? parameters+[1]:parameters }
         var values = AudioEffectCatalog.defaults(for: kind)
@@ -218,7 +224,7 @@ struct ImportedRack: Codable, Equatable {
         return macros.allSatisfy { m in
             (m.midiCC.map{(0...127).contains($0)} ?? true) && (m.midiChannel.map{(0...15).contains($0)} ?? true) && (0..<128).contains(m.index) && m.name.count <= 200 && m.value.isFinite && (0...127).contains(m.value) && m.bindings.count <= 128 && m.bindings.allSatisfy { b in
                 guard let rack=targetRack(b.branchPath ?? [],audioPath:b.audioPath ?? []),rack.effects.indices.contains(b.effect), b.minimum.isFinite, b.maximum.isFinite,
-                      let p = AudioEffectCatalog.descriptors(for:rack.effects[b.effect].kind).first(where:{$0.index == b.parameter}) else { return false }
+                      let p = rack.effects[b.effect].macroDescriptor(b.parameter) else { return false }
                 return (p.minimum...p.maximum).contains(b.minimum) && (p.minimum...p.maximum).contains(b.maximum) && (!b.logarithmic || (b.minimum > 0 && b.maximum > 0))
             }
         }
@@ -251,6 +257,11 @@ struct ImportedRack: Codable, Equatable {
             audioRacks![audioPath[0]].branches[audioPath[1]].rack.apply(binding,path:[],audioPath:Array(audioPath.dropFirst(2)),fraction:fraction);return
         }
         guard effects.indices.contains(binding.effect) else{return}
+        if effects[binding.effect].kind==3,effects[binding.effect].importedDelay?.dryGain != nil,[4,5].contains(binding.parameter) {
+            let value=binding.logarithmic ? exp(log(binding.minimum)+(log(binding.maximum)-log(binding.minimum))*fraction):binding.minimum+(binding.maximum-binding.minimum)*fraction
+            if binding.parameter==4 {effects[binding.effect].importedDelay?.dryGain=value}else{effects[binding.effect].importedDelay?.wetGain=value}
+            return
+        }
         var values=effects[binding.effect].values;guard values.indices.contains(binding.parameter) else{return}
         values[binding.parameter]=binding.logarithmic ? exp(log(binding.minimum)+(log(binding.maximum)-log(binding.minimum))*fraction):binding.minimum+(binding.maximum-binding.minimum)*fraction
         effects[binding.effect].parameters=values

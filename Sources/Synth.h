@@ -48,3 +48,4 @@ void sk_effect_parameter(SKSynth *s,int layer,int slot,int parameterIndex,float 
 void sk_compressor_blend(SKSynth *s,int layer,float inputGainDB,float wet);
 
 void sk_imported_delay_channel(SKSynth*s,int slot,int enabled,float feedback,float crossFeedback,float mix,int input);
+void sk_imported_delay_levels(SKSynth*s,int slot,int enabled,float dry,float wet);
