@@ -10,6 +10,8 @@ For attack diagnosis, play a few isolated notes with the pedal released, then re
 
 `AudioDiagnosticRecorderTests` checks stereo sample order, sample preservation, exact frame limits, validation and repeated stop behavior. No private sound fixture is needed for that test.
 
+Audio-start failures, their bounded retry policy and the non-blocking recovery state are documented in [AUDIO-STARTUP-RECOVERY.md](AUDIO-STARTUP-RECOVERY.md).
+
 ## Temporary master limiter comparison
 
 Audio Settings → Audio → **Bypass Master Limiter (Temporary)** toggles only the output limiter’s bypass property. The graph, master/channel levels, effects and 1 dB output headroom remain unchanged. Re-strike notes after toggling for the attack comparison. This switch is not stored in settings or setlists; the limiter is active again after restarting StageKeys. Audio checks capture whichever limiter state is currently selected.
