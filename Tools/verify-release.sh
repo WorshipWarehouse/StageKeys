@@ -25,6 +25,7 @@ esac
 xcodebuild -project "$repo/StageKeys.xcodeproj" -scheme "$scheme" -configuration Release \
   -derivedDataPath "$build" "${args[@]}" CODE_SIGNING_ALLOWED=NO build 2>&1 | tee "$build/build.log"
 python3 "$repo/Tools/check-distribution.py" --bundle "$bundle"
+python3 "$repo/Tools/check-pack-document-type.py" --bundle "$bundle"
 icon=
 if [[ "$platform" == mac ]]; then
   /usr/bin/lipo "$bundle/Contents/MacOS/$executable" -verify_arch arm64
