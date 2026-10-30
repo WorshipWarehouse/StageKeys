@@ -151,6 +151,32 @@ struct ImportedMacro: Codable, Equatable, Identifiable {
     var midiChannel:Int?
     var id: Int { index }
 }
+/// Data-only record of the source MainStage processing that produced a layer.
+/// It keeps every translated effect, bypass state, macro and compatibility note
+/// even when an effect was not selected for one of the three performance slots.
+struct MainStageSourceRecord: Codable, Equatable {
+    var effects: [AudioEffect]
+    var sourceNames: [String]
+    var effectNotes: [[String]]
+    var macros: [ImportedMacro]
+    var issues: [String]
+    var selectedAudio: [Int]
+    var selectedMIDI: MIDIProgram?
+    var midiEnabled: Bool
+    var hasMIDITransform: Bool
+    var omitted: [String]
+    var valid: Bool {
+        effects.count == sourceNames.count && effects.count == effectNotes.count && effects.count <= 12 &&
+        effects.allSatisfy { $0.validate() } && sourceNames.allSatisfy { $0.count <= 200 } &&
+        effectNotes.allSatisfy { notes in notes.count <= 32 && notes.allSatisfy { $0.count <= 2000 } } &&
+        selectedAudio.count <= 3 && Set(selectedAudio).count == selectedAudio.count &&
+        selectedAudio.allSatisfy { effects.indices.contains($0) && ![6, 7].contains(effects[$0].kind) } &&
+        (selectedMIDI.map { $0 == $0.validated } ?? true) && macros.count <= 128 &&
+        macros.allSatisfy { (0..<128).contains($0.index) && $0.name.count <= 200 && $0.value.isFinite && (0...127).contains($0.value) } &&
+        omitted.count <= 128 && omitted.allSatisfy { $0.count <= 2000 } &&
+        issues.count <= 128 && issues.allSatisfy { $0.count <= 2000 }
+    }
+}
 struct ImportedBranch: Codable, Equatable {
     var name: String
     var sampleLayers: [Int]
@@ -293,13 +319,14 @@ struct Layer: Codable, Identifiable, Equatable {
     var external: ExternalSound?
     var importedRack: ImportedRack?
     var pluginState: Data?
+    var mainStageSource: MainStageSourceRecord?
     var midiEffectEnabled = true
     var midiProgram: MIDIProgram?
     var midiDestinationID: Int32?
     var midiOutputChannel = 0
     var loaded: Bool { external != nil || midiDestinationID != nil }
     static func empty() -> Layer { Layer(name: "Add Sound", instrument: -1, gain: 0) }
-    enum CodingKeys: String, CodingKey { case id,name,instrument,gain,muted,low,high,octave,transpose,pan,blockSustain,octaveEffect,effects,channelSettings,external,importedRack,pluginState,midiEffectEnabled,midiProgram,midiDestinationID,midiOutputChannel }
+    enum CodingKeys: String, CodingKey { case id,name,instrument,gain,muted,low,high,octave,transpose,pan,blockSustain,octaveEffect,effects,channelSettings,external,importedRack,pluginState,mainStageSource,midiEffectEnabled,midiProgram,midiDestinationID,midiOutputChannel }
     init(name: String, instrument: Int, gain: Float) { self.name = name; self.instrument = instrument; self.gain = gain; if instrument != 1 { channelSettings.attack = 0.006; channelSettings.release = 0.3 } }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -317,6 +344,7 @@ struct Layer: Codable, Identifiable, Equatable {
         external = try c.decodeIfPresent(ExternalSound.self, forKey: .external)
         importedRack = try c.decodeIfPresent(ImportedRack.self, forKey: .importedRack)
         pluginState = try c.decodeIfPresent(Data.self, forKey: .pluginState)
+        mainStageSource = try c.decodeIfPresent(MainStageSourceRecord.self, forKey: .mainStageSource)
         midiEffectEnabled = try c.decodeIfPresent(Bool.self, forKey: .midiEffectEnabled) ?? true
         midiProgram = try c.decodeIfPresent(MIDIProgram.self, forKey: .midiProgram)
         midiDestinationID = try c.decodeIfPresent(Int32.self, forKey: .midiDestinationID)
@@ -447,7 +475,7 @@ struct Setlist: Codable {
                     if e.kind == .audioUnit { guard e.component?.type == 0x61756d75, (e.component?.name.count ?? 201) <= 200 else { throw SetlistError.invalid } }
                     else { guard let f = e.fileName, f == URL(fileURLWithPath: f).lastPathComponent, !f.isEmpty, f.count <= 200 else { throw SetlistError.invalid } }
                 }
-                guard l.importedRack?.validate() ?? true else { throw SetlistError.invalid }
+                guard l.importedRack?.validate() ?? true, l.mainStageSource?.valid ?? true else { throw SetlistError.invalid }
                 guard l.channelSettings.validate(), (0...15).contains(l.midiOutputChannel), (l.pluginState?.count ?? 0) <= 2_000_000, (-1...2).contains(l.instrument), l.gain.isFinite, (0...1).contains(l.gain), (0...127).contains(l.low), (l.low...127).contains(l.high), (-2...2).contains(l.octave), (-48...48).contains(l.effectiveTranspose), l.pan.isFinite, (-1...1).contains(l.pan), l.name.count <= 200, l.effects.count == 3, l.effects.allSatisfy({ $0.validate() }) else { throw SetlistError.invalid }
             }
             for s in p.snapshots {

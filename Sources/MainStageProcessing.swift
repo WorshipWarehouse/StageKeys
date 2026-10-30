@@ -4,12 +4,27 @@ import CoreFoundation
 /// Data-only decoder: UID references become ordinary dictionaries; archived
 /// application classes are never instantiated and MIDI scripts are never run.
 enum MainStageProcessing {
+    /// User choices for one converted channel. EQ and compressor are mapped
+    /// automatically; `audio` names only the effects that fill the three slots.
+    struct Selection: Codable, Equatable {
+        var audio:[Int]=[]
+        var midi:MIDIProgram?
+        var midiEnabled=true
+        static let none=Selection()
+    }
+    struct Applied {
+        var layer:Layer
+        var notes:[String]
+        var omitted:[String]
+    }
     struct Draft:Identifiable {
         var id=UUID()
         var effects:[AudioEffect]=[]
         var sourceNames:[String]=[]
         var macros:[ImportedMacro]=[]
         var issues:[String]=[]
+        var effectNotes:[[String]]=[]
+        var hasMIDITransform=false
         var low:Int?
         var high:Int?
         var transpose:Int?
@@ -20,9 +35,21 @@ enum MainStageProcessing {
         var muted:Bool?
         var amplitudeVelocityCurve:Int?
         var hasChanges:Bool {amplitudeVelocityCurve != nil || !effects.isEmpty || !macros.isEmpty || low != nil || high != nil || transpose != nil || blockSustain != nil || gain != nil || pan != nil || muted != nil}
-        func applying(to original:Layer)throws->Layer {
+        var instrumentIndices:[Int] {effects.indices.filter{[6,7].contains(effects[$0].kind)}}
+        var slotIndices:[Int] {effects.indices.filter{![6,7].contains(effects[$0].kind)}}
+        private func sourceName(_ index:Int)->String {sourceNames.indices.contains(index) ? sourceNames[index]:effects.indices.contains(index) ? effects[index].title:"Source effect"}
+        func selectionProblem(_ selection:Selection)->String? {
+            guard selection.audio.count<=3 else{return "Choose no more than three audio effects for the visible slots."}
+            guard Set(selection.audio).count==selection.audio.count else{return "Each source effect can be selected only once."}
+            for index in selection.audio {
+                guard effects.indices.contains(index) else{return "A selected source effect no longer exists; reopen the source patch and choose again."}
+                guard ![6,7].contains(effects[index].kind) else{return "\(sourceName(index)) maps to the instrument controls and cannot also fill an Audio slot."}
+            }
+            guard selection.midi.map({$0 == $0.validated}) ?? true else{return "The selected MIDI effect has unsupported values."}
+            return nil
+        }
+        private func applyingChannelFields(to original:Layer)throws->Layer {
             var layer=original
-            layer.importedRack=try appending(to:layer.importedRack ?? layer.external?.nativeSampler?.rack)
             if let low,let high {layer.low=low;layer.high=high}
             if let transpose {layer.transpose=transpose}
             if let blockSustain {layer.blockSustain=blockSustain}
@@ -37,6 +64,79 @@ enum MainStageProcessing {
             if let pan {layer.pan=pan}
             if let muted {layer.muted=muted}
             return layer
+        }
+        func applying(to original:Layer)throws->Layer {
+            var layer=try applyingChannelFields(to:original)
+            layer.importedRack=try appending(to:layer.importedRack ?? layer.external?.nativeSampler?.rack)
+            return layer
+        }
+        /// Apply selected source processing without appending an overflow rack.
+        /// EQ/compressor go to the instrument controls, at most three other
+        /// effects replace visible slots, and every source effect remains in the
+        /// data-only record for review and persistence.
+        func applying(to original:Layer,selection:Selection)throws->Applied {
+            if let problem=selectionProblem(selection) {throw MainStagePatch.Failure.invalid(problem)}
+            var layer=try applyingChannelFields(to:original),notes:[String]=[],omitted:[String]=[]
+            if !selection.audio.isEmpty && layer.effects.count != 3 {throw MainStagePatch.Failure.invalid("The destination sound has an unsupported effect slot layout.")}
+            if let curve=amplitudeVelocityCurve {
+                var rack=layer.importedRack ?? layer.external?.nativeSampler?.rack ?? ImportedRack()
+                guard rack.mainStageAmplitudeVelocityCurve == nil || rack.mainStageAmplitudeVelocityCurve==curve else{throw MainStagePatch.Failure.invalid("The destination already has a different source velocity curve.")}
+                rack.mainStageAmplitudeVelocityCurve=curve
+                layer.importedRack=rack
+            }
+            if var rack=layer.importedRack ?? layer.external?.nativeSampler?.rack {rack.mainStageUnityControllers=true;layer.importedRack=rack}
+            else {var rack=ImportedRack();rack.mainStageUnityControllers=true;layer.importedRack=rack}
+            let eqIndices=effects.indices.filter{effects[$0].kind==7},compIndices=effects.indices.filter{effects[$0].kind==6}
+            if let index=eqIndices.first {
+                let effect=effects[index],values=effect.values
+                if values.count>=24 {
+                    var bands=EQBand.defaults
+                    for band in 0..<8 {
+                        bands[band].frequency=min(20000,max(20,values[band*3]))
+                        bands[band].gain=min(24,max(-24,values[band*3+1]))
+                        bands[band].q=min(10,max(0.1,values[band*3+2]))
+                    }
+                    layer.channelSettings.equalizer=bands
+                    layer.channelSettings.eqEnabled=effect.enabled
+                    notes.append("Channel EQ mapped to the instrument EQ (FX A); "+(effect.enabled ? "enabled":"bypassed")+". Filter slopes, output gain and the exact Apple EQ response remain approximate.")
+                }
+            }
+            for index in eqIndices.dropFirst() {omitted.append(sourceName(index)+": an additional Channel EQ is retained in the source record and was not mapped; StageKeys has one instrument EQ.")}
+            if let index=compIndices.first {
+                let effect=effects[index],values=effect.values
+                if values.count>=7 {
+                    var settings=layer.channelSettings
+                    settings.compressorEnabled=effect.enabled
+                    settings.compressorAttack=min(1,max(0.001,values[1]/1000))
+                    settings.compressorRelease=min(3,max(0.01,values[2]/1000))
+                    settings.ratio=min(20,max(1,values[3]))
+                    settings.threshold=min(0,max(-60,values[4]))
+                    settings.compressorMix=min(1,max(0,values[5]))
+                    settings.makeup=min(24,max(-24,values[6]))
+                    settings.compressorInputGain=min(24,max(-24,values[0]))
+                    layer.channelSettings=settings
+                    notes.append("Compressor mapped to the instrument compressor (FX B); "+(effect.enabled ? "enabled":"bypassed")+". Circuit model, knee, automatic gain/release, sidechain and limiter behavior are not identical to Apple's compressor.")
+                }
+            }
+            for index in compIndices.dropFirst() {omitted.append(sourceName(index)+": an additional Compressor is retained in the source record and was not mapped; StageKeys has one instrument compressor.")}
+            let chosen=selection.audio.sorted()
+            for (slot,index) in chosen.enumerated() {
+                if layer.effects[slot].kind != 0 {notes.append("Audio 0\(slot+1) replaced the destination effect with \(effects[index].title).")}
+                layer.effects[slot]=effects[index]
+                notes.append("Audio 0\(slot+1): \(effects[index].title) from \(sourceName(index)); "+(effects[index].enabled ? "enabled":"bypassed")+".")
+            }
+            for index in slotIndices where !chosen.contains(index) {omitted.append(sourceName(index)+" · \(effects[index].title): not selected; no automatic rack effect was appended.")}
+            if let midi=selection.midi {
+                layer.midiProgram=midi.validated
+                layer.midiEffectEnabled=selection.midiEnabled
+                notes.append("MIDI effect: \(midi.kind.rawValue.capitalized) "+(selection.midiEnabled ? "enabled":"bypassed")+"; selected manually.")
+            }
+            if hasMIDITransform {notes.append(selection.midi == nil ? "The source MIDI transform is retained in the source record but is not translated, so no MIDI effect was assigned.":"The source MIDI transform is retained in the source record; the selected native MIDI effect is a manual replacement, not a translation of the source transform.")}
+            if !macros.isEmpty {notes.append("\(macros.count) source Smart Control assignment(s) and their macro/MIDI values are retained in the source record; they are not active on the three performance slots.")}
+            let recordNames=sourceNames.count==effects.count ? sourceNames:effects.map{$0.title}
+            let recordNotes=effectNotes.count==effects.count ? effectNotes:effects.map{_ in [String]()}
+            layer.mainStageSource=MainStageSourceRecord(effects:effects,sourceNames:recordNames,effectNotes:recordNotes,macros:macros,issues:issues,selectedAudio:chosen,selectedMIDI:selection.midi?.validated,midiEnabled:selection.midiEnabled,hasMIDITransform:hasMIDITransform,omitted:omitted)
+            return Applied(layer:layer,notes:notes,omitted:omitted)
         }
         func appending(to original:ImportedRack?)throws->ImportedRack {
             var rack=original ?? ImportedRack()
@@ -153,6 +253,7 @@ enum MainStageProcessing {
                 values.append(Float(bitPattern:bits))
             }
             var effect=AudioEffect()
+            let issueStart=draft.issues.count
             let nativeName=canonicalName(device.name)
             switch nativeName {
             case "Chan EQ":
@@ -227,7 +328,7 @@ enum MainStageProcessing {
                 else {draft.issues.append("\(device.name): unrecognized processor bypass flag; review its enabled state.")}
             }
             guard effect.validate() else{draft.issues.append("\(device.name): parameters outside the native effect's supported range.");continue}
-            targets[slot]=(draft.effects.count,nativeName);draft.effects.append(effect);draft.sourceNames.append(device.name)
+            targets[slot]=(draft.effects.count,nativeName);draft.effects.append(effect);draft.sourceNames.append(device.name);draft.effectNotes.append(Array(draft.issues[issueStart...]))
         }
         let decoded=try archives(data)
         var rows:[(Int,[String:Any])]=[]

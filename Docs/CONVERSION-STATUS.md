@@ -12,6 +12,8 @@ All ten Sunday Free MainStage volumes remain original host entries. Complete .pa
 
 A sampled synth freezes its timbre/effects and cannot automatically preserve adjustable synth parameters, tempo-synced effects, arbitrary modulation, arpeggiators and chord/sequence logic. These need explicit translation or separate captures and validation. Do not claim lossless bidirectional conversion.
 
+Converted MainStage channels now present their translated source effects for explicit selection. Channel EQ and compression map to the instrument controls; up to three other effects fill the visible slots. Unselected effects, Smart Control assignments and source MIDI transforms remain archived rather than being appended to a rack or claimed as translated. Parallel/send topology and additional EQs/compressors are reported as omissions.
+
 Sunday Sounds explicitly states that existing MainStage/Live patches cannot directly transfer to the Sunday Keys app: https://support.sundaysounds.com/article/3162-can-i-transfer-my-existing-sunday-keys-patches . StageKeys' importer/exporter does not alter Sunday Keys databases or bypass account entitlements. Loading exported instruments back into Sunday's app has not been established.
 
 ## Current native library
