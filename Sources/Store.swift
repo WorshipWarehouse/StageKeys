@@ -350,14 +350,65 @@ final class PerformanceStore: ObservableObject {
     @Published var mainStageOutcomes:[MainStageChannelOutcome]=[]
     @Published var mainStageSearches:[MainStageDiscovery.Search]=[]
     private var mainStageDiscoveryCandidates:[String:[MainStageDiscovery.Candidate]]?
+    private struct MainStageAuthorizedFolder:Codable,Equatable {
+        var bookmark:Data
+        var label:String
+    }
+    private var mainStageAuthorizedFolders:[MainStageAuthorizedFolder]=[]
+    private var mainStageAuthorizedFoldersURL:URL {saveURL.deletingLastPathComponent().appendingPathComponent("mainstage-authorized-folders.json")}
+    private var mainStageBookmarkCreationOptions:URL.BookmarkCreationOptions {
+        #if os(macOS)
+        return .withSecurityScope
+        #else
+        return []
+        #endif
+    }
+    private var mainStageBookmarkResolutionOptions:URL.BookmarkResolutionOptions {
+        #if os(macOS)
+        return .withSecurityScope
+        #else
+        return []
+        #endif
+    }
+    func rememberMainStageSampleFolder(_ url:URL) {
+        do {
+            let bookmark=try url.bookmarkData(options:mainStageBookmarkCreationOptions,includingResourceValuesForKeys:[.isDirectoryKey],relativeTo:nil)
+            var stale=false
+            let resolved=try URL(resolvingBookmarkData:bookmark,options:mainStageBookmarkResolutionOptions,relativeTo:nil,bookmarkDataIsStale:&stale)
+            guard !stale,(try resolved.resourceValues(forKeys:[.isDirectoryKey])).isDirectory==true else{throw CocoaError(.fileReadNoSuchFile)}
+            let candidate=MainStageAuthorizedFolder(bookmark:bookmark,label:url.lastPathComponent)
+            mainStageAuthorizedFolders.removeAll{folder in
+                var otherStale=false
+                return (try? URL(resolvingBookmarkData:folder.bookmark,options:mainStageBookmarkResolutionOptions,relativeTo:nil,bookmarkDataIsStale:&otherStale).standardizedFileURL)==resolved.standardizedFileURL
+            }
+            mainStageAuthorizedFolders.insert(candidate,at:0)
+            mainStageAuthorizedFolders=Array(mainStageAuthorizedFolders.prefix(8))
+            let encoder=JSONEncoder();encoder.outputFormatting=[.prettyPrinted,.sortedKeys]
+            try RecoverableSessionFile.write(encoder.encode(mainStageAuthorizedFolders),to:mainStageAuthorizedFoldersURL,limit:1_000_000) { data in
+                let decoded=try JSONDecoder().decode([MainStageAuthorizedFolder].self,from:data)
+                guard decoded.count<=8,decoded.allSatisfy({!$0.bookmark.isEmpty && $0.bookmark.count<=128_000 && !$0.label.isEmpty && $0.label.count<=200}) else{throw SetlistError.invalid}
+            }
+        }catch{message="Could not remember this sample folder: \(error.localizedDescription)"}
+    }
+    func rememberedMainStageLocations()->[MainStageDiscovery.Location] {
+        mainStageAuthorizedFolders.compactMap { folder in
+            var stale=false
+            guard let url=try? URL(resolvingBookmarkData:folder.bookmark,options:mainStageBookmarkResolutionOptions,relativeTo:nil,bookmarkDataIsStale:&stale),!stale,
+                  (try? url.resourceValues(forKeys:[.isDirectoryKey]).isDirectory)==true else{return nil}
+            return MainStageDiscovery.Location(instruments:url,samples:url,label:"Remembered · "+folder.label)
+        }
+    }
     func importMainStageAutomatically(_ url:URL,locations:[MainStageDiscovery.Location]?=nil,installedAudioUnits:[ExternalAUIdentity]?=nil) {
         guard !libraryImportBusy else{return}
         importMainStagePatch(url)
         guard let report=mainStageImportReport,let archive=report.sourceArchiveID else{return}
         let retained=saveURL.deletingLastPathComponent().appendingPathComponent("MainStage Sources/"+archive+"/Source.patch")
-        let names=Set(report.channels.flatMap(\.instruments)),searchLocations=locations ?? MainStageDiscovery.locations(source:url,retained:retained)
+        let names=Set(report.channels.flatMap(\.instruments)),searchLocations=locations ?? (MainStageDiscovery.locations(source:url,retained:retained)+rememberedMainStageLocations())
         libraryImportCancelRequested=false;libraryImportBusy=true
         Task { @MainActor in
+            let scopedURLs=Array(Set(searchLocations.flatMap{[$0.instruments,$0.samples]}))
+            let scopes=scopedURLs.map{$0.startAccessingSecurityScopedResource()}
+            defer{for (url,access) in zip(scopedURLs,scopes) where access {url.stopAccessingSecurityScopedResource()}}
             let discovery=await Task.detached {MainStageDiscovery.find(names,locations:searchLocations)}.value
             mainStageSearches=discovery.searches
             guard !libraryImportCancelRequested else {
@@ -417,6 +468,11 @@ final class PerformanceStore: ObservableObject {
         catch {presetsRecoveryRequired=true;message="Personal effect presets could not be read. Writes are blocked; recover the previous presets in Settings."}
         if let data=try? Data(contentsOf:base.appendingPathComponent("mainstage-import-report.json")),data.count<=2_000_000 {
             mainStageImportReport=try? JSONDecoder().decode(MainStagePatch.Report.self,from:data)
+        }
+        if let data=try? RecoverableSessionFile.read(base.appendingPathComponent("mainstage-authorized-folders.json"),limit:1_000_000),
+           let folders=try? JSONDecoder().decode([MainStageAuthorizedFolder].self,from:data),folders.count<=8,
+           folders.allSatisfy({!$0.bookmark.isEmpty && $0.bookmark.count<=128_000 && !$0.label.isEmpty && $0.label.count<=200}) {
+            mainStageAuthorizedFolders=folders
         }
         do { librarySounds = try SoundLibrary(url: base.appendingPathComponent("sound-library.json")).read() }
         catch { libraryRecoveryRequired=true;message = "Could not read sound library: \(error.localizedDescription). Catalog writes are blocked to preserve it. Open Settings to recover the previous catalog." }

@@ -25,7 +25,13 @@ import Foundation
         store.selectMainStageChannel(0,false);assert(store.selectedMainStageChannels==[1])
         store.selectMainStageChannel(1,false);assert(store.selectedMainStageChannels.isEmpty)
         store.selectMainStageChannel(100,true);assert(store.selectedMainStageChannels.isEmpty)
+        let samples=root.appendingPathComponent("Authorized Samples")
+        try FileManager.default.createDirectory(at:samples,withIntermediateDirectories:true)
+        store.rememberMainStageSampleFolder(samples)
+        assert(store.rememberedMainStageLocations().map(\.instruments.standardizedFileURL).contains(samples.standardizedFileURL))
+        let restored=PerformanceStore()
+        assert(restored.rememberedMainStageLocations().map(\.instruments.standardizedFileURL).contains(samples.standardizedFileURL))
         let source=try Data(contentsOf:patch.appendingPathComponent("First.cst"));assert(source==bytes)
-        print("PASS: preflight retains source without committing sounds and channel selection is explicit/bounded")
+        print("PASS: preflight retains source without committing sounds; channel selection and authorized sample-folder bookmarks persist")
     }
 }
