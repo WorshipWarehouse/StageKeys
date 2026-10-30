@@ -6,6 +6,17 @@ StageKeys Sampler is an in-app instrument interface using Apple's system AVAudio
 
 New EXS/AUPRESET sound-file imports retain an exact original instrument in the personal `Original Instruments` directory, identified by SHA-256. The managed playback preset still relocates samples through the existing importer. Samples are copied, never rendered or resampled. Original EXS retention preserves fields which Apple's loader might not expose; this is not a guarantee that Apple's standalone sampler reproduces all EXS features.
 
+## Effect selection and instrument controls
+
+A converted channel no longer appends every translated processor to an imported rack. The import report exposes a **Choose Effects** sheet for each selectable channel. It lists the translated source effects in source order, with the source device name, enabled/bypassed state and the compatibility notes recorded during translation.
+
+- Channel EQ maps automatically to the instrument's FX A equalizer, and the Compressor maps automatically to FX B. Filter slopes, output gain, circuit model, knee, sidechain and exact Apple response remain approximate.
+- At most three other source effects can be selected for the three visible audio slots. Empty slots are not filled automatically, and no overflow rack is created. A source effect that is not selected stays in the archived channel strip and in the data-only source record on the converted layer.
+- The source MIDI transform is retained but has no verified native translation. The sheet allows a manual native MIDI effect for the visible MIDI slot and labels it as a replacement, not a translation. Source Smart Control macro/MIDI assignments and bypass states are retained in the source record; they are not activated as rack macros.
+- Original patch/CST bytes, sample bytes, hashes and conversion IDs are unchanged. Omitted effects, additional EQs/compressors and unsupported parallel/send topology are reported in the conversion notes.
+
+The selection is part of the converted layer and survives JSON/library persistence. Legacy layers without a source record still decode, and an existing imported rack is preserved rather than replaced.
+
 ## MainStage import status
 
 Import Sounds → Import a MainStage Patch reads `.patch/data.plist` and referenced `.cst` documents without opening MainStage or loading source plug-ins. It identifies observed legacy device records, EXS filenames, macro mapping records and MIDI-transform presence. The source bundle is copied byte-for-byte into personal `MainStage Sources`, with source hashes and a conversion report. Unknown effects, routing, macros, MIDI state and script records are retained as opaque document data, never executed. The latest report survives app restart.
@@ -23,8 +34,8 @@ Both installed modern Steinway Grand Piano 2 and Steinway Piano 2 EXS files were
 Remaining implementation work:
 
 - Decode sampler front-panel overrides and modern EXS group/parameter behavior.
-- Translate channel-strip effects, enabled states, serial order, sends and buses.
-- Translate Smart Control mappings and MIDI FX/filters/velocity curves.
+- Translate the processors that remain archive-only (additional EQs, source MIDI FX, filters and unsupported parallel/send topology).
+- Activate retained Smart Control mappings and decode source MIDI FX/filters/velocity curves; the current selection workflow stores but does not activate those assignments.
 - Supply native equivalents for private synthesizers where possible, with explicit fidelity limits.
 - Validate complete translated patches against reference behavior before declaring them playable conversions.
 

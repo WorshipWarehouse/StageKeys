@@ -364,6 +364,7 @@ final class PerformanceStore: ObservableObject {
     @Published var mainStageChannelSelection:Set<Int>?
     @Published var mainStageOutcomes:[MainStageChannelOutcome]=[]
     @Published var mainStageSearches:[MainStageDiscovery.Search]=[]
+    @Published var mainStageEffectSelections:[Int:MainStageProcessing.Selection]=[:]
     private var mainStageDiscoveryCandidates:[String:[MainStageDiscovery.Candidate]]?
     private struct MainStageAuthorizedFolder:Codable,Equatable {
         var bookmark:Data
@@ -444,6 +445,13 @@ final class PerformanceStore: ObservableObject {
         var selection=selectedMainStageChannels
         if enabled {selection.insert(index)} else {selection.remove(index)}
         mainStageChannelSelection=selection
+    }
+    func mainStageSelection(_ channel:Int)->MainStageProcessing.Selection {mainStageEffectSelections[channel] ?? .none}
+    func setMainStageEffectSelection(_ selection:MainStageProcessing.Selection,for channel:Int)throws {
+        guard let report=mainStageImportReport,report.channels.indices.contains(channel) else{throw MainStagePatch.Failure.invalid("Import the MainStage source patch again to choose its effects.")}
+        let draft=try mainStageProcessing(channel)
+        if let problem=draft.selectionProblem(selection) {throw MainStagePatch.Failure.invalid(problem)}
+        mainStageEffectSelections[channel]=selection
     }
     func convertIncludedMainStageSounds() {
         guard let id=mainStageImportReport?.sourceArchiveID,UUID(uuidString:id) != nil else{return}
@@ -1322,6 +1330,7 @@ final class PerformanceStore: ObservableObject {
         let source=channels?.first(where:{$0["Filename"] as? String==report.channels[channel].file})
         var draft=try MainStageProcessing.translate(MainStagePatch.verifiedRead(root.appendingPathComponent(report.channels[channel].file),in:root,sha256:report.channels[channel].sha256),channelID:source?["Channel_instID"] as? Int)
         if let source {MainStageProcessing.channelSettings(source,to:&draft)}
+        draft.hasMIDITransform=source?["MIDITransform"] != nil
         return draft
     }
     private func managedImportAssets()->Set<URL> {
@@ -1401,13 +1410,14 @@ final class PerformanceStore: ObservableObject {
                         createdSound=sound
                         var layer=template ?? Layer(name:channel.name,instrument:-1,gain:1)
                         layer.name=channel.name;layer.external=sound
-                        layer=try processing.applying(to:layer)
+                        let applied=try processing.applying(to:layer,selection:mainStageSelection(channelIndex))
+                        layer=applied.layer
                         let original=try StageKeysSampler.retainOriginal(file,library:saveURL.deletingLastPathComponent())
                         createdOriginal=original
                         // One layer hosts one instrument: a channel that also saved an Audio
                         // Unit keeps that state in the archive instead of losing it silently.
                         let audioUnitNotes=channel.thirdPartyAudioUnits.first.map{["the channel also saved \($0.name); this layer hosts the converted sampler only, so its plug-in state stays in the archive."]} ?? []
-                        let entry=LibrarySound(id:id,name:channel.name,collection:"MainStage Patches",sound:sound,layer:layer,sourceArchiveID:report.sourceArchiveID,conversionNotes:(notes ?? [])+processing.issues+audioUnitNotes,originalInstrument:original)
+                        let entry=LibrarySound(id:id,name:channel.name,collection:"MainStage Patches",sound:sound,layer:layer,sourceArchiveID:report.sourceArchiveID,conversionNotes:(notes ?? [])+processing.issues+applied.notes+applied.omitted+audioUnitNotes,originalInstrument:original)
                         entries.append(entry)
                         outcome(channelIndex,.prepared,"Converted with source settings; review compatibility notes.",id)
                         preparedAssets.formUnion(assetsForImportedSound(createdSound,original:createdOriginal).subtracting(assetsBefore))
@@ -1435,8 +1445,8 @@ final class PerformanceStore: ObservableObject {
                                 outcome(channelIndex,.duplicate,"Already installed; personal edits retained.",id)
                                 skipped+=1;continue
                             }
-                            let layer=try processing.applying(to:hosted.layer)
-                            entries.append(LibrarySound(id:id,name:channel.name,collection:"MainStage Patches",sound:layer.external,layer:layer,sourceArchiveID:archiveID,conversionNotes:hosted.notes+processing.issues))
+                            let applied=try processing.applying(to:hosted.layer,selection:mainStageSelection(channelIndex))
+                            entries.append(LibrarySound(id:id,name:channel.name,collection:"MainStage Patches",sound:applied.layer.external,layer:applied.layer,sourceArchiveID:archiveID,conversionNotes:hosted.notes+processing.issues+applied.notes+applied.omitted))
                             outcome(channelIndex,.prepared,"Hosted instrument requires its installed Audio Unit.",id)
                             imported+=1
                         }catch{outcome(channelIndex,.failed,error.localizedDescription);failures.append(channel.name+": "+error.localizedDescription)}
@@ -1465,6 +1475,7 @@ final class PerformanceStore: ObservableObject {
             try encoder.encode(report).write(to:saveURL.deletingLastPathComponent().appendingPathComponent("mainstage-import-report.json"),options:.atomic)
             mainStageImportReport=report
             mainStageSearches=[]
+            mainStageEffectSelections=[:]
             mainStageOutcomes=report.channels.enumerated().map{MainStageChannelOutcome(id:$0.offset,name:$0.element.name,state:$0.element.isConvertible ? .pending:.unsupported,detail:$0.element.nativeInstrumentStatus)}
             mainStageChannelSelection=Set(report.channels.indices.filter{report.channels[$0].isConvertible})
             let retainedRoot=directory.appendingPathComponent("Source.patch",isDirectory:true)
