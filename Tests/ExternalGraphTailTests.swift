@@ -63,18 +63,18 @@ struct ExternalGraphTailTests {
 
         // A changed imported-rack topology must keep its old graph's wet tail.
         try load(piano, channel: 0)
-        rack.configureImported(channel: 0, rack: ImportedRack(effects: [reverb()]), tempo: 120)
+        try rack.configureImported(channel: 0, rack: ImportedRack(effects: [reverb()]), tempo: 120)
         rack.volume(channel: 0, gain: 1, pan: 0)
         try rack.prepareOfflineSamples()
         engine.prepare()
         try engine.start()
         try play(0)
         let graphBefore = try render(40)
-        rack.configureImported(channel: 0, rack: ImportedRack(effects: [reverb(), gain(0)]), tempo: 120)
+        try rack.configureImported(channel: 0, rack: ImportedRack(effects: [reverb(), gain(0)]), tempo: 120)
         let graphAfter = try render(40)
         FileHandle.standardError.write(Data("graph tail before/after: \(graphBefore) / \(graphAfter)\n".utf8))
         assert(graphBefore > 1e-8 && graphAfter > 1e-9, "An incompatible rack replacement must retain its reverb tail")
-        rack.panic(channel: 0)
+        rack.panic(0)
         _ = try render(8)
         let graphCleared = try render(40)
         assert(graphCleared < graphBefore * 0.0001, "Panic must suppress a retired graph tail")
@@ -82,7 +82,7 @@ struct ExternalGraphTailTests {
         // Replacing the instrument itself must keep the old voice's tail, while
         // the new instrument starts on its own dry path.
         try load(piano, channel: 1)
-        rack.configureImported(channel: 1, rack: ImportedRack(effects: [reverb()]), tempo: 120)
+        try rack.configureImported(channel: 1, rack: ImportedRack(effects: [reverb()]), tempo: 120)
         rack.sustain(channel: 1, on: true)
         try play(1)
         rack.sustain(channel: 1, on: false)
@@ -91,20 +91,20 @@ struct ExternalGraphTailTests {
         let voiceAfter = try render(40)
         FileHandle.standardError.write(Data("voice tail before/after: \(voiceBefore) / \(voiceAfter)\n".utf8))
         assert(voiceBefore > 1e-8 && voiceAfter > 1e-9, "A replaced instrument must retain its old reverb tail")
-        rack.panic(channel: 1)
+        rack.panic(1)
         _ = try render(8)
         let voiceCleared = try render(40)
         assert(voiceCleared < voiceBefore * 0.0001, "Panic must suppress a retired voice tail")
 
         // Stacked reverbs should also survive a topology change.
         try load(pad, channel: 2)
-        rack.configureImported(channel: 2, rack: ImportedRack(effects: [reverb(), reverb()]), tempo: 120)
+        try rack.configureImported(channel: 2, rack: ImportedRack(effects: [reverb(), reverb()]), tempo: 120)
         try play(2)
         let stackedBefore = try render(40)
-        rack.configureImported(channel: 2, rack: ImportedRack(effects: [reverb(), reverb(), gain(0)]), tempo: 120)
+        try rack.configureImported(channel: 2, rack: ImportedRack(effects: [reverb(), reverb(), gain(0)]), tempo: 120)
         let stackedAfter = try render(40)
         assert(stackedBefore > 1e-8 && stackedAfter > 1e-9, "Stacked retired reverbs must retain their tail")
-        rack.panic(channel: 2)
+        rack.panic(2)
 
         // Repeated switches are capped; old samplers must not accumulate or be
         // restored on every later transaction.
