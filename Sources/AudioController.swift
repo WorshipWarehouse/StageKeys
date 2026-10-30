@@ -6,6 +6,152 @@ import AudioToolbox
 import Darwin
 #endif
 
+/// Why an audio-engine start failed, in terms the performer can act on.
+struct AudioStartupFailure: Equatable {
+    enum Kind: Equatable {
+        case outputUnavailable
+        case outputBusy
+        case formatMismatch
+        case interrupted
+        case permissionDenied
+        case unknown
+    }
+
+    let kind: Kind
+    let routeName: String?
+    let code: Int
+
+    /// Only states that can plausibly clear without the user changing a device
+    /// setting are retried automatically. A format or permission failure needs
+    /// an explicit user change; an unexpected failure is not retried blindly.
+    var recoverable: Bool {
+        switch kind {
+        case .outputUnavailable, .outputBusy, .interrupted: return true
+        case .formatMismatch, .permissionDenied, .unknown: return false
+        }
+    }
+
+    var message: String {
+        let route = routeName.map { "“\($0)”" } ?? "The selected audio output"
+        switch kind {
+        case .outputUnavailable:
+            return "Audio could not start. \(route) is unavailable. Connect it or choose another output, then retry."
+        case .outputBusy:
+            return "Audio could not start. \(route) could not be opened. Another app may be using it or its sample rate changed. Close the other app, refresh the output, then retry."
+        case .formatMismatch:
+            return "Audio could not start. \(route) rejected the requested sample rate or buffer size. Choose a supported device setting, then retry."
+        case .interrupted:
+            return "Audio could not start. The system interrupted audio. Retry when the device is available."
+        case .permissionDenied:
+            return "Audio could not start. StageKeys is not allowed to use audio output. Check the system privacy or audio settings, then retry."
+        case .unknown:
+            return "Audio could not start (error \(code)). Refresh the output or choose another device, then retry."
+        }
+    }
+}
+
+enum AudioStartupClassifier {
+    /// Translate AVFAudio/Core Audio/AVAudioSession failures without exposing
+    /// the raw description, which can contain paths or device identifiers.
+    static func classify(_ error: Error, routeName: String?) -> AudioStartupFailure {
+        let ns = error as NSError
+        let code = ns.code
+        let domain = ns.domain.lowercased()
+        let detail = ns.localizedDescription.lowercased()
+        let trimmed = routeName?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let route = (trimmed?.isEmpty == false) ? trimmed : nil
+        let audioDomain = domain == NSOSStatusErrorDomain.lowercased()
+            || domain.contains("coreaudio") || domain.contains("avfaudio")
+
+        let kind: AudioStartupFailure.Kind
+        if audioDomain {
+            switch code {
+            case 2003329396: kind = .outputBusy // kAudioHardwareUnspecifiedError ('what')
+            case Int(kAudioUnitErr_NoConnection): kind = .outputUnavailable
+            case Int(kAudioUnitErr_FormatNotSupported): kind = .formatMismatch
+            case Int(kAudioUnitErr_CannotDoInCurrentContext): kind = .outputBusy
+            default: kind = from(detail: detail)
+            }
+        } else if domain == NSPOSIXErrorDomain.lowercased() {
+            switch code {
+            case 16: kind = .outputBusy // EBUSY
+            case 6, 19: kind = .outputUnavailable // ENXIO, ENODEV
+            default: kind = from(detail: detail)
+            }
+        } else {
+            kind = from(detail: detail)
+        }
+        return AudioStartupFailure(kind: kind, routeName: route, code: code)
+    }
+
+    private static func from(detail: String) -> AudioStartupFailure.Kind {
+        if detail.contains("permission") || detail.contains("not permitted") || detail.contains("denied") { return .permissionDenied }
+        if detail.contains("interrupt") { return .interrupted }
+        if detail.contains("format") || detail.contains("sample rate") || detail.contains("sample-rate") { return .formatMismatch }
+        if detail.contains("in use") || detail.contains("busy") || detail.contains("exclusive") { return .outputBusy }
+        if detail.contains("device") || detail.contains("output") || detail.contains("route")
+            || detail.contains("disconnect") || detail.contains("unavailable") { return .outputUnavailable }
+        return .unknown
+    }
+}
+
+/// Bounded automatic retries. The first two failures wait 0.25 s and 0.75 s;
+/// the third failure leaves the engine stopped and the failure visible for a
+/// manual retry. These are delays, not a claim about recovery probability.
+struct AudioStartupRetryPolicy: Equatable {
+    let maximumAttempts: Int
+    let delays: [TimeInterval]
+
+    init(maximumAttempts: Int = 3, delays: [TimeInterval] = [0.25, 0.75]) {
+        self.maximumAttempts = max(1, maximumAttempts)
+        self.delays = delays.map { max(0, $0) }
+    }
+
+    func delay(afterFailedAttempt attempt: Int) -> TimeInterval? {
+        guard attempt >= 1, attempt < maximumAttempts else { return nil }
+        let index = attempt - 1
+        guard index < delays.count else { return nil }
+        return delays[index]
+    }
+}
+
+enum AudioStartupRecovery {
+    /// Unplug/replug, sleep/wake and route changes all arrive as engine
+    /// configuration changes. Only restart audio that was running; a stopped or
+    /// failed engine waits for an explicit start so an implicit retry loop cannot
+    /// start it while the device is still settling.
+    static func shouldRestartAfterConfigurationChange(started: Bool, engineRunning: Bool) -> Bool {
+        started && !engineRunning
+    }
+}
+
+enum AudioStartupState: Equatable {
+    case stopped
+    case starting(attempt: Int)
+    case retrying(attempt: Int, delay: TimeInterval, failure: AudioStartupFailure)
+    case running
+    case failed(AudioStartupFailure)
+
+    var isStarting: Bool {
+        switch self {
+        case .starting, .retrying: return true
+        case .stopped, .running, .failed: return false
+        }
+    }
+
+    var isFailed: Bool {
+        if case .failed = self { return true }
+        return false
+    }
+
+    var failure: AudioStartupFailure? {
+        switch self {
+        case .retrying(_, _, let failure), .failed(let failure): return failure
+        case .stopped, .starting, .running: return nil
+        }
+    }
+}
+
 final class AudioController {
     private let engine = AVAudioEngine()
     private let synth: OpaquePointer
