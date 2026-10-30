@@ -12,6 +12,16 @@ struct SoundTags: Codable, Equatable {
     var noteRanges:[String]?
     var types:[String]?
     var recommended:Bool?
+    /// Facets explicitly edited by the user or supplied as authored metadata.
+    /// Nil on legacy and purely inferred tags, where provenance cannot be recovered.
+    var authoredFacets:[String]?
+    mutating func markAuthored(_ facet:LibraryFacet) {
+        guard facet.isTagFacet else{return}
+        var values=Set(authoredFacets ?? [])
+        values.insert(facet.rawValue)
+        authoredFacets=LibraryFacet.tagFacets.map(\.rawValue).filter{values.contains($0)}
+    }
+    func isAuthored(_ facet:LibraryFacet)->Bool {authoredFacets?.contains(facet.rawValue)==true}
     static func inferred(name: String, source: String = "Sampler") -> SoundTags {
         let n = name.replacingOccurrences(of:"([a-z])([A-Z])",with:"$1 $2",options:.regularExpression).lowercased()
         let words=Set(n.split(whereSeparator:{!$0.isLetter && !$0.isNumber}).map(String.init))
@@ -45,12 +55,20 @@ enum LibraryNoteRange:String,CaseIterable {
 enum LibraryFacet: String, CaseIterable, Identifiable {
     case category="Category", type="Type", timbre="Timbre", articulation="Articulation", library="Sound Library", source="Source/Model", availability="Availability", complexity="Complexity",noteRange="Note Range"
     var id:String {rawValue}
+    var isTagFacet:Bool {
+        switch self {
+        case .library,.availability:return false
+        default:return true
+        }
+    }
+    static var tagFacets:[LibraryFacet] {allCases.filter(\.isTagFacet)}
 }
+enum LibraryTagOrigin:String {case authored="Authored",suggested="Suggested",unknown="Not Tagged"}
 struct BrowserSound: Identifiable {
     let id:String
     let name:String
     let collection:String
-    let tags:SoundTags
+    var tags:SoundTags
     var entry:LibrarySound?
     var external:ExternalSound?
     var destination:ExternalMIDIDestination?
@@ -75,11 +93,47 @@ struct BrowserSound: Identifiable {
         case .availability:return [unavailableReason != nil ? "Unavailable" : playable ? "Playable" : "Needs Conversion"]
         }
     }
+    func tagOrigin(_ facet:LibraryFacet)->LibraryTagOrigin? {
+        guard facet.isTagFacet else{return nil}
+        if tags.isAuthored(facet) {return .authored}
+        if values(facet).contains("Not Tagged") {return .unknown}
+        return tags.inferred ? .suggested:.authored
+    }
+    private var tagOriginGroups:(authored:[String],suggested:[String],unknown:[String]) {
+        var authored:[String]=[],suggested:[String]=[],unknown:[String]=[]
+        for facet in LibraryFacet.tagFacets {
+            guard let origin=tagOrigin(facet) else{continue}
+            switch origin {
+            case .authored:authored.append(facet.rawValue)
+            case .suggested:suggested.append(facet.rawValue)
+            case .unknown:unknown.append(facet.rawValue)
+            }
+        }
+        return (authored,suggested,unknown)
+    }
+    var tagOriginSummary:String? {
+        let groups=tagOriginGroups
+        var parts:[String]=[]
+        if !groups.authored.isEmpty {parts.append("Authored: "+groups.authored.joined(separator:", "))}
+        if !groups.suggested.isEmpty {parts.append("Suggested: \(groups.suggested.count)")}
+        if !groups.unknown.isEmpty {parts.append("Not tagged: \(groups.unknown.count)")}
+        return parts.isEmpty ? nil:parts.joined(separator:" · ")
+    }
+    var tagOriginDetail:String? {
+        let groups=tagOriginGroups
+        var parts:[String]=[]
+        if !groups.authored.isEmpty {parts.append("Authored: "+groups.authored.joined(separator:", "))}
+        if !groups.suggested.isEmpty {parts.append("Suggested: "+groups.suggested.joined(separator:", "))}
+        if !groups.unknown.isEmpty {parts.append("Not tagged: "+groups.unknown.joined(separator:", "))}
+        return parts.isEmpty ? nil:parts.joined(separator:" · ")
+    }
     static func archive(_ original:LibrarySound,converted:LibrarySound)->BrowserSound {
         let playable=library(converted)
         var tags=original.tags ?? playable.tags
         // Row annotations belong to the playable entry, shared across collections.
         tags.noteRanges=playable.tags.noteRanges;tags.complexity=playable.tags.complexity;tags.types=playable.tags.types;tags.recommended=playable.tags.recommended
+        var authored=Set(tags.authoredFacets ?? []);authored.formUnion(playable.tags.authoredFacets ?? [])
+        tags.authoredFacets=LibraryFacet.tagFacets.map(\.rawValue).filter{authored.contains($0)}
         return BrowserSound(id:original.id,name:original.name,collection:original.collection,tags:tags,entry:converted)
     }
     static func library(_ entry:LibrarySound)->BrowserSound {
@@ -89,15 +143,29 @@ struct BrowserSound: Identifiable {
     }
 }
 enum LibrarySort:String,CaseIterable {case name="Name",recommended="Recommended",rating="Rating",recent="Recently Added",random="Random"}
+struct ActiveLibraryFilter:Identifiable,Equatable {
+    let facet:LibraryFacet
+    let value:String
+    var id:String {"\(facet.rawValue)=\(value)"}
+}
 struct LibraryQuery {
     var search=""
+    var activeFilters:[ActiveLibraryFilter] {
+        LibraryFacet.allCases.compactMap { facet in
+            guard let value=filters[facet],value != "All" else{return nil}
+            return ActiveLibraryFilter(facet:facet,value:value)
+        }
+    }
     var filters:[LibraryFacet:String]=[:]
     var sort:LibraryFacet?=nil
     var ascending=true
     var ordering:LibrarySort = .name
     var shuffleSeed:UInt64=0
     mutating func order(by mode:LibrarySort) {
-        ordering=mode;sort=nil;ascending=mode == .name || mode == .recommended
+        let changed=ordering != mode
+        ordering=mode;sort=nil
+        guard changed else{return}
+        ascending=mode == .name || mode == .recommended
         if mode == .random {shuffleSeed=UInt64.random(in:1...UInt64.max)}
     }
     private func randomKey(_ id:String)->UInt64 {

@@ -71,7 +71,13 @@ struct SoundLibrary {
             entries[i].collection = entries[i].collection.replacingOccurrences(of: "Sunday Free Ableton ·", with: "Sunday Free ·")
             if entries[i].collection == "Ableton Imports" { entries[i].collection = "Imported Sounds" }
         }
-        for i in entries.indices {if let tags=entries[i].tags,tags.inferred {var updated=SoundTags.inferred(name:entries[i].name,source:tags.sourceModel);updated.complexity=tags.complexity;updated.noteRanges=tags.noteRanges;updated.types=tags.types;updated.recommended=tags.recommended;entries[i].tags=updated}}
+        for i in entries.indices {
+            guard let tags=entries[i].tags,tags.inferred else{continue}
+            var updated=SoundTags.inferred(name:entries[i].name,source:tags.sourceModel)
+            updated.complexity=tags.complexity;updated.noteRanges=tags.noteRanges;updated.types=tags.types;updated.recommended=tags.recommended
+            updated.authoredFacets=tags.authoredFacets
+            entries[i].tags=updated
+        }
         for i in entries.indices where entries[i].id.hasPrefix("ableton-samples-") {
             var tags=entries[i].tags ?? SoundTags.inferred(name:entries[i].name)
             // These are suggested browsing ranges, never playable MIDI splits.
@@ -108,15 +114,41 @@ struct SoundLibrary {
                 guard (try? Self.validate([candidate])) != nil else{continue}
                 if entries[i].tags == nil || entries[i].tags?.inferred == true || (entries[i].id.hasSuffix("-room-voicing-v1") && entries[i].sourceTagsApplied != true) {
                     var tags=authored
-                    if let ranges=entries[i].tags?.noteRanges,ranges.isEmpty {tags.noteRanges=[]}
-                    if let recommended=entries[i].tags?.recommended {tags.recommended=recommended}
+                    tags.authoredFacets=Self.authoredFacets(for:tags)
+                    if let previous=entries[i].tags {
+                        // Preserve future per-facet edits and explicit clears; legacy
+                        // inferred annotations without provenance remain replaceable.
+                        if previous.isAuthored(.noteRange) {
+                            tags.noteRanges=previous.noteRanges
+                            tags.markAuthored(.noteRange)
+                        } else if let ranges=previous.noteRanges,ranges.isEmpty {
+                            tags.noteRanges=[]
+                            tags.markAuthored(.noteRange)
+                        }
+                        if previous.isAuthored(.complexity) {
+                            tags.complexity=previous.complexity
+                            tags.markAuthored(.complexity)
+                        }
+                        if previous.isAuthored(.type) {
+                            tags.types=previous.types
+                            tags.markAuthored(.type)
+                        }
+                        if let recommended=previous.recommended {tags.recommended=recommended}
+                    }
                     entries[i].tags=tags;entries[i].sourceTagsApplied=true
                 }
-                else {
+                else if var tags=entries[i].tags {
                     // Preserve annotations and explicit clears already saved by the user.
-                    if entries[i].tags?.recommended == nil {entries[i].tags?.recommended=authored.recommended}
-                    if entries[i].tags?.noteRanges == nil {entries[i].tags?.noteRanges=authored.noteRanges}
-                    if entries[i].tags?.types == nil {entries[i].tags?.types=authored.types}
+                    if tags.recommended == nil,let value=authored.recommended {tags.recommended=value}
+                    if tags.noteRanges == nil,let value=authored.noteRanges {
+                        tags.noteRanges=value
+                        tags.markAuthored(.noteRange)
+                    }
+                    if tags.types == nil,let value=authored.types {
+                        tags.types=value
+                        tags.markAuthored(.type)
+                    }
+                    entries[i].tags=tags
                 }
             }
         }
@@ -147,6 +179,22 @@ struct SoundLibrary {
             return try decoded(data)
         }
     }
+    /// Metadata declares only the facets it can substantiate. An explicit
+    /// "Not Tagged" source or a missing optional facet stays unknown.
+    private static func authoredFacets(for tags:SoundTags)->[String] {
+        LibraryFacet.tagFacets.compactMap { facet in
+            switch facet {
+            case .category:return tags.category.isEmpty ? nil:facet.rawValue
+            case .type:return tags.type.isEmpty && (tags.types?.isEmpty ?? true) ? nil:facet.rawValue
+            case .timbre:return tags.timbres.isEmpty ? nil:facet.rawValue
+            case .articulation:return tags.articulations.isEmpty ? nil:facet.rawValue
+            case .source:return tags.sourceModel == "Not Tagged" ? nil:facet.rawValue
+            case .complexity:return tags.complexity == nil ? nil:facet.rawValue
+            case .noteRange:return tags.noteRanges == nil ? nil:facet.rawValue
+            default:return nil
+            }
+        }
+    }
     static func validate(_ entries: [LibrarySound]) throws {
         guard entries.count <= 4096, Set(entries.map(\.id)).count == entries.count else { throw SetlistError.invalid }
         for entry in entries {
@@ -164,6 +212,11 @@ struct SoundLibrary {
                 guard tags.types.map({$0.count<=64 && Set($0).count==$0.count && $0.allSatisfy{!$0.isEmpty && $0.count<=200}}) ?? true else{throw SetlistError.invalid}
                 let text=[tags.category,tags.type,tags.sourceModel]+tags.timbres+tags.articulations
                 guard tags.timbres.count<=64,tags.articulations.count<=64,text.allSatisfy({$0.count<=200}) else {throw SetlistError.invalid}
+                if let authored=tags.authoredFacets {
+                    guard authored.count<=LibraryFacet.tagFacets.count,
+                          Set(authored).count==authored.count,
+                          authored.allSatisfy({LibraryFacet(rawValue:$0)?.isTagFacet == true}) else{throw SetlistError.invalid}
+                }
             }
             if let source=entry.sourceArchiveID {guard !source.isEmpty,source.count<=256 else{throw SetlistError.invalid}}
             if let layer = entry.layer {
