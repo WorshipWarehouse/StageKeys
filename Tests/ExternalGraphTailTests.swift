@@ -8,7 +8,6 @@ struct ExternalGraphTailTests {
         defer { try? FileManager.default.removeItem(at: folder) }
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
 
-        stage("create audio controller")
         let audio = AudioController()
         defer { audio.stop() }
         guard let rack = audio.externalRack else {
@@ -17,11 +16,7 @@ struct ExternalGraphTailTests {
         audio.master(1)
         audio.space(0)
 
-        stage("start offline engine")
         try audio.prepareOffline()
-        stage("offline engine started")
-
-        stage("import tones")
         let piano = try importTone(folder.appendingPathComponent("Piano.wav"), frequency: 261.626, rack: rack)
         let organ = try importTone(folder.appendingPathComponent("Organ.wav"), frequency: 329.628, rack: rack)
         let pad = try importTone(folder.appendingPathComponent("Pad.wav"), frequency: 392.0, rack: rack)
@@ -68,13 +63,11 @@ struct ExternalGraphTailTests {
         }
 
         // A changed imported-rack topology must keep its old graph's wet tail.
-        stage("load first graph")
         try load(piano, channel: 0)
         try rack.configureImported(channel: 0, rack: ImportedRack(effects: [reverb()]), tempo: 120)
         rack.volume(channel: 0, gain: 1, pan: 0)
         try play(0)
         let graphBefore = try render(40)
-        stage("replace graph")
         try rack.configureImported(channel: 0, rack: ImportedRack(effects: [reverb(), gain(0)]), tempo: 120)
         let graphAfter = try render(40)
         FileHandle.standardError.write(Data("graph tail before/after: \(graphBefore) / \(graphAfter)\n".utf8))
@@ -86,7 +79,6 @@ struct ExternalGraphTailTests {
 
         // Replacing the instrument itself must keep the old voice's tail, while
         // the new instrument starts on its own dry path.
-        stage("build voice with tail")
         try load(piano, channel: 1)
         try rack.configureImported(channel: 1, rack: ImportedRack(effects: [reverb()]), tempo: 120)
         rack.sustain(channel: 1, on: true)
@@ -103,7 +95,6 @@ struct ExternalGraphTailTests {
         assert(voiceCleared < voiceBefore * 0.0001, "Panic must suppress a retired voice tail")
 
         // Stacked reverbs should also survive a topology change.
-        stage("stacked reverb tail")
         try load(pad, channel: 2)
         try rack.configureImported(channel: 2, rack: ImportedRack(effects: [reverb(), reverb()]), tempo: 120)
         try play(2)
@@ -124,21 +115,17 @@ struct ExternalGraphTailTests {
         print("PASS: synthetic piano/organ/pad graph and instrument switches retain reverb tails, Panic clears them, and the tail pool stays bounded")
     }
 
-    private static func stage(_ text: String) {
-        FileHandle.standardError.write(Data(("STAGE: \(text)\n").utf8))
-    }
-
     private static func importTone(_ url: URL, frequency: Double, rack: ExternalInstrumentRack) throws -> ExternalSound {
-        stage("write tone \(url.lastPathComponent)")
         let format = AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 1)!
         let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 48_000)!
         buffer.frameLength = 48_000
         for frame in 0..<48_000 {
             buffer.floatChannelData![0][frame] = 0.2 * sin(Float(frame) * 2 * .pi * Float(frequency) / 48_000)
         }
-        let file = try AVAudioFile(forWriting: url, settings: format.settings)
-        try file.write(from: buffer)
-        stage("import tone \(url.lastPathComponent)")
+        do {
+            let file = try AVAudioFile(forWriting: url, settings: format.settings)
+            try file.write(from: buffer)
+        }
         return try rack.importSound(url)
     }
 }
