@@ -9,6 +9,10 @@ import Darwin
 final class AudioController {
     private let engine = AVAudioEngine()
     private let synth: OpaquePointer
+    private let metronomeEngine: OpaquePointer
+    private var metronomeNode: AVAudioSourceNode!
+    private var metronomeFollowsMaster = true
+    private var masterVolume: Float = 0.7
     private let reverb = AVAudioUnitReverb()
     private let outputLimiter=AVAudioUnitEffect(audioComponentDescription:AudioComponentDescription(componentType:kAudioUnitType_Effect,componentSubType:kAudioUnitSubType_PeakLimiter,componentManufacturer:kAudioUnitManufacturer_Apple,componentFlags:0,componentFlagsMask:0))
     private let protectedOutput=AVAudioMixerNode()
@@ -76,7 +80,9 @@ final class AudioController {
         }
         #endif
         synth = sk_create(48_000)!
+        metronomeEngine = sk_metronome_create(48_000)!
         let pointer = synth
+        let metronomePointer = metronomeEngine
         let format = AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 2)!
         source = AVAudioSourceNode(format: format) { _, _, frames, list in
             let buffers = UnsafeMutableAudioBufferListPointer(list)
@@ -84,7 +90,15 @@ final class AudioController {
             sk_render(pointer, l.assumingMemoryBound(to: Float.self), r.assumingMemoryBound(to: Float.self), frames)
             return noErr
         }
-        engine.attach(source); engine.attach(reverb)
+        // The click bypasses the shared hall reverb and is mixed into the
+        // protected output, so its level and accents stay predictable.
+        metronomeNode = AVAudioSourceNode(format: format) { _, _, frames, list in
+            let buffers = UnsafeMutableAudioBufferListPointer(list)
+            guard buffers.count >= 2, let l = buffers[0].mData, let r = buffers[1].mData else { return -1 }
+            sk_metronome_render(metronomePointer, l.assumingMemoryBound(to: Float.self), r.assumingMemoryBound(to: Float.self), frames)
+            return noErr
+        }
+        engine.attach(source); engine.attach(reverb); engine.attach(metronomeNode)
         reverb.loadFactoryPreset(.largeHall); reverb.wetDryMix = 22
         engine.connect(source, to: reverb, format: format)
         engine.connect(reverb, to: engine.mainMixerNode, format: format)
@@ -95,6 +109,7 @@ final class AudioController {
         engine.connect(engine.mainMixerNode,to:outputLimiter,format:format)
         engine.connect(outputLimiter,to:protectedOutput,format:format)
         engine.connect(protectedOutput,to:engine.outputNode,format:format)
+        engine.connect(metronomeNode,to:protectedOutput,format:format)
         // Leave 1 dB after limiting for reconstructed output peaks.
         protectedOutput.outputVolume=pow(Float(10),Float(-1)/20)
         engine.mainMixerNode.outputVolume = 0.7
@@ -243,16 +258,26 @@ final class AudioController {
     func effect(_ index: Int, _ slot: Int, _ kind: Int, _ amount: Float) { sk_effect(synth, Int32(index), Int32(slot), Int32(kind), amount) }
     func clock(_ tempo: Double, _ enabled: Bool) {
         let changed = self.tempo != Float(tempo); self.tempo = Float(tempo)
-        sk_clock(synth,Float(tempo),enabled ? 1 : 0)
+        sk_clock(synth,Float(tempo))
+        sk_metronome_tempo(metronomeEngine, Float(tempo))
+        sk_metronome_enable(metronomeEngine, enabled ? 1 : 0)
         if changed { for (index,chain) in effects { configureEffects(index,chain,force:true) }; for (index,rack) in importedRacks {configureImported(index,rack)} }
     }
     func releaseSource(_ source:Int32){externalRack?.releaseSource(source)}
     func sustain(_ on: Bool, layers: [Layer]) { sk_sustain(synth, on ? 1 : 0); for (i,l) in layers.enumerated() { externalRack?.sustain(channel: i, on: on && !l.blockSustain) } }
-    func panic() { sk_panic(synth); externalRack?.panic(); reverb.auAudioUnit.reset(); outputLimiter.auAudioUnit.reset() }
+    func panic() { sk_panic(synth); sk_metronome_reset(metronomeEngine); externalRack?.panic(); reverb.auAudioUnit.reset(); outputLimiter.auAudioUnit.reset() }
     /// Reported output latency for the published device/buffer matrix. Never
     /// called from the render callback.
     func latencyChain() throws -> AudioLatencyChain { try deviceController.latency() }
-    func master(_ volume: Float) { engine.mainMixerNode.outputVolume = volume }
+    func master(_ volume: Float) { masterVolume = volume; engine.mainMixerNode.outputVolume = volume; sk_metronome_master(metronomeEngine, volume, metronomeFollowsMaster ? 1 : 0) }
+    /// Applies persisted click controls. The engine keeps its own sample-accurate
+    /// clock; no audio-thread allocation or locking is involved.
+    func metronome(_ enabled: Bool, settings: MetronomeSettings) {
+        metronomeFollowsMaster = settings.followsMaster
+        sk_metronome_settings(metronomeEngine, SKMetronomeSettings(level: settings.level, preset: Int32(settings.preset), beatVelocity: settings.beatVelocity, downbeatEnabled: settings.downbeatEnabled ? 1 : 0, downbeatVelocity: settings.downbeatVelocity, beatsPerBar: Int32(settings.beatsPerBar), accentEvery: Int32(settings.accentEvery), subdivision: Int32(settings.subdivision)))
+        sk_metronome_master(metronomeEngine, masterVolume, metronomeFollowsMaster ? 1 : 0)
+        sk_metronome_enable(metronomeEngine, enabled ? 1 : 0)
+    }
     func space(_ amount: Float) { reverb.wetDryMix = amount }
     // Runs an isolated production graph without sending sound to the device.
     func prepareOffline() throws {
@@ -267,5 +292,5 @@ final class AudioController {
         guard status == .success else { throw NSError(domain: "StageKeysOffline", code: Int(status.rawValue)) }
         return buffer
     }
-    deinit { engine.stop(); sk_destroy(synth) }
+    deinit { engine.stop(); sk_destroy(synth); sk_metronome_destroy(metronomeEngine) }
 }
