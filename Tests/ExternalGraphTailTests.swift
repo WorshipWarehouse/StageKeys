@@ -11,8 +11,6 @@ struct ExternalGraphTailTests {
         let format = AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 2)!
         let engine = AVAudioEngine()
         try engine.enableManualRenderingMode(.offline, format: format, maximumFrameCount: 512)
-        engine.prepare()
-        try engine.start()
         defer { engine.stop() }
 
         let rack = try ExternalInstrumentRack(engine: engine, libraryURL: folder.appendingPathComponent("library"))
@@ -66,6 +64,10 @@ struct ExternalGraphTailTests {
         // A changed imported-rack topology must keep its old graph's wet tail.
         try load(piano, channel: 0)
         rack.configureImported(channel: 0, rack: ImportedRack(effects: [reverb()]), tempo: 120)
+        rack.volume(channel: 0, gain: 1, pan: 0)
+        try rack.prepareOfflineSamples()
+        engine.prepare()
+        try engine.start()
         try play(0)
         let graphBefore = try render(40)
         rack.configureImported(channel: 0, rack: ImportedRack(effects: [reverb(), gain(0)]), tempo: 120)

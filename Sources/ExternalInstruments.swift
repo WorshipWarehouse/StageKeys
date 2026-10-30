@@ -935,7 +935,7 @@ final class ExternalInstrumentRack {
     func panic(_ channel: Int? = nil,preserveEffectTails:Bool=false) {
         precondition(Thread.isMainThread)
         if !preserveEffectTails {
-            for tail in retiredTails where channel == nil || tail.channel == channel {silenceRetiredTail(tail)}
+            for tail in retiredTails where channel.map({$0 == tail.channel}) ?? true {silenceRetiredTail(tail)}
         }
         for index in channel.map({ [$0] }) ?? Array(voices.keys) {
             controllerValues[index,default:[:]][64]=0
