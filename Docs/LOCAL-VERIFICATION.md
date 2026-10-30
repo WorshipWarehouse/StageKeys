@@ -12,9 +12,9 @@ The default list also covers the native C DSP regressions (`AudioEffectsTests`, 
 
 Two tests stay on demand: `AudioDeviceTests` and `LivePatchContentTests` require a live output device, which hosted runners may not provide. Run them on a Mac with `Tests/test-library.sh AudioDeviceTests LivePatchContentTests`.
 
-`AudioGraphTests`, `ExternalAudioTests`, `SamplerInterchangeTests` and `SetlistLibraryTests` take a writable path. Both runners now create a private `scratch/<test>` folder under the build directory and pass it, instead of requiring a hand-written argument. `MIDIInputTests` and `ExternalMIDITests` use virtual CoreMIDI endpoints only, so they run in the default gate alongside the other synthetic MIDI tests.
+`AudioGraphTests`, `ExternalAudioTests`, `SamplerInterchangeTests` and `SetlistLibraryTests` take a writable path. Both runners create a private `scratch/<test>` folder under the build directory and pass it, so neither gated nor explicit on-demand runs need a hand-written argument. `MIDIInputTests` and `ExternalMIDITests` use virtual CoreMIDI endpoints only, so they run in the default gate alongside the other synthetic MIDI tests. `AudioGraphTests` passes the hosted gate.
 
-The remaining programs stay on demand because they need hardware, private content or a specific installed third-party Audio Unit:
+The remaining programs stay on demand because they need hardware, private content, a host audio configuration or a specific installed third-party Audio Unit:
 
 | Test | Why it is not in the default gate |
 | --- | --- |
@@ -27,8 +27,10 @@ The remaining programs stay on demand because they need hardware, private conten
 | `OutputHeadroomTests` | Requires private converted library sounds. |
 | `SoundIdentityTests` | Requires private converted library sounds. |
 | `AudioUnitTests` | Requires an installed third-party Audio Unit such as OB-Xd. |
+| `ExternalAudioTests` | Builds a hosted sampler before enabling manual rendering and trapped (SIGTRAP, no output) on the headless hosted runner in run 41060469300; it needs a host output device. Related recovery work is #110. |
+| `SamplerInterchangeTests` | Loads a hosted sampler before enabling manual rendering, the same headless audio path; it needs a host audio configuration. |
 
-Run a documented on-demand test explicitly, for example `Tests/test-library.sh AudioDeviceTests LivePatchContentTests`; the same names work as trailing arguments to `run-local-library.py`. `Tests/test-library-gate.py` fails when a test program is neither in the default gate nor in the table above, or when a path-taking test loses its scratch-folder handling, so a program cannot become silently ungated again.
+Run a documented on-demand test explicitly, for example `Tests/test-library.sh AudioDeviceTests LivePatchContentTests`; the same names work as trailing arguments to `run-local-library.py`. `Tests/test-library-gate.py` fails when a test program is neither in the default gate nor in the table above, or when a path-taking gated test loses its scratch-folder handling, so a program cannot become silently ungated again.
 
 `PatchGainTests` is back in the default gate after #80 made single-file samples resident before loading. The earlier failure was periodic silent gaps during sustained playback, not moving note onset. On 29 October, 20 consecutive continuity runs and 20 gain runs passed: longest digital-silence run 50 frames (initial onset), +6 dB ratio 1.9952624 and −6 dB ratio 0.5011872. These synthetic offline measurements do not substitute for hardware latency or full library listening checks.
 

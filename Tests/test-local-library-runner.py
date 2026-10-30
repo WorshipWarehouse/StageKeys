@@ -90,11 +90,11 @@ class RunnerTests(unittest.TestCase):
             self.assertEqual(runner.scratch_args('SetlistLibraryTests', build),
                              [build / 'scratch/SetlistLibraryTests'])
             self.assertTrue((build / 'scratch/SetlistLibraryTests').is_dir())
+            self.assertEqual(runner.scratch_args('MIDIInputTests', build), [])
             self.assertEqual(runner.scratch_args('ExternalAudioTests', build),
                              [build / 'scratch/ExternalAudioTests'])
             self.assertEqual(runner.scratch_args('SamplerInterchangeTests', build),
                              [build / 'scratch/SamplerInterchangeTests'])
-            self.assertEqual(runner.scratch_args('MIDIInputTests', build), [])
             self.assertEqual(runner.scratch_args('EXSImportTests', build), [])
 
 
