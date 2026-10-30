@@ -9,6 +9,7 @@ struct SoundImportView:View {
     @State private var pending:URL?
     @State private var status:String?
     @State private var portableSelection:Set<String>?
+    @State private var effectRequest:MainStageEffectSelectionRequest?
     var body:some View {
         EditorFrame(title:"Import Sounds",width:650,height:720) {
             ScrollView {
@@ -54,6 +55,12 @@ struct SoundImportView:View {
                             ForEach(Array(report.channels.enumerated()),id:\.offset) {channelIndex,channel in
                                 if channel.isConvertible {
                                     Toggle("Convert \(channel.name)",isOn:Binding(get:{store.selectedMainStageChannels.contains(channelIndex)},set:{store.selectMainStageChannel(channelIndex,$0)}))
+                                    Button("Choose Effects…") {
+                                        do {
+                                            effectRequest=MainStageEffectSelectionRequest(channel:channelIndex,name:channel.name,draft:try store.mainStageProcessing(channelIndex),selection:store.mainStageSelection(channelIndex))
+                                            status=nil
+                                        } catch {status=error.localizedDescription}
+                                    }.buttonStyle(StageButtonStyle())
                                 }
                                 Text(channel.name+": "+channel.devices.map(\.name).joined(separator:", ")).font(.caption)
                                 Text(channel.nativeInstrumentStatus).font(.caption).foregroundStyle(.secondary)
@@ -101,11 +108,94 @@ struct SoundImportView:View {
             guard let provider=providers.first else{return false}
             _ = provider.loadObject(ofClass:URL.self){url,_ in guard let url,["patch","cst"].contains(url.pathExtension.lowercased()) else{return};DispatchQueue.main.async{store.importMainStageAutomatically(url)}}
             return true
-        }
+        }.sheet(item:$effectRequest){request in MainStageEffectSelectionSheet(request:request).environmentObject(store)}
     }
 
     private func importFile(_ url:URL,samples:URL?=nil){
         if let sound=store.importLibrarySound(url,sampleRoot:samples){status="Added \(sound.name) to My Sounds."}
         else {status=store.message ?? "Could not import this sound.";store.message=nil}
+    }
+}
+
+struct MainStageEffectSelectionRequest:Identifiable {
+    let id=UUID()
+    var channel:Int
+    var name:String
+    var draft:MainStageProcessing.Draft
+    var selection:MainStageProcessing.Selection
+}
+
+/// Choose source processing before conversion. EQ/compressor are always mapped
+/// to the instrument controls; only the remaining effects compete for the three
+/// visible audio slots. The complete source record is cached on the converted layer.
+struct MainStageEffectSelectionSheet:View {
+    @EnvironmentObject private var store:PerformanceStore
+    @Environment(\.dismiss) private var dismiss
+    let request:MainStageEffectSelectionRequest
+    @State private var selection:MainStageProcessing.Selection
+    @State private var error:String?
+    init(request:MainStageEffectSelectionRequest) {
+        self.request=request
+        _selection=State(initialValue:request.selection)
+    }
+    private var unselectedCount:Int {request.draft.slotIndices.filter{!selection.audio.contains($0)}.count}
+    var body:some View {
+        EditorFrame(title:"MainStage Effects · \(request.name)",width:680,height:640) {
+            ScrollView {
+                VStack(alignment:.leading,spacing:14) {
+                    Text("Source effects, in source order").font(StageTheme.font(15,weight:.semibold))
+                    Text("EQ and compressor map to the instrument controls. Choose up to three other effects for the visible audio slots. Unselected processing remains in the archived source; no effect rack is appended automatically.").font(.caption).foregroundStyle(.secondary)
+                    ForEach(Array(request.draft.effects.enumerated()),id:\.offset) {index,effect in effectRow(index,effect)}
+                    if request.draft.effects.isEmpty {Text("No translated audio effects were found in this channel.").font(.caption).foregroundStyle(.secondary)}
+                    Divider()
+                    Text("MIDI effect").font(StageTheme.font(15,weight:.semibold))
+                    Text(request.draft.hasMIDITransform ? "The source MIDI transform is retained in the archive but has no verified native translation. A selection here is a manual replacement, not a translated source effect.":"This channel has no source MIDI transform record. A native MIDI effect can still be assigned manually.").font(.caption).foregroundStyle(.secondary)
+                    Picker("MIDI effect",selection:Binding<MIDIFXKind>(get:{selection.midi?.kind ?? .bypass},set:{kind in selection.midi=kind == .bypass ? nil:MIDIProgram(kind:kind)})) {
+                        Text("None").tag(MIDIFXKind.bypass)
+                        ForEach(MIDIFXKind.allCases,id:\.self){kind in Text(kind.rawValue.capitalized).tag(kind)}
+                    }
+                    if selection.midi != nil {Toggle("MIDI effect enabled",isOn:$selection.midiEnabled)}
+                    if unselectedCount>0 {Text("\(unselectedCount) source effect(s) will remain archived and unassigned; the original channel strip and sample bytes are unchanged.").font(.caption).foregroundStyle(.secondary)}
+                    if let error {Text(error).font(.caption).foregroundStyle(.red)}
+                    HStack {
+                        Text("\(selection.audio.count) of 3 audio slots selected. EQ/compressor do not consume an audio slot.").font(.caption).foregroundStyle(.secondary)
+                        Spacer()
+                        Button("Cancel"){dismiss()}.buttonStyle(StageButtonStyle())
+                        Button("Use These Effects"){apply()}.buttonStyle(StageButtonStyle(selected:true)).disabled(selection.audio.count>3)
+                    }
+                }.padding(24)
+            }
+        }
+    }
+    @ViewBuilder private func effectRow(_ index:Int,_ effect:AudioEffect)->some View {
+        if effect.kind==7 || effect.kind==6 {
+            VStack(alignment:.leading,spacing:4) {
+                HStack {Text("\(index+1). \(effect.title)").font(.subheadline.bold());Spacer();Text(effect.kind==7 ? "Instrument EQ":"Instrument Compressor").font(.caption).foregroundStyle(.secondary)}
+                Text(request.draft.sourceNames.indices.contains(index) ? request.draft.sourceNames[index]:effect.title).font(.caption).foregroundStyle(.secondary)
+                Text(effect.enabled ? "Enabled · mapped automatically":"Bypassed · mapped automatically").font(.caption).foregroundStyle(.secondary)
+                notes(index)
+            }.frame(maxWidth:.infinity,alignment:.leading).padding(10).background(StageTheme.panel,in:RoundedRectangle(cornerRadius:6))
+        } else {
+            let selected=selection.audio.contains(index)
+            Toggle(isOn:Binding(get:{selection.audio.contains(index)},set:{on in
+                if on {if selection.audio.count<3 {selection.audio.append(index)}}
+                else {selection.audio.removeAll{$0==index}}
+            })) {
+                VStack(alignment:.leading,spacing:4) {
+                    HStack {Text("\(index+1). \(effect.title)").font(.subheadline.bold());Spacer();Text(effect.enabled ? "Enabled":"Bypassed").font(.caption).foregroundStyle(.secondary)}
+                    Text(request.draft.sourceNames.indices.contains(index) ? request.draft.sourceNames[index]:effect.title).font(.caption).foregroundStyle(.secondary)
+                    notes(index)
+                }
+            }.disabled(!selected && selection.audio.count>=3)
+        }
+    }
+    @ViewBuilder private func notes(_ index:Int)->some View {
+        if request.draft.effectNotes.indices.contains(index) {
+            ForEach(Array(request.draft.effectNotes[index].enumerated()),id:\.offset){_,note in Text(note).font(.caption).foregroundStyle(.secondary)}
+        }
+    }
+    private func apply() {
+        do {try store.setMainStageEffectSelection(selection,for:request.channel);dismiss()}
+        catch {error=error.localizedDescription}
     }
 }
