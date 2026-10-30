@@ -33,6 +33,19 @@ def run_command(command, env=None):
     return result.stdout
 
 
+SCRATCH_DIRECTORY_TESTS = {'ExternalAudioTests', 'SamplerInterchangeTests', 'SetlistLibraryTests'}
+SCRATCH_FILE_TESTS = {'AudioGraphTests'}
+
+
+def scratch_args(test, build):
+    """Give path-taking tests a private writable location instead of a CLI typo."""
+    if test not in SCRATCH_DIRECTORY_TESTS | SCRATCH_FILE_TESTS:
+        return []
+    root = build / 'scratch' / test
+    root.mkdir(parents=True, exist_ok=True)
+    return [root / 'rendered.wav'] if test in SCRATCH_FILE_TESTS else [root]
+
+
 def fixture_args(test, build, env):
     if test == 'EXSImportTests' and env.get('STAGEKEYS_EXS_FIXTURE') and env.get('STAGEKEYS_EXS_ROOT'):
         return [build / 'exs-scratch', env['STAGEKEYS_EXS_FIXTURE'], env['STAGEKEYS_EXS_ROOT']]
@@ -46,7 +59,7 @@ def execute_test(test, compile_command, executable, build, results):
         run_command(compile_command)
         env = os.environ.copy()
         env['STAGEKEYS_DATA_DIR'] = str(build / f'data-{test}-{uuid.uuid4().hex}')
-        output = run_command([executable] + fixture_args(test, build, env), env)
+        output = run_command([executable] + scratch_args(test, build) + fixture_args(test, build, env), env)
         skips = [line for line in output.splitlines() if line.startswith('SKIP')]
         record.update(status='skipped' if skips else 'passed', passed=None if skips else True)
         if skips:
