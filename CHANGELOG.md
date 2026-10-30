@@ -1,3 +1,9 @@
+## Unreleased
+
+- Add a standalone metronome engine with two synthesized click sounds, independent level, beat/downbeat velocities, accent patterns, subdivisions and master-follow; the click now bypasses the shared hall reverb.
+- Persist every metronome control in `settings.json`, keep older files readable and refuse out-of-range saved values at launch.
+- Cover click timing at 44.1/48/96 kHz, irregular block splits, mid-beat tempo changes, long runs, presets and settings round trips.
+
 ## 0.21.0
 
 - Recreate PrimaVerb's observed Settings, Character, Modulation and Output layout with seven named room sizes, inline knobs, output faders and power control.
