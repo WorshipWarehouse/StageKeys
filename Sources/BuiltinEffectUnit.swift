@@ -53,7 +53,7 @@ final class BuiltinEffectUnit: AUAudioUnit {
         for (side,pointer) in [left,right].enumerated() {
             guard let pointer else{continue}
             sk_effect(pointer,0,Int32(slot),setting.enabled ? Int32(setting.kind):0,1)
-            sk_clock(pointer,setting.tempo,0)
+            sk_clock(pointer,setting.tempo)
             let delay=setting.delay
             let leftSeconds=delay.map{$0.seconds($0.left,synced:$0.leftSynced,tempo:setting.tempo)} ?? 0.001
             let rightSeconds=delay.map{$0.seconds($0.right,synced:$0.rightSynced,tempo:setting.tempo)} ?? 0.001

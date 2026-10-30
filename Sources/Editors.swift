@@ -483,7 +483,7 @@ struct TempoEditor: View {
                 Button("TAP TEMPO") { store.tapTempo() }.font(.title).frame(maxWidth: .infinity).frame(height: 150).background(StageTheme.raised, in: RoundedRectangle(cornerRadius: 10)).buttonStyle(.plain)
                 Stepper("\(Int(store.patch.tempo)) BPM", value: Binding(get: { store.patch.tempo }, set: { store.updateTempo($0) }), in: 20...300)
                 Toggle("Metronome", isOn: $store.metronome)
-                Text("4/4 · The click follows this patch’s tempo.").font(.caption).foregroundStyle(.secondary)
+                Text("4/4 · The click follows this patch’s tempo. Sound, accents and level are in Settings → Metronome.").font(.caption).foregroundStyle(.secondary)
                 Spacer()
             }.padding(25).onDisappear { store.save() }
         }

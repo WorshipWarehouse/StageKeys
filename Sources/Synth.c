@@ -78,10 +78,9 @@ struct SKSynth {
  int predelayPosition[BUSES][3];
  _Atomic(SKCreamCoat*) cream[BUSES][3];
  _Atomic(SKShimmerPitch*) shimmer[BUSES][3];
- double fxPhase[BUSES][3],clockRemaining,clockPhase;
- float clockTempo,clockEnvelope;
+ double fxPhase[BUSES][3];
+ float clockTempo;
  int stereoSide;
- int clockEnabled;
  EffectState effect[BUSES][3];
 };
 static SKSynth *create_engine(double rate,int buses,double seconds) {
@@ -126,7 +125,7 @@ void sk_effect(SKSynth *s,int layer,int slot,int kind,float amount){
 }
 void sk_pan(SKSynth *s,int layer,float pan){if(layer>=0&&layer<BUSES)enqueue(s,(Command){.kind=6,.layer=layer,.value=fminf(1,fmaxf(-1,pan))});}
 void sk_block_sustain(SKSynth *s,int layer,int enabled){if(layer>=0&&layer<BUSES)enqueue(s,(Command){.kind=7,.layer=layer,.value=enabled?1:0});}
-void sk_clock(SKSynth *s,float tempo,int enabled){enqueue(s,(Command){.kind=8,.value=fminf(300,fmaxf(20,tempo)),.key=enabled});}
+void sk_clock(SKSynth *s,float tempo){enqueue(s,(Command){.kind=8,.value=fminf(300,fmaxf(20,tempo))});}
 void sk_sustain(SKSynth *s,int on){enqueue(s,(Command){.kind=4,.value=on?1:0});}
 void sk_panic(SKSynth *s){enqueue(s,(Command){.kind=9});}
 void sk_panic_channel(SKSynth *s,int layer){if(layer>=0&&layer<BUSES)enqueue(s,(Command){.kind=18,.layer=layer});}
@@ -537,7 +536,7 @@ static void commands(SKSynth *s) {
  unsigned r=atomic_load_explicit(&s->read,memory_order_relaxed);
  unsigned w=atomic_load_explicit(&s->write,memory_order_acquire);
  if(atomic_exchange(&s->emergency,0)){
-  memset(s->voices,0,sizeof(s->voices));for(int dl=0;dl<BUSES;dl++)for(int dk=0;dk<3;dk++)clear_delay(s,dl,dk);memset(s->tone,0,sizeof(s->tone));for(int el=0;el<BUSES;el++)for(int ek=0;ek<3;ek++){EffectState*e=&s->effect[el][ek];memset(e->z,0,sizeof(e->z));memset(&e->reverb,0,sizeof(e->reverb));e->shiftPhase=e->stereo=0;s->delayPosition[el][ek]=0;s->fxPhase[el][ek]=0;for(int eb=0;eb<8;eb++)e->eq[eb].z1=e->eq[eb].z2=0;}for(int l=0;l<BUSES;l++){s->filter[l].z1=s->filter[l].z2=0;s->detector[l]=0;for(int k=0;k<8;k++)s->eq[l][k].z1=s->eq[l][k].z2=0;}s->sustain=0;s->clockEnabled=0;s->clockEnvelope=0;
+  memset(s->voices,0,sizeof(s->voices));for(int dl=0;dl<BUSES;dl++)for(int dk=0;dk<3;dk++)clear_delay(s,dl,dk);memset(s->tone,0,sizeof(s->tone));for(int el=0;el<BUSES;el++)for(int ek=0;ek<3;ek++){EffectState*e=&s->effect[el][ek];memset(e->z,0,sizeof(e->z));memset(&e->reverb,0,sizeof(e->reverb));e->shiftPhase=e->stereo=0;s->delayPosition[el][ek]=0;s->fxPhase[el][ek]=0;for(int eb=0;eb<8;eb++)e->eq[eb].z1=e->eq[eb].z2=0;}for(int l=0;l<BUSES;l++){s->filter[l].z1=s->filter[l].z2=0;s->detector[l]=0;for(int k=0;k<8;k++)s->eq[l][k].z1=s->eq[l][k].z2=0;}s->sustain=0;
   atomic_store_explicit(&s->read,w,memory_order_release);return;
  }
  while(r!=w){Command c=s->queue[r];
@@ -553,8 +552,8 @@ static void commands(SKSynth *s) {
   else if(c.kind==5){int l=c.layer,k=c.key;if(s->fxKind[l][k]!=c.instrument){s->tone[l][k]=0;clear_delay(s,l,k);s->delayPosition[l][k]=0;s->fxPhase[l][k]=0;effectReset(&s->effect[l][k]);memcpy(s->effect[l][k].p,effectDefault[c.instrument],sizeof(s->effect[l][k].p));effectCoefficients(&s->effect[l][k],c.instrument,s->rate);}s->fxKind[l][k]=c.instrument;s->fxAmount[l][k]=c.value;}
   else if(c.kind==6)s->pan[c.layer]=c.value;
   else if(c.kind==7){s->blockSustain[c.layer]=c.value>0;if(c.value>0)for(int i=0;i<VOICES;i++)if(s->voices[i].layer==c.layer&&!s->voices[i].held)s->voices[i].releasing=1;}
-  else if(c.kind==8){s->clockTempo=c.value;if(c.key&&!s->clockEnabled)s->clockRemaining=0;s->clockEnabled=c.key;}
-  else if(c.kind==9){memset(s->voices,0,sizeof(s->voices));for(int dl=0;dl<BUSES;dl++)for(int dk=0;dk<3;dk++)clear_delay(s,dl,dk);memset(s->tone,0,sizeof(s->tone));for(int el=0;el<BUSES;el++)for(int ek=0;ek<3;ek++){EffectState*e=&s->effect[el][ek];memset(e->z,0,sizeof(e->z));memset(&e->reverb,0,sizeof(e->reverb));e->shiftPhase=e->stereo=0;s->delayPosition[el][ek]=0;s->fxPhase[el][ek]=0;for(int eb=0;eb<8;eb++)e->eq[eb].z1=e->eq[eb].z2=0;}for(int l=0;l<BUSES;l++){s->filter[l].z1=s->filter[l].z2=0;s->detector[l]=0;for(int k=0;k<8;k++)s->eq[l][k].z1=s->eq[l][k].z2=0;}s->sustain=0;s->clockEnabled=0;s->clockEnvelope=0;}
+  else if(c.kind==8){s->clockTempo=c.value;}
+  else if(c.kind==9){memset(s->voices,0,sizeof(s->voices));for(int dl=0;dl<BUSES;dl++)for(int dk=0;dk<3;dk++)clear_delay(s,dl,dk);memset(s->tone,0,sizeof(s->tone));for(int el=0;el<BUSES;el++)for(int ek=0;ek<3;ek++){EffectState*e=&s->effect[el][ek];memset(e->z,0,sizeof(e->z));memset(&e->reverb,0,sizeof(e->reverb));e->shiftPhase=e->stereo=0;s->delayPosition[el][ek]=0;s->fxPhase[el][ek]=0;for(int eb=0;eb<8;eb++)e->eq[eb].z1=e->eq[eb].z2=0;}for(int l=0;l<BUSES;l++){s->filter[l].z1=s->filter[l].z2=0;s->detector[l]=0;for(int k=0;k<8;k++)s->eq[l][k].z1=s->eq[l][k].z2=0;}s->sustain=0;}
   else if(c.kind==10){s->customEnvelope[c.layer]=1;s->adsr[c.layer][0]=c.value;s->adsr[c.layer][1]=c.seconds;s->adsr[c.layer][2]=c.a;s->adsr[c.layer][3]=c.b;}
   else if(c.kind==11){s->voiceLimit[c.layer]=c.key;int count=0;for(int i=0;i<VOICES;i++)if(s->voices[i].active&&s->voices[i].layer==c.layer&&++count>c.key)s->voices[i].active=0;}
   else if(c.kind==12)s->preGain[c.layer]=c.value;
@@ -668,7 +667,6 @@ void sk_render(SKSynth *s,float *left,float *right,uint32_t frames){
    for(int k=0;k<3;k++)if(s->fxKind[l][k]){x=effectProcess(s,l,k,x);spread+=s->effect[l][k].stereo;}
    x*=s->gain[l];float pan=s->pan[l];sumL+=x*(pan>0?1-pan:1)*(1-fminf(1,fmaxf(0,spread)));sumR+=x*(pan<0?1+pan:1)*(1-fminf(1,fmaxf(0,-spread)));
   }
-  if(s->clockEnabled){if(s->clockRemaining<=0){s->clockRemaining+=s->rate*60/s->clockTempo;s->clockEnvelope=0.1f;s->clockPhase=0;}s->clockRemaining--;float click=sin(s->clockPhase)*s->clockEnvelope;s->clockPhase+=TAU*1600/s->rate;s->clockEnvelope*=0.995f;sumL+=click;sumR+=click;}
   left[n]=tanhf(sumL);if(right)right[n]=tanhf(sumR);
  }
 }
@@ -684,5 +682,115 @@ void sk_read_midi(const MIDIEventList *list,SKMIDIEvent callback,void *context){
    else if(type==4){unsigned kind=status&0xf0;uint32_t data=p->words[j+1];if(kind==0x90||kind==0x80)d2=(data>>25)&127;else if(kind==0xb0)d2=data>>25;else if(kind==0xc0){d1=(data>>24)&127;d2=0;}if(kind==0x90||kind==0x80||kind==0xb0||kind==0xc0)callback(context,status,d1,d2);}
    j+=size;
   }
+ }
+}
+// Independent metronome. It has no signal path through the synth above, so the
+// host can mix it after the shared reverb and set its level predictably.
+#define METRONOME_QUEUE 64
+#define METRONOME_PEAK 0.2f
+typedef struct { int kind; SKMetronomeSettings settings; float value; int flag; } MetronomeCommand;
+struct SKMetronome {
+ double rate;
+ SKMetronomeSettings settings;
+ double tempo,interval,remaining;
+ unsigned beat,step,noise;
+ double phase;
+ float envelope,decay,woodDecay,master;
+ int followsMaster,enabled;
+ MetronomeCommand queue[METRONOME_QUEUE];
+ _Atomic unsigned read,write;
+};
+static float metro_unit(float x){return isfinite(x)?fminf(1,fmaxf(0,x)):0;}
+static double metro_interval(const SKMetronome*m){return m->rate*60.0/m->tempo/(double)m->settings.subdivision;}
+// Drop rather than block: every setting is idempotent and the next control
+// change republishes the full state.
+static void metro_push(SKMetronome*m,MetronomeCommand c){
+ unsigned w=atomic_load_explicit(&m->write,memory_order_relaxed),next=(w+1)%METRONOME_QUEUE;
+ if(next==atomic_load_explicit(&m->read,memory_order_acquire))return;
+ m->queue[w]=c;atomic_store_explicit(&m->write,next,memory_order_release);
+}
+SKMetronome *sk_metronome_create(double rate){
+ if(!(rate>0))return NULL;
+ SKMetronome*m=calloc(1,sizeof(*m));if(!m)return NULL;
+ m->rate=rate;m->tempo=120;m->interval=rate/2;m->master=1;m->followsMaster=1;
+ m->settings=(SKMetronomeSettings){.level=0.6f,.preset=0,.beatVelocity=0.7f,.downbeatEnabled=1,.downbeatVelocity=1,.beatsPerBar=4,.accentEvery=0,.subdivision=1};
+ m->decay=(float)exp(-1.0/(rate*0.012));m->woodDecay=(float)exp(-1.0/(rate*0.006));
+ atomic_init(&m->read,0);atomic_init(&m->write,0);
+ return m;
+}
+void sk_metronome_destroy(SKMetronome*m){free(m);}
+void sk_metronome_settings(SKMetronome*m,SKMetronomeSettings s){
+ if(!m)return;
+ s.level=metro_unit(s.level);s.beatVelocity=metro_unit(s.beatVelocity);s.downbeatVelocity=metro_unit(s.downbeatVelocity);
+ s.preset=s.preset==1?1:0;
+ s.beatsPerBar=s.beatsPerBar<1?1:s.beatsPerBar>16?16:s.beatsPerBar;
+ s.accentEvery=s.accentEvery<0?0:s.accentEvery>16?16:s.accentEvery;
+ s.subdivision=s.subdivision<1?1:s.subdivision>4?4:s.subdivision;
+ metro_push(m,(MetronomeCommand){.kind=1,.settings=s});
+}
+void sk_metronome_enable(SKMetronome*m,int enabled){if(m)metro_push(m,(MetronomeCommand){.kind=2,.flag=enabled?1:0});}
+void sk_metronome_tempo(SKMetronome*m,float tempo){if(m)metro_push(m,(MetronomeCommand){.kind=3,.value=isfinite(tempo)?fminf(300,fmaxf(20,tempo)):120});}
+void sk_metronome_master(SKMetronome*m,float volume,int followsMaster){if(m)metro_push(m,(MetronomeCommand){.kind=4,.value=metro_unit(volume),.flag=followsMaster?1:0});}
+void sk_metronome_reset(SKMetronome*m){if(m)metro_push(m,(MetronomeCommand){.kind=5});}
+// Tempo and subdivision edits scale the pending interval instead of restarting
+// it, so a change cannot double-trigger or skip the beat the performer hears.
+static void metro_rescale(SKMetronome*m,double old){
+ if(m->enabled&&m->remaining>0&&old>0)m->remaining=m->remaining*(m->interval/old);
+ if(m->remaining>m->interval)m->remaining=m->interval;
+}
+static void metro_apply(SKMetronome*m,const MetronomeCommand*c){
+ double old=m->interval;
+ if(c->kind==1){
+  m->settings=c->settings;m->interval=metro_interval(m);metro_rescale(m,old);
+  if(m->step>=(unsigned)m->settings.subdivision)m->step=0;
+  if(m->beat>=(unsigned)m->settings.beatsPerBar)m->beat=0;
+ }else if(c->kind==2){
+  if(c->flag){if(!m->enabled){m->enabled=1;m->beat=0;m->step=0;m->remaining=0;m->envelope=0;m->phase=0;}}
+  else{m->enabled=0;m->envelope=0;}
+ }else if(c->kind==3){m->tempo=c->value;m->interval=metro_interval(m);metro_rescale(m,old);}
+ else if(c->kind==4){m->master=c->value;m->followsMaster=c->flag;}
+ else if(c->kind==5){m->beat=0;m->step=0;m->remaining=m->interval;m->envelope=0;m->phase=0;}
+}
+static void metro_trigger(SKMetronome*m){
+ const SKMetronomeSettings*s=&m->settings;float amp=METRONOME_PEAK*s->level;
+ if(m->step>0)amp*=s->beatVelocity*0.55f;
+ else if(m->beat==0&&s->downbeatEnabled)amp*=s->downbeatVelocity;
+ else if(m->beat>0&&s->accentEvery>0&&m->beat%(unsigned)s->accentEvery==0)amp*=fminf(1,s->beatVelocity*1.25f);
+ else amp*=s->beatVelocity;
+ m->envelope=amp;m->phase=0;
+ m->noise=0x9e3779b9u+(m->beat+1)*2654435761u+(m->step+1)*40503u;
+ m->step++;if(m->step>=(unsigned)s->subdivision){m->step=0;m->beat=(m->beat+1)%(unsigned)s->beatsPerBar;}
+}
+// Two independent synthesized timbres; extend with another preset branch and a
+// matching catalog entry. No recorded or vendor click samples are used.
+static float metro_sample(SKMetronome*m){
+ if(m->envelope<1e-5f)return 0;
+ float env=m->envelope,y;
+ if(m->settings.preset==1){
+  unsigned x=m->noise;x^=x<<13;x^=x>>17;x^=x<<5;m->noise=x;
+  float noise=(float)(x>>9)/4194304.0f-1;
+  y=(0.6f*sinf((float)m->phase)+0.25f*sinf((float)m->phase*2.37f)+0.15f*noise)*env;
+  m->phase+=TAU*920.0/m->rate;m->envelope*=m->woodDecay;
+ }else{y=sinf((float)m->phase)*env;m->phase+=TAU*1760.0/m->rate;m->envelope*=m->decay;}
+ if(m->phase>TAU)m->phase-=TAU;
+ return y;
+}
+void sk_metronome_render(SKMetronome*m,float*left,float*right,uint32_t frames){
+ if(!m)return;
+ for(;;){
+  unsigned rd=atomic_load_explicit(&m->read,memory_order_relaxed);
+  if(rd==atomic_load_explicit(&m->write,memory_order_acquire))break;
+  MetronomeCommand c=m->queue[rd];atomic_store_explicit(&m->read,(rd+1)%METRONOME_QUEUE,memory_order_release);
+  metro_apply(m,&c);
+ }
+ float gain=m->followsMaster?m->master:1;
+ for(uint32_t n=0;n<frames;n++){
+  float y=0;
+  if(m->enabled){
+   while(m->remaining<=0){metro_trigger(m);m->remaining+=m->interval;}
+   m->remaining-=1;y=metro_sample(m)*gain;
+  }else{m->envelope=0;m->phase=0;}
+  if(!isfinite(y))y=0;if(fabsf(y)>1)y=y>0?1:-1;
+  if(left)left[n]=y;if(right)right[n]=y;
  }
 }
