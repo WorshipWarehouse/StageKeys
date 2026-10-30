@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 
 struct LibrarySound: Codable, Identifiable, Equatable {
     var id: String
@@ -21,13 +22,31 @@ struct SoundLibrary {
     let url: URL
     /// Compare before commit so a yielding import cannot replace later user edits.
     func commitImport(_ entries:[LibrarySound], replacing original:[LibrarySound]) throws {
-        guard try read() == original else {
-            throw MainStagePatch.Failure.invalid("The library changed during import. No prepared sounds were committed; retry to preserve your edits.")
+        try withExclusiveWrite {
+            guard try read() == original else {
+                throw MainStagePatch.Failure.invalid("The library changed during import. No prepared sounds were committed; retry to preserve your edits.")
+            }
+            guard Set(entries.map(\.id)).count == entries.count else {
+                throw MainStagePatch.Failure.invalid("Duplicate sound identities in prepared import. No sounds were committed.")
+            }
+            try writeUnlocked(entries)
         }
-        guard Set(entries.map(\.id)).count == entries.count else {
-            throw MainStagePatch.Failure.invalid("Duplicate sound identities in prepared import. No sounds were committed.")
+    }
+    /// Serialize compare-and-write across app processes. Never wait on the UI executor.
+    /// The lock file is deliberately retained: unlinking it could create two lock domains.
+    private func withExclusiveWrite<T>(_ body: () throws -> T) throws -> T {
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let lockURL = url.appendingPathExtension("lock")
+        let descriptor = open(lockURL.path, O_CREAT | O_RDWR | O_NOFOLLOW | O_CLOEXEC, S_IRUSR | S_IWUSR)
+        guard descriptor >= 0 else { throw CocoaError(.fileWriteNoPermission) }
+        defer { close(descriptor) }
+        var info = stat()
+        guard fstat(descriptor, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG,
+              flock(descriptor, LOCK_EX | LOCK_NB) == 0 else {
+            throw MainStagePatch.Failure.invalid("Another library operation is in progress. Retry after it finishes; no sounds were committed.")
         }
-        try write(entries)
+        defer { flock(descriptor, LOCK_UN) }
+        return try body()
     }
     func read() throws -> [LibrarySound] {
         guard FileManager.default.fileExists(atPath: url.path) ||
@@ -111,6 +130,9 @@ struct SoundLibrary {
         return result.trimmingCharacters(in:.whitespacesAndNewlines)
     }
     func write(_ entries: [LibrarySound]) throws {
+        try withExclusiveWrite { try writeUnlocked(entries) }
+    }
+    private func writeUnlocked(_ entries: [LibrarySound]) throws {
         try Self.validate(entries)
         _ = try read() // A failed startup read must never become an empty overwrite.
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -120,8 +142,10 @@ struct SoundLibrary {
         try RecoverableSessionFile.write(bytes,to:url,limit:16_000_000) { _ = try decoded($0) }
     }
     func recoverPrevious()throws->[LibrarySound] {
-        let data=try RecoverableSessionFile.restore(url,limit:16_000_000) { _ = try decoded($0) }
-        return try decoded(data)
+        try withExclusiveWrite {
+            let data=try RecoverableSessionFile.restore(url,limit:16_000_000) { _ = try decoded($0) }
+            return try decoded(data)
+        }
     }
     static func validate(_ entries: [LibrarySound]) throws {
         guard entries.count <= 4096, Set(entries.map(\.id)).count == entries.count else { throw SetlistError.invalid }
