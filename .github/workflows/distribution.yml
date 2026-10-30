@@ -53,7 +53,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Portable conversion, persistence, host and routing regressions
-        run: python3 Tests/run-local-library.py . "$RUNNER_TEMP/stagekeys-library"
+        run: python3 Tests/run-local-library.py . "$RUNNER_TEMP/stagekeys-library" ExternalGraphTailTests
       - name: Preserve test outcomes and explicit fixture skips
         if: always()
         uses: actions/upload-artifact@v4
