@@ -193,7 +193,7 @@ struct PerformanceView: View {
                     }.frame(height: 44)
                 }.buttonStyle(.plain).background(StageTheme.panel, in: RoundedRectangle(cornerRadius: 6))
                 HStack(spacing: 0) {
-                    Button { sheet = .tempo } label: { Text("\(Int(store.patch.tempo))").frame(width: 57, height: 44) }.buttonStyle(.plain)
+                    Button { sheet = .tempo } label: { Text("\(Int(store.performedTempo))").frame(width: 57, height: 44) }.buttonStyle(.plain)
                     Divider().frame(height: 30)
                     Button { sheet = .tempo } label: { Text("4/4").frame(width: 49, height: 44) }.buttonStyle(.plain)
                     if store.metronomeSettings.visible {

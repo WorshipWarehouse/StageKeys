@@ -401,6 +401,15 @@ struct Patch: Codable, Identifiable {
     var transpose = 0
     var playIn = 0
     var hearIn = 0
+    /// How a key change picks its direction. Absent in older setlists, which
+    /// keep playing their stored transposition unchanged.
+    var keyDirection: KeyDirection?
+    /// Explicit octave offset applied on top of the key distance. Nil derives it
+    /// from the stored transposition so legacy patches keep their exact value.
+    var octaveShift: Int?
+    /// Nil keeps the legacy behaviour: this patch's tempo is recalled with it.
+    /// An explicit false shares one live tempo across unlocked patches.
+    var tempoLocked: Bool?
     var layers: [Layer]
     var snapshots: [Snapshot] = []
     var visualMode = 0 // 0 unchanged, 1 effects, 2 notes
@@ -410,7 +419,7 @@ struct Patch: Codable, Identifiable {
     var tonicState:TonicPatchState?
     var silencePrevious = false
     var conversionNotes:[String]?
-    enum CodingKeys: String, CodingKey { case id,name,tempo,transpose,playIn,hearIn,layers,snapshots,visualMode,silencePrevious,volumeDB,programChangeEnabled,programChangeNumber,tonicState,conversionNotes }
+    enum CodingKeys: String, CodingKey { case id,name,tempo,transpose,playIn,hearIn,keyDirection,octaveShift,tempoLocked,layers,snapshots,visualMode,silencePrevious,volumeDB,programChangeEnabled,programChangeNumber,tonicState,conversionNotes }
     init(name: String, layers: [Layer], snapshots: [Snapshot]) { self.name = name; self.layers = layers; self.snapshots = snapshots }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -419,6 +428,9 @@ struct Patch: Codable, Identifiable {
         transpose = try c.decodeIfPresent(Int.self, forKey: .transpose) ?? 0
         playIn = try c.decodeIfPresent(Int.self, forKey: .playIn) ?? 0
         hearIn = try c.decodeIfPresent(Int.self, forKey: .hearIn) ?? ((transpose % 12 + 12) % 12)
+        keyDirection = try c.decodeIfPresent(KeyDirection.self, forKey: .keyDirection)
+        octaveShift = try c.decodeIfPresent(Int.self, forKey: .octaveShift)
+        tempoLocked = try c.decodeIfPresent(Bool.self, forKey: .tempoLocked)
         layers = try c.decode([Layer].self, forKey: .layers); snapshots = try c.decode([Snapshot].self, forKey: .snapshots)
         visualMode = try c.decodeIfPresent(Int.self, forKey: .visualMode) ?? 0
         volumeDB = try c.decodeIfPresent(Float.self,forKey:.volumeDB) ?? 0
@@ -428,6 +440,10 @@ struct Patch: Codable, Identifiable {
         silencePrevious = try c.decodeIfPresent(Bool.self, forKey: .silencePrevious) ?? false
         conversionNotes = try c.decodeIfPresent([String].self,forKey:.conversionNotes)
     }
+    var keyDirectionResolved: KeyDirection { keyDirection ?? .nearest }
+    /// Octave offset that explains the stored transposition when none was saved.
+    var octaveShiftResolved: Int { PatchTransposition.clampOctave(octaveShift ?? PatchTransposition.octave(forTranspose: transpose, playIn: playIn, hearIn: hearIn, direction: keyDirectionResolved)) }
+    var recallsPatchTempo: Bool { PatchTransposition.recallsPatchTempo(locked: tempoLocked) }
     static func make(_ name:String = "New Patch") -> Patch {
         var patch=Patch(name:name,layers:(0..<15).map{_ in Layer.empty()},
                         snapshots:(0..<5).map{Snapshot(emptySlot:true,name:"Snapshot \($0+1)",gains:Array(repeating:0,count:15))})
@@ -490,7 +506,7 @@ struct Setlist: Codable {
         for p in patches {
             guard p.conversionNotes.map({$0.count<=128 && $0.allSatisfy{$0.count<=2000}}) ?? true else {throw SetlistError.invalid}
             guard p.tonicState?.valid ?? true else{throw SetlistError.invalid}
-            guard p.volumeDB.isFinite,(-24...12).contains(p.volumeDB),p.programChangeNumber == nil || (0...127).contains(p.programChangeNumber!), !p.name.isEmpty, p.name.count <= 200, p.tempo.isFinite, (20...300).contains(p.tempo), (-24...24).contains(p.transpose), (0...11).contains(p.playIn), (0...11).contains(p.hearIn), (1...15).contains(p.layers.count), p.snapshots.count <= 16, (0...2).contains(p.visualMode), Set(p.layers.map(\.id)).count == p.layers.count, Set(p.snapshots.map(\.id)).count == p.snapshots.count else { throw SetlistError.invalid }
+            guard p.volumeDB.isFinite,(-24...12).contains(p.volumeDB),p.programChangeNumber == nil || (0...127).contains(p.programChangeNumber!), !p.name.isEmpty, p.name.count <= 200, p.tempo.isFinite, (20...300).contains(p.tempo), (-24...24).contains(p.transpose), (0...11).contains(p.playIn), (0...11).contains(p.hearIn), p.octaveShift.map({ (PatchTransposition.minimumOctave...PatchTransposition.maximumOctave).contains($0) }) ?? true, (1...15).contains(p.layers.count), p.snapshots.count <= 16, (0...2).contains(p.visualMode), Set(p.layers.map(\.id)).count == p.layers.count, Set(p.snapshots.map(\.id)).count == p.snapshots.count else { throw SetlistError.invalid }
             for l in p.layers {
                 if let m = l.midiProgram { guard m == m.validated else { throw SetlistError.invalid } }
                 if let e = l.external {

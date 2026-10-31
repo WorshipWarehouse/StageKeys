@@ -463,8 +463,9 @@ struct TransposeEditor: View {
             ScrollView {
                 VStack(spacing: 24) {
                     HStack(alignment: .top, spacing: 15) { keyGrid("Play In", play: true); keyGrid("Hear In", play: false) }
-                    Stepper("Total transpose: \(store.patch.transpose) semitones", value: Binding(get: { store.patch.transpose }, set: { store.setTranspose($0) }), in: -24...24)
-                    Text("Play In and Hear In apply to the selected patch. The total transpose control can add or subtract octaves.").font(.caption).foregroundStyle(.secondary)
+                    Picker("Direction", selection: Binding(get: { store.patch.keyDirectionResolved }, set: { store.setKeyDirection($0) })) { ForEach(KeyDirection.allCases, id: \.self) { Text($0.label).tag($0) } }.pickerStyle(.segmented)
+                    Stepper("Octave shift: \(store.patch.octaveShiftResolved > 0 ? "+" : "")\(store.patch.octaveShiftResolved)", value: Binding(get: { store.patch.octaveShiftResolved }, set: { store.setOctaveShift($0) }), in: PatchTransposition.minimumOctave...PatchTransposition.maximumOctave)
+                    Text("\(StageTheme.notes[store.patch.playIn]) → \(StageTheme.notes[store.patch.hearIn]) sounds \(store.patch.transpose >= 0 ? "+" : "")\(store.patch.transpose) semitones. Direction decides whether a key change moves up or down; the octave shift moves the sounding key without changing either key.").font(.caption).foregroundStyle(.secondary)
                 }.padding(20)
             }.onDisappear { store.save() }
         }
@@ -473,7 +474,7 @@ struct TransposeEditor: View {
         VStack(alignment: .leading, spacing: 14) {
             Text(title).font(.headline)
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 4), count: 3), spacing: 4) {
-                ForEach(0..<12) { key in Button(StageTheme.notes[key]) { store.transpose(play: play ? key : store.patch.playIn, hear: play ? store.patch.hearIn : key) }.buttonStyle(StageButtonStyle(selected: (play ? store.patch.playIn : store.patch.hearIn) == key)) }
+                ForEach(0..<12) { key in Button(StageTheme.notes[key]) { play ? store.setPlayKey(key) : store.setHearKey(key) }.buttonStyle(StageButtonStyle(selected: (play ? store.patch.playIn : store.patch.hearIn) == key)) }
             }
         }
     }
@@ -484,9 +485,11 @@ struct TempoEditor: View {
         EditorFrame(title: "Tempo") {
             VStack(spacing: 25) {
                 Button("TAP TEMPO") { store.tapTempo() }.font(.title).frame(maxWidth: .infinity).frame(height: 150).background(StageTheme.raised, in: RoundedRectangle(cornerRadius: 10)).buttonStyle(.plain)
-                Stepper("\(Int(store.patch.tempo)) BPM", value: Binding(get: { store.patch.tempo }, set: { store.updateTempo($0) }), in: 20...300)
+                Stepper("\(Int(store.performedTempo)) BPM", value: Binding(get: { store.performedTempo }, set: { store.updateTempo($0) }), in: 20...300)
+                HStack { Text("Enter BPM"); TextField("\(Int(store.performedTempo))", value: Binding(get: { store.performedTempo }, set: { store.updateTempo($0) }), format: .number).frame(width: 90).textFieldStyle(.roundedBorder) }
+                Toggle("Tempo lock (recall this patch’s tempo)", isOn: Binding(get: { store.patch.recallsPatchTempo }, set: { store.setTempoLocked($0) }))
                 Toggle("Metronome", isOn: $store.metronome)
-                Text("4/4 · The click follows this patch’s tempo. Sound, accents and level are in Settings → Metronome.").font(.caption).foregroundStyle(.secondary)
+                Text(store.patch.recallsPatchTempo ? "4/4 · Tempo lock is on: this patch stores and recalls its own tempo. Sound, accents and level are in Settings → Metronome." : "4/4 · Tempo lock is off: one live tempo carries across patches and is restored at launch. The click follows it. Sound, accents and level are in Settings → Metronome.").font(.caption).foregroundStyle(.secondary)
                 Spacer()
             }.padding(25).onDisappear { store.save() }
         }

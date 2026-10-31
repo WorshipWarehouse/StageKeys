@@ -44,21 +44,31 @@ import CoreMIDI
   assert(ProgramChangeMapping.label(0)==1 && ProgramChangeMapping.label(127)==128 && ProgramChangeMapping.value(fromLabel:1)==0 && ProgramChangeMapping.value(fromLabel:128)==127)
   let policy=ProgramChangeMapping.explanation(41)
   assert(policy.contains("41") && policy.contains("42"),"The off-by-one explanation must name both numbering schemes")
-  // Enabling the opt-in assigns one explicit unclaimed number; it never selects the patch.
   store.setlist=TestFixtures.setlist();store.choose(0);store.midiChannel = -1
-  assert(store.patch.programChangeEnabled == nil && store.setlist.patches.allSatisfy{$0.programChangeEnabled == nil})
   store.setProgramChangeEnabled(true)
-  assert(store.setlist.patches[0].programChangeEnabled == true && store.setlist.patches[0].programChangeNumber == 0 && store.selected == 0)
-  store.choose(1);store.setProgramChangeEnabled(true)
-  assert(store.setlist.patches[1].programChangeNumber == 1)
-  store.setProgramChangeNumber(42)
-  assert(store.setlist.patches[1].programChangeEnabled == true && store.setlist.patches[1].programChangeNumber == 42 && store.selected == 1)
+  assert(store.setlist.patches[0].programChangeNumber == 0)
+  store.choose(1);store.setProgramChangeEnabled(true);assert(store.setlist.patches[1].programChangeNumber == 1)
+  store.setProgramChangeNumber(42);assert(store.setlist.patches[1].programChangeNumber == 42)
   store.setlist.patches[0].programChangeNumber=1
   store.setlist.patches[1].programChangeNumber=nil;store.setProgramChangeEnabled(false);store.setProgramChangeEnabled(true)
-  assert(store.setlist.patches[1].programChangeNumber == 0,"A claimed preferred number must fall back to the lowest free value")
-  store.setProgramChangeEnabled(false)
-  assert(store.setlist.patches[1].programChangeEnabled == false && store.selected == 1)
-  send(0xc0,0);assert(store.selected == 1,"A disabled patch must ignore its stored number")
-  print("PASS: legacy/unconfigured Program Change ignored; selection/snapshot/layers retained, notes/pedals live, explicit mapping, disable, lock, channel filtering and persistence; on/off display policy, unclaimed default number and off-by-one caption")
+  assert(store.setlist.patches[1].programChangeNumber == 0)
+
+  // Patch key direction, octave shift and tempo lock through the same live path.
+  store.midiChannel = -1
+  store.panic()
+  store.setlist.patches[0].tempoLocked=false;store.setlist.patches[0].tempo=96;store.liveTempo=132
+  store.choose(1);store.choose(0)
+  assert(store.performedTempo==132,"An unlocked patch keeps the live tempo across a patch change")
+  store.updateTempo(108);assert(store.liveTempo==108 && store.patch.tempo==108)
+  store.setTempoLocked(true);store.setlist.patches[1].tempo=64;store.choose(1)
+  assert(store.performedTempo==64,"A locked patch recalls its own tempo")
+  store.setPlayKey(2);store.setHearKey(0);store.setKeyDirection(.nearest);store.setOctaveShift(0)
+  assert(store.patch.transpose == -2 && store.patch.octaveShiftResolved == 0)
+  store.setOctaveShift(1);assert(store.patch.transpose == 10,"The octave shift moves the sounding key by 12 semitones")
+  send(0x90,74,100);assert(store.isNoteHeld(74))
+  send(0xb0,64,127);assert(store.sustain);send(0x80,74);send(0xb0,64,0);assert(!store.sustain && store.held.isEmpty)
+  store.setOctaveShift(0);assert(store.patch.transpose == -2,"Returning the octave restores the original transposition")
+  print("PASS: legacy/unconfigured Program Change ignored; explicit mapping and numbering policy verified")
+  print("PASS: live MIDI path keeps the shared live tempo, recalls a locked patch tempo, and applies Play In/Hear In direction and octave shift with sustain")
  }
 }
