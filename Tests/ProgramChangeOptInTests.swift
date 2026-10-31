@@ -38,6 +38,27 @@ import CoreMIDI
   store.midiChannel=1;send(0xc0,99);assert(store.selected==1);send(0xc1,99);assert(store.selected==0)
   let roundTrip=try JSONDecoder().decode(Setlist.self,from:JSONEncoder().encode(store.setlist))
   assert(roundTrip.patches[0].programChangeEnabled==true && roundTrip.patches[0].programChangeNumber==99 && roundTrip.patches[1].programChangeEnabled==nil)
-  print("PASS: legacy/unconfigured Program Change ignored; selection/snapshot/layers retained, notes/pedals live, explicit mapping, disable, lock, channel filtering and persistence")
+  // Patch Settings display/mapping policy: raw MIDI 0...127 stored, 1...128 labelled.
+  assert(ProgramChangeMapping.isValid(0) && ProgramChangeMapping.isValid(127))
+  assert(!ProgramChangeMapping.isValid(nil) && !ProgramChangeMapping.isValid(-1) && !ProgramChangeMapping.isValid(128))
+  assert(ProgramChangeMapping.label(0)==1 && ProgramChangeMapping.label(127)==128 && ProgramChangeMapping.value(fromLabel:1)==0 && ProgramChangeMapping.value(fromLabel:128)==127)
+  let policy=ProgramChangeMapping.explanation(41)
+  assert(policy.contains("41") && policy.contains("42"),"The off-by-one explanation must name both numbering schemes")
+  // Enabling the opt-in assigns one explicit unclaimed number; it never selects the patch.
+  store.setlist=TestFixtures.setlist();store.choose(0);store.midiChannel = -1
+  assert(store.patch.programChangeEnabled == nil && store.setlist.patches.allSatisfy{$0.programChangeEnabled == nil})
+  store.setProgramChangeEnabled(true)
+  assert(store.setlist.patches[0].programChangeEnabled == true && store.setlist.patches[0].programChangeNumber == 0 && store.selected == 0)
+  store.choose(1);store.setProgramChangeEnabled(true)
+  assert(store.setlist.patches[1].programChangeNumber == 1)
+  store.setProgramChangeNumber(42)
+  assert(store.setlist.patches[1].programChangeEnabled == true && store.setlist.patches[1].programChangeNumber == 42 && store.selected == 1)
+  store.setlist.patches[0].programChangeNumber=1
+  store.setlist.patches[1].programChangeNumber=nil;store.setProgramChangeEnabled(false);store.setProgramChangeEnabled(true)
+  assert(store.setlist.patches[1].programChangeNumber == 0,"A claimed preferred number must fall back to the lowest free value")
+  store.setProgramChangeEnabled(false)
+  assert(store.setlist.patches[1].programChangeEnabled == false && store.selected == 1)
+  send(0xc0,0);assert(store.selected == 1,"A disabled patch must ignore its stored number")
+  print("PASS: legacy/unconfigured Program Change ignored; selection/snapshot/layers retained, notes/pedals live, explicit mapping, disable, lock, channel filtering and persistence; on/off display policy, unclaimed default number and off-by-one caption")
  }
 }
