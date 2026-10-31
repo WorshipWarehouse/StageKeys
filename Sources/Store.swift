@@ -261,7 +261,6 @@ final class PerformanceStore: ObservableObject {
     /// The tempo actually being performed: a locked patch plays its own tempo,
     /// an unlocked patch keeps the live tempo across patch switches.
     var performedTempo: Double { PatchTransposition.resolvedTempo(locked: patch.tempoLocked, patchTempo: patch.tempo, liveTempo: liveTempo) }
-    private func syncLiveTempo() { if patch.recallsPatchTempo { liveTempo = patch.tempo } }
     private var lastTaps: [Date] = []
     private struct Audition {
         let token: UUID
@@ -646,7 +645,7 @@ final class PerformanceStore: ObservableObject {
         audio.master(master);audio.space(reverb)
         started = true
         audioStartup = .running
-        syncLiveTempo(); applyPatch(); recallTonicPatch(); audio.clock(performedTempo,metronome); audio.metronome(metronome, settings: metronomeSettings); refreshAudioDevices(); restoreAudioBuffer()
+        applyPatch(); recallTonicPatch(); audio.clock(performedTempo,metronome); audio.metronome(metronome, settings: metronomeSettings); refreshAudioDevices(); restoreAudioBuffer()
     }
     private func handleAudioStartFailure(_ error: Error, generation: UUID) {
         started = false
@@ -794,7 +793,10 @@ final class PerformanceStore: ObservableObject {
         cancelAudition(); cancelTransition(); panic(preserveTonic:true,preserveEffectTails:!setlist.patches[index].silencePrevious); capturePluginStates(); selected = index; activeSnapshot = nil
         if patch.silencePrevious { panic(preserveTonic:true) }
         if patch.visualMode != 0 { notesMode = patch.visualMode == 2 }
-        syncLiveTempo(); applyPatch(); recallTonicPatch(); audio.clock(performedTempo, metronome)
+        // A locked patch recalls its own tempo without overwriting the shared
+        // live tempo. Returning to an unlocked patch must therefore resume the
+        // live tempo that was active before the locked patch was selected.
+        applyPatch(); recallTonicPatch(); audio.clock(performedTempo, metronome)
     }
     private func applyPatch() {
         for i in patch.layers.indices {

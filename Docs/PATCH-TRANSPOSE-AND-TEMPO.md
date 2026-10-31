@@ -53,6 +53,10 @@ are emitted:
 | `true` | Tempo lock on: the patch tempo is recalled with the patch |
 | `false` | Tempo lock off: one live tempo is shared and survives patch switches |
 
+Selecting a locked patch temporarily performs at that patch's tempo without
+overwriting the shared live tempo. Returning to an unlocked patch resumes the
+previous live tempo.
+
 The live tempo is persisted in `settings.json` (`SessionSettings.liveTempo`) and
 restored at launch. Tap tempo, the stepper and direct BPM entry all write through
 `PerformanceStore.updateTempo`, which updates the live tempo and the patch tempo
