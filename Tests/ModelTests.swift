@@ -3,7 +3,9 @@ import Foundation
 @main
 struct ModelTests {
     static func main() throws {
-        let original = Setlist()
+        // Use a populated fixture: the shipping default intentionally has no
+        // factory sounds, so it cannot exercise layer identity or mutation.
+        let original = TestFixtures.setlist()
         try original.validate()
         let data = try JSONEncoder().encode(original)
         let decoded = try JSONDecoder().decode(Setlist.self, from: data)
