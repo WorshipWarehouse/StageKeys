@@ -256,6 +256,12 @@ final class PerformanceStore: ObservableObject {
     let midiFX = MIDIFXProcessor()
     private var midiOutput: ExternalMIDIOutput?
     private var outputNotes: [Int: [Int: Int]] = [:]
+    /// Tempo shared by every patch whose tempo is not locked to the patch.
+    @Published var liveTempo: Double = 72
+    /// The tempo actually being performed: a locked patch plays its own tempo,
+    /// an unlocked patch keeps the live tempo across patch switches.
+    var performedTempo: Double { PatchTransposition.resolvedTempo(locked: patch.tempoLocked, patchTempo: patch.tempo, liveTempo: liveTempo) }
+    private func syncLiveTempo() { if patch.recallsPatchTempo { liveTempo = patch.tempo } }
     private var lastTaps: [Date] = []
     private struct Audition {
         let token: UUID
@@ -542,6 +548,7 @@ final class PerformanceStore: ObservableObject {
             midiSourceNames = settings.sourceNames ?? [:]
             metronome = settings.metronomeEnabled ?? false
             metronomeSettings = settings.metronomeSettings ?? MetronomeSettings()
+            liveTempo = settings.liveTempo ?? patch.tempo
             preferredBufferFrames = settings.audioBufferFrames.map { UInt32(max(0, min(8192, $0))) }
             disableSilent = settings.disableSilent; showRanges = settings.showRanges
             tonicVelocitySelector=settings.tonicVelocitySelector ?? false;tonicTimbre=settings.tonicTimbre ?? 0;tonicLastRoot=settings.tonicLastRoot ?? 0;tonicSound=settings.tonicSound
@@ -639,7 +646,7 @@ final class PerformanceStore: ObservableObject {
         audio.master(master);audio.space(reverb)
         started = true
         audioStartup = .running
-        applyPatch(); recallTonicPatch(); audio.clock(patch.tempo,metronome); audio.metronome(metronome, settings: metronomeSettings); refreshAudioDevices(); restoreAudioBuffer()
+        syncLiveTempo(); applyPatch(); recallTonicPatch(); audio.clock(performedTempo,metronome); audio.metronome(metronome, settings: metronomeSettings); refreshAudioDevices(); restoreAudioBuffer()
     }
     private func handleAudioStartFailure(_ error: Error, generation: UUID) {
         started = false
@@ -787,7 +794,7 @@ final class PerformanceStore: ObservableObject {
         cancelAudition(); cancelTransition(); panic(preserveTonic:true,preserveEffectTails:!setlist.patches[index].silencePrevious); capturePluginStates(); selected = index; activeSnapshot = nil
         if patch.silencePrevious { panic(preserveTonic:true) }
         if patch.visualMode != 0 { notesMode = patch.visualMode == 2 }
-        applyPatch(); recallTonicPatch(); audio.clock(patch.tempo, metronome)
+        syncLiveTempo(); applyPatch(); recallTonicPatch(); audio.clock(performedTempo, metronome)
     }
     private func applyPatch() {
         for i in patch.layers.indices {
@@ -947,7 +954,7 @@ final class PerformanceStore: ObservableObject {
         }
     }
     func snapshotDuration(_ snapshot: Snapshot) -> Float {
-        if let beats = snapshot.beats { return min(30, beats * 60 / Float(patch.tempo)) }
+        if let beats = snapshot.beats { return min(30, beats * 60 / Float(performedTempo)) }
         return snapshot.seconds ?? transition
     }
     func commitLayer(_ index: Int, _ layer: Layer) {
@@ -1019,9 +1026,46 @@ final class PerformanceStore: ObservableObject {
         }
         save()
     }
-    func updateTempo(_ value: Double) { setlist.patches[selected].tempo = value; audio.clock(value, metronome); midiFX.updateTempo(value) }
-    func setTranspose(_ value: Int) { setlist.patches[selected].transpose = value; setlist.patches[selected].hearIn = (patch.playIn + value + 120) % 12 }
-    func transpose(play: Int, hear: Int) { setlist.patches[selected].playIn = play; setlist.patches[selected].hearIn = hear; setlist.patches[selected].transpose = hear - play; save() }
+    func updateTempo(_ value: Double) {
+        let tempo = PatchTransposition.clampTempo(value)
+        liveTempo = tempo
+        setlist.patches[selected].tempo = tempo
+        audio.clock(tempo, metronome); midiFX.updateTempo(tempo)
+    }
+    /// Locking keeps the patch's own tempo and recalls it with the patch;
+    /// unlocking keeps the tempo currently being played for the whole session.
+    func setTempoLocked(_ locked: Bool) {
+        // Resolve before the flag changes so locking a patch keeps the tempo that
+        // was actually being played instead of the value it stored earlier.
+        let current = performedTempo
+        setlist.patches[selected].tempoLocked = locked
+        setlist.patches[selected].tempo = current
+        liveTempo = current
+        audio.clock(current, metronome); midiFX.updateTempo(current)
+        save()
+    }
+    func setTranspose(_ value: Int) {
+        let bounded = PatchTransposition.clampTranspose(value)
+        setlist.patches[selected].transpose = bounded
+        setlist.patches[selected].hearIn = (patch.playIn + bounded + 120) % 12
+        setlist.patches[selected].octaveShift = PatchTransposition.octave(forTranspose: bounded, playIn: setlist.patches[selected].playIn, hearIn: setlist.patches[selected].hearIn, direction: patch.keyDirectionResolved)
+    }
+    func transpose(play: Int, hear: Int) {
+        setlist.patches[selected].playIn = PatchTransposition.clampKey(play)
+        setlist.patches[selected].hearIn = PatchTransposition.clampKey(hear)
+        applyKeyChange(); save()
+    }
+    func setPlayKey(_ key: Int) { setlist.patches[selected].playIn = PatchTransposition.clampKey(key); applyKeyChange(); save() }
+    func setHearKey(_ key: Int) { setlist.patches[selected].hearIn = PatchTransposition.clampKey(key); applyKeyChange(); save() }
+    func setKeyDirection(_ direction: KeyDirection) { setlist.patches[selected].keyDirection = direction; applyKeyChange(); save() }
+    func setOctaveShift(_ octave: Int) { setlist.patches[selected].octaveShift = PatchTransposition.clampOctave(octave); applyKeyChange(); save() }
+    /// Recomputes the single playback value from Play In, Hear In, direction and
+    /// octave. Authored Easy Chord/Sequencer notes are never rewritten, so
+    /// repeated key changes cannot accumulate drift.
+    private func applyKeyChange() {
+        let p = patch
+        setlist.patches[selected].transpose = PatchTransposition.semitones(playIn: p.playIn, hearIn: p.hearIn, direction: p.keyDirectionResolved, octave: p.octaveShiftResolved)
+    }
     private func cancelTransition() {
         guard snapshotTimer != nil else { return }
         snapshotTimer?.invalidate(); snapshotTimer = nil
@@ -1142,7 +1186,7 @@ final class PerformanceStore: ObservableObject {
             if let d=layer.midiDestinationID { sendMIDI(d,0xb0|UInt8(layer.midiOutputChannel),64,0);sendMIDI(d,0xb0|UInt8(layer.midiOutputChannel),123,0) }
             configuredPrograms[index]=program.validated
         }
-        midiFX.configure(channel: index, program: program, tempo: patch.tempo)
+        midiFX.configure(channel: index, program: program, tempo: performedTempo)
         if let d = layer.midiDestinationID {
             sendMIDI(d, 0xb0 | UInt8(layer.midiOutputChannel), 7, UInt8(layer.muted ? 0 : Int(layer.gain*127)))
             sendMIDI(d, 0xb0 | UInt8(layer.midiOutputChannel), 10, UInt8(max(0,min(127,Int((layer.pan+1)*63.5)))))
@@ -1644,7 +1688,7 @@ final class PerformanceStore: ObservableObject {
             try RecoverableSessionFile.write(data, to: saveURL) { _ = try JSONDecoder().decode(Setlist.self, from: $0).upgraded() }
             currentSetlistID = try localSetlistLibrary().save(setlist,id:currentSetlistID).id
             refreshSetlists()
-            let settings = SessionSettings(selectedPatchID:patch.id,activeSnapshotID:activeSnapshot,notesMode:notesMode,modWheel:modWheel,master: master, reverb: reverb, transition: transition, midiChannel: midiChannel, primarySourceID: primarySourceID, secondarySourceID: secondarySourceID, secondaryChannel: secondaryChannel, velocityMinimum: velocityMinimum, velocityMaximum: velocityMaximum, sourceNames: midiSourceNames, disableSilent: disableSilent, showRanges: showRanges, tonicGain: tonicGain, tonicBrightness: tonicBrightness, tonicShimmer: tonicShimmer, audioOutputUID: preferredAudioOutputUID, activeSetlistID: currentSetlistID,tonicSound:tonicSound,tonicVelocitySelector:tonicVelocitySelector,tonicTimbre:tonicTimbre,tonicLastRoot:tonicLastRoot,metronomeEnabled:metronome,audioBufferFrames:preferredBufferFrames.map{Int($0)},metronomeSettings:metronomeSettings)
+            let settings = SessionSettings(selectedPatchID:patch.id,activeSnapshotID:activeSnapshot,notesMode:notesMode,modWheel:modWheel,master: master, reverb: reverb, transition: transition, midiChannel: midiChannel, primarySourceID: primarySourceID, secondarySourceID: secondarySourceID, secondaryChannel: secondaryChannel, velocityMinimum: velocityMinimum, velocityMaximum: velocityMaximum, sourceNames: midiSourceNames, disableSilent: disableSilent, showRanges: showRanges, tonicGain: tonicGain, tonicBrightness: tonicBrightness, tonicShimmer: tonicShimmer, audioOutputUID: preferredAudioOutputUID, activeSetlistID: currentSetlistID,tonicSound:tonicSound,tonicVelocitySelector:tonicVelocitySelector,tonicTimbre:tonicTimbre,tonicLastRoot:tonicLastRoot,metronomeEnabled:metronome,audioBufferFrames:preferredBufferFrames.map{Int($0)},metronomeSettings:metronomeSettings,liveTempo:liveTempo)
             guard settings.validate() else { throw SetlistError.invalid }
             try RecoverableSessionFile.write(encoder.encode(settings), to: saveURL.deletingLastPathComponent().appendingPathComponent("settings.json")) {
                 guard try JSONDecoder().decode(SessionSettings.self, from: $0).validate() else { throw SetlistError.invalid }
@@ -1707,7 +1751,7 @@ final class PerformanceStore: ObservableObject {
             let loaded = try localSetlistLibrary().load(id:id)
             try preserveCurrentSetlist()
             panic(); cancelTransition(); setlist = loaded; currentSetlistID = id; selected = 0; activeSnapshot = nil
-            applyPatch(); recallTonicPatch(); audio.clock(patch.tempo,metronome); save()
+            applyPatch(); recallTonicPatch(); audio.clock(performedTempo,metronome); save()
         } catch { message = error.localizedDescription }
     }
     func createLocalSetlist() {
@@ -1717,7 +1761,7 @@ final class PerformanceStore: ObservableObject {
             var fresh = Setlist(); fresh.name = "New Setlist"; fresh.patches = [Patch(name:"New Patch",layers:(0..<15).map { _ in Layer.empty() },snapshots:[])]
             let id = try localSetlistLibrary().save(fresh).id
             panic(); cancelTransition(); setlist = fresh; currentSetlistID = id; selected = 0; activeSnapshot = nil
-            applyPatch(); recallTonicPatch(); audio.clock(patch.tempo,metronome); save()
+            applyPatch(); recallTonicPatch(); audio.clock(performedTempo,metronome); save()
         } catch { message = error.localizedDescription }
     }
     func renameLocalSetlist(_ id: UUID, name: String) {

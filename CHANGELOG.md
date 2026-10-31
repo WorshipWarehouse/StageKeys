@@ -1,5 +1,9 @@
 ## Unreleased
 
+- Add patch-level Play In/Hear In direction (nearest, up, down) and an explicit ±2 octave shift; the stored transposition stays the single playback value and older setlists keep theirs without migration.
+- Apply patch transposition to authored Easy Chord and Sequencer output as a stateless offset, so repeated key changes cannot drift or rewrite the programming.
+- Add a patch tempo lock that shares one live tempo across unlocked patches, with direct BPM entry alongside tap tempo and the stepper; the live tempo is persisted and restored.
+- Cover every key pair, octave wrapping, repeated changes, authored mappings, legacy documents and arpeggiator phase across a tempo change.
 - Add a standalone metronome engine with two synthesized click sounds, independent level, beat/downbeat velocities, accent patterns, subdivisions and master-follow; the click now bypasses the shared hall reverb.
 - Persist every metronome control in `settings.json`, keep older files readable and refuse out-of-range saved values at launch.
 - Cover click timing at 44.1/48/96 kHz, irregular block splits, mid-beat tempo changes, long runs, presets and settings round trips.

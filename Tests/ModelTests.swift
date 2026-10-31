@@ -41,6 +41,20 @@ struct ModelTests {
         assert(migrated.patches[0].layers[0].id == legacy.patches[0].layers[0].id)
         assert(migrated.patches[0].snapshots[0].gains.count == 15)
         assert(migrated.patches[0].layers[14].instrument == -1)
+        // Play In / Hear In direction, octave shift and tempo lock are patch data
+        // and round-trip without touching the stored playback transposition.
+        var keyed = original.patches[0]
+        keyed.playIn = 2; keyed.hearIn = 0; keyed.keyDirection = .down; keyed.octaveShift = -1; keyed.tempoLocked = false
+        keyed.transpose = PatchTransposition.semitones(playIn: keyed.playIn, hearIn: keyed.hearIn, direction: .down, octave: -1)
+        let keyedRound = try JSONDecoder().decode(Patch.self, from: JSONEncoder().encode(keyed))
+        assert(keyed.transpose == -14 && keyedRound.transpose == -14)
+        assert(keyedRound.keyDirection == .down && keyedRound.octaveShift == -1 && keyedRound.tempoLocked == false)
+        assert(keyedRound.octaveShiftResolved == -1 && !keyedRound.recallsPatchTempo)
+        assert(keyedRound.duplicate().tempoLocked == false && keyedRound.duplicate().keyDirection == .down)
+        // Legacy documents have no new keys: tempo recall and octave stay as saved.
+        assert(migrated.patches[0].tempoLocked == nil && migrated.patches[0].keyDirection == nil)
+        assert(migrated.patches[0].octaveShiftResolved == PatchTransposition.octave(forTranspose: migrated.patches[0].transpose, playIn: migrated.patches[0].playIn, hearIn: migrated.patches[0].hearIn, direction: .nearest))
+        assert(migrated.patches[0].recallsPatchTempo)
         bad = original; bad.patches[0].layers[0].effects = []; rejected(bad)
         bad = original; bad.patches[0].snapshots[0].beats = .nan; rejected(bad)
         bad = original; bad.patches[0].layers[0].pan = 2; rejected(bad)

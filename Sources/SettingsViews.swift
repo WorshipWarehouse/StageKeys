@@ -88,7 +88,7 @@ struct SettingsEditor: View {
                     case "Metronome":
                         Section("Metronome") {
                             Toggle("Metronome", isOn: $store.metronome)
-                            Stepper("\(Int(store.patch.tempo)) BPM", value: Binding(get: { store.patch.tempo }, set: { store.updateTempo($0) }), in: 20...300)
+                            Stepper("\(Int(store.performedTempo)) BPM", value: Binding(get: { store.performedTempo }, set: { store.updateTempo($0) }), in: 20...300)
                             Toggle("Show in toolbar", isOn: $store.metronomeSettings.visible)
                             Picker("Click sound", selection: $store.metronomeSettings.preset) {
                                 ForEach(MetronomeSettings.presets.indices, id: \.self) { Text(MetronomeSettings.presets[$0]).tag($0) }

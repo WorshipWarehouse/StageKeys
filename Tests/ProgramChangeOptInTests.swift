@@ -38,6 +38,20 @@ import CoreMIDI
   store.midiChannel=1;send(0xc0,99);assert(store.selected==1);send(0xc1,99);assert(store.selected==0)
   let roundTrip=try JSONDecoder().decode(Setlist.self,from:JSONEncoder().encode(store.setlist))
   assert(roundTrip.patches[0].programChangeEnabled==true && roundTrip.patches[0].programChangeNumber==99 && roundTrip.patches[1].programChangeEnabled==nil)
+  // Patch key direction, octave shift and tempo lock through the same live path.
+  store.setlist.patches[0].tempoLocked=false;store.setlist.patches[0].tempo=96;store.liveTempo=132
+  store.choose(1);store.choose(0)
+  assert(store.performedTempo==132,"An unlocked patch keeps the live tempo across a patch change")
+  store.updateTempo(108);assert(store.liveTempo==108 && store.patch.tempo==108)
+  store.setTempoLocked(true);store.setlist.patches[1].tempo=64;store.choose(1)
+  assert(store.performedTempo==64,"A locked patch recalls its own tempo")
+  store.setPlayKey(2);store.setHearKey(0);store.setKeyDirection(.nearest);store.setOctaveShift(0)
+  assert(store.patch.transpose == -2 && store.patch.octaveShiftResolved == 0)
+  store.setOctaveShift(1);assert(store.patch.transpose == 10,"The octave shift moves the sounding key by 12 semitones")
+  send(0x90,74,100);assert(store.isNoteHeld(74))
+  send(0xb0,64,127);assert(store.sustain);send(0x80,74);send(0xb0,64,0);assert(!store.sustain && store.held.isEmpty)
+  store.setOctaveShift(0);assert(store.patch.transpose == -2,"Returning the octave restores the original transposition")
   print("PASS: legacy/unconfigured Program Change ignored; selection/snapshot/layers retained, notes/pedals live, explicit mapping, disable, lock, channel filtering and persistence")
+  print("PASS: live MIDI path keeps the shared live tempo, recalls a locked patch tempo, and applies Play In/Hear In direction and octave shift with sustain")
  }
 }
