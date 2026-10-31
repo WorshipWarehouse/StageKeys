@@ -658,14 +658,23 @@ void sk_render(SKSynth *s,float *left,float *right,uint32_t frames){
   }
   // Soft output limiting; bounded for large chords and sustained layers.
   for(int l=0;l<BUSES;l++){
+   // Documented native order: source gain -> compressor -> Mod Filter ->
+   // 8-band EQ -> three audio-effect slots -> pan -> performance fader. The
+   // compressor therefore detects the source level, not an EQ boost or a
+   // Mod-Filtered signal.
    float x=bus[l]*s->preGain[l];
+   if(s->compressEnabled[l]){float dry=x;x*=s->compressorInput[l];float level=fabsf(x),c=level>s->detector[l]?s->compAttack[l]:s->compRelease[l];s->detector[l]=c*s->detector[l]+(1-c)*level;float db=20*log10f(fmaxf(1e-9,s->detector[l]));float reduction=fmaxf(0,db-s->threshold[l])*(1-1/s->ratio[l]);x*=powf(10,-reduction/20);x=(dry*(1-s->compressorWet[l])+x*s->compressorWet[l])*powf(10,s->makeup[l]/20);}
    if(s->cutoff[l]<20000)x=process(&s->filter[l],x);
    for(int band=0;band<8;band++)x=process(&s->eq[l][band],x);
-   if(s->compressEnabled[l]){float dry=x;x*=s->compressorInput[l];float level=fabsf(x),c=level>s->detector[l]?s->compAttack[l]:s->compRelease[l];s->detector[l]=c*s->detector[l]+(1-c)*level;float db=20*log10f(fmaxf(1e-9,s->detector[l]));float reduction=fmaxf(0,db-s->threshold[l])*(1-1/s->ratio[l]);x*=powf(10,-reduction/20);x=(dry*(1-s->compressorWet[l])+x*s->compressorWet[l])*powf(10,s->makeup[l]/20);}
 
    float spread=0;
    for(int k=0;k<3;k++)if(s->fxKind[l][k]){x=effectProcess(s,l,k,x);spread+=s->effect[l][k].stereo;}
-   x*=s->gain[l];float pan=s->pan[l];sumL+=x*(pan>0?1-pan:1)*(1-fminf(1,fmaxf(0,spread)));sumR+=x*(pan<0?1+pan:1)*(1-fminf(1,fmaxf(0,-spread)));
+   // Pan is the last stereo stage; the performance fader scales both sides.
+   float pan=s->pan[l];
+   float panL=(pan>0?1-pan:1)*(1-fminf(1,fmaxf(0,spread)));
+   float panR=(pan<0?1+pan:1)*(1-fminf(1,fmaxf(0,-spread)));
+   x*=s->gain[l];
+   sumL+=x*panL;sumR+=x*panR;
   }
   left[n]=tanhf(sumL);if(right)right[n]=tanhf(sumR);
  }
