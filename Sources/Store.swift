@@ -900,6 +900,21 @@ final class PerformanceStore: ObservableObject {
         setlist.patches.append(copy);choose(setlist.patches.count-1);save()
     }
     func setPatchVolume(_ db:Float) { guard db.isFinite else {return};setlist.patches[selected].volumeDB=max(-24,min(12,db));audio.setPatchVolume(patch.volumeDB);save() }
+    /// Patch Settings Program Change opt-in. An absent legacy flag reads as off;
+    /// enabling a patch without a stored number assigns one explicit, unclaimed
+    /// MIDI value once instead of leaving selection implicit at runtime.
+    func setProgramChangeEnabled(_ enabled:Bool) {
+        guard setlist.patches.indices.contains(selected) else { return }
+        setlist.patches[selected].programChangeEnabled=enabled
+        guard enabled,!ProgramChangeMapping.isValid(setlist.patches[selected].programChangeNumber) else { return }
+        let taken=Set(setlist.patches.indices.filter{$0 != selected && setlist.patches[$0].programChangeEnabled == true}.compactMap{setlist.patches[$0].programChangeNumber})
+        setlist.patches[selected].programChangeNumber=ProgramChangeMapping.defaultNumber(preferring:selected,taken:taken)
+    }
+    func setProgramChangeNumber(_ value:Int) {
+        guard ProgramChangeMapping.isValid(value),setlist.patches.indices.contains(selected) else { return }
+        setlist.patches[selected].programChangeEnabled=true
+        setlist.patches[selected].programChangeNumber=value
+    }
 
     func duplicate() { guard setlist.patches.count < 128 else { return }; capturePluginStates(); let p = patch.duplicate(); setlist.patches.insert(p, at: selected + 1); choose(selected + 1); save() }
     func removePatch() { guard setlist.patches.count > 1 else { return }; panic(); cancelTransition(); setlist.patches.remove(at: selected); selected = min(selected, setlist.patches.count - 1); activeSnapshot = nil; applyPatch(); save() }

@@ -457,6 +457,30 @@ struct Patch: Codable, Identifiable {
         return p
     }
 }
+/// Display and mapping policy for the per-patch Program Change opt-in.
+/// StageKeys stores and matches the raw MIDI Program Change byte (0...127). Some
+/// keyboards label the identical values 1...128, so the UI shows both and explains
+/// the offset instead of silently translating it. This is the single policy point
+/// used by Patch Settings and by the Program Change tests.
+enum ProgramChangeMapping {
+    static let values = 0...127
+    /// Only a valid MIDI Program Change byte can select a patch.
+    static func isValid(_ value: Int?) -> Bool { value.map { values.contains($0) } ?? false }
+    /// Label used by hardware and manuals that number Program Changes 1...128.
+    static func label(_ value: Int) -> Int { value + 1 }
+    /// Inverse of `label` for values entered or documented as 1...128.
+    static func value(fromLabel label: Int) -> Int { label - 1 }
+    static func title(_ value: Int) -> String { "Program \(label(value))" }
+    static func explanation(_ value: Int) -> String {
+        "StageKeys matches MIDI \(value). Keyboards that display Program Change 1–128 show the same number as \(label(value)). Only this number selects the Patch."
+    }
+    /// One explicit number for a newly enabled patch: its own position when that
+    /// value is unclaimed, otherwise the lowest unclaimed value.
+    static func defaultNumber(preferring position: Int, taken: Set<Int>) -> Int {
+        if values.contains(position), !taken.contains(position) { return position }
+        return values.first { !taken.contains($0) } ?? position
+    }
+}
 struct Setlist: Codable {
     var version = 4
     var name = "My Setlist"

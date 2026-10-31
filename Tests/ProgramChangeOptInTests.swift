@@ -38,6 +38,21 @@ import CoreMIDI
   store.midiChannel=1;send(0xc0,99);assert(store.selected==1);send(0xc1,99);assert(store.selected==0)
   let roundTrip=try JSONDecoder().decode(Setlist.self,from:JSONEncoder().encode(store.setlist))
   assert(roundTrip.patches[0].programChangeEnabled==true && roundTrip.patches[0].programChangeNumber==99 && roundTrip.patches[1].programChangeEnabled==nil)
+  // Patch Settings display/mapping policy: raw MIDI 0...127 stored, 1...128 labelled.
+  assert(ProgramChangeMapping.isValid(0) && ProgramChangeMapping.isValid(127))
+  assert(!ProgramChangeMapping.isValid(nil) && !ProgramChangeMapping.isValid(-1) && !ProgramChangeMapping.isValid(128))
+  assert(ProgramChangeMapping.label(0)==1 && ProgramChangeMapping.label(127)==128 && ProgramChangeMapping.value(fromLabel:1)==0 && ProgramChangeMapping.value(fromLabel:128)==127)
+  let policy=ProgramChangeMapping.explanation(41)
+  assert(policy.contains("41") && policy.contains("42"),"The off-by-one explanation must name both numbering schemes")
+  store.setlist=TestFixtures.setlist();store.choose(0);store.midiChannel = -1
+  store.setProgramChangeEnabled(true)
+  assert(store.setlist.patches[0].programChangeNumber == 0)
+  store.choose(1);store.setProgramChangeEnabled(true);assert(store.setlist.patches[1].programChangeNumber == 1)
+  store.setProgramChangeNumber(42);assert(store.setlist.patches[1].programChangeNumber == 42)
+  store.setlist.patches[0].programChangeNumber=1
+  store.setlist.patches[1].programChangeNumber=nil;store.setProgramChangeEnabled(false);store.setProgramChangeEnabled(true)
+  assert(store.setlist.patches[1].programChangeNumber == 0)
+
   // Patch key direction, octave shift and tempo lock through the same live path.
   store.midiChannel = -1
   store.panic()
@@ -53,7 +68,7 @@ import CoreMIDI
   send(0x90,74,100);assert(store.isNoteHeld(74))
   send(0xb0,64,127);assert(store.sustain);send(0x80,74);send(0xb0,64,0);assert(!store.sustain && store.held.isEmpty)
   store.setOctaveShift(0);assert(store.patch.transpose == -2,"Returning the octave restores the original transposition")
-  print("PASS: legacy/unconfigured Program Change ignored; selection/snapshot/layers retained, notes/pedals live, explicit mapping, disable, lock, channel filtering and persistence")
+  print("PASS: legacy/unconfigured Program Change ignored; explicit mapping and numbering policy verified")
   print("PASS: live MIDI path keeps the shared live tempo, recalls a locked patch tempo, and applies Play In/Hear In direction and octave shift with sustain")
  }
 }
