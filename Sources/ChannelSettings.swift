@@ -31,6 +31,16 @@ struct ChannelSettings: Codable, Equatable {
     var faderMin: Float = -60
     var faderMax: Float = 0
     var routingGroup = "Keys"
+    /// Mod Filter taper: modulation 0 reaches `filterMin`, 1 reaches `filterMax`.
+    /// Exponential in frequency so equal wheel movement sounds even; bounded for
+    /// non-finite input so a controller glitch cannot open the filter arbitrarily.
+    func cutoff(modulation: Float) -> Float {
+        let m = modulation.isFinite ? min(1, max(0, modulation)) : 0
+        let low = min(20000, max(20, filterMin))
+        let high = min(20000, max(low, filterMax))
+        guard low > 0, high > low else { return high }
+        return exp(log(low) + (log(high) - log(low)) * m)
+    }
     func validate() -> Bool {
         (outputTrimDB.map{$0.isFinite && (-24...12).contains($0)} ?? true) && (samplerAttackMinimum.map{$0.isFinite && (0...0.1).contains($0)} ?? true) && (compressorInputGain.map{$0.isFinite && (-24...24).contains($0)} ?? true) && (compressorMix.map{$0.isFinite && (0...1).contains($0)} ?? true) && attack.isFinite && (0.001...10).contains(attack) && decay.isFinite && (0.001...10).contains(decay) && sustain.isFinite && (0...1).contains(sustain) && release.isFinite && (0.001...30).contains(release) && (1...64).contains(voiceCount) && samplerGain.isFinite && (0...4).contains(samplerGain) && filterMin.isFinite && (20...20000).contains(filterMin) && filterMax.isFinite && (filterMin...20000).contains(filterMax) && resonance.isFinite && (0.1...10).contains(resonance) && equalizer.count == 8 && equalizer.allSatisfy({ $0.frequency.isFinite && (20...20000).contains($0.frequency) && $0.gain.isFinite && (-24...24).contains($0.gain) && $0.q.isFinite && (0.1...10).contains($0.q) }) && threshold.isFinite && (-60...0).contains(threshold) && ratio.isFinite && (1...20).contains(ratio) && compressorAttack.isFinite && (0.001...1).contains(compressorAttack) && compressorRelease.isFinite && (0.01...3).contains(compressorRelease) && makeup.isFinite && (-24...24).contains(makeup) && faderMin.isFinite && faderMax.isFinite && (-60...0).contains(faderMin) && (faderMin...0).contains(faderMax)
     }

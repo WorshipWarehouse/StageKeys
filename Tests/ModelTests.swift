@@ -3,7 +3,7 @@ import Foundation
 @main
 struct ModelTests {
     static func main() throws {
-        let original = TestFixtures.setlist()
+        let original = Setlist()
         try original.validate()
         let data = try JSONEncoder().encode(original)
         let decoded = try JSONDecoder().decode(Setlist.self, from: data)
@@ -47,6 +47,13 @@ struct ModelTests {
         var v3 = original; v3.version=3
         let upgrade3=try JSONDecoder().decode(Setlist.self,from:JSONEncoder().encode(v3)).upgraded()
         assert(upgrade3.version==4 && upgrade3.patches[0].id==original.patches[0].id)
+        // Snapshot recall captures performance state, not sound-editor shaping.
+        var shaped = original.patches[0].layers[0]
+        shaped.channelSettings.attack = 3; shaped.channelSettings.filterMin = 90; shaped.channelSettings.resonance = 6
+        let captured = SnapshotSoundState(shaped)
+        let capturedText = String(decoding: try JSONEncoder().encode(captured), as: UTF8.self)
+        assert(!capturedText.contains("channelSettings") && !capturedText.contains("attack") && !capturedText.contains("filterMin"), "Snapshots must not store sound-editor envelope or filter values")
+        assert(captured.effects == shaped.effects && captured.pan == shaped.pan)
         print("PASS: legacy migration and new rack bounds")
         print("PASS: setlist round-trip, independent duplicate identity and values, malformed setlist rejection")
     }

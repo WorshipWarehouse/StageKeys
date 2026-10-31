@@ -1,5 +1,9 @@
 ## Unreleased
 
+- Enforce and document the native sound order: source gain → compressor → Mod Filter → EQ → three audio slots → pan → fader. The compressor no longer detects an already EQ-boosted signal.
+- Expose Attack/Decay/Sustain/Release and the Mod Filter (min/max cutoff, resonance) in Sound Settings for native sounds, with an explicit explanation instead of inert controls for instrument- or plug-in-owned envelopes.
+- Map the mod wheel through one tested exponential filter taper and clamp non-finite or out-of-range modulation.
+- Report retained MainStage envelope/filter parameters that are not translated instead of leaving a destination default unexplained; snapshots still exclude sound-editor shaping.
 - Add a standalone metronome engine with two synthesized click sounds, independent level, beat/downbeat velocities, accent patterns, subdivisions and master-follow; the click now bypasses the shared hall reverb.
 - Persist every metronome control in `settings.json`, keep older files readable and refuse out-of-range saved values at launch.
 - Cover click timing at 44.1/48/96 kHz, irregular block splits, mid-beat tempo changes, long runs, presets and settings round trips.

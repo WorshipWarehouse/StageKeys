@@ -301,7 +301,7 @@ final class AudioController {
     }
     func filter(_ index: Int, _ layer: Layer, mod: Float) {
         let c = layer.channelSettings
-        let cutoff = exp(log(c.filterMin) + (log(c.filterMax) - log(c.filterMin)) * mod)
+        let cutoff = c.cutoff(modulation: mod)
         sk_filter(synth, Int32(index), cutoff, c.resonance)
         externalRack?.processing(channel: index, gain: c.samplerGain, cutoff: cutoff, resonance: c.resonance,
             eqEnabled: c.eqEnabled, bands: c.equalizer.map { ($0.frequency, $0.gain, $0.q) },
