@@ -18,7 +18,34 @@ struct SoundSettingsControls: View {
             Button {value.wrappedValue=min(range.upperBound,value.wrappedValue+1)} label:{Image(systemName:"plus").frame(width:36,height:42)}.disabled(value.wrappedValue>=range.upperBound).accessibilityLabel("Increase \(title)")
         }.buttonStyle(.plain).background(StageTheme.raised,in:RoundedRectangle(cornerRadius:7))
     }
+    private var canEditEnvelope: Bool { layer.external == nil && layer.midiDestinationID == nil }
+    private var canEditFilter: Bool { layer.midiDestinationID == nil }
+    private var filterMinBinding: Binding<Float> { Binding(get:{layer.channelSettings.filterMin},set:{layer.channelSettings.filterMin=min($0,layer.channelSettings.filterMax)}) }
+    private var filterMaxBinding: Binding<Float> { Binding(get:{layer.channelSettings.filterMax},set:{layer.channelSettings.filterMax=max($0,layer.channelSettings.filterMin)}) }
+    private var shaping: some View {
+        VStack(alignment:.leading,spacing:8) {
+            Text("Native Sound Shaping").font(StageTheme.font(15,weight:.semibold))
+            Text("Source gain → compressor → Mod Filter → EQ → three Audio slots → pan → fader. Hosted plug-ins run their own internal order.").font(.caption).foregroundStyle(.secondary)
+            if canEditEnvelope {
+                HStack(spacing:8) {
+                    EffectKnob(compact:true,descriptor:.init(index:0,name:"Attack",minimum:0.001,maximum:10,defaultValue:0.35,unit:"s"),value:$layer.channelSettings.attack)
+                    EffectKnob(compact:true,descriptor:.init(index:1,name:"Decay",minimum:0.001,maximum:10,defaultValue:0.1,unit:"s"),value:$layer.channelSettings.decay)
+                    EffectKnob(compact:true,descriptor:.init(index:2,name:"Sustain",minimum:0,maximum:1,defaultValue:1,unit:"%"),value:$layer.channelSettings.sustain)
+                    EffectKnob(compact:true,descriptor:.init(index:3,name:"Release",minimum:0.001,maximum:30,defaultValue:1.2,unit:"s"),value:$layer.channelSettings.release)
+                }
+            } else {
+                Text("This sound's amplitude envelope belongs to its loaded instrument or hosted plug-in. The native envelope is hidden rather than substituted.").font(.caption).foregroundStyle(.secondary)
+            }
+            HStack(spacing:8) {
+                EffectKnob(compact:true,descriptor:.init(index:4,name:"Filter Min",minimum:20,maximum:20000,defaultValue:20000,unit:"Hz"),value:filterMinBinding)
+                EffectKnob(compact:true,descriptor:.init(index:5,name:"Filter Max",minimum:20,maximum:20000,defaultValue:20000,unit:"Hz"),value:filterMaxBinding)
+                EffectKnob(compact:true,descriptor:.init(index:6,name:"Resonance",minimum:0.1,maximum:10,defaultValue:0.707,unit:"Q"),value:$layer.channelSettings.resonance)
+            }.disabled(!canEditFilter)
+            Text(canEditFilter ? "Mod Wheel CC1 sweeps the filter exponentially from Filter Min to Filter Max." : "A MIDI-destination sound has no native filter path; use the receiving instrument's own filter.").font(.caption).foregroundStyle(.secondary)
+        }.padding(16).frame(maxWidth:.infinity,alignment:.leading).background(StageTheme.panel,in:RoundedRectangle(cornerRadius:8))
+    }
     var body: some View {
+        VStack(alignment:.leading,spacing:8) {
         HStack(alignment: .top, spacing:8) {
             VStack(spacing:8) {
                 card("Block Sustain", detail:"Make the Sound ignore the Sustain Pedal") { Toggle("Block Sustain",isOn:$layer.blockSustain).labelsHidden().toggleStyle(.switch) }
@@ -45,6 +72,8 @@ struct SoundSettingsControls: View {
                     }.background(StageTheme.panel,in:RoundedRectangle(cornerRadius:8))
                 }.frame(width:165)
             }
+        }
+        shaping
         }
     }
 }

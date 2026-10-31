@@ -171,6 +171,16 @@ enum MainStageProcessing {
         }
         if let expression=source["Channel_expressionValue"] as? Int,expression != 127 {draft.issues.append("Source expression \(expression) is retained; channel expression response requires translation.")}
         if let sends=source["Channel_sends"] as? [[String:Any]],sends.contains(where:{!$0.isEmpty}) {draft.issues.append("Source bus sends are retained in the patch archive; auxiliary routing is not flattened into insert effects.")}
+        // Source envelope and filter controls are not translated. Name the keys
+        // that were retained so a destination default is never mistaken for the
+        // source setting.
+        let shapingKeys = source.keys.filter { key in
+            let lower = key.lowercased()
+            return ["attack","decay","sustain","release","cutoff","resonance","filter","adsr","envelope"].contains { lower.contains($0) }
+        }.sorted()
+        if !shapingKeys.isEmpty {
+            draft.issues.append("Source sound-shaping parameters are retained in the patch archive but not translated: \(shapingKeys.joined(separator: ", ")). The destination keeps its own amplitude envelope and Mod Filter; set them explicitly in Sound Settings if the source values matter.")
+        }
     }
     /// Observed MainStage 4.3.1 channel `volume`: Q24 square-root amplitude,
     /// unity at 90 and maximum at 127. This is not the mixer slider's AX value.
