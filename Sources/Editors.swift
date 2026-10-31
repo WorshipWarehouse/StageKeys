@@ -430,11 +430,14 @@ struct PatchEditor: View {
                         HStack { Button("−"){store.setPatchVolume(store.patch.volumeDB-1)}.accessibilityLabel("Decrease patch volume");Text(String(format:"%.0f dB",store.patch.volumeDB)).frame(width:64);Button("+"){store.setPatchVolume(store.patch.volumeDB+1)}.accessibilityLabel("Increase patch volume") }.buttonStyle(StageButtonStyle())
                     }
                     row("Instantly Silence Previous Patch","") { Toggle("Instantly Silence Previous Patch",isOn:$store.setlist.patches[store.selected].silencePrevious).labelsHidden().toggleStyle(.switch) }
-                    row("Respond to Program Change","Set a MIDI Program Change number for this Patch") {
-                        VStack {
-                            Toggle("Respond to Program Change",isOn:Binding(get:{store.patch.programChangeEnabled ?? false},set:{store.setlist.patches[store.selected].programChangeEnabled=$0;if $0 && store.patch.programChangeNumber == nil {store.setlist.patches[store.selected].programChangeNumber=store.selected}})).labelsHidden().toggleStyle(.switch)
-                            if store.patch.programChangeEnabled == true { Stepper("\((store.patch.programChangeNumber ?? store.selected)+1)",value:Binding(get:{store.patch.programChangeNumber ?? store.selected},set:{store.setlist.patches[store.selected].programChangeEnabled=true;store.setlist.patches[store.selected].programChangeNumber=$0}),in:0...127) }
-                        }.frame(width:145)
+                    row("Respond to Program Change","Optional. Only the number set here selects this Patch; connecting or powering on a keyboard selects nothing.") {
+                        VStack(alignment:.trailing,spacing:6) {
+                            Toggle("Respond to Program Change",isOn:Binding(get:{store.patch.programChangeEnabled == true},set:{store.setProgramChangeEnabled($0)})).labelsHidden().toggleStyle(.switch)
+                            if store.patch.programChangeEnabled == true {
+                                Stepper(ProgramChangeMapping.title(store.patch.programChangeNumber ?? store.selected),value:Binding(get:{store.patch.programChangeNumber ?? store.selected},set:{store.setProgramChangeNumber($0)}),in:ProgramChangeMapping.values)
+                                Text(ProgramChangeMapping.explanation(store.patch.programChangeNumber ?? store.selected)).font(StageTheme.font(11)).foregroundStyle(.secondary).multilineTextAlignment(.trailing).fixedSize(horizontal:false,vertical:true)
+                            }
+                        }.frame(width:250)
                     }
                     row("Visual state when Patch is selected","Have this Patch recall a specific visual state when it is selected") {
                         Picker("Visual state",selection:$store.setlist.patches[store.selected].visualMode){Text("Don't change").tag(0);Text("Show Effects").tag(1);Text("Show Notes").tag(2)}.pickerStyle(.segmented).labelsHidden().frame(width:335)
