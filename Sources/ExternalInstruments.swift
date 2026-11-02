@@ -2,6 +2,31 @@ import Foundation
 import AVFoundation
 import AudioToolbox
 
+/// Scalar evidence for the original operation and graph completion. Raw error
+/// descriptions/paths are never retained in the support record.
+struct AudioGraphFailure: Codable, Equatable {
+    struct Cause: Codable, Equatable {
+        let domain: String
+        let code: Int
+        init(_ error: Error) {
+            let ns = error as NSError
+            domain = [NSOSStatusErrorDomain, "com.apple.coreaudio.avfaudio", NSPOSIXErrorDomain,
+                      NSCocoaErrorDomain].contains(ns.domain) ? ns.domain : "other"
+            code = ns.code
+        }
+    }
+    let id: UUID
+    let generation: UInt64
+    let edited: Bool
+    let wasRunning: Bool
+    let engineRunning: Bool
+    let operation: Cause?
+    let restoration: Cause?
+    let restart: Cause?
+    var rollbackSucceeded: Bool? = nil
+    var rollback: Cause? = nil
+}
+
 extension ExternalAUIdentity {
     var description: AudioComponentDescription {
         AudioComponentDescription(componentType: type, componentSubType: subtype,
@@ -10,9 +35,10 @@ extension ExternalAUIdentity {
 }
 
 enum ExternalInstrumentError: LocalizedError {
-    case unsupportedFormat, missingFile, invalidComponent, invalidChannel, superseded, unsupportedEffect
+    case unsupportedFormat, missingFile, invalidComponent, invalidChannel, superseded, unsupportedEffect, unavailableAudioUnit(String)
     var errorDescription: String? {
         switch self {
+        case .unavailableAudioUnit(let reason): return reason
         case .unsupportedFormat: return "Import SF2, DLS, Apple sampler AUPRESET/EXS, WAV, AIFF, AIF, or CAF files. VST and Kontakt libraries require a compatible Audio Unit."
         case .missingFile: return "The imported sound file is missing. Import it again on this device."
         case .invalidComponent: return "This Audio Unit is not a playable MIDI instrument or is unavailable on this device."
@@ -32,11 +58,12 @@ private final class ImportedBranchVoice {
     var audioGraph:ImportedAudioGraph?
     let midi=MIDIFXProcessor()
     var plan:ImportedBranch
+    private(set) var tempo: Float = 120
     var pitches:[Int:UInt8]=[:]
     var controllers:[Int:Int]=[:]
     init(_ plan:ImportedBranch){self.plan=plan}
     func configure(_ plan:ImportedBranch,tempo:Float) {
-        self.plan=plan;output.pan=plan.pan;output.outputVolume=plan.enabled != false ? (plan.gain ?? 1):0
+        self.plan=plan;self.tempo=tempo;output.pan=plan.pan;output.outputVolume=plan.enabled != false ? (plan.gain ?? 1):0
         var program=plan.midi ?? MIDIProgram();if plan.midiEnabled == false {program.kind = .bypass}
         midi.configure(channel:0,program:program,tempo:Double(tempo))
         for (index,child) in children.enumerated(){child.configure(plan.rack.branches![index],tempo:tempo)}
@@ -66,6 +93,12 @@ private final class ImportedBranchVoice {
 /// All methods run on the main thread, never in a render callback. Owns no engine.
 /// The host must silence held notes before a graph edit and surface thrown errors.
 final class ExternalInstrumentRack {
+    // Two complete 16-slot request sets (15 performance slots plus Tonic).
+    // Admission covers all rack instances in this process, including cancelled
+    // requests whose backend callback has not returned yet.
+    static let maximumPendingInstantiations = 32
+    static let loadCapacityErrorDomain = "StageKeysPluginLoadCapacity"
+    private static var pendingInstantiations = Set<UUID>()
     private static var recoveryStores:[String:PluginLoadRecovery]=[:]
     private static func loadRecovery()throws->PluginLoadRecovery {
         precondition(Thread.isMainThread)
@@ -75,8 +108,46 @@ final class ExternalInstrumentRack {
         let recovery=try PluginLoadRecovery(url:url);recoveryStores[url.path]=recovery;return recovery
     }
     static func allowBlockedLoads()throws {try loadRecovery().allowBlockedLoads()}
+    static func allowBlockedLoad(_ id: String) throws { try loadRecovery().allowBlockedLoad(id) }
+    static func blockedComponentIDs() throws -> Set<String> { try loadRecovery().blockedIDs() }
+    private var catalogScopeDepth = 0
+    private var catalogWasRead = false
+    private var scopedCatalog: [ExternalAUIdentity]?
+    /// Reuse one lazy registry observation during a synchronous user operation.
+    /// Never retain it across asynchronous loading or the next interaction.
+    func withInstrumentCatalog<T>(_ operation: () throws -> T) rethrows -> T {
+        precondition(Thread.isMainThread)
+        let outer = catalogScopeDepth == 0
+        if outer { scopedCatalog = nil; catalogWasRead = false }
+        catalogScopeDepth += 1
+        defer {
+            catalogScopeDepth -= 1
+            if outer { scopedCatalog = nil; catalogWasRead = false }
+        }
+        return try operation()
+    }
+    private func instrumentCatalog() -> [ExternalAUIdentity]? {
+        if catalogScopeDepth > 0 && catalogWasRead { return scopedCatalog }
+        let result: [ExternalAUIdentity]?
+        #if DEBUG
+        if let supplied = debugInstrumentCatalog { result = supplied() }
+        else if debugInstantiate != nil { result = nil }
+        else { result = Self.instruments() }
+        #else
+        result = Self.instruments()
+        #endif
+        if catalogScopeDepth > 0 { scopedCatalog = result; catalogWasRead = true }
+        return result
+    }
     private let engine: AVAudioEngine
     private var controllerValues:[Int:[Int:Int]]=[:]
+    private struct NoteIntent {
+        let pitch: Int
+        let velocity: Float
+        let source: Int32?
+        var released = false
+    }
+    private var noteIntents: [Int: [Int: NoteIntent]] = [:]
     let libraryURL: URL
     private struct Voice {
         var unit: AVAudioUnit
@@ -105,13 +176,13 @@ final class ExternalInstrumentRack {
         let mixer:AVAudioMixerNode
         var muteWorkItem:DispatchWorkItem?
         var silent=false
+        let expiresAt = ProcessInfo.processInfo.systemUptime + 20
         init(channel:Int,nodes:[AVAudioNode],mixer:AVAudioMixerNode) {
             self.channel=channel;self.nodes=nodes;self.mixer=mixer
         }
     }
     private var retiredTails:[RetiredTail]=[]
     private let maxRetiredTails=2
-    private let retiredTailLifetime:TimeInterval=20
     static func supportsEffect(kind: Int) -> Bool { (0...17).contains(kind) }
     /// Legacy names accepted by the adapter; the descriptor API exposes all built-in controls.
     static func supportedEffectParameters(kind: Int) -> Set<String> {
@@ -214,6 +285,9 @@ final class ExternalInstrumentRack {
                     engine.connect(mix,to:voice.filter,format:voice.filter.inputFormat(forBus:0))
                 }
                 voice.parallel=parallel;voice.parallelNodes=nodes;voice.parallelTopology=topology;voices[channel]=voice
+                #if DEBUG
+                try injectGraphFault(.graphConnected)
+                #endif
             }
         }
         for (i,branch) in voice.parallel.enumerated(){branch.configure(branches![i],tempo:tempo)}
@@ -221,7 +295,12 @@ final class ExternalInstrumentRack {
     func prepareOfflineSamples()throws {
         for voice in voices.values {if let sampler=voice.unit as? AVAudioUnitSampler {try SamplerRendering.configure(sampler,offline:true)};for branch in voice.parallel {try branch.prepareOffline()}}
     }
-    func releaseSource(_ source:Int32){for voice in voices.values {voice.parallel.forEach{$0.releaseSource(source)}}}
+    func releaseSource(_ source:Int32){
+        for (channel, notes) in noteIntents {
+            for (key, note) in notes where note.source == source { noteOff(channel: channel, key: key, forceRelease: true) }
+        }
+        for voice in voices.values {voice.parallel.forEach{$0.releaseSource(source)}}
+    }
     #if DEBUG
     func advanceBranches(to time:Double){for voice in voices.values {voice.parallel.forEach{$0.advance(time)}}}
     func debugBranchStates(_ channel:Int)->[[String:Any]] {voices[channel]?.parallel.compactMap{$0.sampler?.auAudioUnit.fullStateForDocument} ?? []}
@@ -245,6 +324,9 @@ final class ExternalInstrumentRack {
                 if hadGraph {for node in voice.imported where node.engine === engine {engine.disconnectNodeOutput(node);engine.detach(node)}}
                 voice.imported=[];voice.audioGraph=graph
                 connectEffects(voice);voices[channel]=voice
+                #if DEBUG
+                try injectGraphFault(.graphConnected)
+                #endif
             }
         }
         voice.audioGraph?.configure(plan,tempo:tempo)
@@ -505,32 +587,80 @@ final class ExternalInstrumentRack {
     }
     #if DEBUG
     func debugBuiltin(_ channel:Int)->AVAudioUnitEffect? {voices[channel]?.builtin}
+    var debugPendingInstantiationCount: Int { Self.pendingInstantiations.count }
+    var debugInstantiationTimeout: TimeInterval = 10
+    var debugInstrumentCatalog: (() -> [ExternalAUIdentity])?
+    var debugInstantiate: ((AudioComponentDescription, @escaping (AVAudioUnit?, Error?) -> Void) -> Void)?
+    private(set) var debugInstantiationCallbacks = 0
+    private(set) weak var debugLastCandidate: AVAudioUnit?
+    func debugActiveNoteCount(_ channel: Int) -> Int { voices[channel]?.pitches.count ?? 0 }
+    enum GraphFaultPoint { case candidateAttached, graphConnected, pluginStateApplied, restoreSamplers, restartEngine }
+    var debugGraphFault: ((GraphFaultPoint) -> Error?)?
+    private func injectGraphFault(_ point: GraphFaultPoint) throws {
+        if let error = debugGraphFault?(point) { throw error }
+    }
     #endif
     func contains(_ channel: Int) -> Bool { voices[channel] != nil }
-    func load(_ sound: ExternalSound, channel: Int, attackMinimum:Float=0, hostVelocityCurve:Int?=nil, completion: @escaping (Result<Void, Error>) -> Void) {
+    /// Read-only preparation for a proposed sound. All checks precede removal
+    /// of the current voice; the actual loader still rechecks at installation.
+    func validateSound(_ sound: ExternalSound, checkInstallation: Bool = true) throws {
+        precondition(Thread.isMainThread)
+        if sound.kind == .audioUnit {
+            guard let component = sound.component, component.type == kAudioUnitType_MusicDevice else {
+                throw ExternalInstrumentError.invalidComponent
+            }
+            if checkInstallation {
+                guard let catalog = instrumentCatalog() else { return } // DEBUG callback fixtures only.
+                #if os(iOS)
+                let mobile = true
+                #else
+                let mobile = false
+                #endif
+                if let reason = ExternalAUCatalog.unavailableReason(for: component, installed: catalog, isMobile: mobile) {
+                    throw ExternalInstrumentError.unavailableAudioUnit(reason)
+                }
+            }
+            return // Catalog presence does not prove instantiation/state restoration.
+        }
+        guard let name = sound.fileName, name == URL(fileURLWithPath: name).lastPathComponent,
+              !name.isEmpty else { throw ExternalInstrumentError.missingFile }
+        let file = libraryURL.appendingPathComponent(name)
+        guard Self.readableFile(file) else { throw ExternalInstrumentError.missingFile }
+        if sound.kind == .samplerPreset { try Self.verifySamples(file) }
+    }
+    func load(_ sound: ExternalSound, channel: Int, attackMinimum:Float=0, hostVelocityCurve:Int?=nil, configureCandidate: (() throws -> Void)? = nil, completion: @escaping (Result<Void, Error>) -> Void) {
         precondition(Thread.isMainThread)
         guard (0..<16).contains(channel) else { completion(.failure(ExternalInstrumentError.invalidChannel)); return }
+        if graphBatchDepth == 0 { lastGraphFailure = nil }
+        do { try validateSound(sound) } catch { completion(.failure(error)); return }
+        if sound.kind == .audioUnit && Self.pendingInstantiations.count >= Self.maximumPendingInstantiations {
+            completion(.failure(NSError(domain: Self.loadCapacityErrorDomain, code: 1, userInfo: [NSLocalizedDescriptionKey:
+                "Earlier Audio Unit loads are still finishing. Wait before retrying. If they never finish, save your work and restart StageKeys."])))
+            return
+        }
         let generation = UUID()
         generations[channel] = generation
         if sound.kind == .audioUnit {
             guard let component = sound.component, component.type == kAudioUnitType_MusicDevice else {
                 completion(.failure(ExternalInstrumentError.invalidComponent)); return
             }
-            #if os(iOS)
-            if let reason=component.platformUnavailableReason(isMobile:true) {
-                completion(.failure(NSError(domain:"StageKeysPluginPlatform",code:1,userInfo:[NSLocalizedDescriptionKey:reason])));return
-            }
-            #endif
             let recovery:PluginLoadRecovery
             do {recovery=try Self.loadRecovery();try recovery.begin(component.id)}
             catch {completion(.failure(error));return}
+            let ticket = UUID()
+            Self.pendingInstantiations.insert(ticket)
             var finished=false
             func finish(_ result:Result<Void,Error>,failed:Bool=false) {
                 guard !finished else{return};finished=true
                 do {try recovery.finish(component.id,failed:failed);completion(result)}
                 catch {completion(.failure(error))}
             }
-            DispatchQueue.main.asyncAfter(deadline:.now()+10) { [weak self] in
+            #if DEBUG
+            let timeout = debugInstantiationTimeout.isFinite ? max(0.001, min(10, debugInstantiationTimeout)) : 10
+            #else
+            let timeout: TimeInterval = 10
+            #endif
+            DispatchQueue.main.asyncAfter(deadline:.now()+timeout) { [weak self] in
                 guard !finished else{return}
                 guard self?.generations[channel]==generation else{finish(.failure(ExternalInstrumentError.superseded));return}
                 finish(.failure(NSError(domain:"StageKeysPluginRecovery",code:2,userInfo:[NSLocalizedDescriptionKey:"Audio Unit loading timed out after 10 seconds. It is blocked until you explicitly allow another attempt."])),failed:true)
@@ -540,27 +670,42 @@ final class ExternalInstrumentRack {
             #else
             let options:AudioComponentInstantiationOptions = []
             #endif
-            AVAudioUnit.instantiate(with: component.description, options: options) { [weak self] unit, error in
+            let instantiated: (AVAudioUnit?, Error?) -> Void = { [weak self] unit, error in
                 DispatchQueue.main.async {
+                    // A timeout/cancellation does not cancel Core Audio's work.
+                    // Release admission only when its callback actually arrives,
+                    // even if the host result has already been completed.
+                    ExternalInstrumentRack.pendingInstantiations.remove(ticket)
                     guard !finished else{return}
                     guard let self else {finish(.failure(ExternalInstrumentError.superseded));return}
+                    #if DEBUG
+                    self.debugInstantiationCallbacks += 1
+                    #endif
                     guard self.generations[channel] == generation else {
                         finish(.failure(ExternalInstrumentError.superseded)); return
                     }
                     guard let unit, unit.auAudioUnit.scheduleMIDIEventBlock != nil else {
                         finish(.failure(error ?? ExternalInstrumentError.invalidComponent),failed:true); return
                     }
-                    do { try self.install(unit, channel: channel); finish(.success(())) }
+                    do { try self.install(unit, channel: channel, ready: configureCandidate); finish(.success(())) }
+                    catch ExternalInstrumentError.superseded { finish(.failure(ExternalInstrumentError.superseded)) }
                     catch { finish(.failure(error),failed:true) }
                 }
             }
+            #if DEBUG
+            if let instantiate = debugInstantiate {
+                instantiate(component.description, instantiated)
+                return
+            }
+            #endif
+            AVAudioUnit.instantiate(with: component.description, options: options, completionHandler: instantiated)
         } else {
             do {
                 guard let name = sound.fileName, name == URL(fileURLWithPath: name).lastPathComponent else {
                     throw ExternalInstrumentError.missingFile
                 }
                 let file = libraryURL.appendingPathComponent(name)
-                guard FileManager.default.fileExists(atPath: file.path) else { throw ExternalInstrumentError.missingFile }
+                guard Self.readableFile(file) else { throw ExternalInstrumentError.missingFile }
                 let sampler = AVAudioUnitSampler()
                 // A single-file sample must be resident in memory. Left streaming, the sampler
                 // emits ~250 ms of digital silence every ~640 ms once the note is held.
@@ -569,7 +714,7 @@ final class ExternalInstrumentRack {
                     try sampler.loadSoundBankInstrument(at: file, program: sound.program, bankMSB: sound.bankMSB, bankLSB: sound.bankLSB)
                 } else if sound.kind == .samplerPreset {
                     try Self.verifySamples(file)
-                    try install(sampler, channel: channel) { let document=try SamplerAttack.load(sampler,file:file,minimum:attackMinimum,curve:hostVelocityCurve);self.rememberSampler(sampler,document:document) }
+                    try install(sampler, channel: channel, ready: configureCandidate) { let document=try SamplerAttack.load(sampler,file:file,minimum:attackMinimum,curve:hostVelocityCurve);self.rememberSampler(sampler,document:document) }
                     voices[channel]?.nativePreset=file;voices[channel]?.attackMinimum=attackMinimum;voices[channel]?.hostVelocityCurve=hostVelocityCurve
                     if sound.nativeSampler != nil {
                         // MainStage starts with unity volume/expression. Keep any
@@ -579,7 +724,7 @@ final class ExternalInstrumentRack {
                     completion(.success(()))
                     return
                 } else { try loadSample(sampler, url: file) }
-                try install(sampler, channel: channel)
+                try install(sampler, channel: channel, ready: configureCandidate)
                 completion(.success(()))
             } catch { completion(.failure(error)) }
         }
@@ -590,22 +735,38 @@ final class ExternalInstrumentRack {
     /// a file that disappeared after import. Only absolute paths and file URLs
     /// are checked here; other references stay with the sampler's own resolver.
     /// Runs on load, never on the audio render thread.
+    private static func readableFile(_ url: URL) -> Bool {
+        let resolved = url.resolvingSymlinksInPath()
+        return (try? resolved.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true &&
+            FileManager.default.isReadableFile(atPath: resolved.path)
+    }
     private static func verifySamples(_ preset:URL)throws {
         guard let size=(try? preset.resourceValues(forKeys:[.fileSizeKey]))?.fileSize,size<=16_000_000,
               let data=try? Data(contentsOf:preset),
-              let state=try? PropertyListSerialization.propertyList(from:data,options:[],format:nil) as? [String:Any],
-              let references=state["file-references"] as? [String:String] else{return}
-        for (_,reference) in references.sorted(by:{$0.key<$1.key}).prefix(4096) {
-            let path:String
+              let state=try? PropertyListSerialization.propertyList(from:data,options:[],format:nil) as? [String:Any] else{return}
+        try verifyReferences(state)
+    }
+    private static func verifyReferences(_ state: [String: Any]) throws {
+        guard let references = state["file-references"] as? [String: String] else { return }
+        var checked = Set<String>()
+        for (_, reference) in references.sorted(by: { $0.key < $1.key }) {
+            let file: URL
             if reference.hasPrefix("file://") {
-                guard let url=URL(string:reference),url.isFileURL else{continue}
-                path=url.path
-            } else if reference.hasPrefix("/") {path=reference}
-            else {continue}
-            guard FileManager.default.fileExists(atPath:path) else {
-                throw NSError(domain:"StageKeysSampler",code:1,userInfo:[NSLocalizedDescriptionKey:
-                    "Missing sample: \(URL(fileURLWithPath:path).lastPathComponent). Import this sound again or reconnect its storage."])
+                guard let url = URL(string: reference), url.isFileURL else { throw ExternalInstrumentError.unsupportedFormat }
+                file = url
+            } else if reference.hasPrefix("/") { file = URL(fileURLWithPath: reference) }
+            else { continue } // Leave relative/opaque references with the sampler resolver.
+            guard checked.insert(file.path).inserted else { continue }
+            guard readableFile(file) else {
+                throw NSError(domain: "StageKeysSampler", code: 1, userInfo: [NSLocalizedDescriptionKey:
+                    "A sample is missing or unreadable. Reconnect its storage or import the sound again."])
             }
+        }
+    }
+    private func prepareActiveSamplerResources() throws {
+        let active = Set(activeSamplers().map(ObjectIdentifier.init))
+        for (sampler, state) in samplerState() where active.contains(ObjectIdentifier(sampler)) {
+            try Self.verifyReferences(state)
         }
     }
     private func mixerState() -> [(AVAudioMixerNode, Float, Float)] {
@@ -676,6 +837,7 @@ final class ExternalInstrumentRack {
             defer{try? FileManager.default.removeItem(at:file)}
             try PropertyListSerialization.data(fromPropertyList:state,format:.xml,options:0).write(to:file)
             try sampler.loadInstrument(at:file)
+            rememberSampler(sampler, document: state)
             #if DEBUG
             samplerRestorationCount += 1
             #endif
@@ -689,25 +851,181 @@ final class ExternalInstrumentRack {
             }
         }
     }
+    /// Enumerate our nodes only: querying engine.attachedNodes can instantiate
+    /// an input singleton and request microphone access in this playback app.
+    private func graphNodes() -> [AVAudioNode] {
+        var nodes: [AVAudioNode] = []
+        for voice in voices.values {
+            nodes += [voice.unit, voice.filter, voice.eq, voice.compressor, voice.builtin, voice.mixer]
+            nodes += voice.imported
+            nodes += voice.parallelNodes
+            nodes += voice.audioGraph?.nodes ?? []
+        }
+        nodes += retiredTails.flatMap(\.nodes)
+        var seen = Set<ObjectIdentifier>()
+        return nodes.filter { seen.insert(ObjectIdentifier($0)).inserted }
+    }
+    private struct Route {
+        let node: AVAudioNode
+        let bus: AVAudioNodeBus
+        let points: [AVAudioConnectionPoint]
+        let format: AVAudioFormat
+    }
+    private struct Rollback {
+        let nodes: [AVAudioNode]
+        let routes: [Route]
+        let voices: [Int: Voice]
+        let controllers: [Int: [Int: Int]]
+        let notes: [Int: [Int: NoteIntent]]
+        let tails: [RetiredTail]
+        let tailSilence: [Bool]
+        let mixers: [(AVAudioMixerNode, Float, Float)]
+        let effects: [(BuiltinEffectUnit, [BuiltinEffectUnit.Setting])]
+        let branches: [(ImportedBranchVoice, ImportedBranch, Float)]
+    }
+    private func rollbackSnapshot() -> Rollback {
+        let nodes = graphNodes()
+        var routes: [Route] = []
+        for node in nodes where node.engine === engine {
+            for bus in 0..<node.numberOfOutputs {
+                let points = engine.outputConnectionPoints(for: node, outputBus: bus)
+                if !points.isEmpty { routes.append(Route(node: node, bus: bus, points: points, format: node.outputFormat(forBus: bus))) }
+            }
+        }
+        var branches: [(ImportedBranchVoice, ImportedBranch, Float)] = []
+        func capture(_ branch: ImportedBranchVoice) {
+            branches.append((branch, branch.plan, branch.tempo))
+            branch.children.forEach(capture)
+        }
+        voices.values.forEach { $0.parallel.forEach(capture) }
+        return Rollback(nodes: nodes, routes: routes, voices: voices, controllers: controllerValues,
+            notes: noteIntents, tails: retiredTails, tailSilence: retiredTails.map(\.silent),
+            mixers: (nodes.compactMap { $0 as? AVAudioMixerNode } + [engine.mainMixerNode]).map { ($0, $0.outputVolume, $0.pan) },
+            effects: nodes.compactMap { ($0 as? AVAudioUnit)?.auAudioUnit as? BuiltinEffectUnit }.map { ($0, $0.configurationSnapshot()) }, branches: branches)
+    }
+    private func restoreGraph(_ snapshot: Rollback, samplers: [(AVAudioUnitSampler, [String: Any])], states: [(AVAudioUnit, [String: Any])], wasRunning: Bool) throws {
+        engine.stop()
+        let oldIDs = Set(snapshot.nodes.map(ObjectIdentifier.init))
+        let oldTailIDs = Set(snapshot.tails.map(ObjectIdentifier.init))
+        for tail in retiredTails where !oldTailIDs.contains(ObjectIdentifier(tail)) { tail.muteWorkItem?.cancel() }
+        let current = graphNodes()
+        for node in current where node.engine === engine { engine.disconnectNodeOutput(node) }
+        for node in current.reversed() where !oldIDs.contains(ObjectIdentifier(node)) && node.engine === engine { engine.detach(node) }
+        for node in snapshot.nodes where node.engine == nil { engine.attach(node) }
+        for route in snapshot.routes { engine.connect(route.node, to: route.points, fromBus: route.bus, format: route.format) }
+        voices = snapshot.voices; controllerValues = snapshot.controllers; noteIntents = snapshot.notes
+        retiredTails = snapshot.tails
+        for (index, tail) in retiredTails.enumerated() {
+            tail.silent = snapshot.tailSilence[index]
+            scheduleTailExpiry(tail)
+        }
+        for (unit, state) in states.reversed() where oldIDs.contains(ObjectIdentifier(unit)) {
+            unit.auAudioUnit.fullStateForDocument = state
+        }
+        restoreControls(snapshot)
+        #if DEBUG
+        try injectGraphFault(.restoreSamplers)
+        #endif
+        try restoreSamplers(samplers)
+        restoreMixers(snapshot.mixers)
+        replayNotes()
+        if wasRunning {
+            #if DEBUG
+            try injectGraphFault(.restartEngine)
+            #endif
+            engine.prepare(); try engine.start()
+        }
+    }
+    private func restoreControls(_ snapshot: Rollback) {
+        for (branch, plan, tempo) in snapshot.branches { branch.configure(plan, tempo: tempo) }
+        for (unit, settings) in snapshot.effects { unit.restoreConfiguration(settings) }
+        restoreMixers(snapshot.mixers)
+    }
+    /// Reloaded samplers have lost their voices. Replay only intent still owned
+    /// by the same unit; a successful replacement must not inherit old notes.
+    private func replayNotes() {
+        let saved = noteIntents
+        for (channel, notes) in saved {
+            voices[channel]?.pitches.removeAll()
+            voices[channel]?.parallel.forEach { $0.panic() }
+            midi(channel, 0xB0, 120, 0)
+            for (controller, value) in controllerValues[channel] ?? [:] where controller < 120 {
+                voices[channel]?.parallel.forEach { $0.control(UInt8(controller), UInt8(value)) }
+                midi(channel, 0xB0, UInt8(controller), UInt8(value))
+            }
+            for (key, note) in notes.sorted(by: { $0.key < $1.key }) {
+                noteOn(channel: channel, key: key, pitch: note.pitch, velocity: note.velocity, sourceID: note.source)
+                if note.released { noteOff(channel: channel, key: key) }
+            }
+        }
+    }
     private struct GraphEdit {
+        let rollback: Rollback
         var mixers: [(AVAudioMixerNode, Float, Float)]
         var samplers: [(AVAudioUnitSampler, [String: Any])]
         var wasRunning: Bool
+        var states: [(AVAudioUnit, [String: Any])] = []
     }
     private var graphBatchDepth = 0
+    private(set) var graphGeneration: UInt64 = 0
     private var pendingGraphEdit: GraphEdit?
-    /// One lazy graph transaction per patch. Built-in-only updates never stop audio.
-    func withGraphChanges(_ operation: () throws -> Void) throws {
-        precondition(Thread.isMainThread)
-        if graphBatchDepth > 0 { try operation(); return }
-        graphBatchDepth = 1
-        defer { graphBatchDepth = 0 }
-        do { try operation() }
-        catch { try? finishGraphChanges(); throw error }
-        try finishGraphChanges()
+    private var preparedRollback: Rollback?
+    private(set) var lastGraphFailure: AudioGraphFailure?
+    private struct GraphFinish {
+        let edited: Bool
+        let wasRunning: Bool
+        var restoration: Error?
+        var restart: Error?
     }
-    private func finishGraphChanges() throws {
-        guard var edit = pendingGraphEdit else { return }
+    /// One lazy graph transaction per patch. Keep original and completion
+    /// failures separate, and preserve the original thrown error's type.
+    func withGraphChanges(capturingControls: Bool = false, _ operation: () throws -> Void) throws {
+        precondition(Thread.isMainThread)
+        if graphBatchDepth > 0 {
+            if capturingControls && pendingGraphEdit == nil && preparedRollback == nil { preparedRollback = rollbackSnapshot() }
+            try operation(); return
+        }
+        graphBatchDepth = 1
+        lastGraphFailure = nil
+        if capturingControls { preparedRollback = rollbackSnapshot() }
+        defer { graphBatchDepth = 0; preparedRollback = nil }
+        var operationError: Error?
+        do { try operation() } catch { operationError = error }
+        let edit = pendingGraphEdit
+        let finish = finishGraphChanges()
+        var rollbackSucceeded: Bool?
+        var rollbackError: Error?
+        if let edit, operationError != nil || finish.restoration != nil || finish.restart != nil {
+            do {
+                try restoreGraph(edit.rollback, samplers: edit.samplers, states: edit.states, wasRunning: edit.wasRunning)
+                rollbackSucceeded = true
+            } catch {
+                rollbackSucceeded = false; rollbackError = error
+                engine.stop()
+            }
+        }
+        if operationError != nil, !finish.edited, let preparedRollback {
+            restoreControls(preparedRollback)
+            // Restoring a changed branch MIDI plan can reset its scheduler.
+            // Rebuild owned note intent from resident voices without disk reload.
+            replayNotes()
+            rollbackSucceeded = true
+        }
+        if operationError != nil || finish.restoration != nil || finish.restart != nil {
+            lastGraphFailure = AudioGraphFailure(id: UUID(), generation: graphGeneration,
+                edited: finish.edited, wasRunning: finish.wasRunning, engineRunning: engine.isRunning,
+                operation: operationError.map(AudioGraphFailure.Cause.init),
+                restoration: finish.restoration.map(AudioGraphFailure.Cause.init),
+                restart: finish.restart.map(AudioGraphFailure.Cause.init),
+                rollbackSucceeded: rollbackSucceeded, rollback: rollbackError.map(AudioGraphFailure.Cause.init))
+        }
+        if let operationError { throw operationError }
+        if let error = finish.restoration ?? finish.restart { throw error }
+    }
+    private func finishGraphChanges() -> GraphFinish {
+        guard var edit = pendingGraphEdit else {
+            return GraphFinish(edited: false, wasRunning: engine.isRunning)
+        }
         pendingGraphEdit = nil
         // Retired graphs must not reload their samplers during a later patch
         // transaction. Their effects can still decay into the output without
@@ -715,13 +1033,29 @@ final class ExternalInstrumentRack {
         let active=Set(activeSamplers().map{ObjectIdentifier($0)})
         edit.samplers=edit.samplers.filter{active.contains(ObjectIdentifier($0.0))}
         edit.samplers += samplerState().filter { candidate in !edit.samplers.contains(where: { $0.0 === candidate.0 }) }
-        var failure: Error?
-        do { try restoreSamplers(edit.samplers) } catch { failure = error }
+        var outcome = GraphFinish(edited: true, wasRunning: edit.wasRunning)
+        do {
+            #if DEBUG
+            try injectGraphFault(.restoreSamplers)
+            #endif
+            try restoreSamplers(edit.samplers)
+        } catch { outcome.restoration = error }
         restoreMixers(edit.mixers)
-        if edit.wasRunning {
-            do { engine.prepare(); try engine.start() } catch { if failure == nil { failure = error } }
+        if outcome.restoration == nil { replayNotes() }
+        // A partially restored graph must not resume as if every instrument was
+        // ready. The controller/store expose an explicit manual recovery state.
+        if edit.wasRunning && outcome.restoration == nil {
+            do {
+                #if DEBUG
+                try injectGraphFault(.restartEngine)
+                #endif
+                engine.prepare(); try engine.start()
+            } catch {
+                outcome.restart = error
+                engine.stop() // A throwing start must not leave a partial-running state.
+            }
         }
-        if let failure { throw failure }
+        return outcome
     }
     private func editGraph(_ operation: () throws -> Void) throws {
         if graphBatchDepth == 0 {
@@ -729,7 +1063,9 @@ final class ExternalInstrumentRack {
             return
         }
         if pendingGraphEdit == nil {
-            pendingGraphEdit = GraphEdit(mixers: mixerState(), samplers: samplerState(), wasRunning: engine.isRunning)
+            try prepareActiveSamplerResources()
+            graphGeneration &+= 1
+            pendingGraphEdit = GraphEdit(rollback: preparedRollback ?? rollbackSnapshot(), mixers: mixerState(), samplers: samplerState(), wasRunning: engine.isRunning)
             if engine.isRunning { engine.stop() }
             purgeSilentRetiredTails()
         }
@@ -753,18 +1089,23 @@ final class ExternalInstrumentRack {
         var seen=Set<ObjectIdentifier>()
         let unique=nodes.filter{seen.insert(ObjectIdentifier($0)).inserted}
         let tail=RetiredTail(channel:channel,nodes:unique,mixer:mixer)
-        let work=DispatchWorkItem { [weak tail] in
-            guard let tail else{return}
-            tail.silent=true;tail.mixer.outputVolume=0
-        }
-        tail.muteWorkItem=work
         retiredTails.append(tail)
         // Repeated switches must not accumulate graphs or CPU. The oldest tail
         // is already silent enough to drop when this bound is exceeded.
         while retiredTails.count>maxRetiredTails {
             detachRetiredTail(retiredTails.removeFirst())
         }
-        DispatchQueue.main.asyncAfter(deadline:.now()+retiredTailLifetime,execute:work)
+        scheduleTailExpiry(tail)
+    }
+    private func scheduleTailExpiry(_ tail: RetiredTail) {
+        tail.muteWorkItem?.cancel()
+        guard !tail.silent else { return }
+        let work = DispatchWorkItem { [weak tail] in
+            guard let tail else { return }
+            tail.silent = true; tail.mixer.outputVolume = 0
+        }
+        tail.muteWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + max(0, tail.expiresAt - ProcessInfo.processInfo.systemUptime), execute: work)
     }
     private func detachRetiredTail(_ tail:RetiredTail) {
         tail.muteWorkItem?.cancel()
@@ -804,10 +1145,16 @@ final class ExternalInstrumentRack {
         engine.connect(mixer,to:destination,format:nil)
         enqueueRetiredTail(channel:channel,nodes:units.map{$0 as AVAudioNode}+[mixer as AVAudioNode],mixer:mixer)
     }
-    private func install(_ unit: AVAudioUnit, channel: Int, configure: (() throws -> Void)? = nil) throws {
+    private func install(_ unit: AVAudioUnit, channel: Int, ready: (() throws -> Void)? = nil, configure: (() throws -> Void)? = nil) throws {
         try editGraph {
             engine.attach(unit)
+            #if DEBUG
+            debugLastCandidate = unit
+            #endif
             do {
+                #if DEBUG
+                try injectGraphFault(.candidateAttached)
+                #endif
                 try configure?()
                 if let sampler = unit as? AVAudioUnitSampler { rememberSampler(sampler) }
             } catch { engine.detach(unit); throw error }
@@ -832,6 +1179,7 @@ final class ExternalInstrumentRack {
             connectEffects(voice)
             engine.connect(mixer, to: engine.mainMixerNode, format: nil)
             voices[channel] = voice
+            try ready?()
         }
     }
     private func retire(_ channel: Int) {
@@ -843,6 +1191,26 @@ final class ExternalInstrumentRack {
         nodes += old.parallelNodes
         nodes += old.audioGraph?.nodes ?? []
         enqueueRetiredTail(channel:channel,nodes:nodes,mixer:old.mixer)
+    }
+    /// Discard only rack-owned nodes after a failed performance, while stopped.
+    /// Retained sampler documents may no longer resolve after storage loss;
+    /// retry must build the selected patch without reloading abandoned voices.
+    func resetForRecovery() {
+        precondition(Thread.isMainThread && !engine.isRunning && graphBatchDepth == 0)
+        for channel in 0..<16 { cancelPendingLoad(channel) }
+        panic()
+        let nodes = graphNodes()
+        retiredTails.forEach { $0.muteWorkItem?.cancel() }
+        for node in nodes where node.engine === engine { engine.disconnectNodeOutput(node) }
+        for node in nodes.reversed() where node.engine === engine { engine.detach(node) }
+        voices.removeAll(); retiredTails.removeAll(); noteIntents.removeAll()
+        samplerHandles.removeAll(); samplerDocuments.removeAll()
+        graphGeneration &+= 1
+    }
+    /// Supersede an in-flight AU instantiation without removing a playing voice.
+    func cancelPendingLoad(_ channel: Int) {
+        precondition(Thread.isMainThread)
+        generations[channel] = UUID()
     }
     func remove(_ channel: Int) throws {
         precondition(Thread.isMainThread)
@@ -865,6 +1233,7 @@ final class ExternalInstrumentRack {
     func noteOn(channel: Int, key: Int, pitch: Int, velocity: Float,sourceID:Int32? = nil) {
         precondition(Thread.isMainThread)
         guard (0...127).contains(pitch), velocity.isFinite, voices[channel] != nil else { return }
+        noteIntents[channel, default: [:]][key] = NoteIntent(pitch: pitch, velocity: velocity, source: sourceID)
         if let branches=voices[channel]?.parallel,!branches.isEmpty {branches.forEach{$0.noteOn(key,pitch,velocity,sourceID)};return}
         if let previous = voices[channel]?.pitches[key] { midi(channel, 0x80, previous, 0) }
         let note = UInt8(pitch)
@@ -873,15 +1242,17 @@ final class ExternalInstrumentRack {
     }
     func noteOff(channel: Int, key: Int, forceRelease: Bool = false) {
         precondition(Thread.isMainThread)
+        if !forceRelease && (controllerValues[channel]?[64] ?? 0) >= 64 {
+            noteIntents[channel]?[key]?.released = true
+        } else { noteIntents[channel]?[key] = nil }
         if let branches=voices[channel]?.parallel,!branches.isEmpty {branches.forEach{$0.midi.noteOff(channel:0,key:key,force:forceRelease)};return}
-        if forceRelease { midi(channel, 0xB0, 64, 0) }
+        if forceRelease { control(channel: channel, controller: 64, value: 0) }
         if let note = voices[channel]?.pitches.removeValue(forKey: key) { midi(channel, 0x80, note, 0) }
     }
     func noteOff(key: Int) {
         precondition(Thread.isMainThread)
         for channel in Array(voices.keys) {
-            voices[channel]?.parallel.forEach{$0.midi.noteOff(channel:0,key:key)}
-            if let note = voices[channel]?.pitches.removeValue(forKey: key) { midi(channel, 0x80, note, 0) }
+            noteOff(channel: channel, key: key)
         }
     }
     func initializeMainStageControllers(channel:Int) {
@@ -889,8 +1260,8 @@ final class ExternalInstrumentRack {
             control(channel:channel,controller:UInt8(controller),value:127)
         }
     }
-    func control(channel: Int, controller: UInt8, value: UInt8) { precondition(Thread.isMainThread); guard controller < 128, value < 128 else { return };controllerValues[channel,default:[:]][Int(controller)]=Int(value);voices[channel]?.parallel.forEach{$0.control(controller,value)}; midi(channel, 0xB0, controller, value) }
-    func sustain(channel: Int, on: Bool) { precondition(Thread.isMainThread);controllerValues[channel,default:[:]][64]=on ? 127:0; voices[channel]?.parallel.forEach{$0.control(64,on ? 127:0)};midi(channel, 0xB0, 64, on ? 127 : 0) }
+    func control(channel: Int, controller: UInt8, value: UInt8) { precondition(Thread.isMainThread); guard controller < 128, value < 128 else { return };controllerValues[channel,default:[:]][Int(controller)]=Int(value);if controller == 64 && value < 64 {noteIntents[channel] = noteIntents[channel]?.filter { !$0.value.released }};if controller == 120 || controller == 123 {noteIntents[channel] = nil};voices[channel]?.parallel.forEach{$0.control(controller,value)}; midi(channel, 0xB0, controller, value) }
+    func sustain(channel: Int, on: Bool) { control(channel: channel, controller: 64, value: on ? 127 : 0) }
     func volume(channel: Int, gain: Float, pan: Float) {
         precondition(Thread.isMainThread)
         voices[channel]?.mixer.outputVolume = max(0, min(4, gain))
@@ -927,9 +1298,16 @@ final class ExternalInstrumentRack {
               let state = try PropertyListSerialization.propertyList(from: data, options: [], format: nil) as? [String: Any] else {
             throw ExternalInstrumentError.unsupportedFormat
         }
+        guard let unit = voices[channel]?.unit, let previous = unit.auAudioUnit.fullStateForDocument else {
+            throw ExternalInstrumentError.unsupportedFormat
+        }
         try editGraph {
+            pendingGraphEdit?.states.append((unit, previous))
             panic(channel)
             restoreState(state, channel: channel)
+            #if DEBUG
+            try injectGraphFault(.pluginStateApplied)
+            #endif
         }
     }
     func panic(_ channel: Int? = nil,preserveEffectTails:Bool=false) {
@@ -938,6 +1316,7 @@ final class ExternalInstrumentRack {
             for tail in retiredTails where channel.map({$0 == tail.channel}) ?? true {silenceRetiredTail(tail)}
         }
         for index in channel.map({ [$0] }) ?? Array(voices.keys) {
+            noteIntents[index] = nil
             controllerValues[index,default:[:]][64]=0
             voices[index]?.parallel.forEach{$0.panic(preserveEffectTails:preserveEffectTails)}
             midi(index, 0xB0, 64, 0)
@@ -955,6 +1334,8 @@ final class ExternalInstrumentRack {
     func unit(channel: Int) -> AVAudioUnit? { voices[channel]?.unit }
     func state(channel: Int) -> [String: Any]? { voices[channel]?.unit.auAudioUnit.fullStateForDocument }
     #if DEBUG
+    func debugNoteIntentCount(_ channel: Int) -> Int { noteIntents[channel]?.count ?? 0 }
+    var debugOwnedNodeCount: Int { graphNodes().count }
     var debugRetiredTailCount:Int {retiredTails.count}
     func debugExpireRetiredTails() {for tail in retiredTails {silenceRetiredTail(tail)}}
     #endif

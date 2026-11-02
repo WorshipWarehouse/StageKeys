@@ -7,6 +7,7 @@ final class PluginLoadRecovery {
     private struct Record: Codable {var pending:[String:Int]=[:];var blocked:Set<String>=[]}
     private var record:Record
     private let url:URL
+    private var persistenceFailed = false
     init(url:URL)throws {
         self.url=url
         if FileManager.default.fileExists(atPath:url.path) {
@@ -17,22 +18,56 @@ final class PluginLoadRecovery {
         record.blocked.formUnion(record.pending.keys);record.pending=[:]
         try save()
     }
-    private func save()throws {
-        try FileManager.default.createDirectory(at:url.deletingLastPathComponent(),withIntermediateDirectories:true)
-        try JSONEncoder().encode(record).write(to:url,options:.atomic)
+    private func save() throws { try persist(record) }
+    private func persist(_ next: Record) throws {
+        do {
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try JSONEncoder().encode(next).write(to: url, options: .atomic)
+        } catch { persistenceFailed = true; throw error }
     }
+    private func commit(_ next: Record) throws {
+        try persist(next)
+        record = next
+    }
+    private func requireWritableJournal() throws {
+        guard !persistenceFailed else {
+            throw NSError(domain: "StageKeysPluginRecovery", code: 4, userInfo: [NSLocalizedDescriptionKey:
+                "Audio Unit recovery information could not be saved. Restore app storage access, then restart StageKeys before loading instruments."])
+        }
+    }
+    func blockedIDs() throws -> Set<String> { try requireWritableJournal(); return record.blocked }
+    func isLoading(_ id: String) -> Bool { (record.pending[id] ?? 0) > 0 }
     func isBlocked(_ id:String)->Bool {record.blocked.contains(id)}
     func begin(_ id:String)throws {
+        try requireWritableJournal()
         guard !isBlocked(id) else{throw NSError(domain:"StageKeysPluginRecovery",code:1,userInfo:[NSLocalizedDescriptionKey:"This Audio Unit is blocked after a failed or interrupted load. Use Allow Blocked Loads in the Audio Units browser to retry explicitly."])}
-        record.pending[id,default:0]+=1;try save()
+        var next = record; next.pending[id, default: 0] += 1
+        try commit(next)
     }
     func finish(_ id:String,failed:Bool)throws {
-        let remaining=max(0,(record.pending[id] ?? 1)-1)
-        if remaining==0 {record.pending[id]=nil} else {record.pending[id]=remaining}
-        if failed {record.blocked.insert(id)}
-        try save()
+        var next = record
+        let remaining = max(0, (next.pending[id] ?? 1) - 1)
+        if remaining == 0 { next.pending[id] = nil } else { next.pending[id] = remaining }
+        if failed { next.blocked.insert(id) }
+        try commit(next)
     }
-    func allowBlockedLoads()throws {record.blocked=[];try save()}
+    func allowBlockedLoad(_ id: String) throws {
+        try requireWritableJournal()
+        guard !isLoading(id) else { throw pendingLoadError() }
+        guard record.blocked.contains(id) else { return }
+        var next = record; next.blocked.remove(id)
+        try commit(next)
+    }
+    func allowBlockedLoads() throws {
+        try requireWritableJournal()
+        guard record.pending.isEmpty else { throw pendingLoadError() }
+        var next = record; next.blocked = []
+        try commit(next)
+    }
+    private func pendingLoadError() -> NSError {
+        NSError(domain: "StageKeysPluginRecovery", code: 3, userInfo: [NSLocalizedDescriptionKey:
+            "An Audio Unit load is still finishing. Wait for it to finish or cancel before allowing another attempt."])
+    }
 }
 
 /// Persisted, portable component identity; installation remains a device requirement.
@@ -70,6 +105,21 @@ struct ExternalAUIdentity: Codable, Hashable, Identifiable {
 /// Catalog ordering and search for installed Audio Units. Kept separate from
 /// Core Audio enumeration so it can be verified without third-party plug-ins.
 enum ExternalAUCatalog {
+    /// Availability is device-local. Saved display/validation metadata must not
+    /// override a fresh component-triple match in this device's catalog.
+    static func unavailableReason(for saved: ExternalAUIdentity, installed: [ExternalAUIdentity], isMobile: Bool) -> String? {
+        guard saved.type == kAudioUnitType_MusicDevice else { return "The saved Audio Unit is not a MIDI instrument. Choose a replacement sound." }
+        guard let current = installed.first(where: { $0.id == saved.id }) else {
+            if isMobile, saved.manufacturer != kAudioUnitManufacturer_Apple, saved.isV3 == false {
+                return "This instrument requires a Mac AUv2 plugin. Install a compatible iOS AUv3 version or replace the sound on this device."
+            }
+            return "This Audio Unit is not installed on this device. Install the compatible instrument and refresh, or replace the sound. Saved settings are retained."
+        }
+        if isMobile, current.manufacturer != kAudioUnitManufacturer_Apple, current.isV3 == false {
+            return "This instrument requires a Mac AUv2 plugin. Install a compatible iOS AUv3 version or replace the sound on this device."
+        }
+        return current.unavailableReason
+    }
     /// Vendor first, then display name, then the stable component identity.
     static func sorted(_ items: [ExternalAUIdentity]) -> [ExternalAUIdentity] {
         items.sorted { lhs, rhs in

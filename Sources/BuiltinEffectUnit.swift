@@ -13,8 +13,13 @@ final class BuiltinEffectUnit: AUAudioUnit {
     private var scratch:AVAudioPCMBuffer?
     private var left:OpaquePointer?
     private var right:OpaquePointer?
-    private struct Setting {var kind=0;var enabled=false;var values:[Float]=[];var tempo:Float=120;var delay:ImportedDelay?}
+    struct Setting {var kind=0;var enabled=false;var values:[Float]=[];var tempo:Float=120;var delay:ImportedDelay?}
     private var settings=Array(repeating:Setting(),count:3)
+    func configurationSnapshot() -> [Setting] { settings }
+    func restoreConfiguration(_ snapshot: [Setting]) {
+        settings = snapshot
+        for slot in settings.indices { apply(slot) }
+    }
     override init(componentDescription:AudioComponentDescription,options:AudioComponentInstantiationOptions=[]) throws {
         try super.init(componentDescription:componentDescription,options:options)
         let format=AVAudioFormat(standardFormatWithSampleRate:48000,channels:2)!

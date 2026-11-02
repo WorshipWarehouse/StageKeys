@@ -41,17 +41,22 @@ struct SoundBrowser: View {
             return item
         }
         result += destinations.map{BrowserSound(id:"midi-\($0.id)",name:$0.name,collection:"External MIDI",tags:.init(category:"External MIDI",type:"MIDI Destination",sourceModel:"External MIDI"),destination:$0)}
-        return result.filter {sound in
+        #if os(iOS)
+        let mobile = true
+        #else
+        let mobile = false
+        #endif
+        return result.map { $0.checkingAudioUnitAvailability(installed: instruments, isMobile: mobile) }.filter {sound in
             guard sound.collection != "Tonic Pads" else{return false}
             switch collection {
-            case "All Sounds":return sound.playable && sound.destination == nil
+            case "All Sounds":return (sound.playable || sound.isAudioUnit) && sound.destination == nil
             case "MainStage Archive":return entries.contains(where:{$0.id == sound.id && $0.hostPath != nil})
             case "Sunday Free":return sound.collection.hasPrefix("Sunday Free") && sound.playable
             case "Sunday App":return sound.collection.hasPrefix("Sunday App")
             // Keep unavailable Audio Units listed so the reason is visible; every
-            // other collection only offers playable sounds.
+            // other collection also keeps saved AU entries visible for repair.
             case "Audio Units":return sound.collection == "Audio Units"
-            default:return sound.collection == collection && sound.playable
+            default:return sound.collection == collection && (sound.playable || sound.isAudioUnit)
             }
         }.map {sound in
             var item=sound;item.rating=store.soundRatings[sound.ratingID] ?? 0
@@ -161,7 +166,7 @@ struct SoundBrowser: View {
                 LazyVStack(spacing:2) {
                     ForEach(results){sound in
                         HStack(spacing:0){
-                            Button{selectedID=sound.id}label:{VStack(alignment:.leading,spacing:5){Text(sound.name).font(StageTheme.font(16)).multilineTextAlignment(.leading);if collection == "MainStage Archive" {Text(sound.playable ? "Playable":"Needs Conversion").font(StageTheme.font(11)).foregroundStyle(.secondary)};if sound.collection == "Audio Units" {Text(sound.tags.sourceModel).font(StageTheme.font(11)).foregroundStyle(.secondary)}}.frame(maxWidth:.infinity,alignment:.leading).padding(.leading,14).padding(.vertical,13)}.buttonStyle(.plain).accessibilityLabel("\(sound.name), \(sound.unavailableReason != nil ? "Unavailable" : sound.playable ? "Playable":"Needs Conversion")")
+                            Button{selectedID=sound.id}label:{VStack(alignment:.leading,spacing:5){Text(sound.name).font(StageTheme.font(16)).multilineTextAlignment(.leading);if collection == "MainStage Archive" {Text(sound.playable ? "Playable":"Needs Conversion").font(StageTheme.font(11)).foregroundStyle(.secondary)};if sound.unavailableReason != nil {Text("Unavailable").font(StageTheme.font(11)).foregroundStyle(.orange)};if sound.collection == "Audio Units" {Text(sound.tags.sourceModel).font(StageTheme.font(11)).foregroundStyle(.secondary)}}.frame(maxWidth:.infinity,alignment:.leading).padding(.leading,14).padding(.vertical,13)}.buttonStyle(.plain).accessibilityLabel("\(sound.name), \(sound.unavailableReason != nil ? "Unavailable" : sound.playable ? "Playable":"Needs Conversion")")
                             SoundRatingControl(name:sound.name,rating:sound.rating){store.rateSound(sound.ratingID,$0)}.padding(.horizontal,12)
                         }.background(selectedID == sound.id ? selectionColor:.clear,in:RoundedRectangle(cornerRadius:7)).foregroundStyle(selectedID == sound.id ? .white:.white.opacity(0.85))
                          .contextMenu {if let entry=sound.entry {
@@ -211,12 +216,13 @@ struct SoundBrowser: View {
                 }
             }.font(StageTheme.font(12)).frame(maxWidth:.infinity,alignment:.leading)
             if selection?.entry?.conversionNotes?.isEmpty == false {Button("Import Notes"){showingImportNotes=true}.buttonStyle(StageButtonStyle()).popover(isPresented:$showingImportNotes){ScrollView{VStack(alignment:.leading,spacing:12){ForEach(selection?.entry?.conversionNotes ?? [],id:\.self){Text($0)}}.padding(20)}.frame(width:420,height:300)}}
+            Button("Refresh Audio Units") { instruments=ExternalInstrumentRack.instruments(); store.refreshUnavailablePatchInstruments(installed: instruments) }.buttonStyle(StageButtonStyle())
             if collection == "External MIDI" {Button("Refresh"){store.refreshMIDIDestinations()}.buttonStyle(StageButtonStyle())}
-            if collection == "Audio Units" {Button("Allow Blocked Loads") {do{try ExternalInstrumentRack.allowBlockedLoads();instruments=ExternalInstrumentRack.instruments()}catch{store.message=error.localizedDescription}}.buttonStyle(StageButtonStyle()).help("Explicitly retry plug-ins blocked after failed or interrupted loading")}
+            if collection == "Audio Units" {Button("Allow Blocked Loads") {if store.allowAllBlockedAudioUnits() { instruments=ExternalInstrumentRack.instruments() }}.buttonStyle(StageButtonStyle()).help("Explicitly retry plug-ins blocked after failed or interrupted loading")}
             if collection == "Audio Units" {Button("Rescan"){instruments=ExternalInstrumentRack.instruments()}.buttonStyle(StageButtonStyle()).help("Re-scan installed Audio Units; a plug-in installed while StageKeys is running may need a relaunch")}
             Button(auditionToken == nil ? "Audition":"Stop Audition") {
                 if let token=auditionToken {store.endAudition(token);auditionToken=nil} else {auditionSelection()}
-            }.buttonStyle(StageButtonStyle(selected:auditionToken != nil)).disabled(selection?.playable != true && auditionToken == nil).help("Play your keyboard to hear only the selected sound; Cancel restores the original mix")
+            }.buttonStyle(StageButtonStyle(selected:auditionToken != nil)).disabled((selection?.playable != true || !store.started || store.patchLoading) && auditionToken == nil).help(!store.started ? "Start audio before auditioning a sound" : store.patchLoading ? "Wait for the patch to finish loading before auditioning" : "Play your keyboard to hear only the selected sound; Cancel restores the original mix")
             Button("Cancel"){cancel()}.buttonStyle(LibraryActionStyle()).help("Close without changing the current module")
             Button(primaryActionTitle){addSelection()}.buttonStyle(LibraryActionStyle(primary:true)).disabled(selection?.playable != true)
                 .accessibilityLabel(isReplacing ? "Replace the sound in module \(index+1)":"Add this sound to module \(index+1)")

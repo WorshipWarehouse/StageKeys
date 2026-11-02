@@ -1,0 +1,962 @@
+{
+  "date": "2026-11-02",
+  "git_baseline": "6a253130196e8beca471a575a45c1834d52cedf8",
+  "preceding_evidence": "resource-recovery-verification.json",
+  "scope": "Named blocked AU rows in Settings, selective permission without starting audio, shared global permission handling, atomic record publication and fail-closed journal persistence errors.",
+  "environment": {
+    "platform": "macOS 27.2 (26B123), arm64",
+    "xcode": "27.2 (27B52)",
+    "fixtures": "Per-program isolated STAGEKEYS_DATA_DIR; synthetic component identities, Apple sampler candidates and original generated WAV fixtures. Journal refusal tests replace only disposable generated file paths with directories.",
+    "ui": "Compiled in unsigned Mac/Simulator artifacts; no interactive native-UI walkthrough or physical-device operation claimed.",
+    "simulator_warning": "Existing CoreSimulator service version mismatch warning; unsigned artifact gates succeeded."
+  },
+  "checks": [
+    {
+      "label": "focused",
+      "command": "python3 Tests/run-local-library.py . /private/tmp/stagekeys-plugin-recovery-checked PluginRecoveryTests PluginRecoverySettingsTests PatchReadinessTests AudioUnitCommitTests StoreTests SupportDiagnosticsTests ResourceAvailabilityTests",
+      "exit_code": 0,
+      "log": "/private/tmp/stagekeys-plugin-recovery-checked.log",
+      "log_sha256": "a0ed5292429f5fe842b6edc281345549ba97d858070c50babee1952dcc737e1a",
+      "scope": "Seven programs passed before the final empty-status display guard and bounded callback wait refinement; complete final suite includes both refinements."
+    },
+    {
+      "label": "full-final",
+      "command": "python3 Tests/run-local-library.py . /private/tmp/stagekeys-plugin-settings-final",
+      "exit_code": 0,
+      "log": "/private/tmp/stagekeys-plugin-settings-final.log",
+      "log_sha256": "98c7ba1ce8eb85e9888fe9ed0d88fbc5e30ece323d44afd21ac0d85bc63f9ca2",
+      "scope": "Complete default gate including selective permission, failed journal writes and asynchronous store recovery."
+    },
+    {
+      "label": "mac-final",
+      "command": "Tools/verify-release.sh mac /private/tmp/stagekeys-plugin-settings-mac",
+      "exit_code": 0,
+      "log": "/private/tmp/stagekeys-plugin-settings-mac.log",
+      "log_sha256": "2d5cdf6ed93b56196ce3e5ec38192b32b73b3c19061bbbf787ed17cac149ca0a",
+      "scope": "Unsigned universal Mac artifact/content/document/notices gate."
+    },
+    {
+      "label": "simulator-final",
+      "command": "Tools/verify-release.sh simulator /private/tmp/stagekeys-plugin-settings-simulator",
+      "exit_code": 0,
+      "log": "/private/tmp/stagekeys-plugin-settings-simulator.log",
+      "log_sha256": "ba58604b464e07017132e8a4d585e86c5d37e4bdaa2f4e32d4fa0e67fb64d1c6",
+      "scope": "Unsigned Simulator artifact/content/document/icon gate; not physical-device or interactive UI qualification."
+    }
+  ],
+  "results": {
+    "total": 108,
+    "counts": {
+      "passed": 97,
+      "skipped": 11
+    },
+    "programs": [
+      {
+        "test": "PluginRecoverySettingsTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 1.336
+      },
+      {
+        "test": "ResourceAvailabilityTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 1.426
+      },
+      {
+        "test": "PatchReadinessTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 1.531
+      },
+      {
+        "test": "SnapshotProcessingTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 1.898
+      },
+      {
+        "test": "AudioUnitCommitTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 1.413
+      },
+      {
+        "test": "NativeGraphRollbackTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 1.707
+      },
+      {
+        "test": "MainStageTapeDelayTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 0.68
+      },
+      {
+        "test": "PersonalSoundPackTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 2.343
+      },
+      {
+        "test": "MainStageGuidedImportTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 1.367
+      },
+      {
+        "test": "MetadataRecoveryTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 1.082
+      },
+      {
+        "test": "CatalogRecoveryTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 0.862
+      },
+      {
+        "test": "MainStageFaderTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 1.132
+      },
+      {
+        "test": "NoFactorySoundsTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 1.098
+      },
+      {
+        "test": "SamplerStartupTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 0.908
+      },
+      {
+        "test": "SetlistPathAliasTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 0.626
+      },
+      {
+        "test": "StoreTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 1.727
+      },
+      {
+        "test": "SnapshotSlotTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 0.807
+      },
+      {
+        "test": "SessionRecoveryTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 0.88
+      },
+      {
+        "test": "SupportDiagnosticsTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 0.661
+      },
+      {
+        "test": "TransactionalImportTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 0.864
+      },
+      {
+        "test": "MainStagePreflightTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 0.813
+      },
+      {
+        "test": "PluginRecoveryTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 0.656
+      },
+      {
+        "test": "EffectStressTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 1.285
+      },
+      {
+        "test": "OutputMeterTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 0.884
+      },
+      {
+        "test": "MainStageLayerAssemblyTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 0.744
+      },
+      {
+        "test": "ModulationWheelTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 0.765
+      },
+      {
+        "test": "AllSoundSlotsTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 5.693
+      },
+      {
+        "test": "PatchDraftPlanTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 1.196
+      },
+      {
+        "test": "ManualMIDIDestinationRefreshTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 0.862
+      },
+      {
+        "test": "PluginParameterModelTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 3.537
+      },
+      {
+        "test": "PrimaVerbModelTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 1.068
+      },
+      {
+        "test": "EffectPresetTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 0.897
+      },
+      {
+        "test": "DenseHostedTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 1.238
+      },
+      {
+        "test": "ReverbTransitionTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 1.211
+      },
+      {
+        "test": "ExternalGraphTailTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 1.518
+      },
+      {
+        "test": "LibraryBrowserTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 0.883
+      },
+      {
+        "test": "SoundRatingTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 0.833
+      },
+      {
+        "test": "LibraryNoteRangeTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 0.747
+      },
+      {
+        "test": "SoundLibraryTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 0.566
+      },
+      {
+        "test": "ImportedSampleContinuityTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 0.787
+      },
+      {
+        "test": "ImportedSoundRetentionTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 0.736
+      },
+      {
+        "test": "MainStagePatchTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 0.744
+      },
+      {
+        "test": "StageKeysSamplerTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 0.483
+      },
+      {
+        "test": "SamplerAttackTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 0.553
+      },
+      {
+        "test": "AudioDiagnosticRecorderTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 0.547
+      },
+      {
+        "test": "InstrumentGainMatchTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 9.464
+      },
+      {
+        "test": "PatchGainTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 0.833
+      },
+      {
+        "test": "EXSEnvelopeTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 0.687
+      },
+      {
+        "test": "EXSVoiceControlsTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 1.155
+      },
+      {
+        "test": "EXSSplitRegionTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 0.776
+      },
+      {
+        "test": "LibraryBackupTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 0.673
+      },
+      {
+        "test": "TonicPadTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 1.117
+      },
+      {
+        "test": "MainStageProcessingTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 0.681
+      },
+      {
+        "test": "MainStageControllerDefaultsTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 0.805
+      },
+      {
+        "test": "MainStageAudioUnitImportTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 1.015
+      },
+      {
+        "test": "EXSReferenceIdentityTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 0.521
+      },
+      {
+        "test": "EXSCrossfadeNeutralTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 0.552
+      },
+      {
+        "test": "SamplerHostVelocityTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 1.166
+      },
+      {
+        "test": "NativeSamplerGroupTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 0.908
+      },
+      {
+        "test": "PianoFidelityTests",
+        "status": "skipped",
+        "passed": null,
+        "reasons": [
+          "SKIP: private piano fixture unset"
+        ],
+        "seconds": 0.515
+      },
+      {
+        "test": "SamplerBoundaryRegressionTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 1.439
+      },
+      {
+        "test": "SamplerStreamingStressTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 2.917
+      },
+      {
+        "test": "AudioUnitCatalogTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 0.522
+      },
+      {
+        "test": "MIDISetupTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 0.527
+      },
+      {
+        "test": "BuiltinEffectUnitTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 2.146
+      },
+      {
+        "test": "NativeCreamCoatTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 0.643
+      },
+      {
+        "test": "ParallelAudioTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 0.604
+      },
+      {
+        "test": "PianoHeldNoteTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 0.541
+      },
+      {
+        "test": "ModelTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 0.786
+      },
+      {
+        "test": "GrooveTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 0.493
+      },
+      {
+        "test": "MIDIFXTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 0.546
+      },
+      {
+        "test": "SnapshotMorphTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 0.49
+      },
+      {
+        "test": "EXSAmplitudeUpgradeTests",
+        "status": "skipped",
+        "passed": null,
+        "reasons": [
+          "SKIP: private sampler/source unset"
+        ],
+        "seconds": 0.5
+      },
+      {
+        "test": "EXSResponseUpgradeTests",
+        "status": "skipped",
+        "passed": null,
+        "reasons": [
+          "SKIP: private response fixture unset"
+        ],
+        "seconds": 0.509
+      },
+      {
+        "test": "EXSVoiceUpgradeTests",
+        "status": "skipped",
+        "passed": null,
+        "reasons": [
+          "SKIP: private v2 sampler/source fixture unset"
+        ],
+        "seconds": 0.574
+      },
+      {
+        "test": "EXSCaptureCompatibilityTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 0.797
+      },
+      {
+        "test": "EXSImportTests",
+        "status": "skipped",
+        "passed": null,
+        "reasons": [
+          "SKIP EXS test: provide scratch directory, installed EXS, and explicit sample root"
+        ],
+        "seconds": 0.524
+      },
+      {
+        "test": "ModernEXSImportTests",
+        "status": "skipped",
+        "passed": null,
+        "reasons": [
+          "SKIP: provide private EXS fixture and selected sample root"
+        ],
+        "seconds": 0.594
+      },
+      {
+        "test": "ModernEXSPlaybackTests",
+        "status": "skipped",
+        "passed": null,
+        "reasons": [
+          "SKIP: provide private EXS fixture and selected sample root"
+        ],
+        "seconds": 0.535
+      },
+      {
+        "test": "MainStageAutoConversionTests",
+        "status": "skipped",
+        "passed": null,
+        "reasons": [
+          "SKIP: private bundled MainStage fixture unset"
+        ],
+        "seconds": 0.566
+      },
+      {
+        "test": "MainStagePackTests",
+        "status": "skipped",
+        "passed": null,
+        "reasons": [
+          "SKIP: private MainStage pack unset"
+        ],
+        "seconds": 0.586
+      },
+      {
+        "test": "ReferencedMainStageImportTests",
+        "status": "skipped",
+        "passed": null,
+        "reasons": [
+          "SKIP: provide private source patch and selected sample root"
+        ],
+        "seconds": 0.492
+      },
+      {
+        "test": "ImportedAttackAuditTests",
+        "status": "skipped",
+        "passed": null,
+        "reasons": [
+          "SKIP: optional installed-sound audit fixture unset"
+        ],
+        "seconds": 0.589
+      },
+      {
+        "test": "EQBandwidthTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 0.45
+      },
+      {
+        "test": "PlugAndPlayTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 2.321
+      },
+      {
+        "test": "ProgramChangeOptInTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 1.322
+      },
+      {
+        "test": "AudioStartupTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 0.498
+      },
+      {
+        "test": "ChannelSignalOrderTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 0.46
+      },
+      {
+        "test": "PatchTranspositionTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 0.5
+      },
+      {
+        "test": "MainStageEffectSelectionTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 0.594
+      },
+      {
+        "test": "MainStageEffectSelectionImportTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 0.787
+      },
+      {
+        "test": "MetronomeSettingsTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 0.489
+      },
+      {
+        "test": "PluginInterfaceRequestTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 0.575
+      },
+      {
+        "test": "LiveSoundChangeTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 0.999
+      },
+      {
+        "test": "NativeLoadFailureTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 1.085
+      },
+      {
+        "test": "GraphCompletionFailureTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 1.247
+      },
+      {
+        "test": "AudioGraphTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 0.88
+      },
+      {
+        "test": "SetlistLibraryTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 0.546
+      },
+      {
+        "test": "MIDIInputTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 1.312
+      },
+      {
+        "test": "ExternalMIDITests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 0.543
+      },
+      {
+        "test": "DelayIndependentLevelsTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 0.155
+      },
+      {
+        "test": "AudioEffectsTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 0.75
+      },
+      {
+        "test": "ChannelDSPTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 0.19
+      },
+      {
+        "test": "ChannelPanicTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 0.192
+      },
+      {
+        "test": "RackTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 0.375
+      },
+      {
+        "test": "SynthTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 0.803
+      },
+      {
+        "test": "MetronomeTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 0.188
+      },
+      {
+        "test": "NativeSoundOrderTests",
+        "status": "passed",
+        "passed": true,
+        "seconds": 0.179
+      }
+    ],
+    "known_unexercised_pass": "PianoHeldNoteTests returns without its private fixture; no piano qualification inferred."
+  },
+  "policies": {
+    "library_gate": "100 Swift, 8 C; 11 documented on-demand programs; 21 sanitizer programs unchanged",
+    "runner_contract": "7 passed",
+    "distribution": "Synthetic refusal suite and repository content gate passed",
+    "shell_syntax": "passed",
+    "whitespace": "passed",
+    "source_hashes_verified": true,
+    "dsp_sanitizers": "C sources unchanged; earlier sanitizer result not rerun"
+  },
+  "source_sha256": {
+    "Sources/AssetDigest.swift": "7fbb1f9973ecaa0e20ccb6aab60afd4c6bdf90698c5469fbffeeddbbc609eadf",
+    "Sources/AudioController.swift": "332b90336a868f3fd8c956a77d8230d649befa9feb28290bff065774859e2f82",
+    "Sources/AudioDevices.swift": "97aa8380b080f3a7bb0ac225df04e6187519dcabec3d5e3bd7aef9c378c74d43",
+    "Sources/AudioDiagnosticRecorder.swift": "223858a326f8bc05f15040a39f5b4b2209c59ce56423ef91163e01e649f69b81",
+    "Sources/AudioEffectParameters.swift": "7bfd077496edde6e5cb672a5abd4ba64fb53d7aa4d883f2cd0b2e991cb0ce736",
+    "Sources/Bridge.h": "2b021836cedd1956349ee0d331719e6f5c2e92fe9d9726a49b3b2ccf49861819",
+    "Sources/BuiltinEffectUnit.swift": "3037e479b7b3f422e27c1c5f2502ac2e2b48b235b7eb57b9bb501bc014b26431",
+    "Sources/ChannelSettings.swift": "b5d35d33384ddc1b7f8751f5ae5ea9dc34215fe0ad0d1b78fd11578963033f72",
+    "Sources/CreamCoat.c": "2fa8f368aec5e45b23e546bac8e46e46bd572bd66cb4902304ba723f930a3727",
+    "Sources/CreamCoat.h": "398075e39f9b6ccc262a4baef626fe795069eb5db7cfd58d1a734e6078a93e59",
+    "Sources/EQBandwidth.swift": "3fbe46db54a2a42e19c80dcb0f9229aa2452604788b0de499014c9c680362a36",
+    "Sources/EXSCaptureCompatibility.swift": "c99070587d7d9322d90cd9e17859c0e508c9fff1a8146436e4ed3f075c7905b4",
+    "Sources/EXSNative.swift": "d7d3f2aa6eb22f617c623ed42f3deb1164693154dae873549eff1b30bdaef36a",
+    "Sources/Editors.swift": "b060a1dd81b8abffe678f0bb54ef7e9354c0a7f12dc19c7ce1ff3c7df3a96195",
+    "Sources/EqualizerEditor.swift": "bf17120c9a160f1e22b3dd992ba09d83d53dcd58a8ea21035f50398c3281d6d3",
+    "Sources/ExternalInstruments.swift": "bcdef5d67e5b5bb3cb45bb6891f169cce2356e8ab9c6f4c34bc794697fef9040",
+    "Sources/ExternalMIDIOutput.swift": "b0a078adf41c2ffd048d3e77f6039eb5e026b87a590848187dbf511636f29124",
+    "Sources/ExternalSound.swift": "cf0e3d293f2c9a30735b5b6e81a42977adc6a0e2f392e39d448563807f5bd750",
+    "Sources/ImportedAudioGraph.swift": "5b43c07010819d44838d383e80790bf702643e79292fd04aa6b356a32277102b",
+    "Sources/LibraryBackup.swift": "c735355f4530b12ff4134170b42071f2688083269b5583d54749ad0556c16050",
+    "Sources/LibraryBrowserModel.swift": "734bed4c8192be93879e9340b495dd823b663622e4e6f57f1a8fc870a6fa4df6",
+    "Sources/MIDIControlLearnView.swift": "51a4a802019a7dd0e97c5fb4f55a894bf2aa5f678f958799d31f0224b955a0af",
+    "Sources/MIDIControlTarget.swift": "b2110a315b2e2f1bfcfa27941f2eb3b6464b58b5b92213282526da0a138bbe02",
+    "Sources/MIDIFXProcessor.swift": "e23f62656f2ab3e7c89bed5a701ae2a4a69560cc5ba0f1bb019c9264dac23bcf",
+    "Sources/MIDIInput.swift": "004eb402f6164e5242be4a76dbd21da0625e36ef3ed8939d793d7cfda5bf4606",
+    "Sources/MIDIPrograms.swift": "6b9006f2ba887c27371121bce2740a6525fc9705160f714976641405541e1eb8",
+    "Sources/MainStagePatch.swift": "de815f9f0c9b4e61e580cdd84bec3b8f423215055635ed391ec3d1cdcb9bcc22",
+    "Sources/MainStageProcessing.swift": "56d89d17e2269ff2d39e03714e614adc0cd7ea068625a9b5f6cafef3a958e4cd",
+    "Sources/Models.swift": "497b34a369e8c486232e40063b9bd97933bdb33b67bcbe35666566bc4e629ebe",
+    "Sources/PatchWorkflowViews.swift": "6c34584b380acd1deb5869089e8245f75245ef050975df9f3c8e1a41ae9666a9",
+    "Sources/PerformanceControls.swift": "6e0cc83fd51a304cae039809d9186c7b89750c629639ba076942f22ff13555e4",
+    "Sources/PluginInterface.swift": "2e190f92fcd5a9220b8bf99c8f22febbf81948f9635621536f4548fd04385129",
+    "Sources/PluginParameterModel.swift": "e1c4520afefe9dcf244f05f5f7516b0925d8ed13dc5d03248c540701061d8714",
+    "Sources/SamplerInterchange.swift": "41f182a8d3877bcddd4bbb2d78d0201d3322b9c8a2b023338156be29dc50535f",
+    "Sources/SessionSettings.swift": "acde1fec9e9c0f1a1644f2a175ab8241513436f22852312d7e4e171268bf8980",
+    "Sources/SetlistLibrary.swift": "dc534991dda3d5e3fc33ab7314288a9566040785e5d63a1351af260080f26346",
+    "Sources/SettingsViews.swift": "0339cbca72745042838ca30c634a7103439c7fa942e41dfab038cb7e4eb9f058",
+    "Sources/ShimmerPitch.h": "3be11ae239b1d0996b7775b7afd9516a305d81fdc4cf38a45604bb717ccc5cc3",
+    "Sources/SnapshotMorph.swift": "fd3a49d2a2e1cf8981764aa12f71c65627ffbd637477d5b7f34c6aa07a06ebc3",
+    "Sources/SoundBrowser.swift": "004397b07a1ba127a5c770764b3b2d2ba73501d76944eed1d5d60e71d3afcc5b",
+    "Sources/SoundImportView.swift": "4a8630ee426f567eba5b014429b32fa7c15c368c9144565398c2a6186db67ae2",
+    "Sources/SoundLibrary.swift": "f09a1e4ef6397ba0434b9ecb8abdd2a681909a80d80b384a7f26195b4a16a26e",
+    "Sources/SoundSettingsControls.swift": "4d8015e39bd3a3f553da2dd46f32429239e59a326757058a4414a043dc4a460a",
+    "Sources/StageKeysApp.swift": "9337cad863e6d57f87879f580b5697a9cba40f049ef83b13861c46988c7e4cf8",
+    "Sources/StageKeysSampler.swift": "fef30136311c5041904b3c47475f78514df0c58b6f9a07548117f66ca612eec5",
+    "Sources/Store.swift": "00f2ae5d957617e35407a62a67f17054b0f82017e11b54b4e05bbb90f08b2c76",
+    "Sources/SundayFactoryVoicing.swift": "687226fd3c1325738f8ec3d514db2a15065af015250b4dc7984505611882c1e8",
+    "Sources/Synth.c": "c085218de166c4a9b19bac4e91c6847ffdf9c82bc5641d30cdc29df8c13b9564",
+    "Sources/Synth.h": "f31326a2219155557d2166fd5509d91b493d29fb753807755c7f785a7cfafbc3",
+    "StageKeys.xcodeproj/project.pbxproj": "49a4fde2c848c38f13fc32917952bc1e9f9acadf6ef1a937d2a504000990e0c5",
+    "Tests/AllSoundSlotsTests.swift": "1043a96adf921e0cbacb35862b09a9fb7fc4b18a424aab2fd4dac8bc8e03e12b",
+    "Tests/AudioDeviceTests.swift": "4df414ea218d27846042a11c60c6fd7dd1104e7211112da8ee1b237703f3b7f7",
+    "Tests/AudioDiagnosticRecorderTests.swift": "a815f30989f323ba1ac1ca0f5aa3312bef83f69544580c7719e5336f2c389d0c",
+    "Tests/AudioEffectsTests.c": "9605ee8821cfb073ef5e1aa12e8f370c3a894184b9db9a5e21a3a4a0113c0009",
+    "Tests/AudioGraphTests.swift": "36c0952de543df8cda0ad9d92bd3f1824273a55ec1938bac45f11119c857916e",
+    "Tests/AudioStartupTests.swift": "846606be5c61f588858a0f336fe8e9ed6cfe0f91c55d23096e4794d41494e881",
+    "Tests/AudioUnitCatalogTests.swift": "debb125021e4fc9a1ab592b4ce9b7a32044effae0d4f5eb8b96c63ecd481a157",
+    "Tests/AudioUnitCommitTests.swift": "e69a9b6593614a8c1f254b15b5ed846608492173401c0d2eb6d2dabc2763453d",
+    "Tests/AudioUnitTests.swift": "e0f55796ffbf581bb7ef6283984ee698677cc71da002b402705d81aeae784753",
+    "Tests/BuiltinEffectUnitTests.swift": "05b5e01f098f826d432e284de666fe8d215270bc694ffd5d5ea5546ec4821e9f",
+    "Tests/CapturedSoundPlaybackTests.swift": "f1174c7af8eb8dfdc91de65e57d62cb25905f57c51241c2eb94e5aa3e6c45525",
+    "Tests/CatalogRecoveryTests.swift": "4c45cd81edd781a70bd74b5eb18aac729b222be8a9c989f4330da7e2dbd895e2",
+    "Tests/ChannelCompressorTests.c": "34028e6518b2771110fda7257752c63426b3c1c3c1898efb1903c2a44356f0f1",
+    "Tests/ChannelDSPTests.c": "99e43148360719ba3fa6bf12cdd0adf7226d18e8e69e6687d93e78891bad90c0",
+    "Tests/ChannelPanicTests.c": "a98fd30a7e51622e7f60cd8d85b4f5fe646bb7d7f2712d112b455c297fcb9a0e",
+    "Tests/ChannelSignalOrderTests.swift": "4efff8736711d4f48a2f41207608fee73e37d19da384fb716b1428ebd2d2bd4a",
+    "Tests/ClipDistAutomationTests.c": "52f85089bd550764b9873be1a93e90790824c27a0b7f52d3516dc21d4c792cc8",
+    "Tests/CreamCoatTests.c": "264e65bce4353d51738084cf09f47a9b1b53f1c29f39d0836103e8f711cda12b",
+    "Tests/DelayIndependentLevelsTests.c": "071c3ca6b0935891c1dc694c05bb6eaede60876be9319ec85a8350d6c651d919",
+    "Tests/DenseHostedTests.swift": "aa51980567fe1e19653746303f3cea9ab0ef9e33f10725ff09617ce3fd9490e7",
+    "Tests/DenseReverbAutomationTests.c": "e675e7c7d83a672ed4cfc21d00420cbdf0d691846de784837da7ef2ce176e3b3",
+    "Tests/DenseReverbTests.c": "3f8fa9c0284744f72beb624ebacf3b1a13c823db1618f306b8c85ab0c52e46a1",
+    "Tests/EQBandwidthTests.swift": "a25ea8dfa5ceb9c3013561110109703aa03dd4faf1e6c419a90d05d63a65b674",
+    "Tests/EXSAmplitudeUpgradeTests.swift": "ddf19cb231e478a7473e04252d013eadf71dbef67ab2a223223eed5e5a897311",
+    "Tests/EXSCaptureCompatibilityTests.swift": "8a685aa0137735e64529d21f1e56edb51113622d70115f1e36addcfdd70b07d9",
+    "Tests/EXSCrossfadeNeutralTests.swift": "68177f6a404633806cad2278c0c3f6bd864910bba976724257f000c6f952c154",
+    "Tests/EXSEnvelopeTests.swift": "400a33fe965c2166cf614af147f47ac64f7a0e206a0991d21c51f1aeaadf067b",
+    "Tests/EXSImportTests.swift": "aed89e1ac728dcfa7afc37ffacc550f7c56360e92ec387797b20d22574c246cc",
+    "Tests/EXSReferenceIdentityTests.swift": "f4d9c5052481aac959d8fd1783fec294811cd5f59e6deba9794089f0ff01e40b",
+    "Tests/EXSResponseUpgradeTests.swift": "b3e10e9884602ee5d15e8b976c3f10a42b55be4f9e39e499b430b25c26e0a361",
+    "Tests/EXSSplitRegionTests.swift": "2a2ac206f09717fa4ed66329890dbd9d651dfb2bba5fe137c15e26cc412a40dd",
+    "Tests/EXSVoiceControlsTests.swift": "fa87d66debd483ed85ec9afc9288438cc83077006b352a30641d603ae345db50",
+    "Tests/EXSVoiceUpgradeTests.swift": "bae9831f687b8f8f814d2540b98794d46d914feaab287e7655526af57b1f5928",
+    "Tests/EffectPresetTests.swift": "036944e554c68a44033aacd1db0b6a503376ccd1f47c3493ffbdce483cb5f837",
+    "Tests/EffectStressTests.swift": "84546f2b5d84cc4044d343d6ee774c31f535b8037a6013cb6c20cc9c7c0ddf52",
+    "Tests/ExternalAudioTests.swift": "48833d8f441b0cca58169a788ab32636599cb710bbef0d5e10cc18ce71f7beb9",
+    "Tests/ExternalGraphTailTests.swift": "2d6d6b01fd6dd1798a0be288fb2720c224df32d70d211c53f6b7904f307d0375",
+    "Tests/ExternalMIDITests.swift": "33c7533f71ac00a3f12cf1d83018241bb9ea4424b32d429c3c90feb52a738ea1",
+    "Tests/FeltPianoFidelityTests.swift": "935248acea672191d90f9f96bade73100b96fcad6e806a6eb0e0c1202fd9c0e8",
+    "Tests/FixtureSupport.swift": "0c57d25db386571b7844e56345b5d05501b946bf7c1f3680fd02d6af04cc13fe",
+    "Tests/GraphCompletionFailureTests.swift": "f2533d31229f18bb57cf13753d8fccf16342eb2f7be94b002d1e1d31800be6d3",
+    "Tests/GrooveTests.swift": "87fb2b228d2a84a163c03701e9215f4a84f46aea0031e97b19c86977d33d3d5b",
+    "Tests/ImportedAttackAuditTests.swift": "50be3a9f594913d9d2b97f5bcd077b6665e1f14bc121648dae3be58e6a7b365c",
+    "Tests/ImportedDelayTests.c": "3ec1dad1b4fa99e597de3f96a51f090ec4013f9df789f314a0062647b195a537",
+    "Tests/ImportedSampleContinuityTests.swift": "0fbdac76096522aa0289c15a126c63fa8e77abd0dd53d7e334f7ca804601e1ae",
+    "Tests/ImportedSoundRetentionTests.swift": "11c45824185b8ec748d63dc887944a6196c35a627479f89f8b952e88afc082a2",
+    "Tests/InstrumentGainMatchTests.swift": "c3d1af01bf644752da90ef5b37ed613062ee2803dd0e172656017a93e0bdb99a",
+    "Tests/LibraryBackupTests.swift": "98a2f39a01b21a4e6167379aa98cb2432b56f4925d490d8ecbfb5616efa61d95",
+    "Tests/LibraryBrowserTests.swift": "32f1cbb29a4af1cf46d64d6f80c395eea167c1f1db7fa20331ef69920d87cd43",
+    "Tests/LibraryNoteRangeTests.swift": "c06fbfd5a5ca10b136b6c90cb93770f27636d0032c82e3590e16a9cc6856ce6c",
+    "Tests/LivePatchContentTests.swift": "96771db4d637b3d0f3f3f3550465d914ee4fe6781cb20c75b572d1211cc1ec31",
+    "Tests/LivePianoFidelityTests.swift": "ea4b5595fef8f64416b866b7ffff7cadc0aee5ff30e0c215a523dc41f79d6091",
+    "Tests/LiveSoundChangeTests.swift": "3e1dd151dec2566ed36709186b1a1bc59ab80d769c91dbcfb3a6068e5d4679e6",
+    "Tests/MIDIFXTests.swift": "aa8d51ebc1d4ea08975f2c07b2f8923a1bf5ed352a15d4545d09956b64d2a8e9",
+    "Tests/MIDIInputTests.swift": "91dd87a28e48f864db5ba6c4823754e8e7cbf0bc10edfb76effc2be89aa7c445",
+    "Tests/MIDISetupTests.swift": "1c875c710a7407724997617540a25b02fe7581bfd5cfe31579243d6865a27df8",
+    "Tests/MainStageAudioUnitImportTests.swift": "b79d746650506a57298d46d21f75775cfdc6cf78b287dbcb04f88bd66c20a24a",
+    "Tests/MainStageAutoConversionTests.swift": "3df3902c58625af666bdebe291d5b613da4ba1f9dfafbd67820b641b2cf7b5ee",
+    "Tests/MainStageControllerDefaultsTests.swift": "43007618362c0748676a08ea984eb036aa5819462b46854f1a2f8d2639d78441",
+    "Tests/MainStageEffectAudioTests.c": "f4d761d4a3e2f582349060ea61f83e1000ebe8fccba1af7e5d337e06a9b8cf9b",
+    "Tests/MainStageEffectSelectionImportTests.swift": "e780e6d591116b64298ce7cc31dcb0035ca0246f994608cfc4b947e03cb14b4f",
+    "Tests/MainStageEffectSelectionTests.swift": "fe0a2cd983dccc315229122dcf6444caa6f052ded0a05b542fb2430796619683",
+    "Tests/MainStageFaderTests.swift": "6dbce5b02ba8d463c7938e8b97fc83f840a4fb144016aaddc7a1f67a69877f26",
+    "Tests/MainStageGuidedImportTests.swift": "a6781a0c10a4a78b2a0dae579c21d13430102e9b5d0cbc0511d8079772321b1f",
+    "Tests/MainStageLayerAssemblyTests.swift": "b35c3cf7ed8f87609c94c3eff41544e382a8182ab7968e64524eaa91c9520248",
+    "Tests/MainStagePackTests.swift": "3048b818cd8be34b82bb164cee7146950b77ab24cc28027c1441cbdad981975f",
+    "Tests/MainStagePatchTests.swift": "08a083751ecfabec618207deb12cbe55cbe5f8742aa78af6a404b750213ea0ba",
+    "Tests/MainStagePreflightTests.swift": "1a33bb0675c60109e164adff599a79a74f2b89a79f404cbae92f848e28224095",
+    "Tests/MainStageProcessingTests.swift": "8ec8043a3171d22006630452751e727f38eac942f456da9e6aae6fb24cb8d2ff",
+    "Tests/MainStageTapeDelayTests.swift": "562f9a73207d776c46d60d8c01a66e7914d673e990e4f0ee433de0261791d204",
+    "Tests/ManualMIDIDestinationRefreshTests.swift": "e2aff1502fb9095eadd51657a8ed62ca5015430a7911c1ef5368ea1d305a370a",
+    "Tests/MetadataRecoveryTests.swift": "e4faab2ffd13b658b9d9865bf7313d7a9bfee80c0b79116858c6af63f39f3557",
+    "Tests/MetronomeSettingsTests.swift": "48c3d18a74de4ae2f9da2c7fa8181860697ba8cd3336efd98de1261dd8e6d024",
+    "Tests/MetronomeTests.c": "e86b63882b28e4e626c8cd15f124d07e4416a363a5ad583542d17243dba0d1ee",
+    "Tests/ModelTests.swift": "ea792ccd8d5a5ddbb88406a0faced630eb1b39fe9a6b144ef2d2a78aa7f5c8ff",
+    "Tests/ModernEXSImportTests.swift": "0632bd2043c61f0641f3612d27e389532d1a65ecc446d62d020873ad7fc7b381",
+    "Tests/ModernEXSPlaybackTests.swift": "80b9bb12cdbd715096d784345221d9c8da99d7bc620194ebc4381707d97fa11c",
+    "Tests/ModulationWheelTests.swift": "b34200868d4575b8f41acb366a18c78e678a93695cb0c8f54e3c4417ecb75fd0",
+    "Tests/NativeCreamCoatTests.swift": "a2800660b56a19767955a1ac0eacac707e95faedabf1e18f30960305fcc3e086",
+    "Tests/NativeGraphRollbackTests.swift": "08eaed672177c30c7ff6cb80f2b17f7d850bf3db088f0666c6c745ff8d1949aa",
+    "Tests/NativeLoadFailureTests.swift": "c11325f71811a95a848d84d09ffd5fc5da617fb1782fc6ba7ca40bed8f60b728",
+    "Tests/NativeSamplerGroupTests.swift": "f3c3b55e66d1b708285364ba0d3a957096b535865ba860b91cc4e2d7dcc72672",
+    "Tests/NativeSoundOrderTests.c": "ce966c496aaf5c37b76d3d0231f7d6658e6c64c80f47270de0fad9a2736d43af",
+    "Tests/NoFactorySoundsTests.swift": "f82b56290e52f210fb40846372787bdb652657626e5f0626e0f09243e44dc575",
+    "Tests/OutputHeadroomTests.swift": "4f11cd637e2711ad435bfa4807f9601e5e72dcb50aaecaa80eb017f6b10c4d7a",
+    "Tests/OutputMeterTests.swift": "3ba25636845ad3137fe5d4b2cac0bdfecb4be7ae8fcc48a7e2fb03cce836d908",
+    "Tests/ParallelAudioTests.swift": "df39e111a7c0bbec1c9d965516c094fd1dea5cf47d64647bc85b9e71e9615e7c",
+    "Tests/PatchDraftPlanTests.swift": "13de7e742ef7c62db3de529f5ceb5206a5c9a2bcdee1d69e310ccd77863ba6d5",
+    "Tests/PatchGainTests.swift": "0b30453c570e7f90d9128d762d54994b8bedce056078475f92cc7c6ad6d1239b",
+    "Tests/PatchReadinessTests.swift": "2b615ba9f0f4bb111ff5074d12f4bc3d7bb6b9c3866a73cc00e2075f65d6d5b8",
+    "Tests/PatchTranspositionTests.swift": "7cffba692bf57db34a8f5e1a5e4edf34b8a080c265032c4854e4e4cc68c59755",
+    "Tests/PersonalSoundPackTests.swift": "b925b1ec16089a5ba93204e8d2bab0e01a0d651a298595635bfe749b7756e30c",
+    "Tests/PianoFidelityTests.swift": "27c29a32aac629e15232f4481c3ab26c577e136b525e1cd6627a3c96d82408de",
+    "Tests/PianoHeldNoteTests.swift": "1e0f8e61ce6898f68e305d664142adf5c3ee98c18b8d54d065d1f2b007eca280",
+    "Tests/PlugAndPlayTests.swift": "8dfd4dc4f32d5b69139738746dba86a9bf8549a94fa694aed233645f70f80285",
+    "Tests/PluginInterfaceRequestTests.swift": "4dd221938b0323e4daf0da2e5037fc7442d3e02b7664794f88ff10814aae4c4d",
+    "Tests/PluginParameterModelTests.swift": "bbaefa927610978c19a590e437121b038bc61ce75b64b15292d35d32b0cd07c9",
+    "Tests/PluginRecoverySettingsTests.swift": "f565613ba024f6bd4444f8c78441b4471d70bf9bd695e27aba1380f8325d3b14",
+    "Tests/PluginRecoveryTests.swift": "6880361b456b05217245efbe8be88508173e2c5894e6f6b4d59df68e57d5feb1",
+    "Tests/PrimaVerbModelTests.swift": "a7f9f7e37e148c55f1606b18589f95f7a8649b7c30d36ae0603d81ec697d092a",
+    "Tests/ProgramChangeOptInTests.swift": "895d7dcb0a21da27a5363865a8713d3c5a3b799a9db0fda2022bd057343d425d",
+    "Tests/RackTests.c": "b2e64f02396619dc2bcca2a6cfd7a5ce8cbd6d6f29f2837c2d630d77df77bbac",
+    "Tests/RealtimePianoTests.swift": "d5b31ab9eac7b1a1922807370f8ac741e8592bd4a4548da89221e12142835fb0",
+    "Tests/ReferencedMainStageImportTests.swift": "d5355bc8f90aba8f101024fd038c677a106357856f44af3dd0b01716d7abaf59",
+    "Tests/ResourceAvailabilityTests.swift": "0d0b6fed815ab7161c275d85066efd9203f37da30b01bc4ee9168c84f279915e",
+    "Tests/ReverbChorusPlacementTests.c": "780f741cc1d8ea68ceb39ddfb27f54902a51d47e153189e90ad6704f0cb02a78",
+    "Tests/ReverbPredelayTests.c": "37d3f77fe5969fa4017862147d707739999aed6e6e92e47913cd5c29eb9516cb",
+    "Tests/ReverbTransitionTests.swift": "a7e697d0939e3d579470ef52de9a03e0c91a9aeb174a16ab2afba3d5cf593676",
+    "Tests/RoomStereoTests.c": "7be1f56e4c64dbcfe4853e128e71172762ca5a67da54125500791adb5d7ac61d",
+    "Tests/SamplerAttackTests.swift": "4e1caa6134347b06c6fc5a7d42294356430865e53a0215d94f651a9fd106e54e",
+    "Tests/SamplerBoundaryRegressionTests.swift": "96ef05ca47da1dbdd1485313f9c36f4365010e96aa17051d09005518d44b7018",
+    "Tests/SamplerHostVelocityTests.swift": "3e9698926aad49d7b4608afb8d0ec259365c801944a32f1df20ebf68bb22ddf9",
+    "Tests/SamplerInterchangeTests.swift": "3e79f99fbbbe68ec37dc1767e3246295ca027ade951d3db82849cb463c7f5dca",
+    "Tests/SamplerStartupTests.swift": "73e0453e7e02f9eadc5e5cfe4ab5a56ee2e3c87f5629470efda48eccfce06b67",
+    "Tests/SamplerStreamingStressTests.swift": "87be8e5651461d85fba0cfc3b33b8952d544679d1a249b9ab61fb715122672a1",
+    "Tests/SessionRecoveryTests.swift": "070bc689c4c6d9ef8f2ae549c55bddb78b9e291cd29ce2ddd8e65f8b72b3273f",
+    "Tests/SetlistLibraryTests.swift": "b5a5969f206b49e91baf7439cc158257f20a0123e051f20d8309164ca520928f",
+    "Tests/SetlistPathAliasTests.swift": "470f9807ce9bb20b213200c17815ce1e9640421049754a0fc5d6317ad937bffb",
+    "Tests/ShimmerAliasTests.c": "211f6d0acdfc280d66719d61d51e9bf3b9e0f71fdff8e20942eddd4da2c3e3d3",
+    "Tests/ShimmerAutomationTests.c": "4e2c2229143399a2d336e06cf1c049a5886b974c30361eb0a9afef658ca9d828",
+    "Tests/ShimmerPitchTests.c": "f3fee1f2a5a5731c23b4de243875af4f500be41c52518ccda6a60f41ccd10168",
+    "Tests/ShimmerQualityTests.c": "fdcc6e768de75a6a030b5a66e373d69fad2cb42780fd78fa53154a49aeb137cb",
+    "Tests/ShimmerTailTests.c": "fa0398d12d65cd616dee772b102eb47e80427189bfe88784ed98069fc803db7c",
+    "Tests/ShimmerToneDecayTests.c": "26302ab66a2368a300c6f942655afc888d7248692901e31136105189eadab25d",
+    "Tests/SilverEarlyReflectionTests.c": "d3946696682e3513668fd887c296a043a8e924ce1b42b1308a21003c25e23ba6",
+    "Tests/SilverToneDecayTests.c": "69f41856f339e28204ccb40f4b13ba361709d27286b4fb11901fc2c55dd71a6c",
+    "Tests/SnapshotMorphTests.swift": "5bd0b03e20656130ee56ac7cfae9279fda6e19b99dbacb647aba3f2a5c6aaa0c",
+    "Tests/SnapshotProcessingTests.swift": "8d28070e514d60088a269b5e2b95f972173fbb912cf8164a2ab1e5d521f76ab3",
+    "Tests/SnapshotSlotTests.swift": "9539b9f95967d091c3b3d695a6de8d82e972a70263a9935ba43046fbf5ce5de7",
+    "Tests/SolaModulationTests.c": "b8605f45dbe78c0316ca87e2379e4bdce6fcce575ea8b6270a2690a0986cbbd1",
+    "Tests/SolaQualityTests.c": "b899bed29da40e6f2f0de63f671a26ab9c8f05e9d13f98d5b6209863ec75046f",
+    "Tests/SoundIdentityTests.swift": "42447b2f4e65c44f21994d819205875029685504296f4d69bee7d38b94fc49c2",
+    "Tests/SoundLibraryTests.swift": "a9d0e115ba2d376faf62da0b5ae2354207487cbdead28d4344952efc9dfa90cb",
+    "Tests/SoundRatingTests.swift": "5d70ba78acf4065f5eb23a22d8cb2c91b9771994ebb36d8b5cadd167794d283c",
+    "Tests/StageKeysSamplerTests.swift": "6035b8b99e2ee5ab7bd7be3a131eca94c0963a37dd661799867537400f683025",
+    "Tests/StoreTests.swift": "02d8a37401a1a4c653bb725e6e7577062f4eaa67077b0e94b6869696d5732f43",
+    "Tests/SupportDiagnosticsTests.swift": "eb2d065f77ca540cedbf9854ffc58af0764db5d8732e4f2ea23507a004666f9a",
+    "Tests/SynthTests.c": "28bd7bc5b49e794200ea91aafc2f2b9011e65a190cf73fc48f5de467a5455596",
+    "Tests/TonicPadTests.swift": "7b8aacc5681016089166106a5ec0734219ea5c2a9c97d6827293bf0020e8aee8",
+    "Tests/TransactionalImportTests.swift": "3e5317e22177528484487f9db08be3aedcca442466aefb59167b9c64fbc30319",
+    "Tests/run-local-library.py": "2abe79e9856009e6e3ff127ca9f582068a3a59bc8a3b8b0e218d27ad1ee4a987",
+    "Tests/test-app-icon.py": "d75d9c7aed9e4d577797fa571c5623aafed0d07d2fe284a9c80b2b2e0597a35f",
+    "Tests/test-audit-mainstage-presets.py": "7826263bb10c6b71fbe4f5f16b5d03e987e780b4abea0a93f7b8653a4b7e7eb5",
+    "Tests/test-catalog-tags.py": "04050cb083b658b907b9207b1ad3f731c9d37e379c589769580ac44e951272be",
+    "Tests/test-distribution.py": "d848316d0487729ca536c8009fea4db91aa34e4d8648dbfcae71030baa25a5e7",
+    "Tests/test-library-gate.py": "81f2fb59a8be3fdc876b579ff2d6cdec82241a428c5eaec35bbf0310589bad04",
+    "Tests/test-library.sh": "e4b8d5ec29d91060e1faae8293843f9492de7e0ed3bf817d8699577ac76ab8b3",
+    "Tests/test-local-library-runner.py": "86b2b0bee94d3ff71e4e6ba0ab0cc56ef4c97b690eaa45a7d53bb655b6b66b54",
+    "Tests/test-pack-document-type.py": "67c23cfa17bcaf7cab8567dbafb6379a536183a07d32e87d14684a1eb10d25c0",
+    "Tests/test-preset-coverage.py": "e785d49cb0a47f02989a8483b9ac48b4dbe6b7b0f17e6e610d56c2241b45f2cd",
+    "Tests/test-reverb.sh": "f94c919984afd74311ea5fd433af0b8e9887be250bde1a97a43fa1f6e22ab7ef",
+    "Tests/test-sampler-calibration.py": "15e5da76d62e3796ad46d770212a4bfb7a11866d3979b014c97dabd6de16a947",
+    "project.yml": "73d28ee971814bbef0a0318958cf6e91fe6384ced1b1b8078e6c9af2424ca436"
+  },
+  "remaining_acceptance_record": "../PLUGIN-RECOVERY-SETTINGS.md",
+  "not_performed": [
+    "GitHub changes or issue closure",
+    "commit or push",
+    "signing, installation or distribution",
+    "real vendor AU state/crash/hang or sound qualification",
+    "real intermittent -1 reproduction",
+    "interactive Settings walkthrough or physical mobile check",
+    "hardware storage/route/latency or prolonged rehearsal"
+  ]
+}

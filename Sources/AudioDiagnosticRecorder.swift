@@ -16,9 +16,11 @@ struct SupportDiagnostics: Codable {
     let audioCheckRecording: Bool
     let underrunCount: Int? // nil until measured; never report unmeasured zero.
     let latencyScope: String
+    let lastAudioChangeFailure: AudioChangeDiagnostic?
 
     init(version: String, build: String, running: Bool, status: AudioDeviceStatus?, latency: AudioLatencyChain?,
-         midiSources: Int, loadedSlots: Int, limiterBypassed: Bool, recording: Bool) {
+         midiSources: Int, loadedSlots: Int, limiterBypassed: Bool, recording: Bool,
+         lastAudioChangeFailure: AudioChangeDiagnostic? = nil) {
         schemaVersion = 1
         appVersion = String(version.prefix(64)); appBuild = String(build.prefix(64))
         audioRunning = running
@@ -29,6 +31,7 @@ struct SupportDiagnostics: Codable {
         self.limiterBypassed = limiterBypassed; audioCheckRecording = recording
         underrunCount = nil
         latencyScope = "Core Audio reported output chain; physical MIDI-to-speaker latency not measured"
+        self.lastAudioChangeFailure = lastAudioChangeFailure
     }
     func json() throws -> String {
         let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys]

@@ -107,13 +107,13 @@ struct PluginInterface: View {
     private func open(token:UUID,attempt: Int = 0) {
         guard requestGeneration==token,controller == nil else { return }
         guard attempt < 120 else { status = "The instrument is still loading or unavailable."; return }
-        guard let unit = store.audio.externalRack?.unit(channel: index) else {
+        guard let unit = store.audio.loadedUnit(channel: index, sound: currentSound) else {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { open(token:token,attempt: attempt + 1) }
             return
         }
         unit.auAudioUnit.requestViewController { view in
             DispatchQueue.main.async {
-                guard requestGeneration==token,store.audio.externalRack?.unit(channel:index) === unit else{return}
+                guard requestGeneration==token,store.audio.loadedUnit(channel:index,sound:currentSound) === unit else{return}
                 if let view {
                     let preferred = view.preferredContentSize
                     let actual = view.view.frame.size
