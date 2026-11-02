@@ -6,6 +6,70 @@ import AudioToolbox
 import Darwin
 #endif
 
+/// Numeric, operation-scoped evidence only. Never retain an NSError description,
+/// source path, patch name or plug-in state in a support report.
+struct AudioChangeDiagnostic: Codable, Equatable {
+    enum Phase: String, Codable {
+        case prepareSound, loadInstrument, restorePluginState, importedProcessing, effectControls, finishGraph
+        var action: String {
+            switch self {
+            case .prepareSound: return "preparing the sound"
+            case .loadInstrument: return "loading the instrument"
+            case .restorePluginState: return "restoring instrument settings"
+            case .importedProcessing: return "updating imported effects"
+            case .effectControls: return "updating effect controls"
+            case .finishGraph: return "applying the audio change"
+            }
+        }
+    }
+    let requestID: UUID
+    let phase: Phase
+    let soundSlot: Int?
+    let graphGeneration: UInt64
+    let engineRunning: Bool
+    let sampleRate: Double?
+    let errorDomain: String
+    let errorCode: Int
+    /// True only when the controller retained its previous instrument/cache
+    /// without a graph edit. Document transaction ownership belongs to Store;
+    /// this flag alone never proves document rollback or uninterrupted audio.
+    let previousSoundRetained: Bool?
+    let lastGraphFailure: AudioGraphFailure?
+
+    init(error: Error, phase: Phase, slot: Int?, generation: UInt64, running: Bool,
+         sampleRate: Double?, previousSoundRetained: Bool? = nil,
+         lastGraphFailure: AudioGraphFailure? = nil) {
+        requestID = UUID(); self.phase = phase
+        soundSlot = slot.flatMap { (0..<16).contains($0) ? $0 + 1 : nil }
+        graphGeneration = generation; engineRunning = running
+        self.sampleRate = sampleRate.flatMap { $0.isFinite && $0 > 0 ? $0 : nil }
+        let ns = error as NSError
+        errorCode = ns.code
+        errorDomain = [NSOSStatusErrorDomain, "com.apple.coreaudio.avfaudio", NSPOSIXErrorDomain,
+                       NSCocoaErrorDomain, ExternalInstrumentRack.loadCapacityErrorDomain].contains(ns.domain) ? ns.domain : "other"
+        self.previousSoundRetained = previousSoundRetained
+        self.lastGraphFailure = lastGraphFailure
+    }
+}
+
+struct AudioChangeFailure: LocalizedError {
+    let diagnostic: AudioChangeDiagnostic
+    var errorDescription: String? {
+        let slot = diagnostic.soundSlot.map { " for sound \($0)" } ?? ""
+        if diagnostic.errorDomain == ExternalInstrumentRack.loadCapacityErrorDomain {
+            let retained = diagnostic.previousSoundRetained == true ? " The previous sound remains available." : ""
+            return "Could not begin another Audio Unit load\(slot). Earlier loads are still finishing. Wait before retrying. If they never finish, save your work and restart StageKeys.\(retained)"
+        }
+        if diagnostic.previousSoundRetained == true {
+            return "Could not apply the sound change\(slot) while \(diagnostic.phase.action) (error \(diagnostic.errorCode)). The previous sound remains available. Check for missing sounds or samples, reconnect their storage, then try again."
+        }
+        if diagnostic.phase == .prepareSound {
+            return "Could not prepare the sound\(slot) (error \(diagnostic.errorCode)). Check for missing sounds or samples and reconnect their storage. For an Audio Unit, review instrument availability in Audio Settings, then retry."
+        }
+        return "Could not complete the audio change\(slot) while \(diagnostic.phase.action) (error \(diagnostic.errorCode)). Check Audio Settings and retry. If audio has stopped, restart audio. Copy Support Diagnostics before reporting the problem."
+    }
+}
+
 /// Why an audio-engine start failed, in terms the performer can act on.
 struct AudioStartupFailure: Equatable {
     enum Kind: Equatable {
@@ -15,6 +79,7 @@ struct AudioStartupFailure: Equatable {
         case interrupted
         case permissionDenied
         case unknown
+        case graphRecoveryRequired
     }
 
     let kind: Kind
@@ -27,7 +92,7 @@ struct AudioStartupFailure: Equatable {
     var recoverable: Bool {
         switch kind {
         case .outputUnavailable, .outputBusy, .interrupted: return true
-        case .formatMismatch, .permissionDenied, .unknown: return false
+        case .formatMismatch, .permissionDenied, .unknown, .graphRecoveryRequired: return false
         }
     }
 
@@ -46,6 +111,8 @@ struct AudioStartupFailure: Equatable {
             return "Audio could not start. StageKeys is not allowed to use audio output. Check the system privacy or audio settings, then retry."
         case .unknown:
             return "Audio could not start (error \(code)). Refresh the output or choose another device, then retry."
+        case .graphRecoveryRequired:
+            return "Audio stopped during a sound change (error \(code)). Retry audio or open Audio Settings. Your session is still available."
         }
     }
 }
@@ -197,6 +264,68 @@ final class AudioController {
     // unchanged so the limiter is the only processor toggled for comparison.
     func bypassMasterLimiter(_ bypassed:Bool){outputLimiter.bypass=bypassed}
     var onError: ((String) -> Void)?
+    var onGraphUnavailable: ((AudioChangeDiagnostic) -> Void)?
+    private(set) var lastChangeFailure: AudioChangeDiagnostic?
+    private var handledGraphFailure: UUID?
+    private var rebuildRackOnStart = false
+    #if DEBUG
+    /// Deterministic preparation failure; no target application or user content.
+    var debugSoundPreparationFailure: Error?
+    var debugStartFailure: (() -> Error?)?
+    #endif
+    @discardableResult
+    private func changeFailure(_ error: Error, phase: AudioChangeDiagnostic.Phase,
+                               slot: Int? = nil, retained: Bool? = nil, forceUnavailable: Bool = false) -> AudioChangeFailure {
+        let rate = engine.isInManualRenderingMode ? engine.manualRenderingFormat.sampleRate : engine.mainMixerNode.outputFormat(forBus: 0).sampleRate
+        let diagnostic = AudioChangeDiagnostic(error: error, phase: phase, slot: slot,
+            generation: externalRack?.graphGeneration ?? 0, running: engine.isRunning,
+            sampleRate: rate, previousSoundRetained: retained, lastGraphFailure: externalRack?.lastGraphFailure)
+        lastChangeFailure = diagnostic
+        let graphUnavailable = diagnostic.lastGraphFailure.map { $0.edited && $0.wasRunning && !engine.isRunning && handledGraphFailure != $0.id } ?? false
+        if forceUnavailable || graphUnavailable {
+            rebuildRackOnStart = true
+            handledGraphFailure = diagnostic.lastGraphFailure?.id
+            // A candidate may already be attached despite a finish failure.
+            // Do not let identity caches suppress the saved patch's reload on
+            // manual retry, or expose state from an unqualified live unit.
+            invalidateInstrumentCaches()
+            onGraphUnavailable?(diagnostic)
+        }
+        return AudioChangeFailure(diagnostic: diagnostic)
+    }
+    /// Direct rack clients (the transactional Tonic picker) use the same graph
+    /// completion reporting and stopped-engine recovery as channel loads.
+    func recordInstrumentLoadFailure(_ error: Error, channel: Int) -> AudioChangeFailure {
+        changeFailure(error, phase: .loadInstrument, slot: channel)
+    }
+    /// Check known unavailable resources before the store changes snapshots,
+    /// panics held notes, or persists the proposed sound. Does not load an AU or
+    /// edit the graph; successful preflight is not proof a later install succeeds.
+    func prepareSoundChange(_ index: Int, _ layer: Layer, revalidateResources: Bool = false, checkInstallation: Bool = true) throws {
+        let hostCurve = layer.importedRack?.mainStageAmplitudeVelocityCurve ?? layer.external?.nativeSampler?.rack.mainStageAmplitudeVelocityCurve
+        guard let sound = layer.external,
+              (revalidateResources && sound.kind != .audioUnit) || externalSounds[index] != sound || externalStates[index] != layer.pluginState ||
+              samplerAttacks[index] != layer.samplerAttackMinimum || samplerHostCurves[index] != hostCurve else { return }
+        do {
+            #if DEBUG
+            if let failure = debugSoundPreparationFailure { throw failure }
+            #endif
+            guard let rack = externalRack else { throw ExternalInstrumentError.invalidComponent }
+            try rack.validateSound(sound, checkInstallation: checkInstallation)
+        } catch {
+            throw changeFailure(error, phase: .prepareSound, slot: index,
+                                retained: externalRack?.unit(channel: index) != nil && engine.isRunning ? true : nil)
+        }
+    }
+    func withInstrumentCatalog<T>(_ operation: () throws -> T) rethrows -> T {
+        if let rack = externalRack { return try rack.withInstrumentCatalog(operation) }
+        return try operation()
+    }
+    func preparePatchResources(_ layers: [Layer]) throws {
+        try withInstrumentCatalog {
+            for (index, layer) in layers.enumerated() { try prepareSoundChange(index, layer, revalidateResources: true) }
+        }
+    }
     var offline: Bool { engine.isInManualRenderingMode }
     #if DEBUG
     func installPlaybackProbe(_ callback:@escaping (AVAudioPCMBuffer)->Void) {
@@ -208,6 +337,7 @@ final class AudioController {
     /// Mark a sampler already installed directly by a transactional pad load so
     /// the following control/effect configuration does not detach and reload it.
     func adoptExternalSound(_ sound:ExternalSound?,channel:Int) {
+        unavailableConfigurations.remove(channel)
         externalSounds[channel]=sound
         externalStates[channel]=nil
         samplerAttacks[channel]=0
@@ -262,6 +392,15 @@ final class AudioController {
         installOutputTap()
     }
     func start() throws {
+        #if DEBUG
+        if let failure = debugStartFailure?() { throw failure }
+        #endif
+        if rebuildRackOnStart {
+            engine.stop()
+            invalidateInstrumentCaches()
+            externalRack?.resetForRecovery()
+            rebuildRackOnStart = false
+        }
         #if os(iOS)
         let session = AVAudioSession.sharedInstance()
         try session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
@@ -281,8 +420,13 @@ final class AudioController {
     }
     func noteOff(_ key: Int) { sk_note_off(synth, Int32(key)); externalRack?.noteOff(key: key) }
     private var patchGain: Float = 1
+    private var patchLoading = false
+    func setPatchLoading(_ loading: Bool) {
+        patchLoading = loading
+        for (index, level) in levels where index < 15 { gain(index, level, seconds: 0) }
+    }
     private var outputTrims:[Int:Float]=[:]
-    private func scaledGain(_ index:Int,_ gain:Float)->Float { gain * (outputTrims[index] ?? 1) * (index<15 ? patchGain : 1) }
+    private func scaledGain(_ index:Int,_ gain:Float)->Float { gain * (outputTrims[index] ?? 1) * (index < 15 ? (patchLoading ? 0 : patchGain) : 1) }
     func setPatchVolume(_ db:Float) { patchGain=pow(10,max(-24,min(12,db))/20);for (index,gain) in levels where index<15 { self.gain(index,gain) } }
     func gain(_ index: Int, _ gain: Float, seconds: Float = 0.025) {
         levels[index] = gain
@@ -307,39 +451,169 @@ final class AudioController {
             eqEnabled: c.eqEnabled, bands: c.equalizer.map { ($0.frequency, $0.gain, $0.q) },
             compressorEnabled: c.compressorEnabled, threshold: c.threshold, attack: c.compressorAttack, release: c.compressorRelease, makeup: c.makeup,ratio:c.ratio,inputGain:c.compressorInputGain ?? 0,mix:c.compressorMix ?? 1)
     }
+    private var hostGraphBatchDepth = 0
+    private var pendingPatchFailure: Error?
     func withGraphChanges(_ operation: () throws -> Void) throws {
-        if let rack = externalRack { try rack.withGraphChanges(operation) }
-        else { try operation() }
-    }
-    func configure(_ index: Int, _ layer: Layer) {
-        outputTrims[index]=pow(10,(layer.channelSettings.outputTrimDB ?? 0)/20)
-        pans[index] = layer.pan
-        let hostCurve=layer.importedRack?.mainStageAmplitudeVelocityCurve ?? layer.external?.nativeSampler?.rack.mainStageAmplitudeVelocityCurve
-        if samplerHostCurves[index] != hostCurve || externalSounds[index] != layer.external || externalStates[index] != layer.pluginState || samplerAttacks[index] != layer.samplerAttackMinimum {
-            samplerAttacks[index]=layer.samplerAttackMinimum
-            samplerHostCurves[index]=hostCurve
-            externalStates[index] = layer.pluginState
-            if let sound = layer.external {
-                do { try externalRack?.remove(index) } catch { onError?(error.localizedDescription) }
-                externalSounds[index] = sound
-                externalRack?.load(sound, channel: index,attackMinimum:layer.samplerAttackMinimum,hostVelocityCurve:hostCurve) { [weak self] result in
-                    guard let self else { return }
-                    switch result {
-                    case .success:
-                        if let state = layer.pluginState { do { try self.externalRack?.restoreStateData(state, channel: index) } catch { self.onError?(error.localizedDescription) } }
-                        self.externalRack?.volume(channel: index, gain: self.scaledGain(index,self.levels[index] ?? 0), pan: layer.pan)
-                        self.filter(index, layer, mod: self.modulationValues[index] ?? 1)
-                        self.modulation(index, value: self.modulationValues[index] ?? 1)
-                        self.configureEffects(index, layer.effects, force: true)
-                        self.configureImported(index,layer.importedRack ?? layer.external?.nativeSampler?.rack)
-                    case .failure(let error):
-                        if let e = error as? ExternalInstrumentError, case .superseded = e { return }
-                        try? self.externalRack?.remove(index)
-                        self.onError?(error.localizedDescription)
-                    }
+        let outer = hostGraphBatchDepth == 0
+        if outer { pendingPatchFailure = nil }
+        hostGraphBatchDepth += 1
+        defer { hostGraphBatchDepth -= 1; if outer { pendingPatchFailure = nil } }
+        let initialRequests = configurationRequests
+        do {
+            if let rack = externalRack {
+                try rack.withGraphChanges {
+                    try operation()
+                    if outer, let failure = pendingPatchFailure { throw failure }
                 }
-            } else { externalSounds[index] = nil; do { try externalRack?.remove(index) } catch { onError?(error.localizedDescription) } }
+            } else {
+                try operation()
+                if outer, let failure = pendingPatchFailure { throw failure }
+            }
+        } catch {
+            // Whole-patch callers may already have changed selection, MIDI or
+            // control caches inside the batch. A rack rollback alone cannot
+            // publish that batch as Running; explicit retry rebuilds the saved
+            // selected patch and invalidates those speculative caches.
+            if let failure = pendingPatchFailure { publishPatchFailure(failure) }
+            else {
+                if externalRack?.lastGraphFailure?.edited == true && initialRequests != configurationRequests { engine.stop() }
+                changeFailure(error, phase: .finishGraph)
+            }
+            throw error // Preserve the caller's typed-error handling contract.
         }
+    }
+    func rejectPatchChange(_ error: Error) {
+        if hostGraphBatchDepth > 0 { pendingPatchFailure = pendingPatchFailure ?? error; return }
+        publishPatchFailure(error)
+    }
+    private func publishPatchFailure(_ error: Error) {
+        engine.stop()
+        if let failure = error as? AudioChangeFailure {
+            let d = failure.diagnostic
+            changeFailure(NSError(domain: d.errorDomain, code: d.errorCode), phase: d.phase,
+                          slot: d.soundSlot.map { $0 - 1 }, forceUnavailable: true)
+        } else { changeFailure(error, phase: .finishGraph, forceUnavailable: true) }
+    }
+    private func invalidateInstrumentCaches() {
+        cancelPendingConfigurations()
+        externalSounds.removeAll(); externalStates.removeAll()
+        samplerAttacks.removeAll(); samplerHostCurves.removeAll()
+        effects.removeAll(); importedRacks.removeAll()
+    }
+    /// Offline document edits must not instantiate instruments or capture old
+    /// live AU state over the newly authored settings. Rebuild at next Start.
+    func prepareOfflineEditing() {
+        precondition(!engine.isRunning)
+        invalidateInstrumentCaches()
+        rebuildRackOnStart = true
+    }
+    func cancelPendingConfigurations() {
+        configurationRequests.removeAll(); unavailableConfigurations.removeAll()
+        for channel in 0..<16 { externalRack?.cancelPendingLoad(channel) }
+    }
+    private var configurationRequests: [Int: UUID] = [:]
+    private var unavailableConfigurations: Set<Int> = []
+    /// The rack may still be playing the previous instrument during a pending
+    /// replacement. Editors and state capture must match the document's sound,
+    /// not merely find any live unit in that channel.
+    func loadedUnit(channel: Int, sound: ExternalSound?) -> AVAudioUnit? {
+        guard !unavailableConfigurations.contains(channel), let sound, externalSounds[channel] == sound else { return nil }
+        return externalRack?.unit(channel: channel)
+    }
+    func pluginStateData(channel: Int, sound: ExternalSound?) throws -> Data? {
+        guard sound?.kind == .audioUnit, loadedUnit(channel: channel, sound: sound) != nil else { return nil }
+        return try externalRack?.stateData(channel: channel)
+    }
+    /// False reports a synchronous preparation/loading rejection. True means
+    /// accepted, including pending asynchronous AU loads. Later state/effect or
+    /// graph-finalization failures are not covered by this acceptance result.
+    @discardableResult
+    func configure(_ index: Int, _ layer: Layer, shouldInstall: (() -> Bool)? = nil, completion: ((Bool) -> Void)? = nil) -> Bool {
+        withInstrumentCatalog { configurePrepared(index, layer, shouldInstall: shouldInstall, completion: completion) }
+    }
+    private func configurePrepared(_ index: Int, _ layer: Layer, shouldInstall: (() -> Bool)?, completion: ((Bool) -> Void)?) -> Bool {
+        do { try prepareSoundChange(index, layer) }
+        catch { onError?(error.localizedDescription); completion?(false); return false }
+        let request = UUID()
+        configurationRequests[index] = request
+        externalRack?.cancelPendingLoad(index)
+        let hostCurve = layer.importedRack?.mainStageAmplitudeVelocityCurve ?? layer.external?.nativeSampler?.rack.mainStageAmplitudeVelocityCurve
+        let changed = samplerHostCurves[index] != hostCurve || externalSounds[index] != layer.external ||
+            externalStates[index] != layer.pluginState || samplerAttacks[index] != layer.samplerAttackMinimum
+        if changed, let sound = layer.external {
+            guard let rack = externalRack else {
+                onError?(changeFailure(ExternalInstrumentError.invalidComponent, phase: .loadInstrument, slot: index).localizedDescription)
+                completion?(false)
+                return false
+            }
+            let previousUnit = rack.unit(channel: index)
+            let previousGeneration = rack.graphGeneration
+            unavailableConfigurations.insert(index)
+            var rejected = false
+            // Rack installation retires the old voice only after candidate
+            // preparation succeeds. Do not remove it or change active caches,
+            // gain/pan/effects before the loader has accepted the replacement.
+            rack.load(sound, channel: index, attackMinimum: layer.samplerAttackMinimum, hostVelocityCurve: hostCurve, configureCandidate: {
+                // AU state belongs to the staged candidate. A rejected document
+                // must roll back before the loader reports installation success.
+                guard shouldInstall?() ?? true else { throw ExternalInstrumentError.superseded }
+                if self.patchLoading { rack.volume(channel: index, gain: 0, pan: layer.pan) }
+                if let state = layer.pluginState { try rack.restoreStateData(state, channel: index) }
+            }) { [weak self] result in
+                guard let self, self.configurationRequests[index] == request else { completion?(false); return }
+                switch result {
+                case .success:
+                    self.externalSounds[index] = sound
+                    self.externalStates[index] = layer.pluginState
+                    self.samplerAttacks[index] = layer.samplerAttackMinimum
+                    self.samplerHostCurves[index] = hostCurve
+                    self.unavailableConfigurations.remove(index)
+                    guard self.applyLayerConfiguration(index, layer, forceEffects: true) else {
+                        rejected = true
+                        self.rejectPatchChange(self.lastChangeFailure.map { AudioChangeFailure(diagnostic: $0) } ?? ExternalInstrumentError.unsupportedEffect)
+                        completion?(false); return
+                    }
+                    completion?(true)
+                case .failure(let error):
+                    rejected = true
+                    if let e = error as? ExternalInstrumentError, case .superseded = e {
+                        self.unavailableConfigurations.remove(index)
+                        completion?(false)
+                        return
+                    }
+                    let unchanged = rack.unit(channel: index) === previousUnit && (rack.graphGeneration == previousGeneration || rack.lastGraphFailure?.rollbackSucceeded == true)
+                    if unchanged && self.externalSounds[index] != sound {
+                        self.unavailableConfigurations.remove(index)
+                    }
+                    self.onError?(self.changeFailure(error, phase: .loadInstrument, slot: index, retained: unchanged ? true : nil).localizedDescription)
+                    completion?(false)
+                }
+            }
+            return !rejected
+        }
+        if changed {
+            do { try externalRack?.remove(index) }
+            catch {
+                onError?(changeFailure(error, phase: .loadInstrument, slot: index).localizedDescription)
+                completion?(false)
+                return false
+            }
+            externalSounds[index] = nil
+            externalStates[index] = layer.pluginState
+            samplerAttacks[index] = layer.samplerAttackMinimum
+            samplerHostCurves[index] = hostCurve
+        }
+        unavailableConfigurations.remove(index)
+        guard applyLayerConfiguration(index, layer) else {
+            rejectPatchChange(lastChangeFailure.map { AudioChangeFailure(diagnostic: $0) } ?? ExternalInstrumentError.unsupportedEffect)
+            completion?(false); return false
+        }
+        completion?(true)
+        return true
+    }
+    private func applyLayerConfiguration(_ index: Int, _ layer: Layer, forceEffects: Bool = false) -> Bool {
+        outputTrims[index] = pow(10, (layer.channelSettings.outputTrimDB ?? 0) / 20)
+        pans[index] = layer.pan
         externalRack?.volume(channel: index, gain: scaledGain(index,levels[index] ?? layer.gain), pan: layer.pan)
         let c = layer.channelSettings
         sk_envelope(synth, Int32(index), c.attack, c.decay, c.sustain, c.release)
@@ -351,14 +625,16 @@ final class AudioController {
         filter(index, layer, mod: modulationValues[index] ?? 1)
         sk_pan(synth, Int32(index), layer.pan)
         sk_block_sustain(synth, Int32(index), layer.blockSustain ? 1 : 0)
-        configureEffects(index, layer.effects)
-        configureImported(index,layer.importedRack ?? layer.external?.nativeSampler?.rack)
+        guard configureEffects(index, layer.effects, force: forceEffects) else { return false }
+        return configureImported(index,layer.importedRack ?? layer.external?.nativeSampler?.rack)
     }
-    private func configureImported(_ index:Int,_ rack:ImportedRack?) {
+    @discardableResult
+    private func configureImported(_ index:Int,_ rack:ImportedRack?) -> Bool {
         if let rack { importedRacks[index]=rack } else {importedRacks[index]=nil}
         do {try externalRack?.configureParallel(channel:index,branches:rack?.branches ?? externalSounds[index]?.nativeSampler?.rack.branches,tempo:tempo);try externalRack?.configureImported(channel:index,rack:rack,tempo:tempo)}
-        catch {onError?(error.localizedDescription)}
+        catch {onError?(changeFailure(error, phase: .importedProcessing, slot: index).localizedDescription); return false}
         if rack?.mainStageUnityControllers==true {externalRack?.initializeMainStageControllers(channel:index)}
+        return true
     }
     func audition(_ index: Int, _ layer: Layer) {
         var live = layer
@@ -366,25 +642,73 @@ final class AudioController {
         configure(index,live)
     }
     func restoreAuditionState(_ index: Int, _ state: Data) throws {
-        try externalRack?.restoreStateData(state,channel:index)
+        do { try externalRack?.restoreStateData(state,channel:index) }
+        catch {
+            changeFailure(error, phase: .restorePluginState, slot: index)
+            throw error
+        }
         externalStates[index] = state
     }
-    /// Restore a saved Audio Unit document state in place. Snapshot recall uses
-    /// this instead of `restoreStateData` so the transition is not interrupted by
-    /// an engine stop and graph rebuild.
-    func restorePluginState(_ index: Int, _ state: Data) {
-        guard let map = try? PropertyListSerialization.propertyList(from: state, options: [], format: nil) as? [String: Any] else { return }
-        externalRack?.restoreState(map, channel: index)
-        externalStates[index] = state
+    /// Commit processing caches and C controls only after every rack edit has
+    /// completed. This does not instantiate or change the selected instrument.
+    @discardableResult
+    func applySnapshotStates(_ states: [Int: SnapshotSoundState], restorePluginStates: Bool = false) -> Bool {
+        guard !states.isEmpty else { return true }
+        var pluginStates: [Int: Data] = [:]
+        do {
+            for (index, state) in states {
+                guard (0..<15).contains(index), state.effects.count == 3,
+                      state.effects.allSatisfy({ $0.validate() }), state.pan.isFinite, (-1...1).contains(state.pan),
+                      state.importedRack?.validate() ?? true else { throw ExternalInstrumentError.unsupportedFormat }
+                if restorePluginStates, let data = state.pluginState, externalSounds[index]?.kind == .audioUnit,
+                   externalStates[index] != data {
+                    guard loadedUnit(channel: index, sound: externalSounds[index]) != nil, data.count <= 2_000_000,
+                          (try PropertyListSerialization.propertyList(from: data, options: [], format: nil)) is [String: Any] else {
+                        throw ExternalInstrumentError.unsupportedFormat
+                    }
+                    pluginStates[index] = data
+                }
+            }
+            if let rack = externalRack {
+                try rack.withGraphChanges(capturingControls: true) {
+                    for index in states.keys.sorted() {
+                        let state = states[index]!
+                        if let data = pluginStates[index] { try rack.restoreStateData(data, channel: index) }
+                        let imported = state.importedRack ?? externalSounds[index]?.nativeSampler?.rack
+                        try rack.configureParallel(channel: index, branches: imported?.branches, tempo: tempo)
+                        try rack.configureImported(channel: index, rack: imported, tempo: tempo)
+                        for (slot, fx) in state.effects.enumerated() {
+                            var values = fx.renderValues
+                            if fx.kind == 2, let beats = fx.syncBeats { values[1] = min(20, max(0.01, tempo / (60 * beats))) }
+                            try rack.configureEffect(channel: index, slot: slot, kind: fx.kind, enabled: fx.enabled, parameters: values, tempo: tempo, delay: fx.playbackDelay)
+                        }
+                        rack.volume(channel: index, gain: scaledGain(index, levels[index] ?? 0), pan: state.pan)
+                    }
+                }
+            }
+        } catch {
+            onError?(changeFailure(error, phase: .importedProcessing).localizedDescription)
+            return false
+        }
+        for (index, state) in states {
+            pans[index] = state.pan
+            externalRack?.volume(channel: index, gain: scaledGain(index, levels[index] ?? 0), pan: state.pan)
+            sk_pan(synth, Int32(index), state.pan)
+            configureEffects(index, state.effects, configureRack: false)
+            let imported = state.importedRack ?? externalSounds[index]?.nativeSampler?.rack
+            importedRacks[index] = imported
+            if imported?.mainStageUnityControllers == true { externalRack?.initializeMainStageControllers(channel: index) }
+            if let data = pluginStates[index] { externalStates[index] = data }
+        }
+        return true
     }
-    func configureSnapshot(_ index: Int, effects: [AudioEffect], pan: Float, importedRack:ImportedRack? = nil) {
-        pans[index] = pan
-        sk_pan(synth, Int32(index), pan)
-        externalRack?.volume(channel: index, gain: scaledGain(index,levels[index] ?? 0), pan: pan)
-        configureEffects(index, effects)
-        configureImported(index,importedRack)
+    @discardableResult
+    func configureSnapshot(_ index: Int, effects: [AudioEffect], pan: Float, importedRack: ImportedRack? = nil) -> Bool {
+        var layer = Layer.empty(); layer.effects = effects; layer.pan = pan; layer.importedRack = importedRack
+        return applySnapshotStates([index: SnapshotSoundState(layer)])
     }
-    private func configureEffects(_ index: Int, _ chain: [AudioEffect], force: Bool = false) {
+    @discardableResult
+    private func configureEffects(_ index: Int, _ chain: [AudioEffect], force: Bool = false, configureRack: Bool = true) -> Bool {
         for (slot, fx) in chain.enumerated() {
             let old = effects[index].flatMap { $0.indices.contains(slot) ? $0[slot] : nil }
             guard force || old != fx else { continue }
@@ -394,12 +718,13 @@ final class AudioController {
                 if fx.kind == 2, let beats = fx.syncBeats { values[1] = min(20,max(0.01,tempo/(60*beats))) }
                 for (p,value) in values.enumerated() { sk_effect_parameter(synth,Int32(index),Int32(slot),Int32(p),value) }
             }
-            if externalSounds[index] != nil {
+            if configureRack && externalSounds[index] != nil {
                 do { var values=fx.renderValues;if fx.kind==2,let beats=fx.syncBeats {values[1]=min(20,max(0.01,tempo/(60*beats)))};try externalRack?.configureEffect(channel:index,slot:slot,kind:fx.kind,enabled:fx.enabled,parameters:values,tempo:tempo,delay:fx.playbackDelay) }
-                catch { onError?(error.localizedDescription) }
+                catch { onError?(changeFailure(error, phase: .effectControls, slot: index).localizedDescription); return false }
             }
         }
         effects[index] = chain
+        return true
     }
     func effect(_ index: Int, _ slot: Int, _ kind: Int, _ amount: Float) { sk_effect(synth, Int32(index), Int32(slot), Int32(kind), amount) }
     func clock(_ tempo: Double, _ enabled: Bool) {

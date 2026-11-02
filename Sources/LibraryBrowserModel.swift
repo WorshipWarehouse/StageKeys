@@ -80,6 +80,17 @@ struct BrowserSound: Identifiable {
     var validationNote:String?
     var ratingID:String {entry?.id ?? id}
     var playable:Bool {(entry?.sound != nil || entry?.layer?.loaded == true || external != nil || destination != nil) && unavailableReason == nil}
+    var isAudioUnit: Bool { (external ?? entry?.layer?.external ?? entry?.sound)?.kind == .audioUnit }
+    func checkingAudioUnitAvailability(installed: [ExternalAUIdentity], isMobile: Bool) -> BrowserSound {
+        guard isAudioUnit else { return self }
+        var copy = self
+        guard let component = (external ?? entry?.layer?.external ?? entry?.sound)?.component else {
+            copy.unavailableReason = "The saved Audio Unit identity is missing. Choose a replacement sound."
+            return copy
+        }
+        copy.unavailableReason = ExternalAUCatalog.unavailableReason(for: component, installed: installed, isMobile: isMobile)
+        return copy
+    }
     func values(_ facet:LibraryFacet)->[String] {
         switch facet {
         case .noteRange:return tags.noteRanges?.isEmpty == false ? tags.noteRanges!:["Not Tagged"]

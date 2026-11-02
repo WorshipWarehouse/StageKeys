@@ -12,15 +12,100 @@ final class PerformanceStore: ObservableObject {
     @Published var setlist = Setlist()
     @Published var selected = 0
     @Published private(set) var effectPresets:[EffectPreset]=[]
+    @Published private(set) var patchLoading = false
+    private var patchLoadGeneration = UUID()
     @Published private(set) var started = false
     @Published private(set) var audioStartup: AudioStartupState = .stopped
+    private var resumeTonicAfterGraphFailure = false
+    private var automaticAudioStartAllowed = true
     @Published var audioOutputs: [AudioOutputDevice] = []
     @Published var audioStatus: AudioDeviceStatus?
     @Published var message: String?
+    struct UnavailablePatchInstrument: Identifiable {
+        let id: UUID
+        let slot: Int
+        let name: String
+        let reason: String
+    }
+    @Published private(set) var unavailablePatchInstruments: [UnavailablePatchInstrument] = []
+    func refreshUnavailablePatchInstruments(installed: [ExternalAUIdentity]? = nil) {
+        let catalog = installed ?? ExternalInstrumentRack.instruments()
+        let blocked = (try? ExternalInstrumentRack.blockedComponentIDs()) ?? []
+        #if os(iOS)
+        let mobile = true
+        #else
+        let mobile = false
+        #endif
+        unavailablePatchInstruments = patch.layers.enumerated().compactMap { index, layer in
+            guard layer.external?.kind == .audioUnit, let component = layer.external?.component,
+                  !blocked.contains(component.id),
+                  let reason = ExternalAUCatalog.unavailableReason(for: component, installed: catalog, isMobile: mobile) else { return nil }
+            return UnavailablePatchInstrument(id: layer.id, slot: index + 1, name: component.displayName, reason: reason)
+        }
+    }
+    struct BlockedAudioUnit: Identifiable {
+        let id: String
+        let name: String
+    }
+    @Published private(set) var blockedAudioUnits: [BlockedAudioUnit] = []
+    @Published private(set) var pluginRecoveryStatus: String?
+    func refreshBlockedAudioUnits(includeCatalog: Bool = true) {
+        do {
+            let blocked = try ExternalInstrumentRack.blockedComponentIDs()
+            var known = setlist.patches.flatMap { $0.layers.compactMap { $0.external?.component } }
+            known += librarySounds.compactMap { $0.sound?.component }
+            if let component = tonicSound?.component { known.append(component) }
+            if includeCatalog && !blocked.isEmpty { known += ExternalInstrumentRack.instruments() }
+            let names = Dictionary(known.map { ($0.id, $0.displayName) }, uniquingKeysWith: { first, _ in first })
+            blockedAudioUnits = blocked.map { BlockedAudioUnit(id: $0, name: names[$0] ?? "Unavailable Audio Unit") }
+                .sorted { $0.name == $1.name ? $0.id < $1.id : $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+            pluginRecoveryStatus = nil
+        } catch {
+            pluginRecoveryStatus = "Audio Unit recovery information could not be read or saved. Restore app storage access or your backup, then restart StageKeys. Existing blocks have not been cleared."
+        }
+    }
+    @discardableResult
+    func allowBlockedAudioUnit(_ id: String) -> Bool {
+        do {
+            try ExternalInstrumentRack.allowBlockedLoad(id)
+            refreshBlockedAudioUnits(includeCatalog: false)
+            refreshUnavailablePatchInstruments()
+            message = "This instrument may load again. Retry audio or select it again. Other blocked instruments remain blocked."
+            return true
+        } catch { return reportPluginRecoveryError(error) }
+    }
+    @discardableResult
+    func allowAllBlockedAudioUnits() -> Bool {
+        do {
+            try ExternalInstrumentRack.allowBlockedLoads()
+            refreshBlockedAudioUnits(includeCatalog: false)
+            refreshUnavailablePatchInstruments()
+            message = "Blocked instruments may load again. Retry audio or select a sound."
+            return true
+        } catch { return reportPluginRecoveryError(error) }
+    }
+    private func reportPluginRecoveryError(_ error: Error) -> Bool {
+        let ns = error as NSError
+        if ns.domain == "StageKeysPluginRecovery", ns.code == 3 || ns.code == 4 {
+            pluginRecoveryStatus = ns.localizedDescription
+        } else {
+            pluginRecoveryStatus = "Could not save permission to retry. Existing blocks have not been cleared. Restore app storage access, then restart StageKeys."
+        }
+        message = pluginRecoveryStatus
+        return false
+    }
     var audioIsStarting: Bool { audioStartup.isStarting }
+    var audioOperationInProgress: Bool { audioIsStarting || patchLoading }
     var audioFailed: Bool { audioStartup.isFailed }
-    var audioFailureMessage: String? { audioStartup.failure?.message }
+    var audioFailureMessage: String? {
+        if audioStartup.failure?.kind == .graphRecoveryRequired, let failure = audio.lastChangeFailure,
+           failure.errorDomain == ExternalInstrumentRack.loadCapacityErrorDomain {
+            return AudioChangeFailure(diagnostic: failure).localizedDescription
+        }
+        return audioStartup.failure?.message
+    }
     var audioStatusText: String {
+        if patchLoading { return "Loading patch…" }
         switch audioStartup {
         case .stopped: return "Stopped"
         case .starting(let attempt): return "Starting (attempt \(attempt) of \(audioRetryPolicy.maximumAttempts))…"
@@ -53,7 +138,8 @@ final class PerformanceStore: ObservableObject {
                 build: Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "development",
                 running: audio.running, status: audioStatus, latency: try? audio.latencyChain(),
                 midiSources: midiSources.filter(\.connected).count, loadedSlots: patch.layers.filter(\.loaded).count,
-                limiterBypassed: masterLimiterBypassed, recording: audioCheckRecording)
+                limiterBypassed: masterLimiterBypassed, recording: audioCheckRecording,
+                lastAudioChangeFailure: audio.lastChangeFailure)
             let text = try report.json()
             #if os(macOS)
             NSPasteboard.general.clearContents(); NSPasteboard.general.setString(text, forType: .string)
@@ -200,6 +286,13 @@ final class PerformanceStore: ObservableObject {
                     if wasEnabled,let oldRoot {self.tonic=oldRoot;self.playTonicNotes(oldRoot)}
                     self.tonicSoundLoading=false;if persist {self.save()};completion(.success(()))
                 case .failure(let error):
+                    let failure = self.audio.recordInstrumentLoadFailure(error, channel: channel)
+                    if failure.diagnostic.lastGraphFailure?.wasRunning == true && !self.audio.running {
+                        // Do not recursively mutate the stopped graph or erase
+                        // the previous pad selection while recovery is required.
+                        self.tonicSoundLoading = false; self.message = failure.localizedDescription
+                        completion(.failure(failure)); return
+                    }
                     if let previous {
                         rack.load(previous,channel:channel){ [weak self] restore in
                             guard let self,self.tonicLoadGeneration==generation else{return}
@@ -210,6 +303,11 @@ final class PerformanceStore: ObservableObject {
                                 if wasEnabled,let oldRoot {self.tonic=oldRoot;self.playTonicNotes(oldRoot)}
                                 self.message=error.localizedDescription
                             case .failure(let restoreError):
+                                let restoreFailure = self.audio.recordInstrumentLoadFailure(restoreError, channel: channel)
+                                if restoreFailure.diagnostic.lastGraphFailure?.wasRunning == true && !self.audio.running {
+                                    self.tonicSoundLoading = false; self.message = restoreFailure.localizedDescription
+                                    completion(.failure(restoreFailure)); return
+                                }
                                 self.audio.adoptExternalSound(nil,channel:channel)
                                 self.tonicVelocitySelector=previousVelocitySelector;self.tonicTimbre=previousTimbre
                                 self.tonicSound=nil;self.tonic=nil
@@ -289,11 +387,12 @@ final class PerformanceStore: ObservableObject {
     }
     @discardableResult
     func beginAudition(_ index: Int) -> UUID? {
+        pendingLayerCommits.removeAll()
         cancelAudition()
         guard patch.layers.indices.contains(index) else { return nil }
         cancelTransition()
         let layer = patch.layers[index], token = UUID()
-        let state = layer.external?.kind == .audioUnit ? (try? audio.externalRack?.stateData(channel:index)) : nil
+        let state = try? audio.pluginStateData(channel:index,sound:layer.external)
         audition = Audition(token:token,patchID:patch.id,layerID:layer.id,index:index,pluginState:state ?? nil,draft:layer)
         return token
     }
@@ -303,6 +402,9 @@ final class PerformanceStore: ObservableObject {
         var layer = proposed; layer.gain = session.isolatedLibrary ? 0.6:patch.layers[index].gain; layer.muted = session.isolatedLibrary ? false:patch.layers[index].muted
         var validation = Setlist(); validation.patches = [Patch(name:"Audition",layers:[layer],snapshots:[])]
         guard (try? validation.validate()) != nil else { return }
+        // Reject known unavailable resources before changing note ownership or the draft.
+        do { try audio.prepareSoundChange(index, layer, revalidateResources: true) }
+        catch { message = error.localizedDescription; return }
         let previous = session.draft
         if previous.effectiveTranspose != layer.effectiveTranspose || previous.low != layer.low || previous.high != layer.high || previous.midiOutputChannel != layer.midiOutputChannel {
             midiFX.panic(channel:index); audio.panic(channel:index)
@@ -319,7 +421,7 @@ final class PerformanceStore: ObservableObject {
         audition=nil
         if let state=session.pluginState {
             do { try audio.restoreAuditionState(session.index,state); setlist.patches[selected].layers[session.index].pluginState=state }
-            catch { message=error.localizedDescription }
+            catch { message=audio.lastChangeFailure.map { AudioChangeFailure(diagnostic:$0).localizedDescription } ?? error.localizedDescription }
         }
         let original=patch.layers[session.index]
         configureMIDI(session.index,original); audio.configure(session.index,original)
@@ -328,6 +430,13 @@ final class PerformanceStore: ObservableObject {
         updateToneFilters(); applySustain()
     }
     @discardableResult func auditionLibrarySound(_ index:Int,_ layer:Layer)->UUID? {
+        guard started && audio.running else { message = "Start audio before auditioning a sound."; return nil }
+        guard !patchLoading else { message = "Wait for the patch to finish loading before auditioning a sound."; return nil }
+        guard patch.layers.indices.contains(index) else { return nil }
+        var validation = Setlist(); validation.patches = [Patch(name:"Audition",layers:[layer],snapshots:[])]
+        guard (try? validation.validate()) != nil else { message = "The sound contains unsupported or invalid settings."; return nil }
+        do { try audio.prepareSoundChange(index, layer, revalidateResources: true) }
+        catch { message = error.localizedDescription; return nil }
         guard let token=beginAudition(index) else{return nil}
         panic();audition?.isolatedLibrary=true
         for i in patch.layers.indices where i != index {audio.gain(i,0)}
@@ -338,10 +447,14 @@ final class PerformanceStore: ObservableObject {
     func confirmAudition(_ token: UUID?, index: Int, layer: Layer) {
         guard let session=audition, session.token == token, session.patchID == patch.id, session.index == index, patch.layers.indices.contains(index), patch.layers[index].id == session.layerID else { return }
         var final=layer; final.gain=patch.layers[index].gain; final.muted=patch.layers[index].muted
-        if layer.external?.kind == .audioUnit { do { final.pluginState=try audio.externalRack?.stateData(channel:index) } catch { message=error.localizedDescription; return } }
+        if layer.external?.kind == .audioUnit {
+            guard audio.loadedUnit(channel:index,sound:layer.external) != nil else {message="Wait for the selected instrument to finish loading before confirming its settings.";return}
+            do { final.pluginState=try audio.pluginStateData(channel:index,sound:layer.external) } catch { message=error.localizedDescription; return }
+        }
         endAudition(token); commitLayer(index,final)
     }
     private var snapshotTimer: Timer?
+    private var snapshotTransitionGeneration = UUID()
     private var notifications: [NSObjectProtocol] = []
     let audio = AudioController()
     let midi = MIDIInput()
@@ -562,7 +675,11 @@ final class PerformanceStore: ObservableObject {
                 message = "Saved settings could not be loaded. Automatic saves are blocked; use Settings to recover the previous copy."
             }
         }
-        audio.onError = { [weak self] in self?.message = $0 }
+        audio.onError = { [weak self] text in
+            self?.message = text
+            self?.refreshBlockedAudioUnits(includeCatalog: false)
+        }
+        audio.onGraphUnavailable = { [weak self] diagnostic in self?.handleGraphUnavailable(diagnostic) }
         do { midiOutput = try ExternalMIDIOutput() } catch { message = error.localizedDescription }
         midiOutput?.onChange = { [weak self] in self?.refreshMIDIDestinations() }
         midiDestinations = midiOutput?.destinations ?? []
@@ -570,7 +687,7 @@ final class PerformanceStore: ObservableObject {
         // renamed or looped port cannot feed StageKeys' output back into itself.
         if let own = midiOutput?.ownSourceID, own != 0 { midi.ignoreSources([own]) }
         midiFX.onNoteWithSource = { [weak self] channel, key, pitch, velocity, sourceID in
-            guard let self, self.patch.layers.indices.contains(channel) else { return }
+            guard let self, !self.patchLoading, self.started, self.patch.layers.indices.contains(channel) else { return }
             if let audition=self.audition,audition.isolatedLibrary,audition.index != channel{return}
             let l = self.playbackLayer(channel)
             let pitch = pitch + self.patch.transpose
@@ -603,7 +720,7 @@ final class PerformanceStore: ObservableObject {
         midi.start()
         #if os(macOS)
         for event in [NSApplication.willTerminateNotification] {
-            notifications.append(NotificationCenter.default.addObserver(forName: event, object: nil, queue: .main) { [weak self] _ in self?.cancelAudition(); self?.panic(); self?.save() })
+            notifications.append(NotificationCenter.default.addObserver(forName: event, object: nil, queue: .main) { [weak self] _ in self?.cancelAudition(); self?.cancelTransition(); self?.panic(); self?.save() })
         }
         notifications.append(NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in self?.refreshMIDI() })
         notifications.append(NotificationCenter.default.addObserver(forName: NSApplication.willResignActiveNotification, object: nil, queue: .main) { [weak self] _ in self?.releaseScreenNotes(); self?.save() })
@@ -620,13 +737,18 @@ final class PerformanceStore: ObservableObject {
     }
     func start() {
         guard !audioStartup.isStarting, audioStartup != .running else { return }
+        automaticAudioStartAllowed = true // Explicit Start/Retry resumes the session.
         audioAttempt = 0
         let generation = UUID()
         audioStartGeneration = generation
         attemptAudioStart(generation: generation)
     }
+    func startAutomatically() {
+        guard automaticAudioStartAllowed, audioStartup == .stopped else { return }
+        start()
+    }
     private func startIfStopped() {
-        if audioStartup == .stopped { start() }
+        if audioStartup == .stopped { startAutomatically() }
     }
     private func attemptAudioStart(generation: UUID) {
         guard audioStartGeneration == generation else { return }
@@ -645,9 +767,32 @@ final class PerformanceStore: ObservableObject {
         audio.master(master);audio.space(reverb)
         started = true
         audioStartup = .running
-        applyPatch(); recallTonicPatch(); audio.clock(performedTempo,metronome); audio.metronome(metronome, settings: metronomeSettings); refreshAudioDevices(); restoreAudioBuffer()
+        let tonicBeforeRecall = tonic
+        applyPatch()
+        guard started && audio.running else { return }
+        recallTonicPatch()
+        if resumeTonicAfterGraphFailure, tonic == tonicBeforeRecall, let root = tonic { playTonicNotes(root) }
+        resumeTonicAfterGraphFailure = false
+        audio.clock(performedTempo,metronome); audio.metronome(metronome, settings: metronomeSettings); refreshAudioDevices(); restoreAudioBuffer()
+    }
+    private func handleGraphUnavailable(_ diagnostic: AudioChangeDiagnostic) {
+        patchLoadGeneration = UUID(); patchLoading = false
+        pendingLayerCommits.removeAll()
+        guard started || audioStartup == .running else { return }
+        audioStartGeneration = UUID(); audioAttempt = 0
+        started = false
+        let code = diagnostic.lastGraphFailure?.restart?.code ?? diagnostic.lastGraphFailure?.restoration?.code ?? diagnostic.errorCode
+        audioStartup = .failed(AudioStartupFailure(kind: .graphRecoveryRequired, routeName: nil, code: code))
+        resumeTonicAfterGraphFailure = tonic != nil && tonicSound != nil
+        let clickEnabled = metronome
+        cancelTransition()
+        // Clear active note/pedal ownership and DSP histories without changing
+        // the selected pad, its power/key settings or the user's click choice.
+        panic(preserveTonic: true); audio.panic(); pressedCCs.removeAll()
+        metronome = clickEnabled
     }
     private func handleAudioStartFailure(_ error: Error, generation: UUID) {
+        cancelTransition(pinImmediately: true)
         started = false
         audio.stop(); panic()
         rememberAudioOutputName()
@@ -663,9 +808,15 @@ final class PerformanceStore: ObservableObject {
         }
     }
     func stopAudio() {
+        automaticAudioStartAllowed = false
+        cancelTransition(pinImmediately: true)
+        patchLoadGeneration = UUID(); patchLoading = false
+        audio.cancelPendingConfigurations()
+        pendingLayerCommits.removeAll()
+        resumeTonicAfterGraphFailure = false
         audioStartGeneration = UUID()
         audioAttempt = 0
-        panic(); audio.stop()
+        panic(); audio.stop(); audio.setPatchLoading(false)
         started = false
         audioStartup = .stopped
     }
@@ -675,6 +826,7 @@ final class PerformanceStore: ObservableObject {
     }
     private func handleAudioConfigurationChange() {
         guard started || audioStartup == .running else { return }
+        cancelTransition(pinImmediately: true)
         let generation = UUID()
         audioStartGeneration = generation
         audio.stop(); panic()
@@ -683,7 +835,7 @@ final class PerformanceStore: ObservableObject {
         audioStartup = .stopped
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
             guard let self, self.audioStartGeneration == generation, self.audioStartup == .stopped else { return }
-            self.start()
+            self.startAutomatically()
         }
     }
     /// Re-apply the saved hardware buffer once the engine is running. A device that
@@ -736,7 +888,7 @@ final class PerformanceStore: ObservableObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in self?.sendMIDI(id, 0x80, 60, 0) }
     }
     func noteOn(_ note: Int, velocity: Float = 0.8, hardware: Bool = false) {
-        guard started else { return }
+        guard !patchLoading, started else { return }
         let key = note + (hardware ? 128 : 0)
         guard !held.contains(key) else { return }
         held.insert(key)
@@ -757,6 +909,7 @@ final class PerformanceStore: ObservableObject {
     func releaseScreenNotes() { for key in held.filter({ (0...127).contains($0) }) { noteOff(key) }; screenSustain = false; applySustain() }
     private func hardwareOn(source: Int32, channel: Int, note: Int, velocity: Float) {
         if !started { startIfStopped(); if !started { return } }
+        guard !patchLoading else { return }
         let input = HardwareNote(source: source, channel: channel, note: note)
         if let old = hardwareNotes.removeValue(forKey: input) { releaseKey(old) }
         if nextHardwareKey >= Int(Int32.max)-1 { panic(); nextHardwareKey = 1024 }
@@ -788,17 +941,53 @@ final class PerformanceStore: ObservableObject {
         for l in patch.layers { if let d = l.midiDestinationID { for cc: UInt8 in [64,123,120] { sendMIDI(d, 0xb0 | UInt8(l.midiOutputChannel), cc, 0) } } }
         outputNotes.removeAll(); held.removeAll(); sustain = false; metronome = false; if preserveTonic {audio.sustain(false,layers:patch.layers);for channel in 0..<15 {audio.panic(channel:channel,preserveEffectTails:preserveEffectTails)}} else {tonic = nil;audio.panic()} }
     func choose(_ index: Int) {
+        audio.withInstrumentCatalog { choosePrepared(index) }
+    }
+    private func choosePrepared(_ index: Int) {
         pluginInterfaceRequest=nil
         guard !patchLock, setlist.patches.indices.contains(index) else { return }
+        if started || audio.running {
+            do { try audio.preparePatchResources(setlist.patches[index].layers) }
+            catch { message = error.localizedDescription; return }
+        }
         cancelAudition(); cancelTransition(); panic(preserveTonic:true,preserveEffectTails:!setlist.patches[index].silencePrevious); capturePluginStates(); selected = index; activeSnapshot = nil
         if patch.silencePrevious { panic(preserveTonic:true) }
         if patch.visualMode != 0 { notesMode = patch.visualMode == 2 }
         // A locked patch recalls its own tempo without overwriting the shared
         // live tempo. Returning to an unlocked patch must therefore resume the
         // live tempo that was active before the locked patch was selected.
+        if !started && !audio.running { audio.prepareOfflineEditing(); return }
         applyPatch(); recallTonicPatch(); audio.clock(performedTempo, metronome)
     }
     private func applyPatch() {
+        audio.withInstrumentCatalog { applyPreparedPatch() }
+    }
+    private func applyPreparedPatch() {
+        do { try audio.preparePatchResources(patch.layers) }
+        catch { audio.rejectPatchChange(error); message = error.localizedDescription; return }
+        cancelTransition()
+        let generation = UUID(); patchLoadGeneration = generation
+        let patchID = patch.id
+        // Native-only selection completes synchronously; retain its existing
+        // tail behavior. AU patches need a gated asynchronous readiness window.
+        patchLoading = patch.layers.contains { $0.external?.kind == .audioUnit }
+        audio.setPatchLoading(patchLoading)
+        var pending = Set(patch.layers.indices)
+        var building = true
+        var rejected = false
+        func finish() {
+            guard patchLoadGeneration == generation, patch.id == patchID, !building else { return }
+            if rejected {
+                patchLoadGeneration = UUID(); patchLoading = false
+                let failure: Error = audio.lastChangeFailure.map { AudioChangeFailure(diagnostic: $0) }
+                    ?? ExternalInstrumentError.invalidComponent
+                audio.rejectPatchChange(failure)
+                message = audio.lastChangeFailure.map { AudioChangeFailure(diagnostic: $0).localizedDescription }
+            } else if pending.isEmpty {
+                patchLoading = false; audio.setPatchLoading(false)
+            }
+        }
+        pendingLayerCommits.removeAll()
         for i in patch.layers.indices {
             guard let file=patch.layers[i].external?.fileName,
                   let entry=librarySounds.first(where:{$0.id.hasPrefix("ableton-samples-") && $0.sound?.fileName == file}) else {continue}
@@ -821,14 +1010,32 @@ final class PerformanceStore: ObservableObject {
         audio.setPatchVolume(patch.volumeDB)
         do {
             try audio.withGraphChanges {
-                for (i, l) in patch.layers.enumerated() { configureMIDI(i, l); audio.configure(i, l) }
+                for (i, l) in patch.layers.enumerated() {
+                    configureMIDI(i, l)
+                    let accepted = audio.configure(i, l, shouldInstall: { [weak self] in
+                        guard let self else { return false }
+                        return self.patchLoadGeneration == generation && self.patch.id == patchID &&
+                            self.patch.layers.indices.contains(i) && self.patch.layers[i] == l
+                    }) { [weak self] success in
+                        guard let self, self.patchLoadGeneration == generation, self.patch.id == patchID else { return }
+                        pending.remove(i)
+                        if !success { rejected = true }
+                        finish()
+                    }
+                    if !accepted { rejected = true }
+                }
                 configureTonic()
             }
-        } catch { message = "Could not complete the patch audio graph: " + error.localizedDescription }
+        } catch {
+            rejected = true
+            message = audio.lastChangeFailure.map { AudioChangeFailure(diagnostic: $0).localizedDescription }
+                ?? "Could not apply the patch audio. Check Audio Settings and retry."
+        }
         // Graph restoration protects old mixer values. Apply the requested patch
         // levels/pans only after the final graph has restored its samplers.
         for (i, l) in patch.layers.enumerated() { audio.gain(i, l.loaded && !l.muted ? l.gain : 0) }
         audio.gain(15, tonicGain); updateToneFilters()
+        building = false; finish()
     }
     func setRange(_ index: Int, low: Int, high: Int) {
         guard patch.layers.indices.contains(index),(0...127).contains(low),(low...127).contains(high) else{return}
@@ -921,25 +1128,48 @@ final class PerformanceStore: ObservableObject {
     func saveSnapshot() { captureSnapshot(patch.snapshots.firstIndex(where: { $0.isEmptySlot }) ?? patch.snapshots.count) }
     func recall(_ snapshot: Snapshot) {
         guard !snapshot.isEmptySlot else { return }
+        guard !patchLoading else { message = "Wait for the patch to finish loading before recalling a snapshot."; return }
+        let performanceWasRunning = started && audio.running
+        guard snapshot.seconds.map({ $0.isFinite && $0 >= 0 }) ?? true,
+              snapshot.beats.map({ $0.isFinite && $0 >= 0 }) ?? true,
+              snapshot.gains.count == patch.layers.count,
+              snapshot.gains.allSatisfy({ $0.isFinite && (0...1).contains($0) }),
+              snapshot.sounds.map({ $0.count == patch.layers.count }) ?? true,
+              snapshotDuration(snapshot).isFinite, snapshotDuration(snapshot) >= 0 else {
+            message = "This snapshot contains invalid sound or transition settings."
+            return
+        }
+        if let states = snapshot.sounds {
+            for (i, state) in states.enumerated() where patch.layers[i].external?.kind == .audioUnit && state.pluginState != nil && state.pluginState != patch.layers[i].pluginState {
+                guard audio.loadedUnit(channel: i, sound: patch.layers[i].external) != nil else {
+                    message = "Wait for the Audio Unit to finish loading before recalling its saved state."
+                    return
+                }
+            }
+        }
         cancelAudition()
-        cancelTransition(); activeSnapshot = snapshot.id
+        cancelTransition()
         let initialSounds = patch.layers.map(SnapshotSoundState.init)
         let initialWheel = modWheel, initialTonicGain = tonicGain, initialBrightness = tonicBrightness
         if let states = snapshot.sounds {
-            for (i,state) in states.enumerated() where patch.layers.indices.contains(i) {
-                // Plug-in state is structural, not interpolated: restore it before
-                // the fade so the recalled instrument matches the stored snapshot.
-                if let pluginState=state.pluginState,patch.layers[i].external?.kind == .audioUnit,patch.layers[i].pluginState != pluginState {
-                    setlist.patches[selected].layers[i].pluginState=pluginState
-                    audio.restorePluginState(i,pluginState)
+            var proposed: [Int: SnapshotSoundState] = [:]
+            for (i, state) in states.enumerated() where patch.layers.indices.contains(i) {
+                proposed[i] = SnapshotMorph.interpolateSound(from: initialSounds[i], to: state, fraction: 0)
+            }
+            guard audio.applySnapshotStates(proposed, restorePluginStates: true) else { return }
+            for (i, state) in proposed {
+                setlist.patches[selected].layers[i].effects = state.effects
+                setlist.patches[selected].layers[i].importedRack = state.importedRack
+                setlist.patches[selected].layers[i].pan = state.pan
+                setlist.patches[selected].layers[i].midiProgram = state.midiProgram
+                setlist.patches[selected].layers[i].midiEffectEnabled = state.midiEffectEnabled
+                if let data = state.pluginState, patch.layers[i].external?.kind == .audioUnit {
+                    setlist.patches[selected].layers[i].pluginState = data
                 }
-                setlist.patches[selected].layers[i].effects=SnapshotMorph.interpolateEffects(from: initialSounds[i].effects, to: state.effects, fraction: 0)
-                setlist.patches[selected].layers[i].midiProgram=state.midiProgram
-                setlist.patches[selected].layers[i].midiEffectEnabled=state.midiEffectEnabled
-                setlist.patches[selected].layers[i].pan=initialSounds[i].pan
-                configureMIDI(i,patch.layers[i]); audio.configure(i,patch.layers[i])
+                configureMIDI(i, patch.layers[i])
             }
         }
+        activeSnapshot = snapshot.id
         if let shimmer=snapshot.tonicShimmer { tonicShimmer=shimmer }
         if let timbre=snapshot.tonicTimbre {tonicTimbre=min(timbre,tonicNames.count-1)}
         if let root=snapshot.tonicRoot {selectTonicRoot(root)}
@@ -947,39 +1177,100 @@ final class PerformanceStore: ObservableObject {
             if enabled,tonic == nil {toggleTonic(tonicLastRoot)}
             else if !enabled,let root=tonic {toggleTonic(root)}
         }
+        guard !performanceWasRunning || (started && audio.running) else { activeSnapshot = nil; return }
         let initial = patch.layers.map { $0.muted ? 0 : $0.gain }
-        for i in self.patch.layers.indices { setlist.patches[selected].layers[i].muted = false; audio.gain(i, snapshot.gains[i], seconds: snapshotDuration(snapshot)) }
-        let began = Date(), duration = Double(snapshotDuration(snapshot))
+        for i in self.patch.layers.indices {
+            setlist.patches[selected].layers[i].muted = false
+            setlist.patches[selected].layers[i].gain = initial[i]
+            audio.gain(i, snapshot.gains[i], seconds: snapshotDuration(snapshot))
+        }
+        let generation = snapshotTransitionGeneration
+        let patchID = patch.id, layerIDs = patch.layers.map(\.id)
+        let began = ProcessInfo.processInfo.systemUptime, duration = Double(snapshotDuration(snapshot))
         snapshotTimer = Timer.scheduledTimer(withTimeInterval: 1.0/30, repeats: true) { [weak self] timer in
             guard let self else { timer.invalidate(); return }
-            let fraction = min(1, Date().timeIntervalSince(began) / max(0.01, duration))
+            guard self.snapshotTransitionGeneration == generation else { timer.invalidate(); return }
+            guard self.patch.id == patchID, self.patch.layers.map(\.id) == layerIDs, self.activeSnapshot == snapshot.id else {
+                timer.invalidate(); self.snapshotTimer = nil; self.snapshotTransitionGeneration = UUID()
+                if self.activeSnapshot == snapshot.id { self.activeSnapshot = nil }
+                return // Never pin/write controls belonging to a replacement document.
+            }
+            guard !performanceWasRunning || (self.started && self.audio.running) else {
+                self.cancelTransition(pinImmediately: true); return
+            }
+            let fraction = min(1, max(0, ProcessInfo.processInfo.systemUptime - began) / max(0.01, duration))
+            if let states = snapshot.sounds {
+                var proposed: [Int: SnapshotSoundState] = [:]
+                for (i, target) in states.enumerated() where self.patch.layers.indices.contains(i) {
+                    let previous = self.patch.layers[i]
+                    let state = SnapshotMorph.interpolateSound(from: initialSounds[i], to: target, fraction: Float(fraction))
+                    if previous.effects != state.effects || previous.pan != state.pan || previous.importedRack != state.importedRack { proposed[i] = state }
+                }
+                guard self.audio.applySnapshotStates(proposed) else {
+                    timer.invalidate()
+                    if self.snapshotTransitionGeneration == generation { self.cancelTransition(pinImmediately: true) }
+                    return
+                }
+                for (i, state) in proposed {
+                    self.setlist.patches[self.selected].layers[i].effects = state.effects
+                    self.setlist.patches[self.selected].layers[i].importedRack = state.importedRack
+                    self.setlist.patches[self.selected].layers[i].pan = state.pan
+                }
+            }
             for i in self.patch.layers.indices { self.setlist.patches[self.selected].layers[i].gain = initial[i] + Float(fraction) * (snapshot.gains[i] - initial[i]); if self.patch.layers[i].external != nil { self.audio.gain(i, self.patch.layers[i].gain) }; if let d = self.patch.layers[i].midiDestinationID { self.sendMIDI(d, 0xb0 | UInt8(self.patch.layers[i].midiOutputChannel), 7, UInt8(max(0,min(127,Int(self.patch.layers[i].gain*127))))) } }
             if let target = snapshot.modulation { self.modWheel = SnapshotMorph.interpolateFloat(from: initialWheel, to: target, fraction: Float(fraction)) }
             if let target = snapshot.tonicLevel { self.tonicGain = SnapshotMorph.interpolateFloat(from: initialTonicGain, to: target, fraction: Float(fraction)) }
             if let target = snapshot.tonicBrightness { self.tonicBrightness = SnapshotMorph.interpolateFloat(from: initialBrightness, to: target, fraction: Float(fraction)) }
-            if let states = snapshot.sounds {
-                for (i, target) in states.enumerated() {
-                    let previous = self.patch.layers[i]
-                    let state = SnapshotMorph.interpolateSound(from: initialSounds[i], to: target, fraction: Float(fraction))
-                    self.setlist.patches[self.selected].layers[i].effects = state.effects
-                    self.setlist.patches[self.selected].layers[i].importedRack = state.importedRack
-                    self.setlist.patches[self.selected].layers[i].pan = state.pan
-                    if previous.effects != state.effects || previous.pan != state.pan || previous.importedRack != state.importedRack { self.audio.configureSnapshot(i, effects: state.effects, pan: state.pan, importedRack:state.importedRack) }
-                }
+            if fraction >= 1 {
+                timer.invalidate(); self.snapshotTimer = nil; self.snapshotTransitionGeneration = UUID()
             }
-            if fraction >= 1 { timer.invalidate(); self.snapshotTimer = nil }
         }
     }
     func snapshotDuration(_ snapshot: Snapshot) -> Float {
         if let beats = snapshot.beats { return min(30, beats * 60 / Float(performedTempo)) }
         return snapshot.seconds ?? transition
     }
+    private struct PendingLayerCommit {
+        let token: UUID
+        let patchID: UUID
+        var openEditor = false
+    }
+    private var pendingLayerCommits: [Int: PendingLayerCommit] = [:]
     func commitLayer(_ index: Int, _ layer: Layer) {
         guard patch.layers.indices.contains(index) else{return}
         var validation=Setlist();validation.patches=[Patch(name:"Sound Edit",layers:[layer],snapshots:[])]
         guard (try? validation.validate()) != nil else{message="The sound edit contains unsupported or invalid settings. The previous sound was retained.";return}
+        do { try audio.prepareSoundChange(index, layer, checkInstallation: started || audio.running) }
+        catch { message = error.localizedDescription; return }
         cancelAudition()
-        let previous=patch.layers[index]
+        pendingLayerCommits[index] = nil
+        let previous = patch.layers[index]
+        if !started && !audio.running {
+            audio.prepareOfflineEditing()
+            finishLayerCommit(index, layer, previous: previous)
+            return
+        }
+        if layer.external?.kind == .audioUnit {
+            let pending = PendingLayerCommit(token: UUID(), patchID: patch.id)
+            pendingLayerCommits[index] = pending
+            audio.configure(index, layer, shouldInstall: { [weak self] in
+                guard let self else { return false }
+                return self.pendingLayerCommits[index]?.token == pending.token && self.patch.id == pending.patchID &&
+                    self.patch.layers.indices.contains(index) && self.patch.layers[index] == previous
+            }) { [weak self] success in
+                guard let self, let current = self.pendingLayerCommits[index], current.token == pending.token else { return }
+                self.pendingLayerCommits[index] = nil
+                guard success, self.patch.id == pending.patchID, self.patch.layers.indices.contains(index),
+                      self.patch.layers[index] == previous else { return }
+                self.finishLayerCommit(index, layer, previous: previous)
+                if current.openEditor { self.requestPluginInterface(index); self.pluginInterfaceReady = UUID() }
+            }
+            return
+        }
+        guard audio.configure(index, layer) else { return }
+        finishLayerCommit(index, layer, previous: previous)
+    }
+    private func finishLayerCommit(_ index: Int, _ layer: Layer, previous: Layer) {
         if previous.instrument != layer.instrument || previous.external != layer.external || previous.midiDestinationID != layer.midiDestinationID {
             for s in patch.snapshots.indices {
                 if setlist.patches[selected].snapshots[s].sounds != nil { setlist.patches[selected].snapshots[s].sounds![index] = SnapshotSoundState(layer) }
@@ -988,7 +1279,7 @@ final class PerformanceStore: ObservableObject {
         }
         midiFX.panic(channel:index); audio.panic(channel:index); cancelTransition(); setlist.patches[selected].layers[index] = layer
         configureMIDI(index, layer)
-        audio.configure(index, layer); audio.gain(index, layer.loaded && !layer.muted ? layer.gain : 0); updateToneFilters(); save()
+        audio.gain(index, layer.loaded && !layer.muted ? layer.gain : 0); updateToneFilters(); save()
     }
     func removeSound(_ index: Int) {
         guard patch.layers.indices.contains(index) else{return}
@@ -997,6 +1288,11 @@ final class PerformanceStore: ObservableObject {
     func toggleMIDIEffect(_ index: Int) { guard patch.layers.indices.contains(index) else{return};var l = patch.layers[index]; l.midiEffectEnabled.toggle(); commitLayer(index,l) }
     func setEffect(_ index: Int, _ slot: Int, _ effect: AudioEffect) {
         guard patch.layers.indices.contains(index),patch.layers[index].effects.indices.contains(slot),effect.validate() else{return}
+        var proposed = patch.layers[index]
+        proposed.effects[slot] = effect
+        if !started && !audio.running { audio.prepareOfflineEditing() }
+        else { guard audio.configureSnapshot(index, effects: proposed.effects, pan: proposed.pan, importedRack: proposed.importedRack ?? proposed.external?.nativeSampler?.rack) else { return } }
+        cancelTransition()
         let changedKind = patch.layers[index].effects[slot].kind != effect.kind
         if changedKind {
             for i in patch.snapshots.indices {
@@ -1005,7 +1301,7 @@ final class PerformanceStore: ObservableObject {
             }
         }
         setlist.patches[selected].layers[index].effects[slot] = effect
-        audio.configure(index, patch.layers[index]); updateToneFilters(); save()
+        updateToneFilters(); save()
     }
     func clearSnapshot(_ index: Int) {
         guard patch.snapshots.indices.contains(index) else { return }
@@ -1083,10 +1379,11 @@ final class PerformanceStore: ObservableObject {
         let p = patch
         setlist.patches[selected].transpose = PatchTransposition.semitones(playIn: p.playIn, hearIn: p.hearIn, direction: p.keyDirectionResolved, octave: p.octaveShiftResolved)
     }
-    private func cancelTransition() {
+    private func cancelTransition(pinImmediately: Bool = false) {
+        snapshotTransitionGeneration = UUID()
         guard snapshotTimer != nil else { return }
-        snapshotTimer?.invalidate(); snapshotTimer = nil
-        for (i, l) in patch.layers.enumerated() { audio.gain(i, l.muted ? 0 : l.gain) }
+        snapshotTimer?.invalidate(); snapshotTimer = nil; activeSnapshot = nil
+        for (i, l) in patch.layers.enumerated() { audio.gain(i, l.muted ? 0 : l.gain, seconds: pinImmediately ? 0 : 0.025) }
     }
     func toggleTonic(_ root: Int) {
         guard started,(0..<12).contains(root) else{return}
@@ -1220,9 +1517,14 @@ final class PerformanceStore: ObservableObject {
         var sound:ExternalSound
     }
     private var pluginInterfaceRequest:PluginInterfaceRequest?
+    @Published var pluginInterfaceReady = UUID()
     /// Called only after committing a library selection, never during audition.
     func requestPluginInterface(_ index:Int) {
         pluginInterfaceRequest=nil
+        if pendingLayerCommits[index] != nil {
+            pendingLayerCommits[index]?.openEditor = true
+            return
+        }
         guard !patchLock,patch.layers.indices.contains(index),
               let sound=patch.layers[index].external,sound.kind == .audioUnit else{return}
         pluginInterfaceRequest=PluginInterfaceRequest(patchID:patch.id,layerID:patch.layers[index].id,index:index,sound:sound)
@@ -1240,9 +1542,10 @@ final class PerformanceStore: ObservableObject {
     /// runs inside an audition, so `capturePluginStates` deliberately skips this
     /// layer and `endAudition` would otherwise restore the pre-edit state.
     func finishPluginInterface(_ index: Int) {
-        guard patch.layers.indices.contains(index), patch.layers[index].external?.kind == .audioUnit else { return }
+        guard patch.layers.indices.contains(index), patch.layers[index].external?.kind == .audioUnit,
+              audio.loadedUnit(channel:index,sound:patch.layers[index].external) != nil else { return }
         do {
-            if let state = try audio.externalRack?.stateData(channel: index) {
+            if let state = try audio.pluginStateData(channel:index,sound:patch.layers[index].external) {
                 audition?.pluginState = state
                 setlist.patches[selected].layers[index].pluginState = state
             }
@@ -1254,7 +1557,7 @@ final class PerformanceStore: ObservableObject {
             if audition?.patchID == patch.id && audition?.index == i { continue }
             // A plug-in that is not installed or failed to load has no live state; keep
             // the state the layer already carries instead of erasing it to nothing.
-            do { if let state = try audio.externalRack?.stateData(channel: i) {setlist.patches[selected].layers[i].pluginState = state} }
+            do { if let state = try audio.pluginStateData(channel:i,sound:l.external) {setlist.patches[selected].layers[i].pluginState = state} }
             catch { message = "Could not capture plug-in state: \(error.localizedDescription)" }
         }
     }
@@ -1642,7 +1945,7 @@ final class PerformanceStore: ObservableObject {
     func saveSoundToLibrary(_ source: Layer, index: Int) -> Bool {
         do {
             var layer = source
-            if layer.external?.kind == .audioUnit { layer.pluginState = try audio.externalRack?.stateData(channel: index) }
+            if layer.external?.kind == .audioUnit, let state = try audio.pluginStateData(channel:index,sound:layer.external) { layer.pluginState = state }
             var validation = Setlist(); validation.patches = [Patch(name: "Library Validation", layers: [layer], snapshots: [])]
             try validation.validate()
             let library = SoundLibrary(url: saveURL.deletingLastPathComponent().appendingPathComponent("sound-library.json"))
