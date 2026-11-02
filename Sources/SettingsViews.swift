@@ -52,6 +52,9 @@ struct SettingsEditor: View {
                                 Text(failure).font(.caption).foregroundStyle(.orange)
                                 Button("Retry Audio") { store.start() }
                             }
+                            if store.audioOperationInProgress {
+                                Button("Stop Audio and Cancel Loading") { store.stopAudio() }
+                            }
                             Toggle("Audio Running",isOn:Binding(get:{store.started},set:{if $0 {store.start()} else {store.stopAudio()}})).disabled(store.audioIsStarting)
                             Toggle("Bypass Master Limiter (Temporary)",isOn:$store.masterLimiterBypassed)
                             TimelineView(.periodic(from:.now,by:0.1)) { _ in
@@ -73,10 +76,37 @@ struct SettingsEditor: View {
                             }
                             Button("Refresh Audio Devices") { store.refreshAudioDevices() }
                         }
+                        if !store.unavailablePatchInstruments.isEmpty {
+                            Section("Unavailable Patch Instruments") {
+                                ForEach(store.unavailablePatchInstruments) { instrument in
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text("Sound \(instrument.slot): \(instrument.name)")
+                                        Text(instrument.reason).font(.caption).foregroundStyle(.orange)
+                                    }
+                                }
+                                Text("Saved instrument settings remain in the patch. Stop audio to edit unavailable sounds, or install a compatible instrument and refresh before retrying.").font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                        Button("Refresh Instrument Availability") { store.refreshUnavailablePatchInstruments() }
+                        Section("Audio Unit Recovery") {
+                            if let status = store.pluginRecoveryStatus { Text(status).font(.caption).foregroundStyle(.orange) }
+                            if store.blockedAudioUnits.isEmpty && store.pluginRecoveryStatus == nil {
+                                Text("No blocked Audio Units are currently listed.").foregroundStyle(.secondary)
+                            }
+                            ForEach(store.blockedAudioUnits) { unit in
+                                HStack {
+                                    Text(unit.name).lineLimit(2)
+                                    Spacer()
+                                    Button("Allow Retry") { store.allowBlockedAudioUnit(unit.id) }
+                                }
+                            }
+                            Text("Failed or interrupted instruments stay blocked until you allow another attempt. Allowing one instrument does not start audio or unblock the others. Then use Retry Audio or select the instrument again.").font(.caption).foregroundStyle(.secondary)
+                            Button("Refresh Audio Unit Recovery") { store.refreshBlockedAudioUnits() }
+                        }
                         Section("Shared Hall Reverb") { Slider(value:$store.reverb,in:0...65);Text("Wet Mix: \(Int(store.reverb)) %") }
                         Section("Local Diagnostics") {
                             Button("Copy Support Diagnostics") { store.copySupportDiagnostics() }
-                            Text("Copies app version, audio rate/buffer, reported latency, MIDI/sound counts and limiter state. No automatic upload. Device names, paths, samples, setlists and plug-in state are excluded.").font(.caption).foregroundStyle(.secondary)
+                            Text("Copies app version, audio rate/buffer, reported latency, MIDI/sound counts, limiter state and the last audio-change failure. No automatic upload. Device names, paths, samples, setlists and plug-in state are excluded.").font(.caption).foregroundStyle(.secondary)
                             Button(store.audioCheckRecording ? "Stop Audio Check" : "Record 30-Second Audio Check") {
                                 if store.audioCheckRecording { store.stopAudioCheck() } else { store.startAudioCheck() }
                             }
@@ -175,7 +205,9 @@ struct SettingsEditor: View {
                         Text("Right-click a snapshot to customize, capture into it, reorder, or clear it. Touch devices use a long press.").font(.caption).foregroundStyle(.secondary)
                     }
                 }.formStyle(.grouped)
-            }.onAppear { store.refreshAudioDevices() }.onDisappear { store.save() }
+            }.onAppear { store.refreshAudioDevices(); store.refreshBlockedAudioUnits(); store.refreshUnavailablePatchInstruments() }
+                .onChange(of: store.patch.id) { _ in store.refreshUnavailablePatchInstruments() }
+                .onDisappear { store.save() }
         }
     }
     private func midiSourcePicker(_ title: String, selection: Binding<Int32>) -> some View {

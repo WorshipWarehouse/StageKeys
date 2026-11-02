@@ -1,0 +1,1289 @@
+{
+  "baseline_commit": "6a253130196e8beca471a575a45c1834d52cedf8",
+  "snapshot_date": "2026-11-02",
+  "issues": [
+    {
+      "number": 1,
+      "title": "[P0] Complete source-backed sampler velocity and level parity",
+      "state": "CLOSED",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/issues/1",
+      "updatedAt": "2026-10-27T00:14:31Z",
+      "discussion_comments": 0,
+      "body_sha256": "930793ee9de388b1291be0095e4e20aaf797bf2828bfbaefdfd59d740ee70829",
+      "discussion_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    {
+      "number": 2,
+      "title": "[P0] Prevent streaming clicks, loop errors and excess MIDI latency",
+      "state": "OPEN",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/issues/2",
+      "updatedAt": "2026-10-28T14:23:09Z",
+      "discussion_comments": 1,
+      "body_sha256": "e67178240636b70d96cef31cac54c9a23d105fbd95cbd8caa4738da6dd3aa46b",
+      "discussion_sha256": "f001c1b836daa45d5fede714373146cecf4a95d0912de70434194a35b7e3ed00"
+    },
+    {
+      "number": 3,
+      "title": "[P0] Verify headroom, MIDI ownership and live audio recovery",
+      "state": "OPEN",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/issues/3",
+      "updatedAt": "2026-10-23T14:17:17Z",
+      "discussion_comments": 0,
+      "body_sha256": "cc64f0d809c2dce47e713a6937924b390b2dd8ca287bdedcd0c6dfe4dd21d65a",
+      "discussion_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    {
+      "number": 4,
+      "title": "[P0] Pass hardware performance soak and realtime resource budgets",
+      "state": "OPEN",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/issues/4",
+      "updatedAt": "2026-10-23T14:17:19Z",
+      "discussion_comments": 0,
+      "body_sha256": "d4481ae3909d18c24f2c672f3811c7ff543c4a087d98a76680206ef58be9398e",
+      "discussion_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    {
+      "number": 5,
+      "title": "[P0] Finish native MainStage import, preflight and missing-content repair",
+      "state": "OPEN",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/issues/5",
+      "updatedAt": "2026-10-23T15:30:54Z",
+      "discussion_comments": 2,
+      "body_sha256": "9f837df43cfd259b57075ccfd9fe087b412794498621a50ce8249fe6daeb8141",
+      "discussion_sha256": "e0a99a82b4e75842168010bacebcd612ba36f1894aeb11c6e90fdda5b8597328"
+    },
+    {
+      "number": 6,
+      "title": "[P0] Translate MainStage channel routing, effects, macros and MIDI",
+      "state": "OPEN",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/issues/6",
+      "updatedAt": "2026-10-30T01:20:57Z",
+      "discussion_comments": 2,
+      "body_sha256": "dd71217a5f82052fc8fb903c8051b9d5bb35cf6dd14874a000317b7248736f4a",
+      "discussion_sha256": "9775cf63ae4becbcd4b4a44078c224461bc53ac410f7ce9cb60401a2d0b3cffc"
+    },
+    {
+      "number": 7,
+      "title": "[P0] Expand EXS compatibility and native instrument coverage",
+      "state": "OPEN",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/issues/7",
+      "updatedAt": "2026-10-30T01:20:58Z",
+      "discussion_comments": 1,
+      "body_sha256": "4b957eca53749d360b578ba342e51fd92df565923371f2ab69b84c500c5ece82",
+      "discussion_sha256": "8d78138c99da10efd4cabbf2e947a60152de9e1bbc1718e57f25765fae0a3961"
+    },
+    {
+      "number": 8,
+      "title": "[P0] Make bulk conversion transactional and verify clean-machine playback",
+      "state": "CLOSED",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/issues/8",
+      "updatedAt": "2026-10-30T02:49:36Z",
+      "discussion_comments": 2,
+      "body_sha256": "d245d91f95dd835e747abc8ba4927eada218a4ba1f5724657a12759c01646acc",
+      "discussion_sha256": "2d66ed0260d5499979c22ab8e843a42ca632abb6bc4ef3c5668afe660ab0f45f"
+    },
+    {
+      "number": 9,
+      "title": "[P1] Match Halo Shimmer musical behavior and parameter tapers",
+      "state": "OPEN",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/issues/9",
+      "updatedAt": "2026-10-23T14:17:33Z",
+      "discussion_comments": 0,
+      "body_sha256": "ba53b8ddfd43a00d82c996473ccef1bb6bf334bd9b6cabd846c008d3bceb5fcb",
+      "discussion_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    {
+      "number": 10,
+      "title": "[P1] Match MainStage EQ, compressor, SilverVerb, delays and distortion",
+      "state": "OPEN",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/issues/10",
+      "updatedAt": "2026-10-30T01:21:00Z",
+      "discussion_comments": 2,
+      "body_sha256": "9b5eff31dbe48f70a94210ee535aeee073a7627ae800618ef4f5a918b7463af4",
+      "discussion_sha256": "fd7412787f4cbebd27b75fde0eeeb78b0b77e1fe03c9de8b39259b881233183b"
+    },
+    {
+      "number": 11,
+      "title": "[P1] Complete native effect controls, presets and preview lifecycle",
+      "state": "OPEN",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/issues/11",
+      "updatedAt": "2026-10-30T12:46:58Z",
+      "discussion_comments": 3,
+      "body_sha256": "ea49e89e68c306403ac98767dbe22959533746bc3e294f4b7b34cbc42c47f00e",
+      "discussion_sha256": "9aefc69b8386c1dacb088541e49803d8d9a7c93a7a1dcc460d47dd541cadaf2a"
+    },
+    {
+      "number": 12,
+      "title": "[P1] Finish Audio Unit discovery, editors and saved state",
+      "state": "OPEN",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/issues/12",
+      "updatedAt": "2026-10-23T14:17:48Z",
+      "discussion_comments": 0,
+      "body_sha256": "f809be9cb4776331ac86d2c1eee896f8395f2947449c5397496bf07bd6080741",
+      "discussion_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    {
+      "number": 13,
+      "title": "[P0] Isolate hosted plugin failures and validate audio/MIDI topology",
+      "state": "OPEN",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/issues/13",
+      "updatedAt": "2026-10-23T14:17:50Z",
+      "discussion_comments": 0,
+      "body_sha256": "62a84667c244323bc5bd244a3647e25c3ce4059d5fa2eec9592796ef43359ad7",
+      "discussion_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    {
+      "number": 14,
+      "title": "[P1] Complete physical iOS AUv3 support and define VST3 scope",
+      "state": "OPEN",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/issues/14",
+      "updatedAt": "2026-10-23T14:17:52Z",
+      "discussion_comments": 0,
+      "body_sha256": "2960eb42ec52351e203cf2a3a60b1c98f741496fc30da4b766ec97eb257fc6a2",
+      "discussion_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    {
+      "number": 15,
+      "title": "[P1] Finish external MIDI routing and controller setup",
+      "state": "OPEN",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/issues/15",
+      "updatedAt": "2026-10-30T12:47:00Z",
+      "discussion_comments": 2,
+      "body_sha256": "24b22e3705a956071efad026d801249487b20c475d555d3563671ac336e51692",
+      "discussion_sha256": "e08c305d884149bb90b9e5813e4bc2e1ff094ba0df8c458f941d9e8b530410e3"
+    },
+    {
+      "number": 16,
+      "title": "[P1] Verify all sound slots, patches, snapshots and Tonic Pad",
+      "state": "OPEN",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/issues/16",
+      "updatedAt": "2026-10-30T12:46:57Z",
+      "discussion_comments": 3,
+      "body_sha256": "cbd52afec8c3195d65aaa46adbffa3d1ad94c4f997c7b57dd4bb8ccf9cb5bee7",
+      "discussion_sha256": "4c72800d109ce32db92f892ad5a180715bc519ca1a3c01f919404b1c109e476f"
+    },
+    {
+      "number": 17,
+      "title": "[P1] Finish library tags, sorting, filters and import workflows",
+      "state": "OPEN",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/issues/17",
+      "updatedAt": "2026-10-30T12:42:40Z",
+      "discussion_comments": 1,
+      "body_sha256": "f165cbcdea26d967b331c7e490d308f222e4427032aebdb86f6c7d2aa0e18647",
+      "discussion_sha256": "577c39d0eca97643c95fbdba56fbe02fe6c4ee9410e4ae215887969eb851037d"
+    },
+    {
+      "number": 18,
+      "title": "[P1] Match modulation wheel and audit every reference page",
+      "state": "OPEN",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/issues/18",
+      "updatedAt": "2026-10-30T12:42:36Z",
+      "discussion_comments": 1,
+      "body_sha256": "913281c3de8621d3f32ff9d8b0fa216c5a3bcbaee9179f4f5f55e7a339d35ff3",
+      "discussion_sha256": "b096650e71cd0f1508e312cea4e2a96c3b1166cdf0b74da667fb039a4ad01324"
+    },
+    {
+      "number": 19,
+      "title": "[P1] Finish responsive UI, accessibility and release visual identity",
+      "state": "OPEN",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/issues/19",
+      "updatedAt": "2026-10-23T15:31:02Z",
+      "discussion_comments": 1,
+      "body_sha256": "4ef0913f71484784df1cdaa96d26bac491286469754e10599566b123478ceadb",
+      "discussion_sha256": "8365f7f976a3b80c0ef59e6ced6cb417c7735e34e007730ec1f7aee5a63f5f21"
+    },
+    {
+      "number": 20,
+      "title": "[P0] Prove session migrations, atomic saves and portable recovery",
+      "state": "OPEN",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/issues/20",
+      "updatedAt": "2026-10-29T20:37:42Z",
+      "discussion_comments": 2,
+      "body_sha256": "109d0e0c0e11435fa54c8cb53d8c1092c63cf256ff96315ba50864ab618299c3",
+      "discussion_sha256": "758b91cbcad8eac0320ed4a3ca7a7ed1be0e6046911ba64b4187fe0eee27ace4"
+    },
+    {
+      "number": 21,
+      "title": "[P0] Complete release content provenance and signed distribution",
+      "state": "OPEN",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/issues/21",
+      "updatedAt": "2026-10-23T14:18:23Z",
+      "discussion_comments": 0,
+      "body_sha256": "f0dd47f20b9af90fd77152a127d038d018ed34d81fe5118cb5da732ef86b4b8d",
+      "discussion_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    {
+      "number": 22,
+      "title": "[P0] Add release CI and artifact/audio regression gates",
+      "state": "CLOSED",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/issues/22",
+      "updatedAt": "2026-10-29T15:00:20Z",
+      "discussion_comments": 1,
+      "body_sha256": "46d9525883e9a7196935cd5b9ba70b00824fbfb797a10dc8f74691742c4a0a74",
+      "discussion_sha256": "50a9e074e975a770fcfaaaa3f2890c6945479fb5c31e978de2d0757cfabe07a3"
+    },
+    {
+      "number": 23,
+      "title": "[P1] Finish diagnostics, onboarding, support and private beta",
+      "state": "OPEN",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/issues/23",
+      "updatedAt": "2026-10-23T14:18:29Z",
+      "discussion_comments": 0,
+      "body_sha256": "d74c452516b9e6f97aca5c5898c5994cc493eb989d82896fca592ef3d3c470cd",
+      "discussion_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    {
+      "number": 24,
+      "title": "[Later] Build an independent StageKeys AI patch builder",
+      "state": "OPEN",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/issues/24",
+      "updatedAt": "2026-10-23T14:18:32Z",
+      "discussion_comments": 0,
+      "body_sha256": "8208a92f9144c71f544fc16e41fceca628fae31d24e7eee98b278a793120550a",
+      "discussion_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    {
+      "number": 25,
+      "title": "[P1] Add user-controlled gain matching for native instruments and AUs",
+      "state": "OPEN",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/issues/25",
+      "updatedAt": "2026-10-23T15:31:07Z",
+      "discussion_comments": 2,
+      "body_sha256": "dc71ac0a355f3eb6f6dd312081604de43bfc15ba128b657a1ef36506aa2a3299",
+      "discussion_sha256": "b5bae62ace9f13eb2c0b9b317fbbb14f5f9133bbb78168c293927c355263ea11"
+    },
+    {
+      "number": 52,
+      "title": "[P1] Choose MainStage effects for the visible slots during import",
+      "state": "CLOSED",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/issues/52",
+      "updatedAt": "2026-10-30T18:17:06Z",
+      "discussion_comments": 0,
+      "body_sha256": "69f7c46af0fed2bd21c566baa2fcd61c5afad4f9f18c5710add053e2410e4bf6",
+      "discussion_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    {
+      "number": 53,
+      "title": "[P1] Open AU instrument editors immediately after adding a plugin",
+      "state": "OPEN",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/issues/53",
+      "updatedAt": "2026-10-29T15:46:00Z",
+      "discussion_comments": 0,
+      "body_sha256": "59f624794500b816b87b24cbc5c3eaa8df053125a1a12abfac7e760c1f25ddfe",
+      "discussion_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    {
+      "number": 54,
+      "title": "[P1] Select user-library sounds for Tonic Pad with eligibility feedback",
+      "state": "CLOSED",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/issues/54",
+      "updatedAt": "2026-10-30T18:55:23Z",
+      "discussion_comments": 0,
+      "body_sha256": "38256c2da03391e5bf7d58d1938a25123f422c62ce6e5aaad0c78f9d1e72dc5d",
+      "discussion_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    {
+      "number": 55,
+      "title": "[P1] Preserve reverb tails when switching instruments or effect graphs",
+      "state": "OPEN",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/issues/55",
+      "updatedAt": "2026-10-25T00:20:02Z",
+      "discussion_comments": 0,
+      "body_sha256": "5fb369d16cefb20fe26515d558cf2f1c3a2740eb334f8b4a46b95f3f49f6aa48",
+      "discussion_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    {
+      "number": 56,
+      "title": "[P1] Keep five snapshot positions on every patch without shifting cleared slots",
+      "state": "CLOSED",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/issues/56",
+      "updatedAt": "2026-10-26T17:34:55Z",
+      "discussion_comments": 0,
+      "body_sha256": "4222bdaa963e7e9e5e0325fb4f12add2fbeafda0dcc7971bf3d220e789a8d39c",
+      "discussion_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    {
+      "number": 58,
+      "title": "[P0] Do not reject valid setlists returned through macOS path aliases",
+      "state": "CLOSED",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/issues/58",
+      "updatedAt": "2026-10-26T17:34:55Z",
+      "discussion_comments": 0,
+      "body_sha256": "3612aec233d18497182a9ff97d08e55687e109e644d39ff42a622954a341fe8c",
+      "discussion_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    {
+      "number": 60,
+      "title": "[P0] Bound cold-start sampler restoration and keep the interface responsive",
+      "state": "CLOSED",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/issues/60",
+      "updatedAt": "2026-10-26T17:34:56Z",
+      "discussion_comments": 0,
+      "body_sha256": "8bd5bfc24c99d35784bc7a801d44082144877d816310ac29b9097d0cf083221a",
+      "discussion_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    {
+      "number": 64,
+      "title": "Decide and document a project-wide license for StageKeys-authored code",
+      "state": "CLOSED",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/issues/64",
+      "updatedAt": "2026-10-26T14:57:13Z",
+      "discussion_comments": 0,
+      "body_sha256": "288e64a2ff113a35bc554079dff3acb0c93021f1613b281f08c3f50186cd7ecf",
+      "discussion_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    {
+      "number": 79,
+      "title": "[P0] Imported single-file samples drop ~250 ms of audio every ~640 ms in playback",
+      "state": "CLOSED",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/issues/79",
+      "updatedAt": "2026-10-29T15:42:46Z",
+      "discussion_comments": 3,
+      "body_sha256": "2231a008fa8747d0ec89248cc615863a297d768d405165e648670a4a00a47467",
+      "discussion_sha256": "a7a2b59e87ff7508b363affef09769ed7cafbe3370099d1007b5954915254bd9"
+    },
+    {
+      "number": 82,
+      "title": "[P1] Resolve remaining ungated regression drift without weakening audio assertions",
+      "state": "CLOSED",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/issues/82",
+      "updatedAt": "2026-10-30T17:03:40Z",
+      "discussion_comments": 0,
+      "body_sha256": "3bafa909568796ad4816ae5820a30ffeca0c0f698585cc8d742ded6adfa47435",
+      "discussion_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    {
+      "number": 85,
+      "title": "[P1] Make adding a MainStage sound a single step on the Mac",
+      "state": "CLOSED",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/issues/85",
+      "updatedAt": "2026-10-30T03:10:56Z",
+      "discussion_comments": 2,
+      "body_sha256": "c236e3c0daaee0f825ed9aaf9f64368ea37278fe7fdb4bf4d56df83abf2729d6",
+      "discussion_sha256": "b08d5e9374ea1c1ad3b7ec620ba356a8d6ae1bddede1c33d198b7489652de6e5"
+    },
+    {
+      "number": 87,
+      "title": "[P1] Carry converted MainStage sounds from the Mac to the iPad",
+      "state": "CLOSED",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/issues/87",
+      "updatedAt": "2026-10-30T02:50:10Z",
+      "discussion_comments": 2,
+      "body_sha256": "d8cb1b91d3b837cd4084cc1596a6563c564c607fcc6a10427691905f3eaaa4c2",
+      "discussion_sha256": "d10a87bece73e5702c41e69423ee2d70ba443a4374d82878afc76cea7dccc80c"
+    },
+    {
+      "number": 88,
+      "title": "Powering on the MIDI keyboard selects the first patch (implicit Program Change mapping)",
+      "state": "OPEN",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/issues/88",
+      "updatedAt": "2026-10-31T16:07:24Z",
+      "discussion_comments": 2,
+      "body_sha256": "7bb5f6216ee0ecd8531599f090ca8fbf862a64e3c8d187e1c25dec99f30ea72c",
+      "discussion_sha256": "79810d79159ac20f809c6134bfcbb974cece44c85b1eac9823f79d7dd95aeb39"
+    },
+    {
+      "number": 89,
+      "title": "[P0] Ship with no sounds \u2014 remove factory synth voices and the seeded demo setlist",
+      "state": "CLOSED",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/issues/89",
+      "updatedAt": "2026-10-29T19:42:39Z",
+      "discussion_comments": 0,
+      "body_sha256": "45d601082ac80208bd0e5331cae372c16f555ed5a032c5f57f47297f6ce93c51",
+      "discussion_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    {
+      "number": 99,
+      "title": "[P1] Protect ratings and personal effect presets after failed archive loads",
+      "state": "CLOSED",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/issues/99",
+      "updatedAt": "2026-10-29T20:37:20Z",
+      "discussion_comments": 0,
+      "body_sha256": "93e4e047169534ea33bf217cb5623039ab112906c039b9f62a53c05b8bb45ddf",
+      "discussion_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    {
+      "number": 105,
+      "title": "[Deferred] Qualify personal sound packs on a physical iPad",
+      "state": "OPEN",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/issues/105",
+      "updatedAt": "2026-10-30T02:49:58Z",
+      "discussion_comments": 0,
+      "body_sha256": "75ef1eaa7ac305ed00e269f56ad8c479bff6e6e31b50d1a2752689339b8f7488",
+      "discussion_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    {
+      "number": 107,
+      "title": "[P1] Add device-aware category and per-sound Flex Routing",
+      "state": "OPEN",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/issues/107",
+      "updatedAt": "2026-10-30T12:41:18Z",
+      "discussion_comments": 0,
+      "body_sha256": "90f8869c504863eeb9f47a97761bbfa11646a45afda86da82f5e70db8bb42cb0",
+      "discussion_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    {
+      "number": 108,
+      "title": "[P1] Complete metronome sound, accent and level controls",
+      "state": "CLOSED",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/issues/108",
+      "updatedAt": "2026-10-30T17:44:52Z",
+      "discussion_comments": 0,
+      "body_sha256": "ebbe80928e4e3e63f303914a783da179ac57a2ca3ed01e2d4ac203ad02b03a7f",
+      "discussion_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    {
+      "number": 109,
+      "title": "[P1] Add bounded patch preloading, keyboard feedback and sound meters",
+      "state": "OPEN",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/issues/109",
+      "updatedAt": "2026-10-30T12:41:31Z",
+      "discussion_comments": 0,
+      "body_sha256": "be0a092fb48556c3a593c1e6eadafd7e2349d3edf4d3a341b3a130bfe66b1c8b",
+      "discussion_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    {
+      "number": 110,
+      "title": "[P0] Recover cleanly when the audio engine cannot start",
+      "state": "OPEN",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/issues/110",
+      "updatedAt": "2026-10-30T12:41:37Z",
+      "discussion_comments": 0,
+      "body_sha256": "30506535807fb8ab979b8f689c35e238b6935d1f7495d1f6daefe2dbb105e7e4",
+      "discussion_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    {
+      "number": 111,
+      "title": "[P1] Implement musical Play In/Hear In transposition and patch tempo lock",
+      "state": "OPEN",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/issues/111",
+      "updatedAt": "2026-10-31T16:39:39Z",
+      "discussion_comments": 1,
+      "body_sha256": "0add96f76ef831fd0c53b35ec37a4996948be90b980ce9e4f2d89cdcb44d4458",
+      "discussion_sha256": "401b76c71f274f4db618e554e4af7ea49c992c2cd259eec92f7b7991a7fdb505"
+    },
+    {
+      "number": 112,
+      "title": "[P1] Complete native ADSR, Mod Filter and sound signal ordering",
+      "state": "OPEN",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/issues/112",
+      "updatedAt": "2026-10-31T16:27:37Z",
+      "discussion_comments": 1,
+      "body_sha256": "04b5436f38992356e2d30053aa71e1f67305cba7b7c2a23feecbed60dbf9efbc",
+      "discussion_sha256": "270e369879063e090f5e5218fbce5b3d2141b025f119ddc26a7b9beefadbaa4f"
+    },
+    {
+      "number": 113,
+      "title": "[P1] Make iPad background audio and interruption recovery performance-safe",
+      "state": "OPEN",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/issues/113",
+      "updatedAt": "2026-10-30T12:46:35Z",
+      "discussion_comments": 0,
+      "body_sha256": "43dc7c7ee656d35eb7fb23812862747c70c7f4f7777bba7e463a5f8ac5f9cbd8",
+      "discussion_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    {
+      "number": 114,
+      "title": "[P1] Add portable setlist sharing, templates and independent library exports",
+      "state": "OPEN",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/issues/114",
+      "updatedAt": "2026-10-30T12:46:36Z",
+      "discussion_comments": 0,
+      "body_sha256": "73e1ea33f3b290e266c268348c11ddb26b143932a542b441ee2dba077d5c5ceb",
+      "discussion_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    {
+      "number": 121,
+      "title": "[P1] Add opt-in CloudKit backups with transactional local recovery",
+      "state": "OPEN",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/issues/121",
+      "updatedAt": "2026-10-30T17:01:04Z",
+      "discussion_comments": 0,
+      "body_sha256": "ef388c10499bf6c7ea0c2b68bf2ed9d66c236b6da7fe8eff7e084140bb4248b6",
+      "discussion_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    {
+      "number": 123,
+      "title": "[P0] Recover atomically from intermittent AVFAudio error -1 during live changes",
+      "state": "OPEN",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/issues/123",
+      "updatedAt": "2026-10-31T12:46:23Z",
+      "discussion_comments": 0,
+      "body_sha256": "77fd97d76f8be6105bde33ac2979884546d6d6ec24f1a3911e0af48590437bb3",
+      "discussion_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    }
+  ],
+  "pull_requests": [
+    {
+      "number": 26,
+      "title": "Issue 2: guard sampler region bounds and add loop, streaming and latency regressions",
+      "state": "MERGED",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/pull/26",
+      "head_sha": "69b78d352486a6d4d231fbdedf4f4276984b8e08",
+      "mergedAt": "2026-10-23T20:13:41Z"
+    },
+    {
+      "number": 27,
+      "title": "Issue 12: Audio Unit discovery, generic editor and saved plug-in state",
+      "state": "MERGED",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/pull/27",
+      "head_sha": "de6c415837648fbc78dc58ddf52b2734527f6e5d",
+      "mergedAt": "2026-10-23T20:14:20Z"
+    },
+    {
+      "number": 29,
+      "title": "Finish external MIDI routing, loop prevention and controller setup",
+      "state": "MERGED",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/pull/29",
+      "head_sha": "c457e7ea6922eb939c25125d8462a998c1b65235",
+      "mergedAt": "2026-10-23T20:14:47Z"
+    },
+    {
+      "number": 30,
+      "title": "[codex] Smooth dense reverb Tone and Low Cut changes",
+      "state": "MERGED",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/pull/30",
+      "head_sha": "b1b9dd2e14bf465453af928313885de0abe8a1b8",
+      "mergedAt": "2026-10-25T01:43:12Z"
+    },
+    {
+      "number": 31,
+      "title": "[codex] Add release build and audio regression gates (#22)",
+      "state": "MERGED",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/pull/31",
+      "head_sha": "6cbd47f07a60c7c103180a14262bf2101c50db9b",
+      "mergedAt": "2026-10-25T02:18:08Z"
+    },
+    {
+      "number": 32,
+      "title": "[codex] Enforce distribution provenance and public signing gates (#21)",
+      "state": "MERGED",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/pull/32",
+      "head_sha": "052b5fd45f27b97e1e0b34ba0272394cca97478b",
+      "mergedAt": "2026-10-25T02:20:24Z"
+    },
+    {
+      "number": 33,
+      "title": "[codex] Prevent corrupt-session autosave loss and add recovery (#20)",
+      "state": "MERGED",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/pull/33",
+      "head_sha": "e87c8dad8fb68973540f7f235e0cf8dbd8745644",
+      "mergedAt": "2026-10-25T02:31:33Z"
+    },
+    {
+      "number": 34,
+      "title": "[codex] Add private support diagnostics and beta setup guide (#23)",
+      "state": "CLOSED",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/pull/34",
+      "head_sha": "97762614ea6d964460ad481182c84d0ab678a5ef",
+      "mergedAt": null
+    },
+    {
+      "number": 35,
+      "title": "[codex] Report gain-match repeatability and make trims reversible (#25)",
+      "state": "MERGED",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/pull/35",
+      "head_sha": "456a6b701b9834acd3373f9c6c5649ceeae44a61",
+      "mergedAt": "2026-10-25T17:58:18Z"
+    },
+    {
+      "number": 36,
+      "title": "[codex] Review MainStage channels before converting sounds (#5)",
+      "state": "CLOSED",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/pull/36",
+      "head_sha": "5e94c994276974c89c8a62d3d8dda60f8d8f8b31",
+      "mergedAt": null
+    },
+    {
+      "number": 37,
+      "title": "[codex] Report unsupported MainStage engines and refuse guessed envelopes (#7)",
+      "state": "MERGED",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/pull/37",
+      "head_sha": "ab7d161cec69f6833a6d753a0a56c4ed73a5f6ad",
+      "mergedAt": "2026-10-25T18:58:58Z"
+    },
+    {
+      "number": 38,
+      "title": "[codex] Make bulk catalog imports cancellable and transactional (#8)",
+      "state": "CLOSED",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/pull/38",
+      "head_sha": "64d98c89beac4e763f5975200c933d4b7a7c7f54",
+      "mergedAt": null
+    },
+    {
+      "number": 39,
+      "title": "[codex] Bound plugin loading and block interrupted retries (#13)",
+      "state": "CLOSED",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/pull/39",
+      "head_sha": "e2e0f4c65a042f1bb0006a08a711de845b0c5ce1",
+      "mergedAt": null
+    },
+    {
+      "number": 40,
+      "title": "[codex] Stress every effect and record worst render durations (#4)",
+      "state": "CLOSED",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/pull/40",
+      "head_sha": "8ae66963048f9fb71e8ce7314c8d1de31f3b79ba",
+      "mergedAt": null
+    },
+    {
+      "number": 41,
+      "title": "[codex] Guard mobile AU editor lifecycle and define VST3 scope (#14)",
+      "state": "CLOSED",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/pull/41",
+      "head_sha": "7476891f4fe61345bbc9cd52b5f73011672a03b5",
+      "mergedAt": null
+    },
+    {
+      "number": 42,
+      "title": "[codex] Meter actual protected stereo output and expose overload (#3)",
+      "state": "CLOSED",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/pull/42",
+      "head_sha": "de9be5fad3a83295e9e2d6102f260b208055f3fb",
+      "mergedAt": null
+    },
+    {
+      "number": 43,
+      "title": "[codex] Fix false arp tags and make unknown metadata filterable (#17)",
+      "state": "CLOSED",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/pull/43",
+      "head_sha": "da340429aeb6dc00cd5268093942b14574a7279d",
+      "mergedAt": null
+    },
+    {
+      "number": 44,
+      "title": "[codex] Require source-backed velocity and loudness evidence (#1)",
+      "state": "CLOSED",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/pull/44",
+      "head_sha": "5c150b49265ba25d62687b08442b5521c9705c6c",
+      "mergedAt": null
+    },
+    {
+      "number": 45,
+      "title": "[codex] Assemble converted channels while preserving processing (#6)",
+      "state": "CLOSED",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/pull/45",
+      "head_sha": "bd66c8f98c835be32d0c33f13f4495d5ea2b4b74",
+      "mergedAt": null
+    },
+    {
+      "number": 46,
+      "title": "[codex] Keep mod-wheel drags synchronized with hardware CC1 (#18)",
+      "state": "CLOSED",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/pull/46",
+      "head_sha": "62aa00d47fbfa3a992e342800003550110df384b",
+      "mergedAt": null
+    },
+    {
+      "number": 47,
+      "title": "[codex] Smooth Shimmer mix and damping automation (#9)",
+      "state": "CLOSED",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/pull/47",
+      "head_sha": "900a84413271b440b2dc7ec612473ab48087d32d",
+      "mergedAt": null
+    },
+    {
+      "number": 48,
+      "title": "[codex] Smooth imported ClipDist gain and mix automation (#10)",
+      "state": "CLOSED",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/pull/48",
+      "head_sha": "3a8ca171d766df8d128167f5cd7476f952fa4352",
+      "mergedAt": null
+    },
+    {
+      "number": 49,
+      "title": "[codex] Guard sound edits and verify all 15 playback slots (#16)",
+      "state": "CLOSED",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/pull/49",
+      "head_sha": "1db2730747342cdba57e729972590a2066975ee3",
+      "mergedAt": null
+    },
+    {
+      "number": 50,
+      "title": "[codex] Add keyboard audio controls and flexible editor sizing (#19)",
+      "state": "MERGED",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/pull/50",
+      "head_sha": "2988a93177e16c6bff35f7d116c9c52d45dc48d4",
+      "mergedAt": "2026-10-25T22:53:47Z"
+    },
+    {
+      "number": 51,
+      "title": "[codex] Define validated local patch drafts for the later builder (#24)",
+      "state": "CLOSED",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/pull/51",
+      "head_sha": "55c9b7e9b1cc675bcb8b88585cdb3d5119aca1aa",
+      "mergedAt": null
+    },
+    {
+      "number": 57,
+      "title": "Keep five snapshot positions and preserve cleared slots",
+      "state": "CLOSED",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/pull/57",
+      "head_sha": "8db55276af740172b9cd6ba4fd4f68d4f9b839bd",
+      "mergedAt": null
+    },
+    {
+      "number": 59,
+      "title": "Keep valid saved setlists visible across macOS path aliases",
+      "state": "CLOSED",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/pull/59",
+      "head_sha": "36a71aed79ebef37aa7fbf118f7f06cd693de9b4",
+      "mergedAt": null
+    },
+    {
+      "number": 61,
+      "title": "Stop reloading resident samplers when configuring empty slots",
+      "state": "CLOSED",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/pull/61",
+      "head_sha": "c7b6ace275351467658aaf2213af286bcfbef280",
+      "mergedAt": null
+    },
+    {
+      "number": 62,
+      "title": "Integrate the locally verified release stack and repair sampler startup",
+      "state": "MERGED",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/pull/62",
+      "head_sha": "074dedd9b474c27550d47c9fe1bb6daced426ac3",
+      "mergedAt": "2026-10-26T17:34:53Z"
+    },
+    {
+      "number": 63,
+      "title": "Add an eligible user-library sound picker for Tonic Pad",
+      "state": "MERGED",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/pull/63",
+      "head_sha": "90050b9c45082fede43130f4ae8a6d9b5a5a780b",
+      "mergedAt": "2026-10-26T18:13:03Z"
+    },
+    {
+      "number": 65,
+      "title": "Refresh StageKeys README with real UI screenshot",
+      "state": "MERGED",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/pull/65",
+      "head_sha": "5befe0da58e4c51eb133137ab64c8615aaf9b046",
+      "mergedAt": "2026-10-26T14:57:11Z"
+    },
+    {
+      "number": 66,
+      "title": "Wait for AU parameter-tree observer updates instead of a fixed 0.15 s drain",
+      "state": "MERGED",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/pull/66",
+      "head_sha": "b6c16f710438f5c9405696575bac82df3f47b16e",
+      "mergedAt": "2026-10-26T19:08:56Z"
+    },
+    {
+      "number": 67,
+      "title": "Report and match saved third-party Audio Unit state in MainStage imports",
+      "state": "MERGED",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/pull/67",
+      "head_sha": "b82822a96a348d7b005a36e4bb8fdb46f78841db",
+      "mergedAt": "2026-10-26T22:46:31Z"
+    },
+    {
+      "number": 68,
+      "title": "Add a read-only evidence probe for MainStage analysis",
+      "state": "MERGED",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/pull/68",
+      "head_sha": "1b2c0847e88f59f448ff2f890a8ed3c597e0fdfc",
+      "mergedAt": "2026-10-26T20:25:48Z"
+    },
+    {
+      "number": 69,
+      "title": "Run the release gates once per commit instead of twice",
+      "state": "MERGED",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/pull/69",
+      "head_sha": "ff2a28080337d1089f5b1c596ad2ef157f6014be",
+      "mergedAt": "2026-10-26T21:20:30Z"
+    },
+    {
+      "number": 70,
+      "title": "Convert a saved MainStage Audio Unit into a hosted layer",
+      "state": "MERGED",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/pull/70",
+      "head_sha": "2739bf51bba5e600859dc1776e94b65ddc529ff4",
+      "mergedAt": "2026-10-26T23:25:39Z"
+    },
+    {
+      "number": 71,
+      "title": "Refuse sampler calibration evidence that is not dry and isolated",
+      "state": "MERGED",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/pull/71",
+      "head_sha": "d54de3f067ce9d76e3838e13edebb54b796aee4f",
+      "mergedAt": "2026-10-27T00:14:30Z"
+    },
+    {
+      "number": 72,
+      "title": "Document the sampler calibration gate and REA evidence probe in Tools/README.md",
+      "state": "MERGED",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/pull/72",
+      "head_sha": "aaa0a3860e125c3f795f6fa4a0bfc0116e123da1",
+      "mergedAt": "2026-10-27T01:59:14Z"
+    },
+    {
+      "number": 73,
+      "title": "Refuse private setlist, MainStage and Ableton content in the distribution gate",
+      "state": "MERGED",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/pull/73",
+      "head_sha": "26a7d7a540054ca973c15c9b7c8856efcd8016e3",
+      "mergedAt": "2026-10-27T01:19:02Z"
+    },
+    {
+      "number": 74,
+      "title": "Keep undeclared catalog metadata unknown in the tag extractor",
+      "state": "MERGED",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/pull/74",
+      "head_sha": "6eaf7236a8dea28ee2135719274c3e6984269a19",
+      "mergedAt": "2026-10-28T02:26:55Z"
+    },
+    {
+      "number": 75,
+      "title": "Document the distribution provenance gate and close its three false-PASS gaps",
+      "state": "MERGED",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/pull/75",
+      "head_sha": "5151652eda86609ef9cc133f2a6fee5ffdff9514",
+      "mergedAt": "2026-10-28T00:44:08Z"
+    },
+    {
+      "number": 76,
+      "title": "Document the remaining Tools/ scripts, fix the icon generator, and gate the iOS app icon",
+      "state": "CLOSED",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/pull/76",
+      "head_sha": "f3a7b37582272dfa405272804991329f3dfd8b70",
+      "mergedAt": null
+    },
+    {
+      "number": 77,
+      "title": "Run the orphaned DSP and import regressions in the default library gate",
+      "state": "CLOSED",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/pull/77",
+      "head_sha": "38259f32d116302e2ebd5794e139b357abfb5915",
+      "mergedAt": null
+    },
+    {
+      "number": 78,
+      "title": "Test the MainStage archive audit against its documented refusals",
+      "state": "MERGED",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/pull/78",
+      "head_sha": "2b04400a78c9d9dff40ecbb38897f04a0c2ce163",
+      "mergedAt": "2026-10-28T13:45:40Z"
+    },
+    {
+      "number": 80,
+      "title": "Keep imported single-file samples resident so playback never streams gaps",
+      "state": "MERGED",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/pull/80",
+      "head_sha": "56d2f6324906cf1c4c66f7035d411cfe7c9ba21f",
+      "mergedAt": "2026-10-28T23:04:39Z"
+    },
+    {
+      "number": 81,
+      "title": "Integrate reviewed gates and requalify sample gain after dropout repair",
+      "state": "CLOSED",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/pull/81",
+      "head_sha": "b048165a9d7404ed1f2acfc11572f3ddc001b5fc",
+      "mergedAt": null
+    },
+    {
+      "number": 83,
+      "title": "Gate EQ bandwidth conversion contracts",
+      "state": "CLOSED",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/pull/83",
+      "head_sha": "9c44dfbea26ae143e78175ebb7e588e8b80e83fa",
+      "mergedAt": null
+    },
+    {
+      "number": 84,
+      "title": "Fix ClipDist control precision without removing automation ramps",
+      "state": "CLOSED",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/pull/84",
+      "head_sha": "64e70b8dcc77c92c2039c24bf815779a13b78e01",
+      "mergedAt": null
+    },
+    {
+      "number": 86,
+      "title": "Restore production MIDI plug-and-play regression coverage",
+      "state": "CLOSED",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/pull/86",
+      "head_sha": "3a632ff4f0e1405076c23d39469d0534dc526594",
+      "mergedAt": null
+    },
+    {
+      "number": 90,
+      "title": "Keep keyboard startup Program Change from selecting unconfigured patches",
+      "state": "CLOSED",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/pull/90",
+      "head_sha": "9671eb9b11c2554d0b074966d0ad95b8a66ed4b6",
+      "mergedAt": null
+    },
+    {
+      "number": 91,
+      "title": "Audit closed PR incorporation and harden MainStage AU identity matching",
+      "state": "CLOSED",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/pull/91",
+      "head_sha": "dcf4a4a09392fcdd6e3f42b90ca303fa76ba9129",
+      "mergedAt": null
+    },
+    {
+      "number": 92,
+      "title": "Open Audio Unit editors automatically after Add Sound",
+      "state": "CLOSED",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/pull/92",
+      "head_sha": "a91128e844ce2600f4f957f562c72eaeb69a01fc",
+      "mergedAt": null
+    },
+    {
+      "number": 93,
+      "title": "Keep personal portable sound packs out of app distributions",
+      "state": "CLOSED",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/pull/93",
+      "head_sha": "053d03b79caca0c7c13b292f70ab00798d65b200",
+      "mergedAt": null
+    },
+    {
+      "number": 94,
+      "title": "Land verified PRs and remove redundant CI core compilation",
+      "state": "MERGED",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/pull/94",
+      "head_sha": "8d2cc044c9f075c1a3696c4c12b64c7762809505",
+      "mergedAt": "2026-10-29T15:42:44Z"
+    },
+    {
+      "number": 95,
+      "title": "[P0] Ship without factory sounds or a seeded demo setlist",
+      "state": "MERGED",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/pull/95",
+      "head_sha": "bc060d38767f62e74f464c9dc4fcfebe39991149",
+      "mergedAt": "2026-10-29T19:42:38Z"
+    },
+    {
+      "number": 96,
+      "title": "[codex] Preserve MainStage fader levels and metadata-only reimports",
+      "state": "MERGED",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/pull/96",
+      "head_sha": "9bfe6351cb291f3250ff572ee5753713078dbb4d",
+      "mergedAt": "2026-10-29T20:05:09Z"
+    },
+    {
+      "number": 97,
+      "title": "[codex] Restore valid backups despite oversized damaged sessions",
+      "state": "MERGED",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/pull/97",
+      "head_sha": "0f805918822580eef52a631d6acc088ab8bdad86",
+      "mergedAt": "2026-10-29T20:12:56Z"
+    },
+    {
+      "number": 98,
+      "title": "[codex] Protect damaged sound catalogs and add explicit recovery",
+      "state": "MERGED",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/pull/98",
+      "head_sha": "939871d4ebc9c5f9b6a339813102593aadf44edd",
+      "mergedAt": "2026-10-29T20:28:17Z"
+    },
+    {
+      "number": 100,
+      "title": "[codex] Recover personal presets and ratings without overwriting damaged data",
+      "state": "MERGED",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/pull/100",
+      "head_sha": "9dcd004ccdbbc939e6285244112e7107b48d6d0b",
+      "mergedAt": "2026-10-29T20:37:19Z"
+    },
+    {
+      "number": 101,
+      "title": "[codex] Automatically discover MainStage samples and report atomic partial imports",
+      "state": "MERGED",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/pull/101",
+      "head_sha": "c878063472fb3398d281d38d75913692c936bad7",
+      "mergedAt": "2026-10-29T20:54:51Z"
+    },
+    {
+      "number": 102,
+      "title": "[codex] Transfer native sounds in verified personal packs between Mac and iPad",
+      "state": "MERGED",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/pull/102",
+      "head_sha": "a0777d0d7b6763133e72b1c745accd69d408466d",
+      "mergedAt": "2026-10-30T00:58:03Z"
+    },
+    {
+      "number": 103,
+      "title": "[codex] Translate clean MainStage Tape Delay with independent levels and MIDI",
+      "state": "MERGED",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/pull/103",
+      "head_sha": "feeed997dbd46fda0677b1d21033e73a16687f4c",
+      "mergedAt": "2026-10-30T01:19:29Z"
+    },
+    {
+      "number": 104,
+      "title": "[codex] Serialize sound library import transactions",
+      "state": "MERGED",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/pull/104",
+      "head_sha": "95fb5d048f959b8392566bf9b738fc4f21df3b63",
+      "mergedAt": "2026-10-30T02:49:21Z"
+    },
+    {
+      "number": 106,
+      "title": "[codex] Remember authorized MainStage sample folders",
+      "state": "MERGED",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/pull/106",
+      "head_sha": "67487004f79860d862d8564dbca3e53314abac89",
+      "mergedAt": "2026-10-30T03:10:39Z"
+    },
+    {
+      "number": 115,
+      "title": "Gate every hardware-free test and record the on-demand set",
+      "state": "MERGED",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/pull/115",
+      "head_sha": "9050900f9663622ff1e72263c03b67a9051097c5",
+      "mergedAt": "2026-10-30T17:03:38Z"
+    },
+    {
+      "number": 116,
+      "title": "Add a standalone metronome with click sounds, accents and levels",
+      "state": "MERGED",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/pull/116",
+      "head_sha": "d5d53633515ceae6cb4e8eee191c6f46d5e168d8",
+      "mergedAt": "2026-10-30T17:44:50Z"
+    },
+    {
+      "number": 117,
+      "title": "Recover cleanly when audio startup fails (#110)",
+      "state": "MERGED",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/pull/117",
+      "head_sha": "7e03753e72c4bc2e0ade7ff436636580badc90ee",
+      "mergedAt": "2026-10-30T18:06:37Z"
+    },
+    {
+      "number": 118,
+      "title": "Choose MainStage effects for the visible slots (#52)",
+      "state": "MERGED",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/pull/118",
+      "head_sha": "99118c1c5b33daf31e0b961d3f4677926445e8ea",
+      "mergedAt": "2026-10-30T18:17:04Z"
+    },
+    {
+      "number": 119,
+      "title": "Complete library add/replace and tag provenance workflows (#17)",
+      "state": "MERGED",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/pull/119",
+      "head_sha": "788f44a2797e6cc9c7042d25738baa8f71d6a446",
+      "mergedAt": "2026-10-30T18:28:27Z"
+    },
+    {
+      "number": 120,
+      "title": "Preserve reverb tails across graph and instrument switches (#55)",
+      "state": "MERGED",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/pull/120",
+      "head_sha": "ac7ef3e743caad5bdcf08eafaa14f74edcf2c304",
+      "mergedAt": "2026-10-30T18:39:04Z"
+    },
+    {
+      "number": 122,
+      "title": "[codex] Make Tonic Pad sound selection transactional (#54)",
+      "state": "MERGED",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/pull/122",
+      "head_sha": "7b2ca76bde419069c56c4e10e5c11c3e50e6cd2e",
+      "mergedAt": "2026-10-30T18:55:21Z"
+    },
+    {
+      "number": 124,
+      "title": "[codex] Redesign the Import Sounds workflow",
+      "state": "MERGED",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/pull/124",
+      "head_sha": "ed5138f65c1e927724fa56a2ab2abada4d8c936c",
+      "mergedAt": "2026-10-31T12:51:48Z"
+    },
+    {
+      "number": 125,
+      "title": "Implement Play In/Hear In direction, octave shift and patch tempo lock (#111)",
+      "state": "MERGED",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/pull/125",
+      "head_sha": "add5da7e0e9f2cfda8b47afd7fed0791bc7b0905",
+      "mergedAt": "2026-10-31T16:39:36Z"
+    },
+    {
+      "number": 126,
+      "title": "Enforce the native sound order and expose envelope and Mod Filter (#112)",
+      "state": "MERGED",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/pull/126",
+      "head_sha": "65aa7d1a6aefb55b4fa5b33a1a56cbfebc720f46",
+      "mergedAt": "2026-10-31T16:27:34Z"
+    },
+    {
+      "number": 127,
+      "title": "Explain Program Change numbering and assign an unclaimed mapping in Patch Settings",
+      "state": "MERGED",
+      "url": "https://github.com/WorshipWarehouse/StageKeys/pull/127",
+      "head_sha": "a0f7ae84cb94bf24132d06d77b2d3cc8eccc307c",
+      "mergedAt": "2026-10-31T16:07:19Z"
+    }
+  ],
+  "labels": [
+    {
+      "id": 12695620678,
+      "node_id": "LA_kwDOVKQKRc8AAAAC9LfMRg",
+      "url": "https://api.github.com/repos/WorshipWarehouse/StageKeys/labels/accessibility",
+      "name": "accessibility",
+      "color": "f143ab",
+      "default": true,
+      "description": "Barrier affecting people with disabilities",
+      "archived_at": null,
+      "archived_by": null
+    },
+    {
+      "id": 12695620670,
+      "node_id": "LA_kwDOVKQKRc8AAAAC9LfMPg",
+      "url": "https://api.github.com/repos/WorshipWarehouse/StageKeys/labels/bug",
+      "name": "bug",
+      "color": "d73a4a",
+      "default": true,
+      "description": "Something isn't working",
+      "archived_at": null,
+      "archived_by": null
+    },
+    {
+      "id": 12695620686,
+      "node_id": "LA_kwDOVKQKRc8AAAAC9LfMTg",
+      "url": "https://api.github.com/repos/WorshipWarehouse/StageKeys/labels/documentation",
+      "name": "documentation",
+      "color": "0075ca",
+      "default": true,
+      "description": "Improvements or additions to documentation",
+      "archived_at": null,
+      "archived_by": null
+    },
+    {
+      "id": 12695620695,
+      "node_id": "LA_kwDOVKQKRc8AAAAC9LfMVw",
+      "url": "https://api.github.com/repos/WorshipWarehouse/StageKeys/labels/duplicate",
+      "name": "duplicate",
+      "color": "cfd3d7",
+      "default": true,
+      "description": "This issue or pull request already exists",
+      "archived_at": null,
+      "archived_by": null
+    },
+    {
+      "id": 12695620705,
+      "node_id": "LA_kwDOVKQKRc8AAAAC9LfMYQ",
+      "url": "https://api.github.com/repos/WorshipWarehouse/StageKeys/labels/enhancement",
+      "name": "enhancement",
+      "color": "a2eeef",
+      "default": true,
+      "description": "New feature or request",
+      "archived_at": null,
+      "archived_by": null
+    },
+    {
+      "id": 12695620723,
+      "node_id": "LA_kwDOVKQKRc8AAAAC9LfMcw",
+      "url": "https://api.github.com/repos/WorshipWarehouse/StageKeys/labels/good%20first%20issue",
+      "name": "good first issue",
+      "color": "7057ff",
+      "default": true,
+      "description": "Good for newcomers",
+      "archived_at": null,
+      "archived_by": null
+    },
+    {
+      "id": 12695620713,
+      "node_id": "LA_kwDOVKQKRc8AAAAC9LfMaQ",
+      "url": "https://api.github.com/repos/WorshipWarehouse/StageKeys/labels/help%20wanted",
+      "name": "help wanted",
+      "color": "008672",
+      "default": true,
+      "description": "Extra attention is needed",
+      "archived_at": null,
+      "archived_by": null
+    },
+    {
+      "id": 12695620731,
+      "node_id": "LA_kwDOVKQKRc8AAAAC9LfMew",
+      "url": "https://api.github.com/repos/WorshipWarehouse/StageKeys/labels/invalid",
+      "name": "invalid",
+      "color": "e4e669",
+      "default": true,
+      "description": "This doesn't seem right",
+      "archived_at": null,
+      "archived_by": null
+    },
+    {
+      "id": 12695620738,
+      "node_id": "LA_kwDOVKQKRc8AAAAC9LfMgg",
+      "url": "https://api.github.com/repos/WorshipWarehouse/StageKeys/labels/question",
+      "name": "question",
+      "color": "d876e3",
+      "default": true,
+      "description": "Further information is requested",
+      "archived_at": null,
+      "archived_by": null
+    },
+    {
+      "id": 12695620746,
+      "node_id": "LA_kwDOVKQKRc8AAAAC9LfMig",
+      "url": "https://api.github.com/repos/WorshipWarehouse/StageKeys/labels/wontfix",
+      "name": "wontfix",
+      "color": "ffffff",
+      "default": true,
+      "description": "This will not be worked on",
+      "archived_at": null,
+      "archived_by": null
+    }
+  ],
+  "milestones": [],
+  "recent_runs": [
+    {
+      "conclusion": "success",
+      "databaseId": 41220745067,
+      "displayTitle": "Implement Play In/Hear In direction, octave shift and patch tempo loc\u2026",
+      "headSha": "6a253130196e8beca471a575a45c1834d52cedf8",
+      "status": "completed"
+    },
+    {
+      "conclusion": "success",
+      "databaseId": 41219826560,
+      "displayTitle": "Implement Play In/Hear In direction, octave shift and patch tempo lock (#111)",
+      "headSha": "add5da7e0e9f2cfda8b47afd7fed0791bc7b0905",
+      "status": "completed"
+    },
+    {
+      "conclusion": "success",
+      "databaseId": 41219821522,
+      "displayTitle": "Release regression gates",
+      "headSha": "add5da7e0e9f2cfda8b47afd7fed0791bc7b0905",
+      "status": "completed"
+    },
+    {
+      "conclusion": "cancelled",
+      "databaseId": 41219814631,
+      "displayTitle": "Implement Play In/Hear In direction, octave shift and patch tempo lock (#111)",
+      "headSha": "d56c9d5580ad79b9faceb2821d11a88022716e8d",
+      "status": "completed"
+    },
+    {
+      "conclusion": "cancelled",
+      "databaseId": 41219808585,
+      "displayTitle": "Release regression gates",
+      "headSha": "d56c9d5580ad79b9faceb2821d11a88022716e8d",
+      "status": "completed"
+    },
+    {
+      "conclusion": "success",
+      "databaseId": 41219780872,
+      "displayTitle": "Enforce the native sound order and expose envelope and Mod Filter (#1\u2026",
+      "headSha": "9044336bf728d477484a287a2eabcd616af2525e",
+      "status": "completed"
+    },
+    {
+      "conclusion": "cancelled",
+      "databaseId": 41219596480,
+      "displayTitle": "Implement Play In/Hear In direction, octave shift and patch tempo lock (#111)",
+      "headSha": "86daee0629d7aff7894d8bd6139907a42e42f8e8",
+      "status": "completed"
+    },
+    {
+      "conclusion": "cancelled",
+      "databaseId": 41219592715,
+      "displayTitle": "Release regression gates",
+      "headSha": "86daee0629d7aff7894d8bd6139907a42e42f8e8",
+      "status": "completed"
+    }
+  ]
+}

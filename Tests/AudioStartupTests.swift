@@ -69,6 +69,9 @@ import Foundation
         assert(policy.delay(afterFailedAttempt: 3) == nil)
         let single = AudioStartupRetryPolicy(maximumAttempts: 1, delays: [])
         assert(single.delay(afterFailedAttempt: 1) == nil)
+        let graphStopped = AudioStartupFailure(kind: .graphRecoveryRequired, routeName: nil, code: 702)
+        assert(!graphStopped.recoverable && graphStopped.message.contains("Retry audio"))
+        assert(graphStopped.message.contains("702"))
 
         // Unplug/replug, sleep/wake and route changes all arrive as engine
         // configuration changes; only a previously running engine is restarted.

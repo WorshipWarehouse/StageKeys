@@ -73,8 +73,15 @@ struct PerformanceView: View {
             let wide = g.size.width >= 850
             VStack(spacing: 8) {
                 toolbar
-                if store.audioIsStarting {
-                    HStack(spacing: 8) { ProgressView().controlSize(.small); Text(store.audioStatusText).font(.caption).foregroundStyle(.secondary); Spacer() }.padding(.horizontal, 4)
+                if store.audioOperationInProgress {
+                    HStack(spacing: 8) {
+                        ProgressView().controlSize(.small)
+                        Text(store.audioStatusText).font(.caption).foregroundStyle(.secondary)
+                        Spacer()
+                        Button("Stop Audio") { store.stopAudio() }
+                            .buttonStyle(StageButtonStyle())
+                            .help("Stop audio and cancel pending startup or patch loading")
+                    }.padding(.horizontal, 4)
                 }
                 if store.audioFailed, let failure = store.audioFailureMessage {
                     HStack(alignment: .top, spacing: 10) {
@@ -122,8 +129,11 @@ struct PerformanceView: View {
                 }
             }
         }
-        .onAppear { store.start() }
+        .onAppear { store.startAutomatically() }
         .tint(StageTheme.selected)
+        .onChange(of: store.pluginInterfaceReady) { _ in
+            if sheet == nil, let index = store.takePluginInterfaceRequest() { sheet = .plugin(index) }
+        }
         .sheet(item: $sheet, onDismiss: {
             DispatchQueue.main.async {
                 if let index=store.takePluginInterfaceRequest() { sheet = .plugin(index) }
