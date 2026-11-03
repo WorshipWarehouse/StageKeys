@@ -62,6 +62,34 @@ import Foundation
         var notTagged=SoundTags.inferred(name:"Warm Pad");notTagged.inferred=false;notTagged.sourceModel="Not Tagged"
         assert(BrowserSound(id:"not-tagged",name:"Warm Pad",collection:"Fixture",tags:notTagged).tagOrigin(.source) == .unknown)
         var none=LibraryQuery();none.search="missing";assert(none.options(.timbre,in:sounds)==["All"])
+        // A blank or absent tag stays unknown: it must not become an empty facet
+        // option or be reported as authored, and Not Tagged stays filterable.
+        var blankTags=SoundTags(category:"  ",type:"",timbres:[" "],articulations:[],sourceModel:"")
+        blankTags.inferred=false
+        let blank=BrowserSound(id:"blank",name:"Blank",collection:"My Sounds",tags:blankTags)
+        assert(blank.values(.category)==["Not Tagged"])
+        assert(blank.values(.type)==["Not Tagged"])
+        assert(blank.values(.timbre)==["Not Tagged"])
+        assert(blank.values(.articulation)==["Not Tagged"])
+        assert(blank.values(.source)==["Not Tagged"])
+        assert(blank.values(.complexity)==["Not Tagged"])
+        for facet in LibraryFacet.tagFacets {assert(blank.tagOrigin(facet) == .unknown,"\(facet.rawValue) must stay unknown when blank")}
+        var unknownOnly=LibraryQuery();unknownOnly.filters[.category]="Not Tagged"
+        assert(unknownOnly.results([blank]).map(\.id)==["blank"])
+        assert(unknownOnly.options(.category,in:[blank])==["All","Not Tagged"])
+        var typeTags=SoundTags(category:"Pads",type:"Synth Pads");typeTags.types=["Synth Pads","  ","Airy Pads"]
+        assert(BrowserSound(id:"types",name:"Pads",collection:"Fixture",tags:typeTags).values(.type)==["Airy Pads","Synth Pads"])
+        var rangeTags=SoundTags(category:"Bass",type:"Synth Bass");rangeTags.noteRanges=["Right Hand","Left Hand","Right Hand"]
+        assert(BrowserSound(id:"ranges",name:"Bass",collection:"Fixture",tags:rangeTags).values(.noteRange)==["Left Hand","Right Hand"])
+        // An unreadable catalog is an error state with recovery, not the
+        // installation-without-sounds empty state. Search and filters stay distinct.
+        assert(LibraryEmptyState.resolve(catalogUnreadable:true,searching:true,filtering:true) == .catalogUnreadable)
+        assert(LibraryEmptyState.catalogUnreadable.offersRecovery && !LibraryEmptyState.catalogUnreadable.offersImport)
+        assert(LibraryEmptyState.resolve(catalogUnreadable:false,searching:false,filtering:false) == .noSounds)
+        assert(LibraryEmptyState.resolve(catalogUnreadable:false,searching:true,filtering:false) == .noMatches)
+        assert(LibraryEmptyState.resolve(catalogUnreadable:false,searching:false,filtering:true) == .noMatches)
+        assert(LibraryEmptyState.noSounds.offersImport && LibraryEmptyState.noSounds.message.contains("ships without sounds"))
+        assert(!LibraryEmptyState.catalogUnreadable.message.contains("ships without sounds"))
         assert(SoundLibrary.cleanImportedName("Classic Pluck Synth- Sunday Sounds-1")=="Classic Pluck Synth")
         assert(SoundLibrary.cleanImportedName("Synth Brass Pad- Sundy Sounds")=="Synth Brass Pad")
         assert(SoundLibrary.cleanImportedName("Circular Echo- Layered Patch")=="Circular Echo")
@@ -82,6 +110,6 @@ import Foundation
         do{try library.write([provenance]);fatalError("Invalid authored facet accepted")}catch{}
         tagged.tags!.timbres=Array(repeating:"x",count:65)
         do{try library.write([tagged]);fatalError("Oversized metadata accepted")}catch{}
-        print("PASS: library facets, combined search, sorting, availability, legacy decode and tagged persistence")
+        print("PASS: library facets, combined search, sorting, availability, unknown tags, empty/error states, legacy decode and tagged persistence")
     }
 }

@@ -78,8 +78,11 @@ struct BrowserSound: Identifiable {
     /// for reporting that a component has not passed auval.
     var unavailableReason:String?
     var validationNote:String?
+    /// Set when the sound's own managed file or one of its samples is gone, so
+    /// the row can offer repair instead of failing only after Add/Replace.
+    var contentIssue:LibraryContentIssue?
     var ratingID:String {entry?.id ?? id}
-    var playable:Bool {(entry?.sound != nil || entry?.layer?.loaded == true || external != nil || destination != nil) && unavailableReason == nil}
+    var playable:Bool {(entry?.sound != nil || entry?.layer?.loaded == true || external != nil || destination != nil) && unavailableReason == nil && contentIssue == nil}
     var isAudioUnit: Bool { (external ?? entry?.layer?.external ?? entry?.sound)?.kind == .audioUnit }
     func checkingAudioUnitAvailability(installed: [ExternalAUIdentity], isMobile: Bool) -> BrowserSound {
         guard isAudioUnit else { return self }
@@ -91,23 +94,40 @@ struct BrowserSound: Identifiable {
         copy.unavailableReason = ExternalAUCatalog.unavailableReason(for: component, installed: installed, isMobile: isMobile)
         return copy
     }
+    /// Managed content is checked once per library read, never per keystroke.
+    func checkingContent(_ issues:[String:LibraryContentIssue])->BrowserSound {
+        var copy=self;copy.contentIssue=issues[entry?.id ?? id];return copy
+    }
+    /// A blank or absent tag is unknown, never an empty facet option or a
+    /// claim of authored metadata.
+    static let unknownTag="Not Tagged"
+    private static func taggedValues(_ raw:[String])->[String] {
+        let values=Set(raw.map{$0.trimmingCharacters(in:.whitespacesAndNewlines)}.filter{!$0.isEmpty && $0 != unknownTag})
+        return values.isEmpty ? [unknownTag]:values.sorted()
+    }
+    /// Facet values are canonical and deterministic: Note Range uses the fixed
+    /// filter order, repeated or blank values collapse, and anything unknown is
+    /// reported as Not Tagged so it stays filterable and visibly untagged.
     func values(_ facet:LibraryFacet)->[String] {
         switch facet {
-        case .noteRange:return tags.noteRanges?.isEmpty == false ? tags.noteRanges!:["Not Tagged"]
-        case .complexity:return [tags.complexity ?? "Not Tagged"]
-        case .category:return [tags.category]
-        case .type:return Array(Set([tags.type]+(tags.types ?? []))).sorted()
-        case .timbre:return tags.timbres.isEmpty ? ["Not Tagged"]:tags.timbres
-        case .articulation:return tags.articulations.isEmpty ? ["Not Tagged"]:tags.articulations
+        case .noteRange:
+            let selected=Set(tags.noteRanges ?? [])
+            let ordered=LibraryNoteRange.allCases.map(\.rawValue).filter{selected.contains($0)}
+            return ordered.isEmpty ? [Self.unknownTag]:ordered
+        case .complexity:return Self.taggedValues([tags.complexity ?? ""])
+        case .category:return Self.taggedValues([tags.category])
+        case .type:return Self.taggedValues([tags.type]+(tags.types ?? []))
+        case .timbre:return Self.taggedValues(tags.timbres)
+        case .articulation:return Self.taggedValues(tags.articulations)
         case .library:return [collection]
-        case .source:return [tags.sourceModel]
-        case .availability:return [unavailableReason != nil ? "Unavailable" : playable ? "Playable" : "Needs Conversion"]
+        case .source:return Self.taggedValues([tags.sourceModel])
+        case .availability:return [unavailableReason != nil || contentIssue != nil ? "Unavailable" : playable ? "Playable" : "Needs Conversion"]
         }
     }
     func tagOrigin(_ facet:LibraryFacet)->LibraryTagOrigin? {
         guard facet.isTagFacet else{return nil}
         if tags.isAuthored(facet) {return .authored}
-        if values(facet).contains("Not Tagged") {return .unknown}
+        if values(facet).contains(Self.unknownTag) {return .unknown}
         return tags.inferred ? .suggested:.authored
     }
     private var tagOriginGroups:(authored:[String],suggested:[String],unknown:[String]) {
@@ -214,12 +234,102 @@ struct LibraryQuery {
     func options(_ facet:LibraryFacet,in sounds:[BrowserSound])->[String] {
         if facet == .noteRange {
             // The source retains all four choices even after narrowing by type.
-            let unknown=filters[facet]=="Not Tagged" || sounds.filter{matches($0,ignoring:facet)}.contains{$0.values(.noteRange).contains("Not Tagged")}
-            return ["All"]+LibraryNoteRange.allCases.map(\.rawValue)+(unknown ? ["Not Tagged"]:[])
+            let unknown=filters[facet]==BrowserSound.unknownTag || sounds.filter{matches($0,ignoring:facet)}.contains{$0.values(.noteRange).contains(BrowserSound.unknownTag)}
+            return ["All"]+LibraryNoteRange.allCases.map(\.rawValue)+(unknown ? [BrowserSound.unknownTag]:[])
         }
         var values=Set(sounds.filter{matches($0,ignoring:facet)}.flatMap{$0.values(facet)})
         if let selected=filters[facet],selected != "All" {values.insert(selected)}
         return ["All"]+values.filter{!$0.isEmpty}.sorted{$0.localizedStandardCompare($1) == .orderedAscending}
+    }
+}
+
+/// What the library shows when it has no result rows. An unreadable catalog is
+/// an error with its own recovery action, never an "install without sounds"
+/// empty state that invites importing over the preserved catalog.
+enum LibraryEmptyState:Equatable {
+    case noSounds,noMatches,catalogUnreadable
+    static func resolve(catalogUnreadable:Bool,searching:Bool,filtering:Bool)->Self {
+        if catalogUnreadable {return .catalogUnreadable}
+        return searching || filtering ? .noMatches:.noSounds
+    }
+    var title:String {
+        switch self {
+        case .noSounds:return "No Sounds found"
+        case .noMatches:return "No Sounds match"
+        case .catalogUnreadable:return "Sound library could not be read"
+        }
+    }
+    var message:String {
+        switch self {
+        case .noSounds:return "StageKeys ships without sounds. Import samples, choose Audio Units, or select an external MIDI destination."
+        case .noMatches:return "Change the search or filters to find more sounds."
+        case .catalogUnreadable:return "The saved catalog is preserved but was not loaded, so this list may look empty. Catalog writes are blocked until you recover it; samples and current patches are unchanged."
+        }
+    }
+    /// Importing before recovery cannot repair an unreadable catalog, so only a
+    /// readable library offers the import shortcuts.
+    var offersImport:Bool {self != .catalogUnreadable}
+    var offersRecovery:Bool {self == .catalogUnreadable}
+}
+
+/// A library sound whose managed content was moved or lost stays listed so it can
+/// be repaired; it is reported as unavailable instead of failing only on Add.
+enum LibraryContentIssue:String,Equatable {
+    case missingFile,missingSamples
+    var message:String {
+        switch self {
+        case .missingFile:return "The saved sound file is missing or unreadable. Locate it, or import the sound again."
+        case .missingSamples:return "A sample this preset needs is missing or unreadable. Reconnect its storage or import the sound again."
+        }
+    }
+    var locateTitle:String {"Locate Sound File…"}
+}
+
+/// Repair is identity-checked: a merely similar file never replaces a sound.
+enum LibraryRepair {
+    /// The stored reference is a bare file name, so a path, traversal or blank
+    /// name cannot address anything outside the managed folder.
+    static func safeName(_ name:String)->Bool {
+        !name.isEmpty && name.count<=200 && !name.hasPrefix(".") && name==URL(fileURLWithPath:name).lastPathComponent
+    }
+    /// Only the digest of the managed asset establishes its identity. A name,
+    /// or the original EXS digest before conversion, does not identify its bytes.
+    static func accepts(candidateName:String,digest:String?,originalDigest:String?,storedName:String)->Bool {
+        guard safeName(candidateName),safeName(storedName) else{return false}
+        guard let digest,let originalDigest else{return false}
+        return digest.count==64 && digest==originalDigest
+    }
+}
+
+/// Copies a located asset into the library folder as a managed file. The copy is
+/// verified before it becomes visible, and an existing readable file is never
+/// overwritten, so repair cannot destroy the bytes that are still there.
+enum LibraryAssetRepair {
+    enum Failure:LocalizedError {
+        case unsafeName,unreadableSource,alreadyPresent,verificationFailed
+        var errorDescription:String? {
+            switch self {
+            case .unsafeName:return "That file name cannot be stored in the sound library."
+            case .unreadableSource:return "That file is missing, unreadable, or larger than the library allows."
+            case .alreadyPresent:return "A file with that name is already in the sound library."
+            case .verificationFailed:return "That file did not verify as the saved sound, so nothing was changed."
+            }
+        }
+    }
+    static let byteLimit=2_000_000_000
+    static func restore(named name:String,from source:URL,to directory:URL,verify:(URL)throws->Void)throws {
+        guard LibraryRepair.safeName(name) else{throw Failure.unsafeName}
+        let values=try source.resourceValues(forKeys:[.isRegularFileKey,.isSymbolicLinkKey,.fileSizeKey])
+        guard values.isRegularFile == true, values.isSymbolicLink != true,
+              let size=values.fileSize,size>0,size<=byteLimit else{throw Failure.unreadableSource}
+        try FileManager.default.createDirectory(at:directory,withIntermediateDirectories:true)
+        let destination=directory.appendingPathComponent(name)
+        guard !FileManager.default.fileExists(atPath:destination.path) else{throw Failure.alreadyPresent}
+        let temporary=directory.appendingPathComponent(".repair-\(UUID().uuidString)")
+        defer {try? FileManager.default.removeItem(at:temporary)}
+        do { try FileManager.default.copyItem(at:source,to:temporary) } catch { throw Failure.unreadableSource }
+        do { try verify(temporary) } catch { throw Failure.verificationFailed }
+        try FileManager.default.moveItem(at:temporary,to:destination)
     }
 }
 
