@@ -10,7 +10,7 @@ import Darwin
 /// source path, patch name or plug-in state in a support report.
 struct AudioChangeDiagnostic: Codable, Equatable {
     enum Phase: String, Codable {
-        case prepareSound, loadInstrument, restorePluginState, importedProcessing, effectControls, finishGraph
+        case prepareSound, loadInstrument, restorePluginState, importedProcessing, effectControls, finishGraph, audioDevice
         var action: String {
             switch self {
             case .prepareSound: return "preparing the sound"
@@ -19,6 +19,7 @@ struct AudioChangeDiagnostic: Codable, Equatable {
             case .importedProcessing: return "updating imported effects"
             case .effectControls: return "updating effect controls"
             case .finishGraph: return "applying the audio change"
+            case .audioDevice: return "changing the audio device"
             }
         }
     }
@@ -28,6 +29,8 @@ struct AudioChangeDiagnostic: Codable, Equatable {
     let graphGeneration: UInt64
     let engineRunning: Bool
     let sampleRate: Double?
+    /// Current device buffer when captured. nil means unmeasured, not zero.
+    let bufferFrames: UInt32?
     let errorDomain: String
     let errorCode: Int
     /// True only when the controller retained its previous instrument/cache
@@ -37,12 +40,13 @@ struct AudioChangeDiagnostic: Codable, Equatable {
     let lastGraphFailure: AudioGraphFailure?
 
     init(error: Error, phase: Phase, slot: Int?, generation: UInt64, running: Bool,
-         sampleRate: Double?, previousSoundRetained: Bool? = nil,
+         sampleRate: Double?, bufferFrames: UInt32? = nil, previousSoundRetained: Bool? = nil,
          lastGraphFailure: AudioGraphFailure? = nil) {
         requestID = UUID(); self.phase = phase
         soundSlot = slot.flatMap { (0..<16).contains($0) ? $0 + 1 : nil }
         graphGeneration = generation; engineRunning = running
         self.sampleRate = sampleRate.flatMap { $0.isFinite && $0 > 0 ? $0 : nil }
+        self.bufferFrames = bufferFrames.flatMap { $0 > 0 ? $0 : nil }
         let ns = error as NSError
         errorCode = ns.code
         errorDomain = [NSOSStatusErrorDomain, "com.apple.coreaudio.avfaudio", NSPOSIXErrorDomain,
@@ -59,6 +63,13 @@ struct AudioChangeFailure: LocalizedError {
         if diagnostic.errorDomain == ExternalInstrumentRack.loadCapacityErrorDomain {
             let retained = diagnostic.previousSoundRetained == true ? " The previous sound remains available." : ""
             return "Could not begin another Audio Unit load\(slot). Earlier loads are still finishing. Wait before retrying. If they never finish, save your work and restart StageKeys.\(retained)"
+        }
+        if diagnostic.phase == .audioDevice {
+            let code = diagnostic.errorCode == 0 ? "" : " (error \(diagnostic.errorCode))"
+            let state = diagnostic.engineRunning
+                ? "The previous audio output is still active. Choose another output in Audio Settings, then retry."
+                : "Audio is stopped. Choose another output in Audio Settings, then start audio."
+            return "Could not change the audio device setting\(code). \(state) Copy Support Diagnostics before reporting the problem."
         }
         if diagnostic.previousSoundRetained == true {
             return "Could not apply the sound change\(slot) while \(diagnostic.phase.action) (error \(diagnostic.errorCode)). The previous sound remains available. Check for missing sounds or samples, reconnect their storage, then try again."
@@ -275,13 +286,15 @@ final class AudioController {
     #endif
     @discardableResult
     private func changeFailure(_ error: Error, phase: AudioChangeDiagnostic.Phase,
-                               slot: Int? = nil, retained: Bool? = nil, forceUnavailable: Bool = false) -> AudioChangeFailure {
+                               slot: Int? = nil, retained: Bool? = nil, forceUnavailable: Bool = false,
+                               includeGraphFailure: Bool = true, bufferFrames: UInt32? = nil) -> AudioChangeFailure {
         let rate = engine.isInManualRenderingMode ? engine.manualRenderingFormat.sampleRate : engine.mainMixerNode.outputFormat(forBus: 0).sampleRate
+        let graphFailure = includeGraphFailure ? externalRack?.lastGraphFailure : nil
         let diagnostic = AudioChangeDiagnostic(error: error, phase: phase, slot: slot,
             generation: externalRack?.graphGeneration ?? 0, running: engine.isRunning,
-            sampleRate: rate, previousSoundRetained: retained, lastGraphFailure: externalRack?.lastGraphFailure)
+            sampleRate: rate, bufferFrames: bufferFrames, previousSoundRetained: retained, lastGraphFailure: graphFailure)
         lastChangeFailure = diagnostic
-        let graphUnavailable = diagnostic.lastGraphFailure.map { $0.edited && $0.wasRunning && !engine.isRunning && handledGraphFailure != $0.id } ?? false
+        let graphUnavailable = includeGraphFailure && (diagnostic.lastGraphFailure.map { $0.edited && $0.wasRunning && !engine.isRunning && handledGraphFailure != $0.id } ?? false)
         if forceUnavailable || graphUnavailable {
             rebuildRackOnStart = true
             handledGraphFailure = diagnostic.lastGraphFailure?.id
@@ -297,6 +310,17 @@ final class AudioController {
     /// completion reporting and stopped-engine recovery as channel loads.
     func recordInstrumentLoadFailure(_ error: Error, channel: Int) -> AudioChangeFailure {
         changeFailure(error, phase: .loadInstrument, slot: channel)
+    }
+    /// Device/route operations are not rack graph edits. Record the underlying
+    /// numeric Core Audio/AVFAudio cause for support without attaching a stale
+    /// graph failure or entering graph-recovery ownership by mistake.
+    @discardableResult
+    func recordAudioDeviceFailure(_ error: Error) -> AudioChangeFailure {
+        let cause: Error
+        if let device = error as? AudioDeviceError, case .resumeFailed(let underlying) = device { cause = underlying }
+        else { cause = error }
+        let frames = (try? deviceController.status())?.bufferFrames
+        return changeFailure(cause, phase: .audioDevice, includeGraphFailure: false, bufferFrames: frames)
     }
     /// Check known unavailable resources before the store changes snapshots,
     /// panics held notes, or persists the proposed sound. Does not load an AU or

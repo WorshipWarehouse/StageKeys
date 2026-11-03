@@ -858,25 +858,34 @@ final class PerformanceStore: ObservableObject {
     }
     func selectAudioOutput(_ id: UInt32) {
         let retryStart = audioStartup.isFailed
-        panic()
+        let wasRunning = audio.running
+        let clickEnabled = suspendPerformanceForAudioDeviceChange()
+        // A terminal startup failure owns the cleared stopped state; only
+        // restore the pad/click when audio remains running, was already stopped,
+        // or an attempted retry succeeded.
+        defer { if audio.running || (!wasRunning && !retryStart) { resumePerformanceAfterAudioDeviceChange(click: clickEnabled) } }
         do {
             try audio.deviceController.select(deviceID:id); preferredAudioOutputUID = try audio.deviceController.outputUID(); restoredAudioOutput = true; refreshAudioDevices(); save()
             if retryStart { start() }
         }
         catch {
-            message=error.localizedDescription; refreshAudioDevices()
+            let failure = audio.recordAudioDeviceFailure(error)
+            message = failure.localizedDescription; refreshAudioDevices()
             if started && !audio.running { started=false; audioStartup = .stopped; start() }
         }
     }
     func setAudioBuffer(_ frames: UInt32) {
         let retryStart = audioStartup.isFailed
-        panic()
+        let wasRunning = audio.running
+        let clickEnabled = suspendPerformanceForAudioDeviceChange()
+        defer { if audio.running || (!wasRunning && !retryStart) { resumePerformanceAfterAudioDeviceChange(click: clickEnabled) } }
         do {
             try audio.deviceController.buffer(frameCount:frames); preferredBufferFrames=frames; refreshAudioDevices(); save()
             if retryStart { start() }
         }
         catch {
-            message=error.localizedDescription; refreshAudioDevices()
+            let failure = audio.recordAudioDeviceFailure(error)
+            message = failure.localizedDescription; refreshAudioDevices()
             if started && !audio.running { started=false; audioStartup = .stopped; start() }
         }
     }
@@ -937,6 +946,21 @@ final class PerformanceStore: ObservableObject {
     func setSustain(_ value: Bool) { screenSustain = value; applySustain() }
     private func applySustain() { let value = screenSustain || !pedalSources.isEmpty || !mappedPedals.isEmpty; sustain = value; audio.sustain(value, layers: patch.layers.indices.map(playbackLayer))
         for l in patch.layers.indices.map(playbackLayer) { if let d = l.midiDestinationID { sendMIDI(d, 0xb0 | UInt8(l.midiOutputChannel), 64, value && !l.blockSustain ? 127 : 0) } } }
+    /// A device/route transaction stops the engine and invalidates note
+    /// ownership. The Tonic Pad and click are independent performance choices,
+    /// so retain them and retrigger the pad only after audio is running again.
+    private func suspendPerformanceForAudioDeviceChange() -> Bool {
+        let clickEnabled = metronome
+        panic(preserveTonic: true)
+        audio.panic()
+        return clickEnabled
+    }
+    private func resumePerformanceAfterAudioDeviceChange(click clickEnabled: Bool) {
+        metronome = clickEnabled
+        guard let root = tonic, tonicSound != nil else { return }
+        if audio.running { playTonicNotes(root) }
+        else { resumeTonicAfterGraphFailure = true }
+    }
     func panic(preserveTonic:Bool=false,preserveEffectTails:Bool=false) { hardwareNotes.removeAll(); pedalSources.removeAll(); mappedPedals.removeAll(); screenSustain = false; midiFX.panic();
         for l in patch.layers { if let d = l.midiDestinationID { for cc: UInt8 in [64,123,120] { sendMIDI(d, 0xb0 | UInt8(l.midiOutputChannel), cc, 0) } } }
         outputNotes.removeAll(); held.removeAll(); sustain = false; metronome = false; if preserveTonic {audio.sustain(false,layers:patch.layers);for channel in 0..<15 {audio.panic(channel:channel,preserveEffectTails:preserveEffectTails)}} else {tonic = nil;audio.panic()} }

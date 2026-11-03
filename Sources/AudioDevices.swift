@@ -34,15 +34,19 @@ struct AudioLatencyChain: Equatable {
     var totalMilliseconds: Double { bufferMilliseconds + presentationLatencyMilliseconds }
 }
 enum AudioDeviceError: LocalizedError {
-    case unavailable, unsupported, offline, invalidBuffer, status(OSStatus), restartFailed(String)
+    case unavailable, unsupported, offline, invalidBuffer, status(OSStatus), resumeFailed(Error)
+    /// Numeric code only. A raw AVFAudio/Core Audio description can contain
+    /// private paths or device details and is not actionable during a set.
     var errorDescription: String? {
         switch self {
-        case .unavailable: return "The selected audio output is unavailable."
+        case .unavailable: return "The selected audio output is unavailable. Choose another output in Audio Settings, then retry."
         case .unsupported: return "This platform manages the audio output through system route controls."
         case .offline: return "Audio-device settings cannot change during offline rendering."
-        case .invalidBuffer: return "This buffer size is not supported by the selected audio device."
-        case .status(let code): return "Audio-device operation failed (\(code))."
-        case .restartFailed(let reason): return "The audio engine could not resume: \(reason)"
+        case .invalidBuffer: return "This buffer size is not supported by the selected audio device. Choose a supported size, then retry."
+        case .status(let code): return "The audio-device operation failed (error \(code)). Choose another output or refresh the device list, then retry."
+        case .resumeFailed(let cause):
+            let code = (cause as NSError).code
+            return "The audio engine could not resume after the device change (error \(code)). Choose another output in Audio Settings, then start audio. Copy Support Diagnostics before reporting this problem."
         }
     }
 }
@@ -233,7 +237,7 @@ final class AudioDeviceController {
             rollback()
             if wasRunning && !engine.isRunning {
                 do { engine.prepare(); try engine.start() }
-                catch { throw AudioDeviceError.restartFailed(error.localizedDescription) }
+                catch { throw AudioDeviceError.resumeFailed(error) }
             }
             engine.mainMixerNode.outputVolume = volume
             throw originalError

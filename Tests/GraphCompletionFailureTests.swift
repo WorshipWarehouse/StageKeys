@@ -96,6 +96,9 @@ import AVFoundation
         assert(!store.audio.running && !store.started && store.audioFailed && restarts == 0)
         let restoreFailure = store.audio.lastChangeFailure!.lastGraphFailure!
         assert(restoreFailure.operation == nil && restoreFailure.restoration?.code == 703 && restoreFailure.restart == nil)
+        assert(restoreFailure.rollbackSucceeded == false && restoreFailure.rollback?.code == 703,
+            "A failed rollback must be recorded separately from the forward restoration failure")
+        assert(store.audioFailed && store.audioFailureMessage?.contains("Audio stopped during a sound change") == true)
         assert(try! encoder.encode(store.setlist) == before)
         assert(try! Data(contentsOf: root.appendingPathComponent("setlist.json")) == saved)
         rack.debugGraphFault = nil; store.start()
@@ -158,6 +161,48 @@ import AVFoundation
         rack.debugGraphFault = nil; store.start()
         assert(store.started && store.audio.running && rack.debugActiveNoteCount(15) > 0)
         try verifyFreshNotes()
+
+        // A rejected device/route transaction (manual rendering cannot change a
+        // live output) must be an operation-scoped device diagnostic and must
+        // not silently switch off the selected pad or the click. The previous
+        // code called the generic panic(), which cleared both properties.
+        store.tonicSound = pad
+        if store.tonic == nil { store.toggleTonic(0) }
+        assert(store.tonic == 0 && store.tonicSound == pad)
+        store.metronome = true
+        store.selectAudioOutput(0)
+        assert(store.audio.lastChangeFailure?.phase == .audioDevice)
+        assert(store.metronome && store.tonic == 0 && store.tonicSound == pad,
+            "A failed device change must retain the pad and click choices")
+        assert(store.message?.contains("audio device") == true && store.message?.contains("PRIVATE") != true)
+        assert(store.message?.contains("couldn’t") != true && store.message?.contains("The operation") != true)
+        assert(rack.debugActiveNoteCount(15) > 0, "The pad must be retriggered after the rejected transaction")
+        store.setAudioBuffer(128)
+        assert(store.audio.lastChangeFailure?.phase == .audioDevice)
+        assert(store.metronome && store.tonic == 0 && store.tonicSound == pad)
+        assert(try! Data(contentsOf: root.appendingPathComponent("settings.json")) == settings,
+            "A rejected device setting must not be persisted")
+        store.audio.metronome(false, settings: store.metronomeSettings)
+        var padEnergy = 0.0
+        for _ in 0..<30 {
+            let buffer = try store.audio.offlineBlock()
+            for frame in 0..<Int(buffer.frameLength) {
+                let sample = buffer.floatChannelData![0][frame]
+                assert(sample.isFinite); padEnergy += Double(sample * sample)
+            }
+        }
+        assert(padEnergy > 0.000001, "The retained pad must still render after a rejected device change")
+
+        // Fault injection for the exact AVFAudio -1 shape, not a real device
+        // reproduction: the underlying numeric cause is retained without the
+        // raw description and without attaching a stale rack graph failure.
+        let injectedResume = NSError(domain: "com.apple.coreaudio.avfaudio", code: -1,
+            userInfo: [NSLocalizedDescriptionKey: "PRIVATE-AVFAUDIO-DESCRIPTION"])
+        let injectedFailure = store.audio.recordAudioDeviceFailure(AudioDeviceError.resumeFailed(injectedResume))
+        assert(injectedFailure.diagnostic.phase == .audioDevice)
+        assert(injectedFailure.diagnostic.errorDomain == "com.apple.coreaudio.avfaudio" && injectedFailure.diagnostic.errorCode == -1)
+        assert(injectedFailure.diagnostic.lastGraphFailure == nil, "A device failure must not attach a stale graph failure")
+        assert(injectedFailure.localizedDescription.contains("-1") && !injectedFailure.localizedDescription.contains("PRIVATE"))
         print("PASS: graph cleanup failure is visible and manual retry restores the saved patch")
     }
 }
