@@ -198,6 +198,9 @@ struct SettingsEditor: View {
                     case "Performance":
                         Toggle("Disable Silenced Sounds", isOn: $store.disableSilent)
                         Text("When enabled, muted modules and modules with their fader fully down do not create new voices.").font(.caption).foregroundStyle(.secondary)
+                        Toggle("On-Screen Keyboard Playable", isOn: $store.keyboardPlayable)
+                        Toggle("Display Played Notes", isOn: $store.showPlayedNotes)
+                        Text("Screen playability does not disable your MIDI controller. Hiding played notes only changes key highlights.").font(.caption).foregroundStyle(.secondary)
                         Toggle("Show Layer Ranges", isOn: $store.showRanges)
                         Text("192 synth voices are shared by all 15 modules and the tonic pad. Each original synth module has its own voice limit in Sound Settings. Imported instruments manage their own polyphony.").font(.caption).foregroundStyle(.secondary)
                     default:

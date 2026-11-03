@@ -343,13 +343,14 @@ struct PianoKey: View {
     let note: Int
     let black: Bool
     var body: some View {
-        RoundedRectangle(cornerRadius: 3).fill(store.isNoteHeld(note) ? StageTheme.selected : (black ? Color(white: 0.07) : Color(white: 0.88)))
+        RoundedRectangle(cornerRadius: 3).fill(store.isNoteHighlighted(note) ? StageTheme.selected : (black ? Color(white: 0.07) : Color(white: 0.88)))
             // Decorative octave marker: the key itself is labelled "C3", and the
             // glyph has to fit a dark-key gap, so it keeps a smaller size but is
             // darkened to the audited 5.26:1 (it measured 2.74:1 at 40 % black).
             .overlay(alignment: .bottom) { if !black && note % 12 == 0 { Text("C\(note/12-1)").font(.system(size: 8)).foregroundStyle(.black.opacity(0.6)).padding(.bottom, 3) } }
             .gesture(DragGesture(minimumDistance: 0).updating($touching) { _, state, _ in state = true }.onChanged { _ in store.noteOn(note) }.onEnded { _ in store.noteOff(note) })
             .onChange(of: touching) { if !$0 { store.noteOff(note) } }.onDisappear { store.noteOff(note) }
+            .disabled(!store.started || !store.keyboardPlayable)
             .accessibilityLabel("\(StageTheme.notes[note%12])\(note/12-1)").accessibilityAddTraits(.isButton)
             .accessibilityAction { store.noteOn(note); DispatchQueue.main.asyncAfter(deadline: .now()+0.4) { store.noteOff(note) } }
     }
