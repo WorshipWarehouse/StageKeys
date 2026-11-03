@@ -32,6 +32,14 @@ import AVFoundation
         return total
     }
 
+    /// Core Audio stops the engine before delivering a configuration change,
+    /// and the store only restarts an engine that was already running. A bare
+    /// notification would therefore be ignored, so stop the engine first.
+    static func simulateEngineStop(_ store: PerformanceStore) {
+        store.audio.stop()
+        assert(store.started && !store.audio.running)
+    }
+
     /// Offline route, reverb off so the note measurements are not tails.
     static func makeStore() throws -> PerformanceStore {
         let store = PerformanceStore()
@@ -181,8 +189,9 @@ import AVFoundation
         store.audio.debugStartFailure = { attempts += 1; return NSError(domain: NSOSStatusErrorDomain, code: -10876) }
         // The store observes configuration changes through the main operation
         // queue, so delivery is asynchronous even when posted from main.
+        simulateEngineStop(store)
         NotificationCenter.default.post(name: .AVAudioEngineConfigurationChange, object: nil)
-        wait("A route change must stop the running engine") { !store.started && !store.audio.running }
+        wait("A route change must stop the running session") { !store.started && !store.audio.running }
         assert(store.held.isEmpty && !store.isNoteHeld(60), "Held notes must be released on a route change")
         wait("An unavailable route must exhaust the bounded retries") { store.audioFailed }
         assert(attempts == 3)
@@ -216,6 +225,7 @@ import AVFoundation
         store.metronome = true
         store.start()
         assert(store.started && store.audio.running)
+        simulateEngineStop(store)
         NotificationCenter.default.post(name: .AVAudioEngineConfigurationChange, object: nil)
         wait("A running engine should restart after a wake/route change") { store.started && store.audio.running }
         assert(!store.audioFailed)
