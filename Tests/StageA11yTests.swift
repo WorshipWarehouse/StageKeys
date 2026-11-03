@@ -12,7 +12,9 @@ import Foundation
   assert(white.composited(over: black, alpha: 0.5)==StageRGB(0.5,0.5,0.5).composited(over: black, alpha: 1))
   assert(white.composited(over: black, alpha: 1.4)==white && black.composited(over: white, alpha: -1)==white)
   let half=white.composited(over: black, alpha: 0.5)
-  assert(abs(half.contrast(against: black)-5.32) < 0.01, "50 % white on black must measure 5.32:1")
+  // Exact halves are not #808080: 0.5 sRGB measures 5.2808:1 on black, while the
+  // often-quoted 5.32 belongs to 128/255. Pin the composited value, not the hex one.
+  assert(abs(half.contrast(against: black)-5.2808) < 0.001, "50 % white on black must measure 5.28:1")
   assert(StageA11y.Palette.base.isInGamut && StageA11y.Palette.selected.isInGamut)
   // The release palette is fixed here so a silent colour change has to update the
   // measured record in Docs/ACCESSIBILITY.md instead of slipping through.
