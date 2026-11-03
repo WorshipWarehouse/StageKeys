@@ -1027,6 +1027,16 @@
     "attempt": 2,
     "label": "macos-15-intel",
     "official_reference": "https://docs.github.com/en/actions/how-tos/write-workflows/choose-where-workflows-run/choose-the-runner-for-a-job",
-    "scope": "Only hosted runner selection changes after the recorded local freeze. App source, test, project, gate names and commands remain unchanged; local native arm64 results retain their original hashes. Hosted native runtime coverage changes to Intel; Mac artifact slices remain universal."
+    "scope": "Hosted runner selection changes after the original local freeze; a separately recorded directory-identity assertion follow-up changes one test. App source/project inputs, gate names and commands remain unchanged. Hosted native runtime coverage is Intel; Mac artifact slices remain universal."
+  },
+  "ci_test_portability_followup": {
+    "test": "Tests/MainStagePreflightTests.swift",
+    "sha256": "8a2a51dfbb0b19d1afb202c685ef4f18ceb74b9f24bef3ebc65a5ad68c7dada6",
+    "command": "python3 Tests/run-local-library.py . /private/tmp/stagekeys-folder-identity-check MainStagePreflightTests",
+    "exit_code": 0,
+    "log": "/private/tmp/stagekeys-folder-identity-check.log",
+    "log_sha256": "476a97788e809839260ab8aba4dcb06321c2583b423cec8c9b5ffcd0aab94976",
+    "reason": "Canonical directory identity/readable marker and duplicate-grant/reload checks replace URL object representation equality. First native Intel run passed both artifact and processing gates, then failed the earlier preflight URL assertion.",
+    "scope": "App source/project inputs remain unchanged; original full native arm64 input manifest retains its earlier test/workflow hashes. This focused assertion follow-up has its own outcome."
   }
 }

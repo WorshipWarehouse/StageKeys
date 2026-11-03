@@ -27,10 +27,29 @@ import Foundation
         store.selectMainStageChannel(100,true);assert(store.selectedMainStageChannels.isEmpty)
         let samples=root.appendingPathComponent("Authorized Samples")
         try FileManager.default.createDirectory(at:samples,withIntermediateDirectories:true)
+        let marker=Data(UUID().uuidString.utf8)
+        try marker.write(to:samples.appendingPathComponent("authorized-marker"))
+        let expected=samples.resolvingSymlinksInPath().standardizedFileURL.path
+        func verifyGrant(_ candidate:PerformanceStore) throws {
+            let matches=candidate.rememberedMainStageLocations().filter {
+                $0.instruments.resolvingSymlinksInPath().standardizedFileURL.path == expected
+            }
+            assert(matches.count == 1, candidate.message ?? "The exact authorized directory must persist once")
+            let url=matches[0].instruments
+            let access=url.startAccessingSecurityScopedResource()
+            defer {if access {url.stopAccessingSecurityScopedResource()}}
+            let contents=try Data(contentsOf:url.appendingPathComponent("authorized-marker"))
+            assert(contents == marker,
+                   "The remembered grant must still read the original directory contents")
+        }
         store.rememberMainStageSampleFolder(samples)
-        assert(store.rememberedMainStageLocations().map(\.instruments.standardizedFileURL).contains(samples.standardizedFileURL))
+        try verifyGrant(store)
+        // Directory URLs can differ in trailing-slash/directory representation.
+        // Regranting the same filesystem directory must not consume another slot.
+        store.rememberMainStageSampleFolder(URL(fileURLWithPath:samples.path,isDirectory:true))
+        try verifyGrant(store)
         let restored=PerformanceStore()
-        assert(restored.rememberedMainStageLocations().map(\.instruments.standardizedFileURL).contains(samples.standardizedFileURL))
+        try verifyGrant(restored)
         let source=try Data(contentsOf:patch.appendingPathComponent("First.cst"));assert(source==bytes)
         print("PASS: preflight retains source without committing sounds; channel selection and authorized sample-folder bookmarks persist")
     }
