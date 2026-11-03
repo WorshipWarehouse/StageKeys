@@ -1541,6 +1541,24 @@ final class PerformanceStore: ObservableObject {
     /// Keep Audio Unit edits made in the instrument interface. The channel editor
     /// runs inside an audition, so `capturePluginStates` deliberately skips this
     /// layer and `endAudition` would otherwise restore the pre-edit state.
+    /// Explicit editor retry: retain authored settings and reject installation
+    /// if the selected patch/layer changes before the backend returns.
+    @discardableResult
+    func retryPluginInterfaceLoad(_ index: Int) -> Bool {
+        guard started && audio.running, !patchLoading else {
+            message = "Start audio and wait for the patch to finish loading before retrying this instrument."
+            return false
+        }
+        guard patch.layers.indices.contains(index) else { return false }
+        let layer = patch.layers[index], patchID = patch.id
+        guard layer.external?.kind == .audioUnit else { return false }
+        if audio.loadedUnit(channel: index, sound: layer.external) != nil { return true }
+        return audio.configure(index, layer, shouldInstall: { [weak self] in
+            guard let self else { return false }
+            return self.started && self.patch.id == patchID &&
+                self.patch.layers.indices.contains(index) && self.patch.layers[index] == layer
+        })
+    }
     func finishPluginInterface(_ index: Int) {
         guard patch.layers.indices.contains(index), patch.layers[index].external?.kind == .audioUnit,
               audio.loadedUnit(channel:index,sound:patch.layers[index].external) != nil else { return }

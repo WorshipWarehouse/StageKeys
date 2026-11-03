@@ -24,3 +24,7 @@ PluginInterfaceRequestTests verifies one-shot consumption and stale/invalid/lock
 - Still manual: a live custom editor and a live generic editor on macOS (including one larger than 1000×700), the same on a physical iPad with an AUv3 instrument, VoiceOver reading the generic controls, and the state/MIDI/EQ round trip described in Issue #53. None of those can run in this Linux workspace.
 
 Issue #53 remains open for live custom/generic presentation on the qualified platforms, physical AUv3/iPad verification and full workflow qualification.
+
+## Audit corrections
+
+The custom view retains its full declared dimensions inside a separately bounded scroll viewport; shrinking the hosted view to the viewport would clip or resize its contents instead of exposing scrollable edges. Retry now asks the host to load a missing unit with patch/layer identity guards and does not start stopped audio. The separate asynchronous custom-view request also has a deadline and rejects late responses after timeout. Model and Store tests cover deterministic rules and retry submission; actual native custom-view scrolling, VoiceOver and callback behavior still require the manual plugin matrix above.

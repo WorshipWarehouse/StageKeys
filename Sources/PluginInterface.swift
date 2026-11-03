@@ -95,9 +95,9 @@ struct PluginInterface: View {
         if let controller {
             ScrollView([.horizontal, .vertical]) {
                 HostedPluginView(controller: controller)
-                    .frame(width: displayed.width, height: displayed.height)
+                    .frame(width: declared.width, height: declared.height)
                     .accessibilityLabel("\(plugInName) plug-in interface")
-            }.accessibilityHint(scrollHint)
+            }.frame(width: displayed.width, height: displayed.height).accessibilityHint(scrollHint)
         } else if generic {
             genericEditor
         } else if let issue {
@@ -221,9 +221,10 @@ struct PluginInterface: View {
             DispatchQueue.main.asyncAfter(deadline: .now() + PluginEditorModel.waitInterval) { open(token:token,attempt: attempt + 1) }
             return
         }
+        watchViewRequest(token: token, unit: unit, attempt: attempt)
         unit.auAudioUnit.requestViewController { view in
             DispatchQueue.main.async {
-                guard requestGeneration==token,store.audio.loadedUnit(channel:index,sound:currentSound) === unit else{return}
+                guard requestGeneration==token,issue == nil,store.audio.loadedUnit(channel:index,sound:currentSound) === unit else{return}
                 if let view {
                     let preferred = view.preferredContentSize
                     let actual = view.view.frame.size
@@ -238,10 +239,29 @@ struct PluginInterface: View {
             }
         }
     }
-    /// Start the wait again from a clean state, clearing any previous report.
+    // requestViewController is a second asynchronous boundary: a ready unit
+    // can still never return a UI. Bound that wait and reject late replies.
+    private func watchViewRequest(token: UUID, unit: AVAudioUnit, attempt: Int) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + PluginEditorModel.waitInterval) {
+            guard requestGeneration == token, issue == nil, controller == nil, !generic,
+                  store.audio.loadedUnit(channel: index, sound: currentSound) === unit else { return }
+            let next = attempt + 1
+            if next >= PluginEditorModel.attemptLimit {
+                issue = .timedOut(seconds: Int(PluginEditorModel.waitDeadline))
+            } else { watchViewRequest(token: token, unit: unit, attempt: next) }
+        }
+    }
+    /// Retry submits a missing instrument load, rather than polling a failed one.
     private func retry() {
+        requestGeneration = UUID() // Invalidate old UI requests even when retry is refused.
+        guard store.retryPluginInterfaceLoad(index) else {
+            status = store.message ?? "Start audio before retrying this instrument."
+            issue = nil
+            return
+        }
         issue = nil; status = "Loading instrument interface…"
         let token = UUID(); requestGeneration = token
+        checkAvailability()
         open(token: token)
     }
     /// Lifting one block is an explicit user action; it never clears the others.

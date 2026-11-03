@@ -84,7 +84,7 @@ enum PluginEditorModel {
             case .timedOut:
                 return "The plug-in may still be starting, or it may be waiting for its authorization or license window. Retry, or check the plug-in outside StageKeys."
             case .noInterface:
-                return "Use the generic controls for this instrument, or open the plug-in's own application to edit it."
+                return "No editable interface was returned. Check the instrument's documentation for other supported editing options."
             }
         }
 
