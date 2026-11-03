@@ -1036,7 +1036,20 @@
     "exit_code": 0,
     "log": "/private/tmp/stagekeys-folder-identity-check.log",
     "log_sha256": "476a97788e809839260ab8aba4dcb06321c2583b423cec8c9b5ffcd0aab94976",
-    "reason": "Canonical directory identity/readable marker and duplicate-grant/reload checks replace URL object representation equality. First native Intel run passed both artifact and processing gates, then failed the earlier preflight URL assertion.",
+    "reason": "Stronger canonical-path/readable-marker assertions exposed bookmark creation Cocoa error 256 on unsigned Intel helpers; URL representation alone was not the root cause.",
     "scope": "App source/project inputs remain unchanged; original full native arm64 input manifest retains its earlier test/workflow hashes. This focused assertion follow-up has its own outcome."
+  },
+  "ci_helper_identity_followup": {
+    "files": {
+      "Tests/run-local-library.py": "d2bd10a9fa58081e65631a97896b0691f125093b19ef942d04fc203074b0d8e3",
+      "Tests/test-library.sh": "2fbb8787ed51fac3856009f432ee8b1392e2e4f7766adf309e6a4dd41cc9dfb3"
+    },
+    "native_arm64_preflight": "PASS: /private/tmp/stagekeys-helper-identity-arm.log",
+    "x86_64_rosetta_ab": {
+      "unsigned": "BOOKMARK_FAILED NSCocoaErrorDomain 256",
+      "linker_adhoc_identity": "BOOKMARK_OK true true"
+    },
+    "scope": "Ephemeral test executable identity only; production bookmark checks and app signing unchanged. Hosted Intel suite required.",
+    "shell_preflight_and_native_c": "PASS: bash Tests/test-library.sh MainStagePreflightTests; /private/tmp/stagekeys-helper-identity-shell.log"
   }
 }

@@ -11,3 +11,5 @@ The `library` check compiles a testable core once with `Tests/run-local-library.
 ## Hosted runner architecture
 
 Required jobs explicitly use `macos-15-intel`. On 3 November 2026, jobs on the floating `macos-15` arm64 pool were cancelled without starting, with hosted-runner acquisition failures and capacity notices. The Intel label is documented by GitHub; it preserves the same four job names, commands and artifact gates. Mac artifacts still verify arm64 and x86_64 slices. Hosted runtime/sanitizer execution is now Intel; native Apple Silicon tests and physical rig qualification remain separately recorded requirements. See [capacity evidence and limits](CI-RUNNER-CAPACITY.md).
+
+Both library runners request linker-generated ad-hoc identity for ephemeral Swift test executables so security-scoped bookmark tests work on Intel as on arm64. No developer certificate or entitlements are used; app/release signing is unchanged. See the bookmark identity evidence in `CI-RUNNER-CAPACITY.md`.
