@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Retain live Tonic Pad root/sound and click intent through unexpected engine configuration/start failures; silence notes while failed, retrigger only after successful recovery, and cancel pending pad recovery on manual Stop.
+
 - Keep the saved click (metronome) choice and the saved output/buffer preferences through an audio-start failure or a device/route change: recovery releases held voices before stopping the engine, restores the click, and re-applies the saved output selection and hardware buffer on the next start instead of erasing them.
 - Add a deterministic Store-level startup-recovery matrix (busy output retry, bounded repeated failure, sample-rate/buffer rejection, partial-initialization cleanup, preserved session bytes and injected unplug/sleep-wake route changes) alongside the classifier/retry contract test. Physical AudioBox, competing-app and sleep/wake checks remain outstanding in #110.
 - Detect library sounds whose managed file or samples are missing, report them as unavailable while keeping them listed, and offer **Locate Sound File…** to restore the file as an identity-checked managed copy.

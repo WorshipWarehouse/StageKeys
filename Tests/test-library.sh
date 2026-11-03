@@ -49,9 +49,12 @@ for test in "${tests[@]}"; do
         AudioGraphTests) mkdir -p "$build/scratch/$test"; args=("$build/scratch/$test/rendered.wav") ;;
         ExternalAudioTests|SamplerInterchangeTests|SetlistLibraryTests) mkdir -p "$build/scratch/$test"; args=("$build/scratch/$test") ;;
     esac
+    # Give Intel test helpers the same ephemeral linker identity as arm64,
+    # required by security-scoped bookmarks; no developer certificate is used.
     xcrun swiftc -DDEBUG -import-objc-header "$repo/Sources/Bridge.h" \
         -module-cache-path "$build/modules" "${sources[@]}" "$repo/Tests/$test.swift" \
-        "$build/Synth.o" "$build/CreamCoat.o" -framework CoreMIDI -lz -o "$build/$test"
+        "$build/Synth.o" "$build/CreamCoat.o" -framework CoreMIDI -lz \
+        -Xlinker -adhoc_codesign -o "$build/$test"
     if [[ "$test" == EXSImportTests && -n "${STAGEKEYS_EXS_FIXTURE:-}" && -n "${STAGEKEYS_EXS_ROOT:-}" ]]; then
         STAGEKEYS_DATA_DIR="$build/data-$test" "$build/$test" "$build/exs-scratch" "$STAGEKEYS_EXS_FIXTURE" "$STAGEKEYS_EXS_ROOT"
     else

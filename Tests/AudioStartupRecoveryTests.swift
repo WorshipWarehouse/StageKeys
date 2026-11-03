@@ -55,6 +55,7 @@ import AVFoundation
         try partialInitialisationIsCleanedUp()
         try routeChangeRecoversWithoutDuplicateEngine()
         try wakePreservesRunningAudioAndDeliberateStop()
+        try padIntentSurvivesRecoveryAndStopCancelsIt()
         print("PASS audio startup recovery: busy retry, bounded repeated failure, format stop, partial-init cleanup, preserved session and injected route-change recovery")
     }
 
@@ -240,4 +241,65 @@ import AVFoundation
         assert(!store.started && !store.audio.running && store.audioStartup == .stopped,
                "A wake must not override a deliberate Stop")
     }
+    static func padIntentSurvivesRecoveryAndStopCancelsIt() throws {
+        let store = try makeStore()
+        defer { store.stopAudio() }
+        store.start()
+        for i in store.patch.layers.indices { store.setGain(i, 0) }
+        store.setTonicInstrument(TestFixtures.padSound())
+        store.toggleTonic(7)
+        store.metronome = true
+        assert(store.tonic == 7 && store.audio.externalRack!.debugActiveNoteCount(15) == 1)
+        store.save()
+        let root = URL(fileURLWithPath: ProcessInfo.processInfo.environment["STAGEKEYS_DATA_DIR"]!)
+        let saved = try Data(contentsOf: root.appendingPathComponent("setlist.json"))
+        let settings = try Data(contentsOf: root.appendingPathComponent("settings.json"))
+        let patchID = store.patch.id, snapshot = store.activeSnapshot, pad = store.tonicSound
+        let rack = store.audio.externalRack!
+        store.noteOn(60); store.setSustain(true)
+        var attempts = 0
+        store.audio.debugStartFailure = { attempts += 1; return observedBusy }
+        simulateEngineStop(store)
+        NotificationCenter.default.post(name: .AVAudioEngineConfigurationChange, object: nil)
+        wait("Route failure must exhaust its bounded recovery") { store.audioFailed }
+        assert(attempts == 3 && !store.audio.running)
+        assert(store.tonic == 7 && store.tonicSound == pad && store.metronome,
+               "Unexpected route failure must retain the live pad and click choices")
+        assert(store.held.isEmpty && !store.sustain)
+        assert(rack.debugActiveNoteCount(15) == 0 && rack.debugNoteIntentCount(15) == 0,
+               "Retaining the pad choice must not retain sounding notes while stopped")
+        assert(store.patch.id == patchID && store.activeSnapshot == snapshot)
+        assert((try! Data(contentsOf: root.appendingPathComponent("setlist.json"))) == saved)
+        assert((try! Data(contentsOf: root.appendingPathComponent("settings.json"))) == settings)
+        store.audio.debugStartFailure = nil
+        store.start()
+        assert(store.started && store.audio.running && store.tonic == 7 && store.metronome)
+        assert(rack.debugActiveNoteCount(15) == 1 && rack.debugNoteIntentCount(15) == 1)
+        store.audio.metronome(false, settings: store.metronomeSettings)
+        assert((try! energy(store)) > 0.001, "The retained pad must actually render after manual retry")
+
+        // A successful automatic recovery must also re-arm exactly one pad note.
+        simulateEngineStop(store)
+        NotificationCenter.default.post(name: .AVAudioEngineConfigurationChange, object: nil)
+        wait("A recovered route should resume the retained pad") { store.started && store.audio.running }
+        assert(store.tonic == 7 && rack.debugActiveNoteCount(15) == 1)
+        store.audio.metronome(false, settings: store.metronomeSettings)
+        assert((try! energy(store)) > 0.001)
+
+        // Manual Stop during backoff revokes recovery, including pad resumption.
+        attempts = 0
+        store.audio.debugStartFailure = { attempts += 1; return observedBusy }
+        simulateEngineStop(store)
+        NotificationCenter.default.post(name: .AVAudioEngineConfigurationChange, object: nil)
+        wait("Wait for the first retryable start") { store.audioIsStarting && attempts == 1 }
+        store.stopAudio()
+        RunLoop.current.run(until: Date().addingTimeInterval(0.8))
+        assert(attempts == 1 && store.tonic == nil && !store.started && !store.audio.running)
+        assert(rack.debugNoteIntentCount(15) == 0)
+        store.audio.debugStartFailure = nil
+        store.start()
+        assert(store.started && store.tonic == nil && rack.debugActiveNoteCount(15) == 0,
+               "Starting an unlocked patch after manual Stop must not resurrect a cancelled pad")
+    }
+
 }

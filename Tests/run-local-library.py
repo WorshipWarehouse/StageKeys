@@ -123,8 +123,12 @@ def main():
         for test in swift:
             path = build / f'{test}.swift'
             path.write_text('@testable import StageKeysVerificationCore\n' + (source / f'Tests/{test}.swift').read_text())
+            # Scoped bookmarks need process identity. arm64 links receive this
+            # implicitly; request the same ephemeral identity on Intel helpers.
+            # This uses no certificate/entitlements and is not app distribution.
             command = common + ['-parse-as-library', '-I', build, '-L', build, '-lStageKeysVerificationCore',
-                       '-Xlinker', '-rpath', '-Xlinker', build, path, '-framework', 'CoreMIDI', '-lz', '-o', build / test]
+                       '-Xlinker', '-rpath', '-Xlinker', build, '-Xlinker', '-adhoc_codesign',
+                       path, '-framework', 'CoreMIDI', '-lz', '-o', build / test]
             execute_test(test, command, build / test, build, results)
         for test in native:
             command = ['xcrun', 'clang', '-I', source / 'Sources', '-std=c11', '-O1', '-g',
