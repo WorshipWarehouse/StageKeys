@@ -1,4 +1,5 @@
 import Foundation
+import AVFoundation
 @main struct PluginInterfaceRequestTests {
  static func main() throws {
   let store=PerformanceStore()
@@ -22,6 +23,21 @@ import Foundation
   assert(store.takePluginInterfaceRequest()==nil,"A selection attempt cancels pending presentation before routing")
   store.setlist.patches[0].layers[0].external=nil;store.requestPluginInterface(0)
   assert(store.takePluginInterfaceRequest()==nil,"Built-in and sample sounds must not request an AU editor")
+  // Retry must submit a real host load, and stopped audio must stay stopped.
+  assert(!store.retryPluginInterfaceLoad(0))
+  store.setlist = TestFixtures.setlist()
+  try store.audio.prepareOffline(); store.start()
+  let rack = store.audio.externalRack!
+  var callbacks: [(AVAudioUnit?, Error?) -> Void] = []
+  rack.debugInstantiate = { _, completion in callbacks.append(completion) }
+  store.setlist.patches[store.selected].layers[0].external = sound
+  let authored = store.patch.layers[0]
+  assert(store.retryPluginInterfaceLoad(0) && callbacks.count == 1)
+  assert(store.patch.layers[0] == authored)
+  store.stopAudio()
+  assert(!store.retryPluginInterfaceLoad(0) && callbacks.count == 1)
+  callbacks[0](nil, NSError(domain: "generated", code: 1))
+  RunLoop.current.run(until: Date().addingTimeInterval(0.02))
   print("PASS: one-shot AU editor handoff rejects patch/layer/component replacement, invalid indices, lock and non-AU sounds")
  }
 }
