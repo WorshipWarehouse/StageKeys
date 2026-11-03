@@ -16,7 +16,7 @@ final class PerformanceStore: ObservableObject {
     private var patchLoadGeneration = UUID()
     @Published private(set) var started = false
     @Published private(set) var audioStartup: AudioStartupState = .stopped
-    private var resumeTonicAfterGraphFailure = false
+    private var resumeTonicAfterAudioRecovery = false
     private var automaticAudioStartAllowed = true
     @Published var audioOutputs: [AudioOutputDevice] = []
     @Published var audioStatus: AudioDeviceStatus?
@@ -774,8 +774,8 @@ final class PerformanceStore: ObservableObject {
         applyPatch()
         guard started && audio.running else { return }
         recallTonicPatch()
-        if resumeTonicAfterGraphFailure, tonic == tonicBeforeRecall, let root = tonic { playTonicNotes(root) }
-        resumeTonicAfterGraphFailure = false
+        if resumeTonicAfterAudioRecovery, tonic == tonicBeforeRecall, let root = tonic { playTonicNotes(root) }
+        resumeTonicAfterAudioRecovery = false
         audio.clock(performedTempo,metronome); audio.metronome(metronome, settings: metronomeSettings); refreshAudioDevices(); restoreAudioBuffer()
     }
     private func handleGraphUnavailable(_ diagnostic: AudioChangeDiagnostic) {
@@ -786,23 +786,21 @@ final class PerformanceStore: ObservableObject {
         started = false
         let code = diagnostic.lastGraphFailure?.restart?.code ?? diagnostic.lastGraphFailure?.restoration?.code ?? diagnostic.errorCode
         audioStartup = .failed(AudioStartupFailure(kind: .graphRecoveryRequired, routeName: nil, code: code))
-        resumeTonicAfterGraphFailure = tonic != nil && tonicSound != nil
-        let clickEnabled = metronome
         cancelTransition()
-        // Clear active note/pedal ownership and DSP histories without changing
-        // the selected pad, its power/key settings or the user's click choice.
+        suspendPerformanceForUnexpectedAudioRecovery()
+    }
+    /// Keep musical pad/click intent across an unexpected failure, but revoke
+    /// all sounding note/pedal/learn ownership until audio actually recovers.
+    private func suspendPerformanceForUnexpectedAudioRecovery() {
+        resumeTonicAfterAudioRecovery = tonic != nil && tonicSound != nil
+        let clickEnabled = metronome
         panic(preserveTonic: true); audio.panic(); pressedCCs.removeAll()
         metronome = clickEnabled
     }
     private func handleAudioStartFailure(_ error: Error, generation: UUID) {
         cancelTransition(pinImmediately: true)
         started = false
-        // Release the voices while the graph can still service all-notes-off,
-        // then stop the engine. panic() silences the click, so the saved click
-        // choice is restored and a successful recovery re-arms the metronome.
-        let clickEnabled = metronome
-        panic()
-        metronome = clickEnabled
+        suspendPerformanceForUnexpectedAudioRecovery()
         audio.stop()
         rememberAudioOutputName()
         let failure = AudioStartupClassifier.classify(error, routeName: lastAudioOutputName)
@@ -822,7 +820,7 @@ final class PerformanceStore: ObservableObject {
         patchLoadGeneration = UUID(); patchLoading = false
         audio.cancelPendingConfigurations()
         pendingLayerCommits.removeAll()
-        resumeTonicAfterGraphFailure = false
+        resumeTonicAfterAudioRecovery = false
         audioStartGeneration = UUID()
         audioAttempt = 0
         panic(); audio.stop(); audio.setPatchLoading(false)
@@ -841,9 +839,7 @@ final class PerformanceStore: ObservableObject {
         // Publish the stopped intent and release voices before the engine stops;
         // this also keeps a re-entrant configuration notification inert.
         started = false
-        let clickEnabled = metronome
-        panic()
-        metronome = clickEnabled
+        suspendPerformanceForUnexpectedAudioRecovery()
         audio.stop()
         audioAttempt = 0
         // The route may now be a different device, so re-apply the saved output
@@ -984,7 +980,7 @@ final class PerformanceStore: ObservableObject {
         metronome = clickEnabled
         guard let root = tonic, tonicSound != nil else { return }
         if audio.running { playTonicNotes(root) }
-        else { resumeTonicAfterGraphFailure = true }
+        else { resumeTonicAfterAudioRecovery = true }
     }
     func panic(preserveTonic:Bool=false,preserveEffectTails:Bool=false) { hardwareNotes.removeAll(); pedalSources.removeAll(); mappedPedals.removeAll(); screenSustain = false; midiFX.panic();
         for l in patch.layers { if let d = l.midiDestinationID { for cc: UInt8 in [64,123,120] { sendMIDI(d, 0xb0 | UInt8(l.midiOutputChannel), cc, 0) } } }

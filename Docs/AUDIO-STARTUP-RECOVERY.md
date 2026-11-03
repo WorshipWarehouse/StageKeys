@@ -81,8 +81,10 @@ while starting, and Settings shows the state text plus the same failure and a
 - Failure releases held notes, pedal state and pending MIDI output, then stops
   the engine. The user's saved click (metronome) choice is captured before the
   panic and restored afterwards, so a transient device failure does not turn the
-  click off in the session or in `settings.json`; the live Tonic Pad root is
-  cleared like any other held performance state. The setlist, patch, snapshot,
+  click off in the session or in `settings.json`. The live Tonic Pad root/sound
+  remains selected as intent, while all sounding voices and note/pedal ownership
+  are cleared. Only a successful recovery retriggers that pad; manual Stop
+  revokes pending resumption. The setlist, patch, snapshot,
   output selection and hardware-buffer preference are not rewritten. A later
   successful start cannot produce stuck voices from the failed attempt.
 - No sampler is loaded until `audio.start()` succeeds. On a machine with no
@@ -126,3 +128,5 @@ manual-rendering route means no output device is opened.
 A physical reproduction with the AudioBox USB 96 and competing apps, a real
 unplug/replug, and sleep/wake remain hardware checks. This document does not
 claim those were performed; issue #110 stays open until that evidence exists.
+
+See [retained pad intent during recovery](PAD-RECOVERY-INTENT.md) for the generated regression and explicit Stop behavior. The pad retriggers; phase continuity and physical unplug/wake recovery are not established.
