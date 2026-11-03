@@ -207,8 +207,12 @@ import AVFoundation
         store.start()
         assert(store.started && store.audio.running && !store.audioFailed)
         assert(store.audio === controller && store.audio.externalRack === rack)
-        let quiet = try energy(store, blocks: 10)
-        assert(quiet < 0.002, "The failed attempt must not leave a stuck voice: \(quiet)")
+        // Ownership, not a decay-threshold measurement: the failed attempt must
+        // leave no held voice or pending note intent for the channel.
+        assert(store.audio.externalRack?.debugActiveNoteCount(0) == 0,
+               "The failed attempt must not retain a held voice")
+        assert(store.audio.externalRack?.debugNoteIntentCount(0) == 0,
+               "The failed attempt must not retain a pending note intent")
         store.noteOn(60)
         let played = try energy(store)
         assert(played > 0.01, "Notes must be audible after reconnecting the route")
