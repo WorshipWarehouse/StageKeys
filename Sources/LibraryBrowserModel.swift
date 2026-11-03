@@ -96,8 +96,7 @@ struct BrowserSound: Identifiable {
     }
     /// Managed content is checked once per library read, never per keystroke.
     func checkingContent(_ issues:[String:LibraryContentIssue])->BrowserSound {
-        guard let issue=issues[entry?.id ?? id] else{return self}
-        var copy=self;copy.contentIssue=issue;return copy
+        var copy=self;copy.contentIssue=issues[entry?.id ?? id];return copy
     }
     /// A blank or absent tag is unknown, never an empty facet option or a
     /// claim of authored metadata.
@@ -280,7 +279,7 @@ enum LibraryContentIssue:String,Equatable {
     var message:String {
         switch self {
         case .missingFile:return "The saved sound file is missing or unreadable. Locate it, or import the sound again."
-        case .missingSamples:return "A sample this preset needs is missing or unreadable. Reconnect its storage or locate the sound file."
+        case .missingSamples:return "A sample this preset needs is missing or unreadable. Reconnect its storage or import the sound again."
         }
     }
     var locateTitle:String {"Locate Sound File…"}
@@ -293,12 +292,10 @@ enum LibraryRepair {
     static func safeName(_ name:String)->Bool {
         !name.isEmpty && name.count<=200 && !name.hasPrefix(".") && name==URL(fileURLWithPath:name).lastPathComponent
     }
-    /// Accept the chosen file only when it already carries the entry's stored name,
-    /// or when its bytes match the retained original digest. Anything else is a
-    /// different instrument and must go through import.
+    /// Only the digest of the managed asset establishes its identity. A name,
+    /// or the original EXS digest before conversion, does not identify its bytes.
     static func accepts(candidateName:String,digest:String?,originalDigest:String?,storedName:String)->Bool {
         guard safeName(candidateName),safeName(storedName) else{return false}
-        if candidateName == storedName {return true}
         guard let digest,let originalDigest else{return false}
         return digest.count==64 && digest==originalDigest
     }
@@ -319,7 +316,7 @@ enum LibraryAssetRepair {
             }
         }
     }
-    static let byteLimit=16_000_000
+    static let byteLimit=2_000_000_000
     static func restore(named name:String,from source:URL,to directory:URL,verify:(URL)throws->Void)throws {
         guard LibraryRepair.safeName(name) else{throw Failure.unsafeName}
         let values=try source.resourceValues(forKeys:[.isRegularFileKey,.isSymbolicLinkKey,.fileSizeKey])

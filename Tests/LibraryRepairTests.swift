@@ -17,7 +17,7 @@ import Foundation
         try LibraryAssetRepair.restore(named:"Moved Sound.aupreset",from:source,to:library) { temporary in
             verified+=1
             assert(temporary.lastPathComponent.hasPrefix(".repair-"),"The copy is staged under a temporary name")
-            assert(temporary.deletingLastPathComponent().standardizedFileURL==library.standardizedFileURL,"The staged copy stays in the managed folder")
+            assert(temporary.deletingLastPathComponent().resolvingSymlinksInPath().path==library.resolvingSymlinksInPath().path,"The staged copy stays in the managed folder")
             assert((try! Data(contentsOf:temporary))==bytes)
         }
         assert(verified==1)
@@ -57,7 +57,8 @@ import Foundation
         // Identity: the stored name, or matching bytes - never a similar name.
         let digest=String(repeating:"a",count:64)
         let other=String(repeating:"b",count:64)
-        assert(LibraryRepair.accepts(candidateName:"Pad.aupreset",digest:nil,originalDigest:nil,storedName:"Pad.aupreset"))
+        assert(!LibraryRepair.accepts(candidateName:"Pad.aupreset",digest:nil,originalDigest:nil,storedName:"Pad.aupreset"))
+        assert(!LibraryRepair.accepts(candidateName:"Pad.aupreset",digest:other,originalDigest:digest,storedName:"Pad.aupreset"),"Same name with different bytes is not identity")
         assert(!LibraryRepair.accepts(candidateName:"Pad 2.aupreset",digest:nil,originalDigest:nil,storedName:"Pad.aupreset"),"A similarly named sound is not the same sound")
         assert(LibraryRepair.accepts(candidateName:"Renamed.aupreset",digest:digest,originalDigest:digest,storedName:"Pad.aupreset"),"Identical retained bytes may be renamed")
         assert(!LibraryRepair.accepts(candidateName:"Renamed.aupreset",digest:other,originalDigest:digest,storedName:"Pad.aupreset"))
@@ -74,6 +75,31 @@ import Foundation
         assert(broken.checkingContent([:]).contentIssue == nil,"A repaired sound reports no issue")
         assert(LibraryContentIssue.missingFile.message.contains("Locate"))
 
+        // Exercise the actual Store copy/publication path with a generated WAV.
+        _ = TestFixtures.sound()
+        let store=PerformanceStore()
+        let wave=root.appendingPathComponent("Generated Fixture 0.wav")
+        let imported=store.importLibrarySound(wave)!
+        let entry=store.librarySounds.first{$0.sound == imported}!
+        assert(entry.managedFileSHA256 != nil)
+        let managed=store.audio.externalRack!.libraryURL.appendingPathComponent(imported.fileName!)
+        let expected=try AssetDigest.sha256(managed)
+        let moved=root.appendingPathComponent("Renamed identical.wav")
+        try FileManager.default.moveItem(at:managed,to:moved)
+        store.save()
+        let session=try Data(contentsOf:root.appendingPathComponent("setlist.json"))
+        store.refreshLibraryContent();assert(store.libraryContentIssues[entry.id] == .missingFile)
+        // A wrong file with the exact managed name is refused without publication.
+        let wrong=root.appendingPathComponent(imported.fileName!)
+        try Data("different bytes".utf8).write(to:wrong)
+        store.relinkLibrarySound(entry.id,from:wrong)
+        assert(!FileManager.default.fileExists(atPath:managed.path))
+        store.relinkLibrarySound(entry.id,from:moved)
+        assert(store.libraryContentIssues[entry.id] == nil)
+        assert((try! AssetDigest.sha256(managed)) == expected && (try! AssetDigest.sha256(moved)) == expected)
+        assert((try! Data(contentsOf:root.appendingPathComponent("setlist.json"))) == session)
+        let reloaded=try SoundLibrary(url:root.appendingPathComponent("sound-library.json")).read()
+        assert(reloaded.first{$0.id == entry.id}?.managedFileSHA256 == expected)
         print("PASS: library repair assertions")
     }
 }

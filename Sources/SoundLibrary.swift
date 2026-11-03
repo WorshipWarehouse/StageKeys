@@ -15,6 +15,7 @@ struct LibrarySound: Codable, Identifiable, Equatable {
     var originalName:String?
     var sourceTagsApplied:Bool?
     var originalInstrument:StageKeysSampler.Original?
+    var managedFileSHA256:String?
 }
 
 /// User-owned sounds stay outside the application bundle and survive upgrades.
@@ -206,6 +207,9 @@ struct SoundLibrary {
         guard entries.count <= 4096, Set(entries.map(\.id)).count == entries.count else { throw SetlistError.invalid }
         for entry in entries {
             guard !entry.id.isEmpty, entry.id.count <= 256, !entry.name.isEmpty, entry.name.count <= 200, entry.collection.count <= 200 else { throw SetlistError.invalid }
+            if let digest=entry.managedFileSHA256 {
+                guard digest.count==64,digest.allSatisfy({$0.isHexDigit && !$0.isUppercase}) else {throw SetlistError.invalid}
+            }
             if let original=entry.originalInstrument {
                 guard original.sha256.count==64,original.sha256.allSatisfy({$0.isHexDigit && !$0.isUppercase}),
                       ["exs","aupreset"].contains(URL(fileURLWithPath:original.file).pathExtension),

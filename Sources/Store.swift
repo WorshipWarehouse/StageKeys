@@ -1583,6 +1583,9 @@ final class PerformanceStore: ObservableObject {
             let access=url.startAccessingSecurityScopedResource();defer{if access{url.stopAccessingSecurityScopedResource()}}
             entry.originalInstrument=try StageKeysSampler.retainOriginal(url,library:saveURL.deletingLastPathComponent())
         }
+        if let name=sound.fileName,let rack=audio.externalRack {
+            entry.managedFileSHA256=try AssetDigest.sha256(rack.libraryURL.appendingPathComponent(name))
+        }
         entries.append(entry)
         try library.write(entries);librarySounds=try library.read();refreshLibraryContent()
         return librarySounds.last(where:{$0.sound?.fileName==sound.fileName})?.sound ?? sound
@@ -1608,12 +1611,16 @@ final class PerformanceStore: ObservableObject {
         let access=url.startAccessingSecurityScopedResource()
         defer {if access{url.stopAccessingSecurityScopedResource()}}
         do {
+            guard let expected=entry.managedFileSHA256 else {
+                message="This sound has no retained managed-file digest. Import it as a new sound; its filename alone cannot verify a repair.";return
+            }
             guard LibraryRepair.accepts(candidateName:url.lastPathComponent,digest:try? AssetDigest.sha256(url),
-                                        originalDigest:entry.originalInstrument?.sha256,storedName:name) else {
+                                        originalDigest:expected,storedName:name) else {
                 message="That file is not \(name). Choose the matching sound file, or import it as a new sound.";return
             }
             try LibraryAssetRepair.restore(named:name,from:url,to:rack.libraryURL) { temporary in
-                guard ExternalInstrumentRack.contentIssue(in:temporary,kind:sound.kind)==nil else {throw LibraryAssetRepair.Failure.verificationFailed}
+                guard try AssetDigest.sha256(temporary)==expected,
+                      ExternalInstrumentRack.contentIssue(in:temporary,kind:sound.kind)==nil else {throw LibraryAssetRepair.Failure.verificationFailed}
             }
             refreshLibraryContent()
             message=libraryContentIssues[id]==nil ? "Restored \(name). The sound is ready to add again.":"Copied \(name), but this sound still reports missing content."

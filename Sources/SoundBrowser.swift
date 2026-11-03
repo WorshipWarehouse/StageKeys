@@ -259,7 +259,7 @@ struct SoundBrowser: View {
                     #endif
                 }
             }.font(StageTheme.font(12)).frame(maxWidth:.infinity,alignment:.leading)
-            if let selection,let issue=selection.contentIssue {Button(issue.locateTitle){locateTarget=selection.id;locating=true}.buttonStyle(StageButtonStyle()).accessibilityLabel("Locate the saved file for \(selection.name)").help("Choose the same sound file from its current location. It is copied into the library; a different sound is refused.")}
+            if let selection,let issue=selection.contentIssue,issue == .missingFile {Button(issue.locateTitle){locateTarget=selection.id;locating=true}.buttonStyle(StageButtonStyle()).accessibilityLabel("Locate the saved file for \(selection.name)").help("Choose the same sound file from its current location. It is copied into the library; a different sound is refused.")}
             if selection?.entry?.conversionNotes?.isEmpty == false {Button("Import Notes"){showingImportNotes=true}.buttonStyle(StageButtonStyle()).popover(isPresented:$showingImportNotes){ScrollView{VStack(alignment:.leading,spacing:12){ForEach(selection?.entry?.conversionNotes ?? [],id:\.self){Text($0)}}.padding(20)}.frame(width:420,height:300)}}
             Button("Refresh Audio Units") { instruments=ExternalInstrumentRack.instruments(); store.refreshUnavailablePatchInstruments(installed: instruments) }.buttonStyle(StageButtonStyle())
             if collection == "External MIDI" {Button("Refresh"){store.refreshMIDIDestinations()}.buttonStyle(StageButtonStyle())}
