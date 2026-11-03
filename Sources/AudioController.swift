@@ -554,6 +554,15 @@ final class AudioController {
         guard sound?.kind == .audioUnit, loadedUnit(channel: channel, sound: sound) != nil else { return nil }
         return try externalRack?.stateData(channel: channel)
     }
+    /// Capture only the draft's installed AU. A pending/rejected replacement
+    /// must retain its authored state instead of borrowing the old unit's state.
+    func calibrationSource(_ layer: Layer, channel: Int) throws -> Layer {
+        var source = layer
+        if source.external?.kind == .audioUnit {
+            source.pluginState = try pluginStateData(channel: channel, sound: source.external) ?? source.pluginState
+        }
+        return source
+    }
     /// False reports a synchronous preparation/loading rejection. True means
     /// accepted, including pending asynchronous AU loads. Later state/effect or
     /// graph-finalization failures are not covered by this acceptance result.

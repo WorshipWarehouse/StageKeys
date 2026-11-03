@@ -30,13 +30,35 @@ import AVFoundation
             }
             assert(rack.debugInstantiationCallbacks == expected)
         }
+        // A calibration draft is a candidate, not necessarily the instrument
+        // still installed in this channel. Its authored bytes must survive.
+        var calibrationDraft = proposed
+        let authoredState = try PropertyListSerialization.data(fromPropertyList: ["GeneratedCalibrationState": "candidate"], format: .binary, options: 0)
+        calibrationDraft.pluginState = authoredState
+        func assertCandidatePreserved() throws {
+            let source = try store.audio.calibrationSource(calibrationDraft, channel: 0)
+            assert(source == calibrationDraft, "Calibration must not borrow the previous instrument's state")
+            assert(try! store.audio.calibrationSource(previous, channel: 0) == previous)
+            assert(try! store.audio.calibrationSource(calibrationDraft, channel: 15) == calibrationDraft)
+        }
+        try assertCandidatePreserved()
         store.noteOn(60); store.setSustain(true)
         try ExternalInstrumentRack.allowBlockedLoads()
         store.commitLayer(0, proposed)
         assert(replies.count == 1 && store.patch.layers[0] == previous && rack.unit(channel: 0) === unit)
+        try assertCandidatePreserved()
+        var retainedEnergy = 0.0
+        for _ in 0..<32 {
+            let buffer = try store.audio.offlineBlock()
+            for frame in 0..<Int(buffer.frameLength) {
+                retainedEnergy += Double(abs(buffer.floatChannelData![0][frame]))
+            }
+        }
+        assert(retainedEnergy > 0.01, "Calibration capture must retain the previous instrument's audio while replacement is pending")
         assert((try! Data(contentsOf: path)) == saved && store.held.contains(60) && store.sustain)
         reply(nil, NSError(domain: NSOSStatusErrorDomain, code: -1))
         assert(store.patch.layers[0] == previous && rack.unit(channel: 0) === unit)
+        try assertCandidatePreserved()
         assert((try! Data(contentsOf: path)) == saved && store.held.contains(60) && store.sustain)
 
         // State validation executes inside candidate installation, before a
@@ -99,6 +121,31 @@ import AVFoundation
         assert(store.takePluginInterfaceRequest() == 0 && store.takePluginInterfaceRequest() == nil)
         assert((try! Data(contentsOf: path)) != saved)
         assert(!store.held.isEmpty, "Existing Store held-key policy is preserved; per-layer voices are panicked at commit")
-        print("PASS deferred AU document commit, rejected state rollback, supersession and editor intent")
+        let bytesBeforeCapture = try Data(contentsOf: path)
+        let captured = try store.audio.calibrationSource(calibrationDraft, channel: 0)
+        assert(captured.pluginState != nil && captured.pluginState != authoredState)
+        var expectedFields = calibrationDraft, actualFields = captured
+        expectedFields.pluginState = nil; actualFields.pluginState = nil
+        assert(actualFields == expectedFields && calibrationDraft.pluginState == authoredState)
+        let liveState = try PropertyListSerialization.propertyList(from: rack.stateData(channel: 0)!, options: [], format: nil) as! NSDictionary
+        let captureState = try PropertyListSerialization.propertyList(from: captured.pluginState!, options: [], format: nil) as! NSDictionary
+        assert(liveState.isEqual(captureState))
+        assert(try! Data(contentsOf: path) == bytesBeforeCapture)
+
+        // An installed AU must not supply state to another AU's pending draft,
+        // even when the two components use the same display name.
+        var other = proposed
+        other.external?.component?.subtype = 0x74657332
+        other.pluginState = nil
+        try ExternalInstrumentRack.allowBlockedLoads()
+        store.commitLayer(0, other)
+        var otherDraft = other; otherDraft.pluginState = authoredState
+        assert(try! store.audio.calibrationSource(otherDraft, channel: 0) == otherDraft)
+        assert(rack.unit(channel: 0) === accepted)
+        reply(nil, NSError(domain: NSOSStatusErrorDomain, code: -1))
+        assert(try! store.audio.calibrationSource(otherDraft, channel: 0) == otherDraft)
+        assert(store.audio.running && rack.unit(channel: 0) === accepted)
+        assert(try! Data(contentsOf: path) == bytesBeforeCapture)
+        print("PASS deferred AU document commit, rejected state rollback, supersession, editor intent and calibration source identity")
     }
 }

@@ -126,6 +126,7 @@ enum InstrumentGainMatch {
         let peakLimited:Bool
         let targetDB:Double
         var probeNotes:[Int] = []
+        var probeTempo:Double? = nil
         var repeatabilityDB:Double? = nil
         var confidenceWarning:String? = nil
         var outputRMSDB:Double {rmsDB+Double(trimDB)}
@@ -139,7 +140,7 @@ enum InstrumentGainMatch {
     }
     static func retarget(_ result:Result,to targetDB:Double)throws->Result {
         var updated = try recommendation(rms:pow(10,result.rmsDB/20),peak:pow(10,result.peakDB/20),targetDB:targetDB)
-        updated.probeNotes=result.probeNotes;updated.repeatabilityDB=result.repeatabilityDB;updated.confidenceWarning=result.confidenceWarning
+        updated.probeNotes=result.probeNotes;updated.probeTempo=result.probeTempo;updated.repeatabilityDB=result.repeatabilityDB;updated.confidenceWarning=result.confidenceWarning
         return updated
     }
     static func repeatability(_ levels:[Double]) throws -> Double {
@@ -206,7 +207,7 @@ enum InstrumentGainMatch {
         if let error=loadError{throw failure(error)}
         guard count>0 else{throw failure("No calibration audio was rendered.")}
         var result=try recommendation(rms:sqrt(energy/Double(count)),peak:peak,targetDB:targetDB)
-        result.probeNotes=notes;result.repeatabilityDB=try repeatability(passLevels)
+        result.probeNotes=notes;result.probeTempo=tempo;result.repeatabilityDB=try repeatability(passLevels)
         if result.repeatabilityDB!>1 {result.confidenceWarning="Repeated probes differ by more than 1 dB. This evolving or nondeterministic sound needs a listening comparison; the proposed trim is only an estimate."}
         return result
     }
