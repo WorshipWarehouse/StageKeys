@@ -794,7 +794,13 @@ final class PerformanceStore: ObservableObject {
     private func handleAudioStartFailure(_ error: Error, generation: UUID) {
         cancelTransition(pinImmediately: true)
         started = false
-        audio.stop(); panic()
+        // Release the voices while the graph can still service all-notes-off,
+        // then stop the engine. panic() silences the click, so the saved click
+        // choice is restored and a successful recovery re-arms the metronome.
+        let clickEnabled = metronome
+        panic()
+        metronome = clickEnabled
+        audio.stop()
         rememberAudioOutputName()
         let failure = AudioStartupClassifier.classify(error, routeName: lastAudioOutputName)
         if failure.recoverable, let delay = audioRetryPolicy.delay(afterFailedAttempt: audioAttempt) {
@@ -829,9 +835,19 @@ final class PerformanceStore: ObservableObject {
         cancelTransition(pinImmediately: true)
         let generation = UUID()
         audioStartGeneration = generation
-        audio.stop(); panic()
+        // Publish the stopped intent and release voices before the engine stops;
+        // this also keeps a re-entrant configuration notification inert.
         started = false
+        let clickEnabled = metronome
+        panic()
+        metronome = clickEnabled
+        audio.stop()
         audioAttempt = 0
+        // The route may now be a different device, so re-apply the saved output
+        // selection and hardware buffer on the restart. Both steps are no-ops
+        // when no preference exists or the device already matches it.
+        restoredAudioOutput = false
+        restoredAudioBuffer = false
         audioStartup = .stopped
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
             guard let self, self.audioStartGeneration == generation, self.audioStartup == .stopped else { return }
@@ -844,8 +860,10 @@ final class PerformanceStore: ObservableObject {
         guard !restoredAudioBuffer, let frames = preferredBufferFrames, frames > 0,
               audioStatus?.canSetBuffer == true, audioStatus?.bufferFrames != frames else { return }
         restoredAudioBuffer = true
-        do { try audio.deviceController.buffer(frameCount: frames) }
-        catch { preferredBufferFrames = nil }
+        // A device that rejects the saved size keeps its current buffer. Retain
+        // the preference instead of erasing it, so the next route change can
+        // apply it again once the saved device returns; one attempt per route.
+        try? audio.deviceController.buffer(frameCount: frames)
         refreshAudioDevices()
     }
     func refreshAudioDevices() {
