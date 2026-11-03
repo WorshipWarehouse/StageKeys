@@ -7,3 +7,7 @@ Run `Tools/verify-release.sh mac /private/tmp/stagekeys-release-mac` or replace 
 Unsigned CI artifacts are not public releases. Branch protection must require successful jobs before release. Hardware route/latency tests, physical iPad AUv3 qualification, reference listening, long performance soak, Developer ID signing/notarization and clean-device install remain separate recorded gates. A green workflow cannot establish those properties.
 
 The `library` check compiles a testable core once with `Tests/run-local-library.py`, preserving the shell gate’s complete default Swift/C list. Its outcome artifact and job summary report skips separately. `processing` tests the runner’s failure/skip behavior. No compiled test artifacts are reused from another commit; the four required check names and platform/content/sanitizer gates remain unchanged. See `CI-PROCESS-AUDIT.md`.
+
+## Hosted runner architecture
+
+Required jobs explicitly use `macos-15-intel`. On 3 November 2026, jobs on the floating `macos-15` arm64 pool were cancelled without starting, with hosted-runner acquisition failures and capacity notices. The Intel label is documented by GitHub; it preserves the same four job names, commands and artifact gates. Mac artifacts still verify arm64 and x86_64 slices. Hosted runtime/sanitizer execution is now Intel; native Apple Silicon tests and physical rig qualification remain separately recorded requirements. See [capacity evidence and limits](CI-RUNNER-CAPACITY.md).

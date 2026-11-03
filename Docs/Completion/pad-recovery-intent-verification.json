@@ -1017,5 +1017,16 @@
     "No hardware latency, real-AU stress, prolonged soak or physical mobile qualification",
     "C DSP unchanged; no new local sanitizer run implied",
     "No signing, installation or distribution"
-  ]
+  ],
+  "ci_runner_followup": {
+    "workflow": ".github/workflows/distribution.yml",
+    "previous_sha256": "4292c708d7c9fa6650229c93b766b46fc71295e6f9834b390b9d31e391f398a9",
+    "updated_sha256": "acc30234941b32b5ea5e3f7528bb5be0326ace43ff3cc50384295ba8153d6b17",
+    "reason": "GitHub cancelled unstarted Simulator/library jobs with explicit hosted-runner acquisition and arm64-capacity annotations.",
+    "run": "https://github.com/WorshipWarehouse/StageKeys/actions/runs/41663622066",
+    "attempt": 2,
+    "label": "macos-15-intel",
+    "official_reference": "https://docs.github.com/en/actions/how-tos/write-workflows/choose-where-workflows-run/choose-the-runner-for-a-job",
+    "scope": "Only hosted runner selection changes after the recorded local freeze. App source, test, project, gate names and commands remain unchanged; local native arm64 results retain their original hashes. Hosted native runtime coverage changes to Intel; Mac artifact slices remain universal."
+  }
 }

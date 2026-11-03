@@ -13,3 +13,5 @@ Manual Stop revokes pending pad resumption, invalidates retry generations and cl
 Exact commands, outcomes and frozen input hashes are recorded in [verification](Completion/pad-recovery-intent-verification.json). Private audio/reference assets are not used. Real AudioBox/device behavior, real hosted-AU stress, hardware latency and prolonged stage rehearsal remain unqualified.
 
 Final local verification: six focused programs passed, then the complete suite reported 107 passes, 11 explicit skips and zero failures. The known absent private-piano case remains unexercised despite its reported pass. Both unsigned Mac and Simulator artifact gates passed; all 217 frozen source/test/project/CI inputs matched after the checks.
+
+Hosted validation follow-up: unstarted arm64 jobs were cancelled by GitHub capacity acquisition errors, so the required workflow is pinned to the documented Intel pool with unchanged commands/check names. [Runner evidence and architecture limits](CI-RUNNER-CAPACITY.md) records this later workflow-only change; the local app/test/project input set remains unchanged.
