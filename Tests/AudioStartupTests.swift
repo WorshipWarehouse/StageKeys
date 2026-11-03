@@ -11,6 +11,8 @@ import Foundation
         assert(busy.kind == .outputBusy, "Unspecified Core Audio error should be treated as busy/unavailable")
         assert(busy.recoverable, "A busy output is worth a bounded automatic retry")
         assert(busy.message.contains(route), "The failure should name the selected route")
+        assert(busy.message.contains("Close the other app"),
+               "The observed contention must suggest the competing-app action")
         assert(!busy.message.contains("/Users/"), "Raw descriptions and paths must not leak into the message")
 
         let unavailable = AudioStartupClassifier.classify(
@@ -45,6 +47,16 @@ import Foundation
         assert(posixBusy.kind == .outputBusy)
         assert(posixBusy.recoverable)
 
+        // Unplug/replug and sleep/wake end in ENODEV/ENXIO rather than an
+        // OSStatus code; both are retried once the route settles.
+        for code in [6, 19] {
+            let unplugged = AudioStartupClassifier.classify(
+                NSError(domain: NSPOSIXErrorDomain, code: code), routeName: route)
+            assert(unplugged.kind == .outputUnavailable)
+            assert(unplugged.recoverable)
+            assert(unplugged.message.contains(route))
+        }
+
         let leak = AudioStartupClassifier.classify(
             NSError(domain: NSOSStatusErrorDomain, code: 42,
                     userInfo: [NSLocalizedDescriptionKey: "/Users/private/Samples/secret.wav"]),
@@ -69,6 +81,10 @@ import Foundation
         assert(policy.delay(afterFailedAttempt: 3) == nil)
         let single = AudioStartupRetryPolicy(maximumAttempts: 1, delays: [])
         assert(single.delay(afterFailedAttempt: 1) == nil)
+        // The whole automatic window is bounded, so a busy device cannot keep
+        // the app starting forever while the user waits.
+        assert(policy.delays.reduce(0, +) <= 1.0)
+        assert(zip(policy.delays, policy.delays.dropFirst()).allSatisfy { $0.0 <= $0.1 })
         let graphStopped = AudioStartupFailure(kind: .graphRecoveryRequired, routeName: nil, code: 702)
         assert(!graphStopped.recoverable && graphStopped.message.contains("Retry audio"))
         assert(graphStopped.message.contains("702"))

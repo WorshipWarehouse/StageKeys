@@ -272,6 +272,9 @@ final class AudioController {
     /// Deterministic preparation failure; no target application or user content.
     var debugSoundPreparationFailure: Error?
     var debugStartFailure: (() -> Error?)?
+    /// Reports a failure after the engine itself started, so tests can exercise
+    /// cleanup from a partially initialized start without a real device.
+    var debugFailureAfterEngineStart: (() -> Error?)?
     #endif
     @discardableResult
     private func changeFailure(_ error: Error, phase: AudioChangeDiagnostic.Phase,
@@ -408,6 +411,9 @@ final class AudioController {
         try session.setActive(true)
         #endif
         if !engine.isRunning { engine.prepare(); try engine.start() }
+        #if DEBUG
+        if let failure = debugFailureAfterEngineStart?() { throw failure }
+        #endif
     }
     func stop() { stopAudioCheck();sk_panic(synth); engine.stop() }
     func noteOn(key: Int, pitch: Int, instrument: Int, layer: Int, velocity: Float,sourceID:Int32? = nil) {
