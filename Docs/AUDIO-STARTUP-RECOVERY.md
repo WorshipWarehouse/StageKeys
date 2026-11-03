@@ -56,7 +56,15 @@ remain visible.
 Unplug/replug, sleep/wake and route changes arrive as engine configuration
 changes. `AudioStartupRecovery` only restarts an engine that was running;
 a stopped or failed engine waits for an explicit start so the retry loop cannot
-start it while the device is still settling.
+start it while the device is still settling. A route change also re-arms the
+saved output selection and hardware buffer for the restart, because the engine
+may have moved to a different device; both steps are skipped when no preference
+is saved or the device already matches it. A device that rejects the saved
+buffer size keeps its current size and the saved preference is retained for the
+next route change instead of being erased.
+
+Voice cleanup runs before the engine stops (`panic()` then `audio.stop()`), so
+all-notes-off reaches hosted samplers while the graph can still service it.
 
 After the final failure the state is `failed`. The error is not shown through
 the old blocking `message` alert. The main window shows a persistent banner with
@@ -70,10 +78,13 @@ while starting, and Settings shows the state text plus the same failure and a
 - MIDI input and its observers are not restarted by a failed engine start.
 - The preferred output UID and hardware buffer are retained. A failed start
   does not clear them; selecting the output and retrying reuses them.
-- Failure stops the engine and calls `panic()`, which clears held notes, pedal
-  state and pending MIDI output and stops the metronome and tonic pad. The
-  setlist, patch, snapshot and output selection are not rewritten. A later successful start cannot produce stuck
-  voices from the failed attempt.
+- Failure releases held notes, pedal state and pending MIDI output, then stops
+  the engine. The user's saved click (metronome) choice is captured before the
+  panic and restored afterwards, so a transient device failure does not turn the
+  click off in the session or in `settings.json`; the live Tonic Pad root is
+  cleared like any other held performance state. The setlist, patch, snapshot,
+  output selection and hardware-buffer preference are not rewritten. A later
+  successful start cannot produce stuck voices from the failed attempt.
 - No sampler is loaded until `audio.start()` succeeds. On a machine with no
   output device the engine failure is reported before the patch graph runs, so
   the pre-offline sampler-load trap seen in the hosted library runner is not
@@ -81,12 +92,37 @@ while starting, and Settings shows the state text plus the same failure and a
 
 ## Verification
 
-`Tests/AudioStartupTests` is in the default library gate. It covers the
-classification table, route-safe messages, the no-path guarantee for unknown
-descriptions, the retry bounds and the published state transitions. It needs no
-audio hardware or private fixture.
+Two hardware-free programs are in the default library gate:
 
-The hosted macOS library job compiles and runs it with everything else. A
-physical reproduction with the AudioBox USB 96 and competing apps, a real
+- `Tests/AudioStartupTests` covers the classification table, route-safe
+  messages, the no-path guarantee for unknown descriptions, the bounded
+  backoff, the configuration-change decision and the published state
+  transitions.
+- `Tests/AudioStartupRecoveryTests` drives the production Store lifecycle with
+  an offline engine and injected `NSError`s: the observed busy failure retried
+  once then rendering, three bounded attempts with no further automatic retry,
+  a sample-rate/buffer rejection reported without retry, cleanup after a
+  failure reported once the engine had started, and an injected
+  configuration-change cycle that clears held notes, exhausts its retries, does
+  not restart a failed engine implicitly, and renders again after an explicit
+  retry on the same engine and rack instances. It also checks that the
+  setlist/settings bytes, selected patch, snapshot and click choice survive.
+
+Neither program is a device test. `debugStartFailure` and
+`debugFailureAfterEngineStart` are DEBUG-only injections; the store's
+manual-rendering route means no output device is opened.
+
+| Scenario | Deterministic coverage here | Physical macOS check still required |
+| --- | --- | --- |
+| Unavailable output | `-10876`, POSIX `ENODEV`/`ENXIO` classification and the bounded attempt count | Unplug the AudioBox during playback and confirm the message names it |
+| Output busy / in use | Observed `2003329396` retried once and then running | Open MainStage plus Sunday Keys on the AudioBox and confirm recovery |
+| Sample-rate/buffer mismatch | `kAudioUnitErr_FormatNotSupported` reported once with the route-safe message | Force a mismatched device setting and confirm no automatic retry loop |
+| Partial initialization | Failure thrown after the engine started leaves the engine stopped and the state `failed` | n/a (software state only) |
+| Session/settings preservation | Setlist and settings bytes, patch, snapshot and click choice unchanged | Confirm the audible patch and output are unchanged after recovery |
+| Unplug/replug | Injected configuration change restarts only a running engine and never a failed one | Real unplug, replug and note-on after the device returns |
+| Sleep/wake | Same injected configuration path; a deliberate Stop stays stopped | Wake the Mac mid-session and confirm audio and MIDI resume |
+| Stuck notes | Held notes, hardware keys and pedals cleared; recovery renders | Listen for stuck voices across a real failure and retry |
+
+A physical reproduction with the AudioBox USB 96 and competing apps, a real
 unplug/replug, and sleep/wake remain hardware checks. This document does not
 claim those were performed; issue #110 stays open until that evidence exists.
