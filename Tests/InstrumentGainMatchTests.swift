@@ -20,9 +20,10 @@ import Foundation
   var invalid=legacy;invalid.outputTrimDB = .nan;assert(!invalid.validate());invalid.outputTrimDB=13;assert(!invalid.validate())
   let base=TestFixtures.layer(gain:0.2,name:"Probe")
   let a=try await InstrumentGainMatch.measure(base,modulation:0.5);var changed=base;changed.gain=0.8;changed.channelSettings.outputTrimDB = -12
-  assert(a.probeNotes == [48,60,72] && a.repeatabilityDB != nil)
-  let preserved=try InstrumentGainMatch.retarget(a,to:-30);assert(preserved.probeNotes==a.probeNotes && preserved.repeatabilityDB==a.repeatabilityDB)
-  let b=try await InstrumentGainMatch.measure(changed,modulation:0.5)
+  assert(a.probeNotes == [48,60,72] && a.probeTempo == 72 && a.repeatabilityDB != nil)
+  let preserved=try InstrumentGainMatch.retarget(a,to:-30);assert(preserved.probeNotes==a.probeNotes && preserved.probeTempo==a.probeTempo && preserved.repeatabilityDB==a.repeatabilityDB)
+  let b=try await InstrumentGainMatch.measure(changed,modulation:0.5,tempo:137)
+  assert(b.probeTempo == 137)
   assert(abs(a.rmsDB-b.rmsDB)<0.001 && abs(a.trimDB-b.trimDB)<0.001,"Probe must be independent of fader and existing trim")
   func outputEnergy(_ trim:Float)throws->Double {
    let audio=AudioController();try audio.prepareOffline();audio.bypassMasterLimiter(true);defer{audio.stop()};var l=base;l.gain=0.01;l.channelSettings.outputTrimDB=trim;l.effects[0]=AudioEffect.factoryDefault(kind:11)

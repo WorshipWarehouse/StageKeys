@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Keep level calibration bound to the requested Audio Unit state and the performed tempo; pending/rejected replacements retain their authored state, and probe BPM stays visible when retargeting.
+
 - Bound audio-device inventory property sizes and validate channel-buffer entries before traversal; reject malformed counts and overflow while preserving current routing.
 
 - Add independent saved on-screen keyboard playability and played-note highlighting controls; disabling screen input releases its notes and pedal without silencing hardware MIDI.

@@ -325,12 +325,12 @@ struct InstrumentGainMatchControls:View {
     private func measure() {
         let input=layer,token=UUID();measurementToken=token
         var source=input
-        do {if source.external?.kind == .audioUnit {source.pluginState=try store.audio.externalRack?.stateData(channel:index) ?? source.pluginState}}
+        do {if source.external?.kind == .audioUnit {source=try store.audio.calibrationSource(source,channel:index)}}
         catch{status=error.localizedDescription;return}
         measurement=nil;status="Measuring an isolated copy; live playback is unchanged."
         task=Task { @MainActor in
             do {
-                let result=try await InstrumentGainMatch.measure(source,modulation:store.modWheel,targetDB:store.gainMatchTargetDB,tempo:store.patch.tempo)
+                let result=try await InstrumentGainMatch.measure(source,modulation:store.modWheel,targetDB:store.gainMatchTargetDB,tempo:store.performedTempo)
                 guard !Task.isCancelled,measurementToken==token,layer==input else{return}
                 measurement=try InstrumentGainMatch.retarget(result,to:store.gainMatchTargetDB)
                 status="Measurement complete. Review the suggested trim before applying."
@@ -365,6 +365,7 @@ struct InstrumentGainMatchControls:View {
             if let name=store.gainMatchReferenceName {Text("Session reference: "+name).font(.caption).foregroundStyle(.secondary)}
             Text("Unity-fader probe at velocities 83 and 127; measured peak ceiling −9 dBFS, trim −24…+12 dB. Applies a separate output trim and preserves source settings. Check sustained chords and slow or tempo-dependent sounds by ear; this is a fixed-probe estimate, not continuous leveling.").font(.caption).foregroundStyle(.secondary)
             if let result=measurement {Text(String(format:"Probe RMS %.1f dBFS · peak %.1f dBFS · proposed RMS %.1f dBFS%@",result.rmsDB,result.peakDB,result.outputRMSDB,result.peakLimited ? " · peak limited":result.trimLimited ? " · trim limited":"")).font(.caption).monospacedDigit()}
+            if let tempo=measurement?.probeTempo {Text("Probe tempo: \(tempo,specifier:"%.1f") BPM").font(.caption).monospacedDigit()}
             if let result=measurement,let variation=result.repeatabilityDB {
                 Text("MIDI notes: \(result.probeNotes.map(String.init).joined(separator:", ")) · two-pass spread \(variation,specifier:"%.2f") dB · sample peak only, not true peak").font(.caption)
                 if let warning=result.confidenceWarning {Text(warning).font(.caption).foregroundStyle(.orange)}
@@ -374,7 +375,7 @@ struct InstrumentGainMatchControls:View {
         .onChange(of:store.gainMatchTargetDB){target in
             if let result=measurement {do{measurement=try InstrumentGainMatch.retarget(result,to:target)}catch{measurement=nil;status=error.localizedDescription}}
         }
-        .onChange(of:store.patch.tempo){_ in task?.cancel();task=nil;measurementToken=UUID();measurement=nil;status="Tempo changed; measure again."}
+        .onChange(of:store.performedTempo){_ in task?.cancel();task=nil;measurementToken=UUID();measurement=nil;status="Tempo changed; measure again."}
         .onChange(of:layer){_ in task?.cancel();task=nil;measurementToken=UUID();measurement=nil}
         .onChange(of:store.modWheel){_ in task?.cancel();task=nil;measurementToken=UUID();measurement=nil;status="Modulation changed; measure again."}
         .onDisappear{task?.cancel();task=nil;measurementToken=UUID()}
