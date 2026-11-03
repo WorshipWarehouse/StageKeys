@@ -34,15 +34,19 @@ struct AudioLatencyChain: Equatable {
     var totalMilliseconds: Double { bufferMilliseconds + presentationLatencyMilliseconds }
 }
 enum AudioDeviceError: LocalizedError {
-    case unavailable, unsupported, offline, invalidBuffer, status(OSStatus), restartFailed(String)
+    case unavailable, unsupported, offline, invalidBuffer, status(OSStatus), resumeFailed(Error)
+    /// Numeric code only. A raw AVFAudio/Core Audio description can contain
+    /// private paths or device details and is not actionable during a set.
     var errorDescription: String? {
         switch self {
-        case .unavailable: return "The selected audio output is unavailable."
+        case .unavailable: return "The selected audio output is unavailable. Choose another output in Audio Settings, then retry."
         case .unsupported: return "This platform manages the audio output through system route controls."
         case .offline: return "Audio-device settings cannot change during offline rendering."
-        case .invalidBuffer: return "This buffer size is not supported by the selected audio device."
-        case .status(let code): return "Audio-device operation failed (\(code))."
-        case .restartFailed(let reason): return "The audio engine could not resume: \(reason)"
+        case .invalidBuffer: return "This buffer size is not supported by the selected audio device. Choose a supported size, then retry."
+        case .status(let code): return "The audio-device operation failed (error \(code)). Choose another output or refresh the device list, then retry."
+        case .resumeFailed(let cause):
+            let code = (cause as NSError).code
+            return "The audio engine could not resume after the device change (error \(code)). Choose another output in Audio Settings, then start audio. Copy Support Diagnostics before reporting this problem."
         }
     }
 }
@@ -52,6 +56,12 @@ enum AudioDeviceError: LocalizedError {
 /// size belongs to the selected hardware device and can affect other clients.
 final class AudioDeviceController {
     private let engine: AVAudioEngine
+    #if DEBUG
+    // Simulate accepted control-thread transactions without touching hardware.
+    var debugSelect: ((UInt32) throws -> Void)?
+    var debugBuffer: ((UInt32) throws -> Void)?
+    var debugOutputUID: (() throws -> String?)?
+    #endif
     init(engine: AVAudioEngine) { self.engine = engine }
     private func assertOnline() throws {
         precondition(Thread.isMainThread)
@@ -141,12 +151,20 @@ final class AudioDeviceController {
         guard code == noErr, let value else { throw AudioDeviceError.status(code) }
         return value.takeRetainedValue() as String
     }
-    func outputUID() throws -> String? { try Self.uid(currentDevice()) }
+    func outputUID() throws -> String? {
+        #if DEBUG
+        if let read = debugOutputUID { return try read() }
+        #endif
+        return try Self.uid(currentDevice())
+    }
     func select(uid: String) throws {
         guard let device = try Self.availableOutputs().first(where: { (try? Self.uid($0.id)) == uid }) else { throw AudioDeviceError.unavailable }
         try select(deviceID: device.id)
     }
     func select(deviceID: UInt32) throws {
+        #if DEBUG
+        if let select = debugSelect { try select(deviceID); return }
+        #endif
         try assertOnline()
         guard try Self.availableOutputs().contains(where: { $0.id == deviceID }) else { throw AudioDeviceError.unavailable }
         guard let unit = engine.outputNode.audioUnit else { throw AudioDeviceError.unavailable }
@@ -164,6 +182,9 @@ final class AudioDeviceController {
         })
     }
     func buffer(frameCount: UInt32) throws {
+        #if DEBUG
+        if let buffer = debugBuffer { try buffer(frameCount); return }
+        #endif
         try assertOnline()
         let current = try status()
         guard current.canSetBuffer, frameCount >= current.minimumBufferFrames,
@@ -233,7 +254,7 @@ final class AudioDeviceController {
             rollback()
             if wasRunning && !engine.isRunning {
                 do { engine.prepare(); try engine.start() }
-                catch { throw AudioDeviceError.restartFailed(error.localizedDescription) }
+                catch { throw AudioDeviceError.resumeFailed(error) }
             }
             engine.mainMixerNode.outputVolume = volume
             throw originalError
