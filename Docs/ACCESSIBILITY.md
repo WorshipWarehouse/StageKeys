@@ -99,7 +99,7 @@ Constants: 44 pt for touch platforms, 28 pt for the pointer (`StageA11y.minimumT
 
 Measured from the source at the audited surfaces: the dense mixer icon buttons are 34–38 pt wide by
 45–49 pt high, the Tonic power/settings/lock buttons 38–40 × 46, and the snapshot card
-100 × 34. Every one clears the 28 pt pointer minimum, so **macOS is compliant**; on iPhone/iPad the
+100 × 34. Every one clears the 28 pt pointer minimum, so these controls clear the project's pointer-size threshold (not a claim of macOS accessibility compliance); on iPhone/iPad the
 34–38 pt widths are below 44 pt. Widening them reflows the mixer that the issue also requires
 photographic evidence for, so that change is deliberately left to the device pass rather than
 guessed at from Linux.
@@ -135,3 +135,7 @@ claimed as verified:
 - VoiceOver reading order and labels, keyboard focus order and `Tab` navigation, and Reduce
   Transparency/Increase Contrast behaviour.
 - Whether the 34–38 pt touch targets above need widening, with the resulting reflow.
+
+## macOS audit correction
+
+The initial PR omitted StageA11y.swift from both committed Xcode targets, although the standalone library runner compiled it. It is now registered in both targets and the Python source audit is included in hosted processing CI. The 11 pt floor and 28 pt pointer threshold are project audit policies, not proof of universal readability or accessibility compliance. Ratios above cover selected source-color pairs, not every rendered state.

@@ -7,10 +7,10 @@ import Foundation
 /// `StageTheme` is the single renderer of these values, so a change here reaches
 /// every surface at once and cannot drift away from the audited numbers.
 enum StageA11y {
-    /// Apple treats 11 pt as the minimum legible text size on Mac and iOS. The
+    /// StageKeys uses 11 pt as its initial dense-layout text floor. The
     /// theme clamps every requested size, so a dense control cannot ask for less.
     static let minimumTextSize: Double = 11
-    /// HIG hit-target sizes: 44 pt on touch platforms, 28 pt for the pointer.
+    /// Project audit thresholds: 44 pt on touch platforms, 28 pt for the pointer.
     static let minimumTouchTarget: Double = 44
     static let minimumPointerTarget: Double = 28
     /// WCAG 2.1 AA: 4.5:1 for body text, 3:1 for large text and UI components.
@@ -68,7 +68,7 @@ enum StageA11y {
         }
     }
 
-    /// Every text/background pair the release surfaces use, with the ratio it must
+    /// Selected text/background pairs from the release surfaces, with the ratio it must
     /// keep. The test asserts the measured ratio; `Docs/ACCESSIBILITY.md` records
     /// the same numbers, so a palette edit that drops below a threshold fails a
     /// gate instead of quietly reducing legibility.
