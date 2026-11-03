@@ -67,9 +67,13 @@ struct SoundBrowser: View {
     private let selectionColor=Color(red:0.49,green:0.61,blue:0.82)
     private var results:[BrowserSound] {query.results(sounds)}
     private var selection:BrowserSound? {results.first{$0.id == selectedID}}
+    private var emptyState:LibraryEmptyState {
+        LibraryEmptyState.resolve(catalogUnreadable:store.libraryRecoveryRequired,searching:!query.search.isEmpty,filtering:!query.filters.isEmpty)
+    }
     var body:some View {
         EditorFrame(title:"Library",width:960,height:650,showsHeader:false) {
             header
+            if store.libraryRecoveryRequired {libraryErrorBar}
             if !query.activeFilters.isEmpty {filterBar}
             GeometryReader {geometry in
                 ScrollView(.horizontal) {
@@ -130,6 +134,22 @@ struct SoundBrowser: View {
             }
         }.background(StageTheme.panel)
     }
+    /// The catalog error state stays visible above the results, not only as a
+    /// dismissed alert or in Settings, so recovery is reachable where the user
+    /// noticed the problem.
+    private var libraryErrorBar:some View {
+        HStack(spacing:12) {
+            Image(systemName:"exclamationmark.triangle.fill").foregroundStyle(Color.orange)
+            Text("The saved sound catalog could not be read. Catalog writes are blocked and this list may be incomplete.")
+                .font(StageTheme.font(12)).fixedSize(horizontal:false,vertical:true)
+            Spacer(minLength:0)
+            Button("Recover Previous Sound Catalog"){store.recoverPreviousLibrary()}
+                .buttonStyle(StageButtonStyle())
+                .accessibilityLabel("Recover the previous sound catalog")
+                .help("Restore the last validated catalog. The damaged file is retained; samples and current patches are unchanged.")
+        }.padding(.horizontal,16).frame(minHeight:46).background(StageTheme.raised.opacity(0.3))
+        .accessibilityElement(children:.contain)
+    }
     private var filterBar:some View {
         ScrollView(.horizontal,showsIndicators:false) {
             HStack(spacing:8) {
@@ -183,13 +203,19 @@ struct SoundBrowser: View {
                     }
                     if results.isEmpty {
                         VStack(spacing:14) {
-                            Image(systemName:"tray.and.arrow.down").font(.system(size:38)).foregroundStyle(StageTheme.selected)
-                            Text("No Sounds found").font(StageTheme.font(17,weight:.semibold))
-                            Text(query.search.isEmpty && query.filters.isEmpty ? "StageKeys ships without sounds. Import samples, choose Audio Units, or select an external MIDI destination." : "Change the search or filters to find more sounds.").multilineTextAlignment(.center).foregroundStyle(.secondary)
-                            if !query.search.isEmpty || !query.filters.isEmpty {Button("Clear Filters"){query.filters=[:];query.search=""}}
-                            Button("Import Samples"){importHub=true}.buttonStyle(StageButtonStyle())
-                            Button("Add Audio Unit"){collection="Audio Units";query=LibraryQuery()}.buttonStyle(StageButtonStyle())
-                            Button("MIDI Routing"){collection="External MIDI";query=LibraryQuery()}.buttonStyle(StageButtonStyle())
+                            Image(systemName:emptyState.offersRecovery ? "exclamationmark.triangle.fill":"tray.and.arrow.down").font(.system(size:38)).foregroundStyle(emptyState.offersRecovery ? Color.orange:StageTheme.selected)
+                            Text(emptyState.title).font(StageTheme.font(17,weight:.semibold))
+                            Text(emptyState.message).multilineTextAlignment(.center).foregroundStyle(.secondary)
+                            if emptyState.offersImport {
+                                if !query.search.isEmpty || !query.filters.isEmpty {Button("Clear Filters"){query.filters=[:];query.search=""}}
+                                Button("Import Samples"){importHub=true}.buttonStyle(StageButtonStyle())
+                                Button("Add Audio Unit"){collection="Audio Units";query=LibraryQuery()}.buttonStyle(StageButtonStyle())
+                                Button("MIDI Routing"){collection="External MIDI";query=LibraryQuery()}.buttonStyle(StageButtonStyle())
+                            } else {
+                                Button("Recover Previous Sound Catalog"){store.recoverPreviousLibrary()}.buttonStyle(StageButtonStyle())
+                                    .accessibilityLabel("Recover the previous sound catalog")
+                                Text("Settings · Sound Catalog Recovery offers the same action. Samples and current patches are unchanged.").font(StageTheme.font(11)).multilineTextAlignment(.center).foregroundStyle(.secondary)
+                            }
                         }.frame(maxWidth:.infinity).padding(24)
                     }
                 }.padding(.horizontal,6)

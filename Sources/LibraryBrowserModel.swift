@@ -91,23 +91,36 @@ struct BrowserSound: Identifiable {
         copy.unavailableReason = ExternalAUCatalog.unavailableReason(for: component, installed: installed, isMobile: isMobile)
         return copy
     }
+    /// A blank or absent tag is unknown, never an empty facet option or a
+    /// claim of authored metadata.
+    static let unknownTag="Not Tagged"
+    private static func taggedValues(_ raw:[String])->[String] {
+        let values=Set(raw.map{$0.trimmingCharacters(in:.whitespacesAndNewlines)}.filter{!$0.isEmpty && $0 != unknownTag})
+        return values.isEmpty ? [unknownTag]:values.sorted()
+    }
+    /// Facet values are canonical and deterministic: Note Range uses the fixed
+    /// filter order, repeated or blank values collapse, and anything unknown is
+    /// reported as Not Tagged so it stays filterable and visibly untagged.
     func values(_ facet:LibraryFacet)->[String] {
         switch facet {
-        case .noteRange:return tags.noteRanges?.isEmpty == false ? tags.noteRanges!:["Not Tagged"]
-        case .complexity:return [tags.complexity ?? "Not Tagged"]
-        case .category:return [tags.category]
-        case .type:return Array(Set([tags.type]+(tags.types ?? []))).sorted()
-        case .timbre:return tags.timbres.isEmpty ? ["Not Tagged"]:tags.timbres
-        case .articulation:return tags.articulations.isEmpty ? ["Not Tagged"]:tags.articulations
+        case .noteRange:
+            let selected=Set(tags.noteRanges ?? [])
+            let ordered=LibraryNoteRange.allCases.map(\.rawValue).filter{selected.contains($0)}
+            return ordered.isEmpty ? [Self.unknownTag]:ordered
+        case .complexity:return Self.taggedValues([tags.complexity ?? ""])
+        case .category:return Self.taggedValues([tags.category])
+        case .type:return Self.taggedValues([tags.type]+(tags.types ?? []))
+        case .timbre:return Self.taggedValues(tags.timbres)
+        case .articulation:return Self.taggedValues(tags.articulations)
         case .library:return [collection]
-        case .source:return [tags.sourceModel]
+        case .source:return Self.taggedValues([tags.sourceModel])
         case .availability:return [unavailableReason != nil ? "Unavailable" : playable ? "Playable" : "Needs Conversion"]
         }
     }
     func tagOrigin(_ facet:LibraryFacet)->LibraryTagOrigin? {
         guard facet.isTagFacet else{return nil}
         if tags.isAuthored(facet) {return .authored}
-        if values(facet).contains("Not Tagged") {return .unknown}
+        if values(facet).contains(Self.unknownTag) {return .unknown}
         return tags.inferred ? .suggested:.authored
     }
     private var tagOriginGroups:(authored:[String],suggested:[String],unknown:[String]) {
@@ -214,13 +227,42 @@ struct LibraryQuery {
     func options(_ facet:LibraryFacet,in sounds:[BrowserSound])->[String] {
         if facet == .noteRange {
             // The source retains all four choices even after narrowing by type.
-            let unknown=filters[facet]=="Not Tagged" || sounds.filter{matches($0,ignoring:facet)}.contains{$0.values(.noteRange).contains("Not Tagged")}
-            return ["All"]+LibraryNoteRange.allCases.map(\.rawValue)+(unknown ? ["Not Tagged"]:[])
+            let unknown=filters[facet]==BrowserSound.unknownTag || sounds.filter{matches($0,ignoring:facet)}.contains{$0.values(.noteRange).contains(BrowserSound.unknownTag)}
+            return ["All"]+LibraryNoteRange.allCases.map(\.rawValue)+(unknown ? [BrowserSound.unknownTag]:[])
         }
         var values=Set(sounds.filter{matches($0,ignoring:facet)}.flatMap{$0.values(facet)})
         if let selected=filters[facet],selected != "All" {values.insert(selected)}
         return ["All"]+values.filter{!$0.isEmpty}.sorted{$0.localizedStandardCompare($1) == .orderedAscending}
     }
+}
+
+/// What the library shows when it has no result rows. An unreadable catalog is
+/// an error with its own recovery action, never an "install without sounds"
+/// empty state that invites importing over the preserved catalog.
+enum LibraryEmptyState:Equatable {
+    case noSounds,noMatches,catalogUnreadable
+    static func resolve(catalogUnreadable:Bool,searching:Bool,filtering:Bool)->Self {
+        if catalogUnreadable {return .catalogUnreadable}
+        return searching || filtering ? .noMatches:.noSounds
+    }
+    var title:String {
+        switch self {
+        case .noSounds:return "No Sounds found"
+        case .noMatches:return "No Sounds match"
+        case .catalogUnreadable:return "Sound library could not be read"
+        }
+    }
+    var message:String {
+        switch self {
+        case .noSounds:return "StageKeys ships without sounds. Import samples, choose Audio Units, or select an external MIDI destination."
+        case .noMatches:return "Change the search or filters to find more sounds."
+        case .catalogUnreadable:return "The saved catalog is preserved but was not loaded, so this list may look empty. Catalog writes are blocked until you recover it; samples and current patches are unchanged."
+        }
+    }
+    /// Importing before recovery cannot repair an unreadable catalog, so only a
+    /// readable library offers the import shortcuts.
+    var offersImport:Bool {self != .catalogUnreadable}
+    var offersRecovery:Bool {self == .catalogUnreadable}
 }
 
 /// Personal ratings are independent of samples, sound presets and patch snapshots.

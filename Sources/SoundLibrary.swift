@@ -179,18 +179,25 @@ struct SoundLibrary {
             return try decoded(data)
         }
     }
-    /// Metadata declares only the facets it can substantiate. An explicit
-    /// "Not Tagged" source or a missing optional facet stays unknown.
+    /// Metadata declares only the facets it can substantiate. A blank value, an
+    /// explicit "Not Tagged" source or a missing optional facet stays undeclared,
+    /// so it is never recorded as authored and the browser keeps it unknown.
+    private static func declared(_ values:[String])->Bool {
+        values.contains { raw in
+            let value=raw.trimmingCharacters(in:.whitespacesAndNewlines)
+            return !value.isEmpty && value != "Not Tagged"
+        }
+    }
     private static func authoredFacets(for tags:SoundTags)->[String] {
         LibraryFacet.tagFacets.compactMap { facet in
             switch facet {
-            case .category:return tags.category.isEmpty ? nil:facet.rawValue
-            case .type:return tags.type.isEmpty && (tags.types?.isEmpty ?? true) ? nil:facet.rawValue
-            case .timbre:return tags.timbres.isEmpty ? nil:facet.rawValue
-            case .articulation:return tags.articulations.isEmpty ? nil:facet.rawValue
-            case .source:return tags.sourceModel == "Not Tagged" ? nil:facet.rawValue
-            case .complexity:return tags.complexity == nil ? nil:facet.rawValue
-            case .noteRange:return tags.noteRanges == nil ? nil:facet.rawValue
+            case .category:return declared([tags.category]) ? facet.rawValue:nil
+            case .type:return declared([tags.type]+(tags.types ?? [])) ? facet.rawValue:nil
+            case .timbre:return declared(tags.timbres) ? facet.rawValue:nil
+            case .articulation:return declared(tags.articulations) ? facet.rawValue:nil
+            case .source:return declared([tags.sourceModel]) ? facet.rawValue:nil
+            case .complexity:return declared([tags.complexity ?? ""]) ? facet.rawValue:nil
+            case .noteRange:return declared(tags.noteRanges ?? []) ? facet.rawValue:nil
             default:return nil
             }
         }
