@@ -30,7 +30,7 @@ struct SoundImportView:View {
                     }
                 }.padding(20).background(StageTheme.panel,in:RoundedRectangle(cornerRadius:12)).overlay {RoundedRectangle(cornerRadius:12).stroke(.white.opacity(0.06))}
 
-                Text("IMPORT FROM").font(StageTheme.font(10,weight:.bold)).tracking(1.2).foregroundStyle(.secondary)
+                Text("IMPORT FROM").font(StageTheme.font(11,weight:.bold)).tracking(1.2).foregroundStyle(.secondary)
                 LazyVGrid(columns:[GridItem(.flexible(),spacing:12),GridItem(.flexible(),spacing:12)],spacing:12) {
                     ImportSourceCard(icon:"pianokeys",title:"MainStage",detail:"Patch or channel strip · choose the effects that fill StageKeys’ visible slots",accent:StageTheme.selected){choice = .mainStage;choosing=true}
                     ImportSourceCard(icon:"waveform.badge.plus",title:"Instrument File",detail:"StageKeys Sampler, EXS, AUPRESET, audio file or supported sound bank",accent:StageTheme.colors[1]){choice = .file;choosing=true}
@@ -166,7 +166,7 @@ private struct ImportSourceCard:View {
                 }.frame(width:48,height:48)
                 VStack(alignment:.leading,spacing:5) {
                     Text(title).font(StageTheme.font(14,weight:.bold)).foregroundStyle(.primary)
-                    Text(detail).font(StageTheme.font(10)).foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true)
+                    Text(detail).font(StageTheme.font(11)).foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true)
                 }
                 Spacer(minLength:4)
                 Image(systemName:"chevron.right").font(.caption.bold()).foregroundStyle(.tertiary).padding(.top,17)
