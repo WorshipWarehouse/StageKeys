@@ -179,8 +179,10 @@ import AVFoundation
         assert(store.held.contains(60))
         var attempts = 0
         store.audio.debugStartFailure = { attempts += 1; return NSError(domain: NSOSStatusErrorDomain, code: -10876) }
+        // The store observes configuration changes through the main operation
+        // queue, so delivery is asynchronous even when posted from main.
         NotificationCenter.default.post(name: .AVAudioEngineConfigurationChange, object: nil)
-        assert(!store.started && !store.audio.running, "A route change must stop the running engine")
+        wait("A route change must stop the running engine") { !store.started && !store.audio.running }
         assert(store.held.isEmpty && !store.isNoteHeld(60), "Held notes must be released on a route change")
         wait("An unavailable route must exhaust the bounded retries") { store.audioFailed }
         assert(attempts == 3)
