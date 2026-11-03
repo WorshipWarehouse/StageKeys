@@ -78,8 +78,11 @@ struct BrowserSound: Identifiable {
     /// for reporting that a component has not passed auval.
     var unavailableReason:String?
     var validationNote:String?
+    /// Set when the sound's own managed file or one of its samples is gone, so
+    /// the row can offer repair instead of failing only after Add/Replace.
+    var contentIssue:LibraryContentIssue?
     var ratingID:String {entry?.id ?? id}
-    var playable:Bool {(entry?.sound != nil || entry?.layer?.loaded == true || external != nil || destination != nil) && unavailableReason == nil}
+    var playable:Bool {(entry?.sound != nil || entry?.layer?.loaded == true || external != nil || destination != nil) && unavailableReason == nil && contentIssue == nil}
     var isAudioUnit: Bool { (external ?? entry?.layer?.external ?? entry?.sound)?.kind == .audioUnit }
     func checkingAudioUnitAvailability(installed: [ExternalAUIdentity], isMobile: Bool) -> BrowserSound {
         guard isAudioUnit else { return self }
@@ -90,6 +93,11 @@ struct BrowserSound: Identifiable {
         }
         copy.unavailableReason = ExternalAUCatalog.unavailableReason(for: component, installed: installed, isMobile: isMobile)
         return copy
+    }
+    /// Managed content is checked once per library read, never per keystroke.
+    func checkingContent(_ issues:[String:LibraryContentIssue])->BrowserSound {
+        guard let issue=issues[entry?.id ?? id] else{return self}
+        var copy=self;copy.contentIssue=issue;return copy
     }
     /// A blank or absent tag is unknown, never an empty facet option or a
     /// claim of authored metadata.
@@ -114,7 +122,7 @@ struct BrowserSound: Identifiable {
         case .articulation:return Self.taggedValues(tags.articulations)
         case .library:return [collection]
         case .source:return Self.taggedValues([tags.sourceModel])
-        case .availability:return [unavailableReason != nil ? "Unavailable" : playable ? "Playable" : "Needs Conversion"]
+        case .availability:return [unavailableReason != nil || contentIssue != nil ? "Unavailable" : playable ? "Playable" : "Needs Conversion"]
         }
     }
     func tagOrigin(_ facet:LibraryFacet)->LibraryTagOrigin? {
@@ -263,6 +271,69 @@ enum LibraryEmptyState:Equatable {
     /// readable library offers the import shortcuts.
     var offersImport:Bool {self != .catalogUnreadable}
     var offersRecovery:Bool {self == .catalogUnreadable}
+}
+
+/// A library sound whose managed content was moved or lost stays listed so it can
+/// be repaired; it is reported as unavailable instead of failing only on Add.
+enum LibraryContentIssue:String,Equatable {
+    case missingFile,missingSamples
+    var message:String {
+        switch self {
+        case .missingFile:return "The saved sound file is missing or unreadable. Locate it, or import the sound again."
+        case .missingSamples:return "A sample this preset needs is missing or unreadable. Reconnect its storage or locate the sound file."
+        }
+    }
+    var locateTitle:String {"Locate Sound File…"}
+}
+
+/// Repair is identity-checked: a merely similar file never replaces a sound.
+enum LibraryRepair {
+    /// The stored reference is a bare file name, so a path, traversal or blank
+    /// name cannot address anything outside the managed folder.
+    static func safeName(_ name:String)->Bool {
+        !name.isEmpty && name.count<=200 && !name.hasPrefix(".") && name==URL(fileURLWithPath:name).lastPathComponent
+    }
+    /// Accept the chosen file only when it already carries the entry's stored name,
+    /// or when its bytes match the retained original digest. Anything else is a
+    /// different instrument and must go through import.
+    static func accepts(candidateName:String,digest:String?,originalDigest:String?,storedName:String)->Bool {
+        guard safeName(candidateName),safeName(storedName) else{return false}
+        if candidateName == storedName {return true}
+        guard let digest,let originalDigest else{return false}
+        return digest.count==64 && digest==originalDigest
+    }
+}
+
+/// Copies a located asset into the library folder as a managed file. The copy is
+/// verified before it becomes visible, and an existing readable file is never
+/// overwritten, so repair cannot destroy the bytes that are still there.
+enum LibraryAssetRepair {
+    enum Failure:LocalizedError {
+        case unsafeName,unreadableSource,alreadyPresent,verificationFailed
+        var errorDescription:String? {
+            switch self {
+            case .unsafeName:return "That file name cannot be stored in the sound library."
+            case .unreadableSource:return "That file is missing, unreadable, or larger than the library allows."
+            case .alreadyPresent:return "A file with that name is already in the sound library."
+            case .verificationFailed:return "That file did not verify as the saved sound, so nothing was changed."
+            }
+        }
+    }
+    static let byteLimit=16_000_000
+    static func restore(named name:String,from source:URL,to directory:URL,verify:(URL)throws->Void)throws {
+        guard LibraryRepair.safeName(name) else{throw Failure.unsafeName}
+        let values=try source.resourceValues(forKeys:[.isRegularFileKey,.isSymbolicLinkKey,.fileSizeKey])
+        guard values.isRegularFile == true, values.isSymbolicLink != true,
+              let size=values.fileSize,size>0,size<=byteLimit else{throw Failure.unreadableSource}
+        try FileManager.default.createDirectory(at:directory,withIntermediateDirectories:true)
+        let destination=directory.appendingPathComponent(name)
+        guard !FileManager.default.fileExists(atPath:destination.path) else{throw Failure.alreadyPresent}
+        let temporary=directory.appendingPathComponent(".repair-\(UUID().uuidString)")
+        defer {try? FileManager.default.removeItem(at:temporary)}
+        do { try FileManager.default.copyItem(at:source,to:temporary) } catch { throw Failure.unreadableSource }
+        do { try verify(temporary) } catch { throw Failure.verificationFailed }
+        try FileManager.default.moveItem(at:temporary,to:destination)
+    }
 }
 
 /// Personal ratings are independent of samples, sound presets and patch snapshots.

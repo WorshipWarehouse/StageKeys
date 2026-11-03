@@ -628,6 +628,21 @@ final class ExternalInstrumentRack {
         guard Self.readableFile(file) else { throw ExternalInstrumentError.missingFile }
         if sound.kind == .samplerPreset { try Self.verifySamples(file) }
     }
+    /// Browse-time companion to `validateSound`: report a missing managed file or
+    /// missing samples without loading anything, so the library can offer repair
+    /// before the user adds the sound. Audio Units keep their own availability
+    /// reason; this never substitutes plugin state for content.
+    func contentIssue(for sound: ExternalSound) -> LibraryContentIssue? {
+        guard sound.kind != .audioUnit else { return nil }
+        guard let name = sound.fileName, LibraryRepair.safeName(name) else { return .missingFile }
+        return Self.contentIssue(in: libraryURL.appendingPathComponent(name), kind: sound.kind)
+    }
+    static func contentIssue(in file: URL, kind: ExternalSound.Kind) -> LibraryContentIssue? {
+        guard kind != .audioUnit else { return nil }
+        guard Self.readableFile(file) else { return .missingFile }
+        if kind == .samplerPreset, (try? Self.verifySamples(file)) == nil { return .missingSamples }
+        return nil
+    }
     func load(_ sound: ExternalSound, channel: Int, attackMinimum:Float=0, hostVelocityCurve:Int?=nil, configureCandidate: (() throws -> Void)? = nil, completion: @escaping (Result<Void, Error>) -> Void) {
         precondition(Thread.isMainThread)
         guard (0..<16).contains(channel) else { completion(.failure(ExternalInstrumentError.invalidChannel)); return }

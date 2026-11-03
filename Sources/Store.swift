@@ -459,6 +459,9 @@ final class PerformanceStore: ObservableObject {
     let audio = AudioController()
     let midi = MIDIInput()
     @Published var librarySounds: [LibrarySound] = []
+    /// Managed-content problems per library sound id. Detection runs when the
+    /// library is opened or changed, so browsing never touches the disk per row.
+    @Published private(set) var libraryContentIssues:[String:LibraryContentIssue] = [:]
     @Published var gainMatchTargetDB:Double = -24
     @Published var gainMatchReferenceName:String?
     @Published private(set) var soundRatings:[String:Int]=[:]
@@ -1581,8 +1584,40 @@ final class PerformanceStore: ObservableObject {
             entry.originalInstrument=try StageKeysSampler.retainOriginal(url,library:saveURL.deletingLastPathComponent())
         }
         entries.append(entry)
-        try library.write(entries);librarySounds=try library.read()
+        try library.write(entries);librarySounds=try library.read();refreshLibraryContent()
         return librarySounds.last(where:{$0.sound?.fileName==sound.fileName})?.sound ?? sound
+    }
+    /// One directory-backed check per saved sound, not per keystroke.
+    func refreshLibraryContent() {
+        guard let rack=audio.externalRack else{libraryContentIssues=[:];return}
+        var issues:[String:LibraryContentIssue]=[:]
+        for entry in librarySounds {
+            guard let sound=entry.sound ?? entry.layer?.external else{continue}
+            if let issue=rack.contentIssue(for:sound) {issues[entry.id]=issue}
+        }
+        libraryContentIssues=issues
+    }
+    /// Restore one sound whose managed file moved or was lost. The chosen file must
+    /// carry the entry's exact identity, and the managed copy is verified inside
+    /// the library before it is left in place, so no external path is ever trusted.
+    func relinkLibrarySound(_ id:String,from url:URL) {
+        guard let rack=audio.externalRack,let entry=librarySounds.first(where:{$0.id==id}),
+              let sound=entry.sound ?? entry.layer?.external,let name=sound.fileName else {
+            message="Choose a library sound with a saved file to restore.";return
+        }
+        let access=url.startAccessingSecurityScopedResource()
+        defer {if access{url.stopAccessingSecurityScopedResource()}}
+        do {
+            guard LibraryRepair.accepts(candidateName:url.lastPathComponent,digest:try? AssetDigest.sha256(url),
+                                        originalDigest:entry.originalInstrument?.sha256,storedName:name) else {
+                message="That file is not \(name). Choose the matching sound file, or import it as a new sound.";return
+            }
+            try LibraryAssetRepair.restore(named:name,from:url,to:rack.libraryURL) { temporary in
+                guard ExternalInstrumentRack.contentIssue(in:temporary,kind:sound.kind)==nil else {throw LibraryAssetRepair.Failure.verificationFailed}
+            }
+            refreshLibraryContent()
+            message=libraryContentIssues[id]==nil ? "Restored \(name). The sound is ready to add again.":"Copied \(name), but this sound still reports missing content."
+        } catch { message="Could not restore \(name): \(error.localizedDescription)" }
     }
     @discardableResult
     func importLibrarySound(_ url:URL,sampleRoot:URL?=nil)->ExternalSound? {
@@ -2030,7 +2065,7 @@ final class PerformanceStore: ObservableObject {
     func recoverPreviousLibrary() {
         do {
             librarySounds=try SoundLibrary(url:saveURL.deletingLastPathComponent().appendingPathComponent("sound-library.json")).recoverPrevious()
-            libraryRecoveryRequired=false
+            libraryRecoveryRequired=false;refreshLibraryContent()
             message="Previous sound catalog restored. Damaged catalog bytes were retained; samples and current patches were not changed."
         } catch {message="Could not recover the sound catalog: \(error.localizedDescription). Existing files were retained."}
     }

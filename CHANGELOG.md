@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Detect library sounds whose managed file or samples are missing, report them as unavailable while keeping them listed, and offer **Locate Sound File…** to restore the file as an identity-checked managed copy.
+- Show one recovery control in the library error state instead of two, and keep **Clear Filters** reachable while the catalog is unreadable.
 - Report a saved sound catalog that could not be read as a recoverable error state inside the library modal — with the recovery action beside the results — instead of the sample-free empty state, so the preserved catalog is not mistaken for a missing install. Search and filter empties now state their own case.
 - Keep undeclared tag metadata unknown: blank Category, Type, Timbre, Articulation, Source and Complexity values show and filter as Not Tagged instead of leaking an empty facet option or claiming authored provenance, both in the browser and when personal source metadata is loaded.
 - Canonicalize facet values (fixed Note Range order, collapsed repeats and blanks) so facet options, matching and ordering stay deterministic.
