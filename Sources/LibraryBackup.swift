@@ -106,6 +106,9 @@ extension LibraryBackup {
                     try PropertyListSerialization.data(fromPropertyList:state,format:.xml,options:0).write(to:output,options:.atomic)
                     try record(relative)
                 }
+                // Reference rewriting changes preset bytes; the installed copy
+                // gets a fresh digest after relocation, not this device's hash.
+                entry.managedFileSHA256=nil
                 entry.sound=portableSound(original);entry.hostPath=nil;entry.sourceArchiveID=nil;entry.originalInstrument=nil;entry.previousImportedRack=nil;entry.originalName=nil
                 entry.conversionNotes=portableNotes(entry.conversionNotes ?? [])
                 if var layer=entry.layer {layer.external=portableSound(original);layer.pluginState=nil;entry.layer=layer}

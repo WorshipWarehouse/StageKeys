@@ -1763,6 +1763,7 @@ final class PerformanceStore: ObservableObject {
                         }
                         installed.name=sound.name
                         entry.sound=installed;entry.hostPath=nil
+                        entry.managedFileSHA256 = try installed.fileName.map { try AssetDigest.sha256(rack.libraryURL.appendingPathComponent($0)) }
                         if entry.layer != nil {entry.layer?.external=installed;entry.layer?.pluginState=nil}
                         if let original=entry.originalInstrument {
                             let source=try LibraryBackup.asset(original.file,in:pack.root,manifest:pack.manifest)
@@ -1800,8 +1801,8 @@ final class PerformanceStore: ObservableObject {
             }
             guard !updates.isEmpty else{libraryImportProgress="No sampler playback settings were changed. "+failures.joined(separator:"; ");return}
             for i in entries.indices {
-                if let file=entries[i].sound?.fileName,let updated=updates[file]{entries[i].sound?.nativeSampler=updated.nativeSampler;entries[i].conversionNotes=Array(Set((entries[i].conversionNotes ?? [])+(updated.nativeSampler?.notes ?? []))).sorted()}
-                if let file=entries[i].layer?.external?.fileName,let updated=updates[file]{entries[i].layer?.external?.nativeSampler=updated.nativeSampler}
+                if let file=entries[i].sound?.fileName,let updated=updates[file]{entries[i].managedFileSHA256=nil;entries[i].sound?.nativeSampler=updated.nativeSampler;entries[i].conversionNotes=Array(Set((entries[i].conversionNotes ?? [])+(updated.nativeSampler?.notes ?? []))).sorted()}
+                if let file=entries[i].layer?.external?.fileName,let updated=updates[file]{entries[i].managedFileSHA256=nil;entries[i].layer?.external?.nativeSampler=updated.nativeSampler}
             }
             try SoundLibrary(url:root.appendingPathComponent("sound-library.json")).write(entries);librarySounds=entries
             panic()
