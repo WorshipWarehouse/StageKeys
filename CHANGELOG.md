@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Bound audio-device inventory property sizes and validate channel-buffer entries before traversal; reject malformed counts and overflow while preserving current routing.
+
 - Add independent saved on-screen keyboard playability and played-note highlighting controls; disabling screen input releases its notes and pedal without silencing hardware MIDI.
 
 - Retain live Tonic Pad root/sound and click intent through unexpected engine configuration/start failures; silence notes while failed, retrigger only after successful recovery, and cancel pending pad recovery on manual Stop.
