@@ -56,6 +56,12 @@ enum AudioDeviceError: LocalizedError {
 /// size belongs to the selected hardware device and can affect other clients.
 final class AudioDeviceController {
     private let engine: AVAudioEngine
+    #if DEBUG
+    // Simulate accepted control-thread transactions without touching hardware.
+    var debugSelect: ((UInt32) throws -> Void)?
+    var debugBuffer: ((UInt32) throws -> Void)?
+    var debugOutputUID: (() throws -> String?)?
+    #endif
     init(engine: AVAudioEngine) { self.engine = engine }
     private func assertOnline() throws {
         precondition(Thread.isMainThread)
@@ -145,12 +151,20 @@ final class AudioDeviceController {
         guard code == noErr, let value else { throw AudioDeviceError.status(code) }
         return value.takeRetainedValue() as String
     }
-    func outputUID() throws -> String? { try Self.uid(currentDevice()) }
+    func outputUID() throws -> String? {
+        #if DEBUG
+        if let read = debugOutputUID { return try read() }
+        #endif
+        return try Self.uid(currentDevice())
+    }
     func select(uid: String) throws {
         guard let device = try Self.availableOutputs().first(where: { (try? Self.uid($0.id)) == uid }) else { throw AudioDeviceError.unavailable }
         try select(deviceID: device.id)
     }
     func select(deviceID: UInt32) throws {
+        #if DEBUG
+        if let select = debugSelect { try select(deviceID); return }
+        #endif
         try assertOnline()
         guard try Self.availableOutputs().contains(where: { $0.id == deviceID }) else { throw AudioDeviceError.unavailable }
         guard let unit = engine.outputNode.audioUnit else { throw AudioDeviceError.unavailable }
@@ -168,6 +182,9 @@ final class AudioDeviceController {
         })
     }
     func buffer(frameCount: UInt32) throws {
+        #if DEBUG
+        if let buffer = debugBuffer { try buffer(frameCount); return }
+        #endif
         try assertOnline()
         let current = try status()
         guard current.canSetBuffer, frameCount >= current.minimumBufferFrames,

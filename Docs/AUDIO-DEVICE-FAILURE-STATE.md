@@ -48,3 +48,7 @@ Record macOS version, StageKeys build, output route, sample rate, buffer, active
 5. To exercise the deterministic regressions, run the focused commands above on the Mac. They inject failures at preparation, candidate attachment, graph connection, state restoration, sampler restoration, engine restart and rollback boundaries. Label this fault-injection evidence, not a real `-1` reproduction.
 6. For a real `-1` attempt, use the AudioBox with a competing audio application, then change the output route, buffer, sound or effect until the alert appears. Capture the support report and note the triggering control, route, rate and buffer. If it does not occur, report no reproduction rather than substituting the injected failure.
 7. Finish with the unsigned universal Mac artifact/content gate (`Tools/verify-release.sh mac <build-dir>`, build directory outside the checkout). Simulator/artifact compilation is not device qualification.
+
+## Audit correction
+
+The click model is now restored before an accepted device transaction saves settings, while the rendered click stays suspended until resumption. The initial defer-only code saved `metronomeEnabled: false` on success. Generated accepted-device/buffer hooks now exercise actual Store save paths and assert the saved click remains enabled. This complements rejected-operation tests; it is not a physical device success test. Startup recovery from #130 is integrated and tested with this change.

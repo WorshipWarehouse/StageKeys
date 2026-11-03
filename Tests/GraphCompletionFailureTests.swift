@@ -203,6 +203,22 @@ import AVFoundation
         assert(injectedFailure.diagnostic.errorDomain == "com.apple.coreaudio.avfaudio" && injectedFailure.diagnostic.errorCode == -1)
         assert(injectedFailure.diagnostic.lastGraphFailure == nil, "A device failure must not attach a stale graph failure")
         assert(injectedFailure.localizedDescription.contains("-1") && !injectedFailure.localizedDescription.contains("PRIVATE"))
+        // Accepted settings must persist the restored click, not the temporary
+        // panic state. The old defer-only restoration saved false on success.
+        let device = store.audio.deviceController
+        device.debugSelect = { assert($0 == 123) }
+        device.debugOutputUID = { "generated-output" }
+        device.debugBuffer = { assert($0 == 128) }
+        store.metronome = true
+        store.selectAudioOutput(123)
+        var savedSettings = try JSONSerialization.jsonObject(with: Data(contentsOf: root.appendingPathComponent("settings.json"))) as! [String:Any]
+        assert(savedSettings["metronomeEnabled"] as? Bool == true)
+        assert(store.metronome && store.tonic == 0)
+        store.setAudioBuffer(128)
+        savedSettings = try JSONSerialization.jsonObject(with: Data(contentsOf: root.appendingPathComponent("settings.json"))) as! [String:Any]
+        assert(savedSettings["metronomeEnabled"] as? Bool == true)
+        assert(store.metronome && store.tonic == 0)
+        device.debugSelect = nil; device.debugOutputUID = nil; device.debugBuffer = nil
         print("PASS: graph cleanup failure is visible and manual retry restores the saved patch")
     }
 }

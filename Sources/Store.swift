@@ -971,6 +971,10 @@ final class PerformanceStore: ObservableObject {
         let clickEnabled = metronome
         panic(preserveTonic: true)
         audio.panic()
+        // Preserve the model before any successful transaction calls save(),
+        // and before startup recovery captures this preference on a retry.
+        metronome = clickEnabled
+        audio.metronome(false, settings: metronomeSettings)
         return clickEnabled
     }
     private func resumePerformanceAfterAudioDeviceChange(click clickEnabled: Bool) {
