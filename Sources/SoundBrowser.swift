@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct SoundBrowser: View {
     @EnvironmentObject private var store:PerformanceStore
@@ -11,6 +12,8 @@ struct SoundBrowser: View {
     @State private var selectedID:String?
     @State private var importHub=false
     @State private var showingImportNotes=false
+    @State private var locating=false
+    @State private var locateTarget:String?
     @State private var auditionToken:UUID?
     @State private var instruments=ExternalInstrumentRack.instruments()
     private var targetLayer:Layer {store.patch.layers[index]}
@@ -46,17 +49,20 @@ struct SoundBrowser: View {
         #else
         let mobile = false
         #endif
-        return result.map { $0.checkingAudioUnitAvailability(installed: instruments, isMobile: mobile) }.filter {sound in
+        return result.map { $0.checkingAudioUnitAvailability(installed: instruments, isMobile: mobile) }
+            .map { $0.checkingContent(store.libraryContentIssues) }.filter {sound in
             guard sound.collection != "Tonic Pads" else{return false}
             switch collection {
-            case "All Sounds":return (sound.playable || sound.isAudioUnit) && sound.destination == nil
+            // A sound with missing content stays listed so Locate can repair it;
+            // hiding it would leave no way back from a moved library.
+            case "All Sounds":return (sound.playable || sound.isAudioUnit || sound.contentIssue != nil) && sound.destination == nil
             case "MainStage Archive":return entries.contains(where:{$0.id == sound.id && $0.hostPath != nil})
             case "Sunday Free":return sound.collection.hasPrefix("Sunday Free") && sound.playable
             case "Sunday App":return sound.collection.hasPrefix("Sunday App")
             // Keep unavailable Audio Units listed so the reason is visible; every
             // other collection also keeps saved AU entries visible for repair.
             case "Audio Units":return sound.collection == "Audio Units"
-            default:return sound.collection == collection && (sound.playable || sound.isAudioUnit)
+            default:return sound.collection == collection && (sound.playable || sound.isAudioUnit || sound.contentIssue != nil)
             }
         }.map {sound in
             var item=sound;item.rating=store.soundRatings[sound.ratingID] ?? 0
@@ -67,9 +73,15 @@ struct SoundBrowser: View {
     private let selectionColor=Color(red:0.49,green:0.61,blue:0.82)
     private var results:[BrowserSound] {query.results(sounds)}
     private var selection:BrowserSound? {results.first{$0.id == selectedID}}
+    private var emptyState:LibraryEmptyState {
+        LibraryEmptyState.resolve(catalogUnreadable:store.libraryRecoveryRequired,searching:!query.search.isEmpty,filtering:!query.filters.isEmpty)
+    }
     var body:some View {
         EditorFrame(title:"Library",width:960,height:650,showsHeader:false) {
             header
+            // One recovery control at a time: with no result rows the empty state
+            // carries the action, and the bar covers a catalog that still lists rows.
+            if store.libraryRecoveryRequired && !results.isEmpty {libraryErrorBar}
             if !query.activeFilters.isEmpty {filterBar}
             GeometryReader {geometry in
                 ScrollView(.horizontal) {
@@ -84,7 +96,13 @@ struct SoundBrowser: View {
             }
             footer
         }.sheet(isPresented:$importHub){SoundImportView().environmentObject(store)}
+        .fileImporter(isPresented:$locating,allowedContentTypes:[.data]) { result in
+            defer {locateTarget=nil}
+            guard case .success(let url)=result,let id=locateTarget else{return}
+            store.relinkLibrarySound(id,from:url)
+        }
         .onAppear {
+            store.refreshLibraryContent()
             let restored=savedFacets.split(separator:"|").compactMap{LibraryFacet(rawValue:String($0))}
             if restored.count==4 && Set(restored).count==4 {facets=restored}
         }
@@ -94,7 +112,7 @@ struct SoundBrowser: View {
         .onChange(of:collection){_ in selectedID=nil;query.filters=[:]}
         .onChange(of:query.search){_ in clearHiddenSelection()}
         .onChange(of:query.filters){_ in clearHiddenSelection()}
-        .onChange(of:store.librarySounds){_ in clearHiddenSelection()}
+        .onChange(of:store.librarySounds){_ in clearHiddenSelection();store.refreshLibraryContent()}
     }
     private var header:some View {
         HStack(spacing:16) {
@@ -129,6 +147,22 @@ struct SoundBrowser: View {
                 }.padding(.horizontal,8)
             }
         }.background(StageTheme.panel)
+    }
+    /// The catalog error state stays visible above the results, not only as a
+    /// dismissed alert or in Settings, so recovery is reachable where the user
+    /// noticed the problem.
+    private var libraryErrorBar:some View {
+        HStack(spacing:12) {
+            Image(systemName:"exclamationmark.triangle.fill").foregroundStyle(Color.orange)
+            Text("The saved sound catalog could not be read. Catalog writes are blocked and this list may be incomplete.")
+                .font(StageTheme.font(12)).fixedSize(horizontal:false,vertical:true)
+            Spacer(minLength:0)
+            Button("Recover Previous Sound Catalog"){store.recoverPreviousLibrary()}
+                .buttonStyle(StageButtonStyle())
+                .accessibilityLabel("Recover the previous sound catalog")
+                .help("Restore the last validated catalog. The damaged file is retained; samples and current patches are unchanged.")
+        }.padding(.horizontal,16).frame(minHeight:46).background(StageTheme.raised.opacity(0.3))
+        .accessibilityElement(children:.contain)
     }
     private var filterBar:some View {
         ScrollView(.horizontal,showsIndicators:false) {
@@ -166,7 +200,7 @@ struct SoundBrowser: View {
                 LazyVStack(spacing:2) {
                     ForEach(results){sound in
                         HStack(spacing:0){
-                            Button{selectedID=sound.id}label:{VStack(alignment:.leading,spacing:5){Text(sound.name).font(StageTheme.font(16)).multilineTextAlignment(.leading);if collection == "MainStage Archive" {Text(sound.playable ? "Playable":"Needs Conversion").font(StageTheme.font(11)).foregroundStyle(.secondary)};if sound.unavailableReason != nil {Text("Unavailable").font(StageTheme.font(11)).foregroundStyle(.orange)};if sound.collection == "Audio Units" {Text(sound.tags.sourceModel).font(StageTheme.font(11)).foregroundStyle(.secondary)}}.frame(maxWidth:.infinity,alignment:.leading).padding(.leading,14).padding(.vertical,13)}.buttonStyle(.plain).accessibilityLabel("\(sound.name), \(sound.unavailableReason != nil ? "Unavailable" : sound.playable ? "Playable":"Needs Conversion")")
+                            Button{selectedID=sound.id}label:{VStack(alignment:.leading,spacing:5){Text(sound.name).font(StageTheme.font(16)).multilineTextAlignment(.leading);if collection == "MainStage Archive" {Text(sound.playable ? "Playable":"Needs Conversion").font(StageTheme.font(11)).foregroundStyle(.secondary)};if sound.unavailableReason != nil || sound.contentIssue != nil {Text("Unavailable").font(StageTheme.font(11)).foregroundStyle(.orange)};if sound.collection == "Audio Units" {Text(sound.tags.sourceModel).font(StageTheme.font(11)).foregroundStyle(.secondary)}}.frame(maxWidth:.infinity,alignment:.leading).padding(.leading,14).padding(.vertical,13)}.buttonStyle(.plain).accessibilityLabel("\(sound.name), \((sound.unavailableReason != nil || sound.contentIssue != nil) ? "Unavailable" : sound.playable ? "Playable":"Needs Conversion")")
                             SoundRatingControl(name:sound.name,rating:sound.rating){store.rateSound(sound.ratingID,$0)}.padding(.horizontal,12)
                         }.background(selectedID == sound.id ? selectionColor:.clear,in:RoundedRectangle(cornerRadius:7)).foregroundStyle(selectedID == sound.id ? .white:.white.opacity(0.85))
                          .contextMenu {if let entry=sound.entry {
@@ -183,13 +217,22 @@ struct SoundBrowser: View {
                     }
                     if results.isEmpty {
                         VStack(spacing:14) {
-                            Image(systemName:"tray.and.arrow.down").font(.system(size:38)).foregroundStyle(StageTheme.selected)
-                            Text("No Sounds found").font(StageTheme.font(17,weight:.semibold))
-                            Text(query.search.isEmpty && query.filters.isEmpty ? "StageKeys ships without sounds. Import samples, choose Audio Units, or select an external MIDI destination." : "Change the search or filters to find more sounds.").multilineTextAlignment(.center).foregroundStyle(.secondary)
+                            Image(systemName:emptyState.offersRecovery ? "exclamationmark.triangle.fill":"tray.and.arrow.down").font(.system(size:38)).foregroundStyle(emptyState.offersRecovery ? Color.orange:StageTheme.selected)
+                            Text(emptyState.title).font(StageTheme.font(17,weight:.semibold))
+                            Text(emptyState.message).multilineTextAlignment(.center).foregroundStyle(.secondary)
+                            // A live search or filter can strand the results even
+                            // while the catalog is unreadable, so clearing it must
+                            // not depend on whether importing is offered.
                             if !query.search.isEmpty || !query.filters.isEmpty {Button("Clear Filters"){query.filters=[:];query.search=""}}
-                            Button("Import Samples"){importHub=true}.buttonStyle(StageButtonStyle())
-                            Button("Add Audio Unit"){collection="Audio Units";query=LibraryQuery()}.buttonStyle(StageButtonStyle())
-                            Button("MIDI Routing"){collection="External MIDI";query=LibraryQuery()}.buttonStyle(StageButtonStyle())
+                            if emptyState.offersImport {
+                                Button("Import Samples"){importHub=true}.buttonStyle(StageButtonStyle())
+                                Button("Add Audio Unit"){collection="Audio Units";query=LibraryQuery()}.buttonStyle(StageButtonStyle())
+                                Button("MIDI Routing"){collection="External MIDI";query=LibraryQuery()}.buttonStyle(StageButtonStyle())
+                            } else {
+                                Button("Recover Previous Sound Catalog"){store.recoverPreviousLibrary()}.buttonStyle(StageButtonStyle())
+                                    .accessibilityLabel("Recover the previous sound catalog")
+                                Text("Settings · Sound Catalog Recovery offers the same action. Samples and current patches are unchanged.").font(StageTheme.font(11)).multilineTextAlignment(.center).foregroundStyle(.secondary)
+                            }
                         }.frame(maxWidth:.infinity).padding(24)
                     }
                 }.padding(.horizontal,6)
@@ -203,7 +246,8 @@ struct SoundBrowser: View {
                     Text(selection.collection).lineLimit(1)
                     if let rack=selection.entry?.layer?.importedRack,rack.effectCount>0 {Text("Rack effects: \(rack.effectCount)").foregroundStyle(.secondary).lineLimit(1)}
                     if let provenance=selection.tagOriginSummary {Text(provenance).foregroundStyle(.secondary).lineLimit(1).help((selection.tagOriginDetail ?? provenance)+" · Edit Note Range by right-clicking a sound.")}
-                    if let reason=selection.unavailableReason {Text(reason).foregroundStyle(.secondary).lineLimit(2)}
+                    if let issue=selection.contentIssue {Text(issue.message).foregroundStyle(.secondary).lineLimit(2)}
+                    else if let reason=selection.unavailableReason {Text(reason).foregroundStyle(.secondary).lineLimit(2)}
                     else if let note=selection.validationNote {Text(note).foregroundStyle(.secondary).lineLimit(2)}
                     else if !selection.playable {Text("This MainStage patch needs a compatible sound import before it can play here.").foregroundStyle(.secondary)}
                 } else {Text(results.count==1 ? "1 sound":"\(results.count) sounds").foregroundStyle(.secondary)}
@@ -215,6 +259,7 @@ struct SoundBrowser: View {
                     #endif
                 }
             }.font(StageTheme.font(12)).frame(maxWidth:.infinity,alignment:.leading)
+            if let selection,let issue=selection.contentIssue,issue == .missingFile {Button(issue.locateTitle){locateTarget=selection.id;locating=true}.buttonStyle(StageButtonStyle()).accessibilityLabel("Locate the saved file for \(selection.name)").help("Choose the same sound file from its current location. It is copied into the library; a different sound is refused.")}
             if selection?.entry?.conversionNotes?.isEmpty == false {Button("Import Notes"){showingImportNotes=true}.buttonStyle(StageButtonStyle()).popover(isPresented:$showingImportNotes){ScrollView{VStack(alignment:.leading,spacing:12){ForEach(selection?.entry?.conversionNotes ?? [],id:\.self){Text($0)}}.padding(20)}.frame(width:420,height:300)}}
             Button("Refresh Audio Units") { instruments=ExternalInstrumentRack.instruments(); store.refreshUnavailablePatchInstruments(installed: instruments) }.buttonStyle(StageButtonStyle())
             if collection == "External MIDI" {Button("Refresh"){store.refreshMIDIDestinations()}.buttonStyle(StageButtonStyle())}

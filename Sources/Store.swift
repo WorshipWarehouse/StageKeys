@@ -459,6 +459,9 @@ final class PerformanceStore: ObservableObject {
     let audio = AudioController()
     let midi = MIDIInput()
     @Published var librarySounds: [LibrarySound] = []
+    /// Managed-content problems per library sound id. Detection runs when the
+    /// library is opened or changed, so browsing never touches the disk per row.
+    @Published private(set) var libraryContentIssues:[String:LibraryContentIssue] = [:]
     @Published var gainMatchTargetDB:Double = -24
     @Published var gainMatchReferenceName:String?
     @Published private(set) var soundRatings:[String:Int]=[:]
@@ -1587,6 +1590,24 @@ final class PerformanceStore: ObservableObject {
     /// Keep Audio Unit edits made in the instrument interface. The channel editor
     /// runs inside an audition, so `capturePluginStates` deliberately skips this
     /// layer and `endAudition` would otherwise restore the pre-edit state.
+    /// Explicit editor retry: retain authored settings and reject installation
+    /// if the selected patch/layer changes before the backend returns.
+    @discardableResult
+    func retryPluginInterfaceLoad(_ index: Int) -> Bool {
+        guard started && audio.running, !patchLoading else {
+            message = "Start audio and wait for the patch to finish loading before retrying this instrument."
+            return false
+        }
+        guard patch.layers.indices.contains(index) else { return false }
+        let layer = patch.layers[index], patchID = patch.id
+        guard layer.external?.kind == .audioUnit else { return false }
+        if audio.loadedUnit(channel: index, sound: layer.external) != nil { return true }
+        return audio.configure(index, layer, shouldInstall: { [weak self] in
+            guard let self else { return false }
+            return self.started && self.patch.id == patchID &&
+                self.patch.layers.indices.contains(index) && self.patch.layers[index] == layer
+        })
+    }
     func finishPluginInterface(_ index: Int) {
         guard patch.layers.indices.contains(index), patch.layers[index].external?.kind == .audioUnit,
               audio.loadedUnit(channel:index,sound:patch.layers[index].external) != nil else { return }
@@ -1626,9 +1647,48 @@ final class PerformanceStore: ObservableObject {
             let access=url.startAccessingSecurityScopedResource();defer{if access{url.stopAccessingSecurityScopedResource()}}
             entry.originalInstrument=try StageKeysSampler.retainOriginal(url,library:saveURL.deletingLastPathComponent())
         }
+        if let name=sound.fileName,let rack=audio.externalRack {
+            entry.managedFileSHA256=try AssetDigest.sha256(rack.libraryURL.appendingPathComponent(name))
+        }
         entries.append(entry)
-        try library.write(entries);librarySounds=try library.read()
+        try library.write(entries);librarySounds=try library.read();refreshLibraryContent()
         return librarySounds.last(where:{$0.sound?.fileName==sound.fileName})?.sound ?? sound
+    }
+    /// One directory-backed check per saved sound, not per keystroke.
+    func refreshLibraryContent() {
+        guard let rack=audio.externalRack else{libraryContentIssues=[:];return}
+        var issues:[String:LibraryContentIssue]=[:]
+        for entry in librarySounds {
+            guard let sound=entry.sound ?? entry.layer?.external else{continue}
+            if let issue=rack.contentIssue(for:sound) {issues[entry.id]=issue}
+        }
+        libraryContentIssues=issues
+    }
+    /// Restore one sound whose managed file moved or was lost. The chosen file must
+    /// carry the entry's exact identity, and the managed copy is verified inside
+    /// the library before it is left in place, so no external path is ever trusted.
+    func relinkLibrarySound(_ id:String,from url:URL) {
+        guard let rack=audio.externalRack,let entry=librarySounds.first(where:{$0.id==id}),
+              let sound=entry.sound ?? entry.layer?.external,let name=sound.fileName else {
+            message="Choose a library sound with a saved file to restore.";return
+        }
+        let access=url.startAccessingSecurityScopedResource()
+        defer {if access{url.stopAccessingSecurityScopedResource()}}
+        do {
+            guard let expected=entry.managedFileSHA256 else {
+                message="This sound has no retained managed-file digest. Import it as a new sound; its filename alone cannot verify a repair.";return
+            }
+            guard LibraryRepair.accepts(candidateName:url.lastPathComponent,digest:try? AssetDigest.sha256(url),
+                                        originalDigest:expected,storedName:name) else {
+                message="That file is not \(name). Choose the matching sound file, or import it as a new sound.";return
+            }
+            try LibraryAssetRepair.restore(named:name,from:url,to:rack.libraryURL) { temporary in
+                guard try AssetDigest.sha256(temporary)==expected,
+                      ExternalInstrumentRack.contentIssue(in:temporary,kind:sound.kind)==nil else {throw LibraryAssetRepair.Failure.verificationFailed}
+            }
+            refreshLibraryContent()
+            message=libraryContentIssues[id]==nil ? "Restored \(name). The sound is ready to add again.":"Copied \(name), but this sound still reports missing content."
+        } catch { message="Could not restore \(name): \(error.localizedDescription)" }
     }
     @discardableResult
     func importLibrarySound(_ url:URL,sampleRoot:URL?=nil)->ExternalSound? {
@@ -1703,6 +1763,7 @@ final class PerformanceStore: ObservableObject {
                         }
                         installed.name=sound.name
                         entry.sound=installed;entry.hostPath=nil
+                        entry.managedFileSHA256 = try installed.fileName.map { try AssetDigest.sha256(rack.libraryURL.appendingPathComponent($0)) }
                         if entry.layer != nil {entry.layer?.external=installed;entry.layer?.pluginState=nil}
                         if let original=entry.originalInstrument {
                             let source=try LibraryBackup.asset(original.file,in:pack.root,manifest:pack.manifest)
@@ -1740,8 +1801,8 @@ final class PerformanceStore: ObservableObject {
             }
             guard !updates.isEmpty else{libraryImportProgress="No sampler playback settings were changed. "+failures.joined(separator:"; ");return}
             for i in entries.indices {
-                if let file=entries[i].sound?.fileName,let updated=updates[file]{entries[i].sound?.nativeSampler=updated.nativeSampler;entries[i].conversionNotes=Array(Set((entries[i].conversionNotes ?? [])+(updated.nativeSampler?.notes ?? []))).sorted()}
-                if let file=entries[i].layer?.external?.fileName,let updated=updates[file]{entries[i].layer?.external?.nativeSampler=updated.nativeSampler}
+                if let file=entries[i].sound?.fileName,let updated=updates[file]{entries[i].managedFileSHA256=nil;entries[i].sound?.nativeSampler=updated.nativeSampler;entries[i].conversionNotes=Array(Set((entries[i].conversionNotes ?? [])+(updated.nativeSampler?.notes ?? []))).sorted()}
+                if let file=entries[i].layer?.external?.fileName,let updated=updates[file]{entries[i].managedFileSHA256=nil;entries[i].layer?.external?.nativeSampler=updated.nativeSampler}
             }
             try SoundLibrary(url:root.appendingPathComponent("sound-library.json")).write(entries);librarySounds=entries
             panic()
@@ -2076,7 +2137,7 @@ final class PerformanceStore: ObservableObject {
     func recoverPreviousLibrary() {
         do {
             librarySounds=try SoundLibrary(url:saveURL.deletingLastPathComponent().appendingPathComponent("sound-library.json")).recoverPrevious()
-            libraryRecoveryRequired=false
+            libraryRecoveryRequired=false;refreshLibraryContent()
             message="Previous sound catalog restored. Damaged catalog bytes were retained; samples and current patches were not changed."
         } catch {message="Could not recover the sound catalog: \(error.localizedDescription). Existing files were retained."}
     }

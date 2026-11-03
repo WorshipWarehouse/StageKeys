@@ -33,14 +33,26 @@ struct StageKeysApp: App {
     }
 }
 enum StageTheme {
-    static let base = Color(red: 0.065, green: 0.071, blue: 0.11)
-    static let panel = Color(red: 0.14, green: 0.15, blue: 0.21)
-    static let raised = Color(red: 0.23, green: 0.26, blue: 0.36)
-    static let selected = Color(red: 0.64, green: 0.76, blue: 0.94)
-    static let colors: [Color] = [Color(red: 0.97, green: 0.66, blue: 0.28), Color(red: 0.2, green: 0.77, blue: 0.47), Color(red: 0.24, green: 0.39, blue: 0.94), Color(red: 0.59, green: 0.34, blue: 0.90), Color(red: 0.88, green: 0.40, blue: 0.75), .cyan, .orange, .brown, .pink, .gray, .red, .yellow, .purple, .green, .pink]
+    /// Colours and type floors come from `StageA11y`, the audited baseline: the
+    /// palette is defined once, and every font size is clamped to the readable
+    /// minimum so a dense control cannot render text smaller than 11 pt.
+    private static func color(_ value: StageRGB) -> Color { Color(red: value.red, green: value.green, blue: value.blue) }
+    static let base = color(StageA11y.Palette.base)
+    static let panel = color(StageA11y.Palette.panel)
+    static let raised = color(StageA11y.Palette.raised)
+    static let selected = color(StageA11y.Palette.selected)
+    static let colors: [Color] = StageA11y.Palette.accents.map(color) + [.cyan, .orange, .brown, .pink, .gray, .red, .yellow, .purple, .green, .pink]
+    /// Layer accent text keeps the identity hue when it already clears 4.5:1 on the
+    /// panel and is raised toward white when it does not. Layers past the five
+    /// custom accents use the audited selection accent, because a system colour's
+    /// components cannot be measured from code.
+    static func accentText(_ index: Int) -> Color {
+        guard index >= 0 && index < StageA11y.Palette.accents.count else { return selected }
+        return color(StageA11y.legibleAccent(StageA11y.Palette.accents[index], on: StageA11y.Palette.panel))
+    }
     static func font(_ size: CGFloat, weight: Font.Weight = .regular) -> Font {
         let name = weight == .bold || weight == .heavy ? "IBMPlexSans-Bold" : weight == .semibold || weight == .medium ? "IBMPlexSans-SemiBold" : "IBMPlexSans-Regular"
-        return .custom(name, size: size)
+        return .custom(name, size: CGFloat(StageA11y.fontSize(Double(size))))
     }
     static let notes = ["C", "D♭", "D", "E♭", "E", "F", "G♭", "G", "A♭", "A", "B♭", "B"]
     static func db(_ gain: Float) -> String { gain < 0.0001 ? "−∞" : String(format: "%.1f dB", 20 * log10(gain)) }
@@ -197,9 +209,9 @@ struct PerformanceView: View {
                 Label("stagekeys", systemImage: "waveform").font(StageTheme.font(15, weight: .semibold)).tracking(1.5).frame(width: 160, alignment: .leading)
                 Button { sheet = .transpose } label: {
                     HStack(spacing: 0) {
-                        VStack(spacing: 3) { Text("Play In").font(StageTheme.font(9)); Text(StageTheme.notes[store.patch.playIn]) }.frame(width: 49)
+                        VStack(spacing: 3) { Text("Play In").font(StageTheme.font(11)); Text(StageTheme.notes[store.patch.playIn]) }.frame(width: 49)
                         Divider().frame(height: 38)
-                        VStack(spacing: 3) { Text("Hear In").font(StageTheme.font(9)); Text(StageTheme.notes[store.patch.hearIn]) }.frame(width: 49)
+                        VStack(spacing: 3) { Text("Hear In").font(StageTheme.font(11)); Text(StageTheme.notes[store.patch.hearIn]) }.frame(width: 49)
                     }.frame(height: 44)
                 }.buttonStyle(.plain).background(StageTheme.panel, in: RoundedRectangle(cornerRadius: 6))
                 HStack(spacing: 0) {
@@ -311,8 +323,8 @@ struct PerformanceView: View {
                     } label: {
                         VStack(spacing: 4) {
                             Text(populated ? snapshot!.name : "Snapshot").lineLimit(1)
-                            Text(populated ? (snapshot!.beats.map { String(format: "%.1f beats", $0) } ?? "Default") : "\(i + 1)").font(.system(size: 9)).opacity(0.65)
-                        }.frame(width: 100, height: 28)
+                            Text(populated ? (snapshot!.beats.map { String(format: "%.1f beats", $0) } ?? "Default") : "\(i + 1)").font(.system(size: 11)).opacity(0.65)
+                        }.frame(width: 100, height: 34)
                     }.buttonStyle(StageButtonStyle(selected: populated && store.activeSnapshot == snapshot?.id))
                         .accessibilityLabel(populated ? "Snapshot \(i + 1), \(snapshot!.name)" : "Snapshot \(i + 1), empty")
                         .help(populated ? "Recall snapshot. Use the context menu to edit or clear." : "Empty slot. Use Capture Snapshot to save the current mix here.")

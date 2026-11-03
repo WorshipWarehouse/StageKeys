@@ -2,6 +2,13 @@
 
 - Keep the saved click (metronome) choice and the saved output/buffer preferences through an audio-start failure or a device/route change: recovery releases held voices before stopping the engine, restores the click, and re-applies the saved output selection and hardware buffer on the next start instead of erasing them.
 - Add a deterministic Store-level startup-recovery matrix (busy output retry, bounded repeated failure, sample-rate/buffer rejection, partial-initialization cleanup, preserved session bytes and injected unplug/sleep-wake route changes) alongside the classifier/retry contract test. Physical AudioBox, competing-app and sleep/wake checks remain outstanding in #110.
+- Detect library sounds whose managed file or samples are missing, report them as unavailable while keeping them listed, and offer **Locate Sound File…** to restore the file as an identity-checked managed copy.
+- Show one recovery control in the library error state instead of two, and keep **Clear Filters** reachable while the catalog is unreadable.
+- Report a saved sound catalog that could not be read as a recoverable error state inside the library modal — with the recovery action beside the results — instead of the sample-free empty state, so the preserved catalog is not mistaken for a missing install. Search and filter empties now state their own case.
+- Keep undeclared tag metadata unknown: blank Category, Type, Timbre, Articulation, Source and Complexity values show and filter as Not Tagged instead of leaking an empty facet option or claiming authored provenance, both in the browser and when personal source metadata is loaded.
+- Canonicalize facet values (fixed Note Range order, collapsed repeats and blanks) so facet options, matching and ordering stay deterministic.
+- Define the release palette, readable type floor and hit-target minimums once in `StageA11y`, render them from `StageTheme`, and raise every 8–10 pt label in the mixer, transport, editors, MIDI Learn, import and snapshot surfaces to the 11 pt minimum.
+- Darken the piano octave marker from a measured 2.74:1 to 5.26:1 and move the fader `−∞` label off `.tertiary`, with the contrast pairs recorded in `Docs/ACCESSIBILITY.md` and asserted by a gated test.
 - Add patch-level Play In/Hear In direction (nearest, up, down) and an explicit ±2 octave shift; the stored transposition stays the single playback value and older setlists keep theirs without migration.
 - Apply patch transposition to authored Easy Chord and Sequencer output as a stateless offset, so repeated key changes cannot drift or rewrite the programming.
 - Add a patch tempo lock that shares one live tempo across unlocked patches, with direct BPM entry alongside tap tempo and the stepper; the live tempo is persisted and restored.
@@ -15,6 +22,9 @@
 - Add a standalone metronome engine with two synthesized click sounds, independent level, beat/downbeat velocities, accent patterns, subdivisions and master-follow; the click now bypasses the shared hall reverb.
 - Persist every metronome control in `settings.json`, keep older files readable and refuse out-of-range saved values at launch.
 - Cover click timing at 44.1/48/96 kHz, irregular block splits, mid-beat tempo changes, long runs, presets and settings round trips.
+- Let the hosted Audio Unit editor expand an oversized plug-in view beyond the collapsed sheet cap and collapse it again, without offering the control when it would reveal nothing or when the window is already the limit.
+- Report a blocked, unavailable or slow Audio Unit inside the editor with that state's own remedy instead of an open-ended loading message; a timeout offers Retry, a block offers Allow and Retry, and an uninstalled plug-in says so immediately.
+- Label every generic plug-in control for assistive technologies with its parameter name and formatted value, and stop the visible name/value text from being announced twice.
 
 ## 0.21.0
 

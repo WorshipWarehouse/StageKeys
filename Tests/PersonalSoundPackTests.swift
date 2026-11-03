@@ -6,6 +6,7 @@ import Foundation
         let exs=try TestFixtures.exs(in:root.appendingPathComponent("source"))
         let store=PerformanceStore()
         guard store.importLibrarySound(exs,sampleRoot:exs.deletingLastPathComponent()) != nil,var entry=store.librarySounds.first else{fatalError(store.message ?? "No generated instrument")}
+        assert(entry.managedFileSHA256 != nil)
         entry.sourceArchiveID="private-source";entry.originalName="Private source";entry.conversionNotes=["Source at /Users/example/private/file.exs requires review."]
         entry.layer!.gain=0.41;entry.layer!.pan=0.2;entry.layer!.blockSustain=true
         entry.layer!.effects[0]=AudioEffect.factoryDefault(kind:3)
@@ -14,6 +15,7 @@ import Foundation
         let folder=root.appendingPathComponent("portable-folder")
         try LibraryBackup.write([entry],library:root,to:folder)
         let pack=try LibraryBackup.read(folder)
+        assert(pack.sounds[0].managedFileSHA256 == nil, "A rewritten portable preset cannot retain its source-device digest")
         assert(pack.sounds.count==1 && pack.sounds[0].sourceArchiveID==nil && pack.sounds[0].originalInstrument==nil && pack.sounds[0].layer?.pluginState==nil)
         assert(pack.sounds[0].layer?.effects==entry.layer?.effects && pack.sounds[0].layer?.importedRack==entry.layer?.importedRack)
         assert(pack.manifest.files.keys.allSatisfy{!$0.hasPrefix("/") && !$0.contains("settings") && !$0.contains("setlist")})
@@ -37,6 +39,8 @@ import Foundation
         for _ in 0..<1500 where destination.libraryImportBusy {try await Task.sleep(nanoseconds:10_000_000)}
         guard let installed=destination.librarySounds.first,let layer=installed.layer else{fatalError(destination.libraryImportProgress ?? "Pack import failed")}
         assert(layer.effects==entry.layer?.effects && layer.importedRack==entry.layer?.importedRack && layer.gain==0.41 && layer.pan==0.2 && layer.blockSustain)
+        let installedFile=destination.audio.externalRack!.libraryURL.appendingPathComponent(installed.sound!.fileName!)
+        assert(installed.managedFileSHA256 == (try! AssetDigest.sha256(installedFile)), "Relocation must capture the actual installed bytes")
         let sessionAfter=try encoder.encode(destination.setlist);assert(sessionBefore==sessionAfter)
         func render(_ layer:Layer,in data:URL)throws->Double {
             setenv("STAGEKEYS_DATA_DIR",data.path,1)
