@@ -60,10 +60,10 @@ struct MIDIControlLearnView: View {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(label(target)).font(StageTheme.font(13, weight: .semibold)).lineLimit(2)
-                    if label(target) != target.title { Text(target.title).font(StageTheme.font(10)).foregroundStyle(.secondary) }
+                    if label(target) != target.title { Text(target.title).font(StageTheme.font(11)).foregroundStyle(.secondary) }
                 }
                 Spacer(minLength: 4)
-                Text(listening ? "Listening" : cc.map { "CC \($0)" } ?? "Unassigned").font(StageTheme.font(10, weight: .semibold)).foregroundStyle(listening ? StageTheme.selected : .secondary)
+                Text(listening ? "Listening" : cc.map { "CC \($0)" } ?? "Unassigned").font(StageTheme.font(11, weight: .semibold)).foregroundStyle(listening ? StageTheme.selected : .secondary)
             }.frame(minHeight: 32, alignment: .topLeading)
             HStack {
                 Button(listening ? "Cancel" : "Learn") { if listening { store.learningTarget = nil } else { store.beginMIDILearn(target) } }.buttonStyle(StageButtonStyle(selected: listening)).accessibilityLabel("\(listening ? "Cancel learning" : "Learn") \(target.title)")

@@ -207,7 +207,7 @@ struct EffectKnob: View {
     private var valueField:some View {
             HStack(spacing:4) {
                 TextField(descriptor.name,value:Binding(get:{descriptor.unit == "%" ? value*100 : value},set:{ if $0.isFinite { let raw=descriptor.unit == "%" ? $0/100 : $0; value=min(descriptor.maximum,max(descriptor.minimum,raw)) } }),format:.number.precision(.fractionLength(0...2))).textFieldStyle(.plain).multilineTextAlignment(inline ? .leading:.center).frame(width:inline ? 50:65)
-                Text(descriptor.unit).font(StageTheme.font(10)).foregroundStyle(.secondary)
+                Text(descriptor.unit).font(StageTheme.font(11)).foregroundStyle(.secondary)
             }
     }
     var body:some View {
@@ -328,7 +328,7 @@ struct EffectEditor: View {
     var body: some View {
         EditorFrame(title: replacing ? "Select Effect" : "0\(slot+1) \(draft.title)", width:!replacing && [3,10,13,15,16].contains(draft.kind) ? 640:800,height:!replacing && draft.kind==3 ? 590:!replacing && [10,13,15,16].contains(draft.kind) ? 690:600,showsHeader:replacing) {
             if !replacing {
-                HStack(spacing:5){Text(String(format:"%02d",slot+1)).font(StageTheme.font(10,weight:.bold)).padding(3).background(Color.purple,in:RoundedRectangle(cornerRadius:2));Text(draft.title).font(StageTheme.font(16,weight:.bold))}.frame(maxWidth:.infinity).padding(.top,20).padding(.bottom,16)
+                HStack(spacing:5){Text(String(format:"%02d",slot+1)).font(StageTheme.font(11,weight:.bold)).padding(3).background(Color.purple,in:RoundedRectangle(cornerRadius:2));Text(draft.title).font(StageTheme.font(16,weight:.bold))}.frame(maxWidth:.infinity).padding(.top,20).padding(.bottom,16)
             }
             if store.patch.layers[index].midiDestinationID != nil {
                 Text("This channel sends MIDI to an external host. Configure audio effects in that host.").padding(24); Spacer()
@@ -669,7 +669,7 @@ struct MIDIEffectEditor: View {
                 Button("\(note+1)") {
                     if chord {var notes=program.chordMappings![mapping].output;if notes.contains(note) {notes.removeAll{$0==note}} else {notes.append(note)};program.chordMappings![mapping].output=notes.sorted()}
                     else if sequenceSteps.indices.contains(step) {program.sequenceMappings![mapping].steps[step].pitch=note}
-                }.font(StageTheme.font(10)).frame(maxWidth:.infinity).frame(height:24).buttonStyle(.plain).background(selected ? StageTheme.selected : StageTheme.raised,in:RoundedRectangle(cornerRadius:3)).foregroundStyle(selected ? StageTheme.base : .white).accessibilityLabel("Output note \(noteName(note))")
+                }.font(StageTheme.font(11)).frame(maxWidth:.infinity).frame(height:24).buttonStyle(.plain).background(selected ? StageTheme.selected : StageTheme.raised,in:RoundedRectangle(cornerRadius:3)).foregroundStyle(selected ? StageTheme.base : .white).accessibilityLabel("Output note \(noteName(note))")
             }
         }
     }
