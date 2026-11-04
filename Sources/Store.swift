@@ -2183,6 +2183,7 @@ final class PerformanceStore: ObservableObject {
         } catch { message = error.localizedDescription }
     }
     private func preserveCurrentSetlist() throws {
+        guard !sessionRecoveryRequired, !settingsRecoveryRequired else { throw SetlistLibraryError.recoveryRequired }
         cancelAudition(); capturePluginStates(); try setlist.validate()
         currentSetlistID = try localSetlistLibrary().save(setlist,id:currentSetlistID).id
     }
@@ -2217,6 +2218,19 @@ final class PerformanceStore: ObservableObject {
     func duplicateLocalSetlist(_ id: UUID) {
         do { if id == currentSetlistID { try preserveCurrentSetlist() }; _ = try localSetlistLibrary().duplicate(id:id); refreshSetlists() }
         catch { message = error.localizedDescription }
+    }
+    /// Save an independent local instance; never activate it or restart audio.
+    @discardableResult
+    func createLocalSetlistFromTemplate(_ id: UUID, name: String) -> UUID? {
+        do {
+            let title = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !title.isEmpty, title.count <= 200 else { throw SetlistLibraryError.name }
+            let library = try localSetlistLibrary()
+            if id == currentSetlistID { try preserveCurrentSetlist() }
+            let copy = try library.duplicate(id: id, name: title)
+            refreshSetlists()
+            return copy.id
+        } catch { message = error.localizedDescription; return nil }
     }
     func archiveLocalSetlist(_ id: UUID) {
         guard id != currentSetlistID else { message = "Open another setlist before moving this one to Trash."; return }

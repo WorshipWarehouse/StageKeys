@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Create independent named local setlists from saved templates without switching the performance; add browser sort/search states and protect preserved library copies when session recovery is required.
+
 - Preserve retired-tail Panic/deadline silence through graph completion and failed-edit rollback, including tails evicted before Panic and later restored from a snapshot.
 
 - Add a saved dynamic MIDI-output range display above the keyboard, with per-sound accessible spans after MIDI effects/transposition and unchanged static input ranges by default.

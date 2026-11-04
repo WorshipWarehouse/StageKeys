@@ -234,6 +234,11 @@ struct SetlistBrowser: View {
     @Binding var importing: Bool
     @Binding var exporting: Bool
     @State private var search = ""
+    @State private var order = SetlistBrowserOrder.updated
+    @State private var templateID: UUID?
+    @State private var templateName = ""
+    @State private var creationError: String?
+    private var entries: [SetlistLibraryDescriptor] { order.entries(store.savedSetlists, search: search) }
     @State private var renameID: UUID?
     @State private var renameName = ""
     var body: some View {
@@ -241,14 +246,18 @@ struct SetlistBrowser: View {
             HStack {
                 Button { store.createLocalSetlist() } label: { Label("New Setlist",systemImage:"plus") }.buttonStyle(StageButtonStyle())
                 TextField("Search Setlists",text:$search).textFieldStyle(.roundedBorder)
+                Picker("Sort Setlists", selection: $order) {
+                    ForEach(SetlistBrowserOrder.allCases) { Text($0.title).tag($0) }
+                }.labelsHidden().pickerStyle(.menu).frame(width:170).accessibilityLabel("Sort Setlists")
                 Menu("Import / Export") {
                     Button("Import Setlist…") { dismiss(); DispatchQueue.main.asyncAfter(deadline:.now()+0.4) { importing=true } }
                     Button("Export Current Setlist…") { store.save(); dismiss(); DispatchQueue.main.asyncAfter(deadline:.now()+0.4) { exporting=true } }
                 }
             }.padding(.horizontal,20).padding(.bottom,12)
+            if let creationError { Text(creationError).font(.caption).foregroundStyle(.orange).frame(maxWidth:.infinity,alignment:.leading).padding(.horizontal,20).padding(.bottom,8) }
             ScrollView {
                 LazyVStack(spacing:8) {
-                    ForEach(store.savedSetlists.filter { search.isEmpty || $0.name.localizedCaseInsensitiveContains(search) }) { entry in
+                    ForEach(entries) { entry in
                         HStack {
                             Button { store.openLocalSetlist(entry.id) } label: {
                                 HStack(spacing:12) {
@@ -256,13 +265,17 @@ struct SetlistBrowser: View {
                                     VStack(alignment:.leading,spacing:4) { Text(entry.name).font(StageTheme.font(16,weight:.semibold)); Text("\(entry.patchCount) patches").font(.caption).foregroundStyle(.secondary) }
                                     Spacer()
                                 }.padding(14)
-                            }.buttonStyle(StageButtonStyle(selected:entry.id == store.currentSetlistID))
+                            }.buttonStyle(StageButtonStyle(selected:entry.id == store.currentSetlistID)).accessibilityValue(entry.id == store.currentSetlistID ? "Current setlist" : "Saved setlist")
                             Menu {
                                 Button("Rename…") { renameName=entry.name; renameID=entry.id }
+                                Button("Use as Template…") { creationError=nil; templateName=String(entry.name.prefix(195))+" Copy"; templateID=entry.id }
                                 Button("Duplicate") { store.duplicateLocalSetlist(entry.id) }
                                 Button("Move to Trash",role:.destructive) { store.archiveLocalSetlist(entry.id) }.disabled(entry.id == store.currentSetlistID)
                             } label: { Image(systemName:"ellipsis").frame(width:36,height:44) }.accessibilityLabel("Options for \(entry.name)")
                         }
+                    }
+                    if entries.isEmpty {
+                        Text(store.savedSetlists.isEmpty ? (store.setlistLibraryIssues.isEmpty ? "No saved setlists yet." : "No readable saved setlists.") : "No setlists match your search.").foregroundStyle(.secondary).padding()
                     }
                     if !store.archivedSetlists.isEmpty {
                         DisclosureGroup("Trash · \(store.archivedSetlists.count) setlists") {
@@ -274,10 +287,21 @@ struct SetlistBrowser: View {
             }
             HStack { Text("Stored on this device").font(.caption).foregroundStyle(.secondary); Spacer(); Button("Done") { store.save(); dismiss() }.buttonStyle(StageButtonStyle(selected:true)) }.padding(20)
         }.onAppear { store.save(); store.refreshSetlists() }
-        .alert("Rename Setlist",isPresented:Binding(get:{renameID != nil},set:{if !$0 {renameID=nil}})) {
-            TextField("Name",text:$renameName)
-            Button("Cancel",role:.cancel) { renameID=nil }
-            Button("Save") { if let id=renameID { store.renameLocalSetlist(id,name:renameName) }; renameID=nil }
+        .alert(templateID == nil ? "Rename Setlist" : "New Setlist from Template",isPresented:Binding(get:{renameID != nil || templateID != nil},set:{if !$0 {renameID=nil;templateID=nil}}),presenting:templateID ?? renameID) { id in
+            if templateID != nil {
+                TextField("Name (1–200 characters)",text:$templateName)
+                Button("Create Copy") {
+                    if store.createLocalSetlistFromTemplate(id,name:templateName) != nil { search=""; order = .updated }
+                    else { creationError=store.message ?? "Could not create this setlist. Refresh and try again."; store.message=nil }
+                    templateID=nil
+                }.disabled(templateName.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty || templateName.trimmingCharacters(in:.whitespacesAndNewlines).count > 200)
+            } else {
+                TextField("Name",text:$renameName)
+                Button("Save") { store.renameLocalSetlist(id,name:renameName); renameID=nil }
+            }
+            Button("Cancel",role:.cancel) { renameID=nil;templateID=nil }
+        } message: { _ in
+            if templateID != nil { Text("Saves an independent local setlist. Your current setlist keeps playing; referenced sounds are shared.") }
         }
     }
 }

@@ -18,8 +18,22 @@ import Foundation
         do { try RecoverableSessionFile.write(next, to: url, validate: validate); assertionFailure("Corrupt source overwritten") } catch {}
         assert(try! Data(contentsOf: url) == damaged)
         assert(try! Data(contentsOf: RecoverableSessionFile.previous(url)) == original)
+        let library = try SetlistLibrary(root: root.appendingPathComponent("Setlists"))
+        let preserved = try library.save(first), alternative = try library.save(second)
+        var sessionSettings = SessionSettings(selectedPatchID: nil, activeSnapshotID: nil, notesMode: nil, modWheel: nil)
+        sessionSettings.activeSetlistID = preserved.id
+        try encoder.encode(sessionSettings).write(to: root.appendingPathComponent("settings.json"))
+        let preservedURL = root.appendingPathComponent("Setlists").appendingPathComponent(preserved.id.uuidString + ".json")
+        let preservedBytes = try Data(contentsOf: preservedURL)
         let store = PerformanceStore()
-        assert(store.sessionRecoveryRequired)
+        assert(store.sessionRecoveryRequired && store.currentSetlistID == preserved.id)
+        store.openLocalSetlist(alternative.id)
+        assert(try! Data(contentsOf: preservedURL) == preservedBytes, "Switching after a failed session load must not overwrite its preserved library copy")
+        assert(store.currentSetlistID == preserved.id)
+        store.createLocalSetlist(); store.duplicateLocalSetlist(preserved.id)
+        assert(try! Data(contentsOf: preservedURL) == preservedBytes)
+        assert(try! library.list().entries.count == 2)
+        assert(store.currentSetlistID == preserved.id)
         store.save() // Simulates resign-active autosave after an invalid startup load.
         assert(try! Data(contentsOf: url) == damaged)
         store.recoverPreviousSession()
