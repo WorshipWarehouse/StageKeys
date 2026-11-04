@@ -58,7 +58,7 @@ if args.bundle:
   raise SystemExit('Bundle has no application Info.plist')
  entries = list(args.bundle.rglob('*'))
  paths += [x.relative_to(args.bundle) for x in entries]
- for notice in ('Airwindows-MIT.txt','EXS-Parser-MIT.md','StageKeys-Dense-Reverb-MIT.txt','OFL.txt'):
+ for notice in ('StageKeys-MIT.txt','Airwindows-MIT.txt','EXS-Parser-MIT.md','StageKeys-Dense-Reverb-MIT.txt','OFL.txt'):
   if not any(x.is_file() and x.name == notice for x in entries):
    raise SystemExit('Required bundled license missing: '+notice)
 factory=[]

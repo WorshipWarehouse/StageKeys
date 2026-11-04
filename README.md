@@ -33,13 +33,13 @@ For coordinated model or specialist work, give each contributor a bounded questi
 
 ## Licensing and content
 
-**This repository has no root project-wide `LICENSE`; the license for StageKeys-authored code is unspecified here.** Do not assume the whole app is MIT-licensed or infer reuse permission. The project owner’s license decision is tracked in [issue #64](https://github.com/WorshipWarehouse/StageKeys/issues/64).
+StageKeys-authored code and accompanying documentation are licensed under the [MIT License](LICENSE), selected by the project owner on 4 November 2026. The bundled copy is [`Licenses/StageKeys-MIT.txt`](Licenses/StageKeys-MIT.txt). See the [license decision and scope](Docs/PROJECT-LICENSE.md).
 
-Third-party notices apply only to their stated components and scopes:
+Existing component notices retain their stated terms and attribution:
 
 - Airwindows CreamCoat: MIT — [`Licenses/Airwindows-MIT.txt`](Licenses/Airwindows-MIT.txt).
 - EXS parser-derived implementation: MIT — [`Licenses/EXS-Parser-MIT.md`](Licenses/EXS-Parser-MIT.md).
-- StageKeys DenseReverb: MIT for only the specifically scoped code — [`Licenses/StageKeys-Dense-Reverb-MIT.txt`](Licenses/StageKeys-Dense-Reverb-MIT.txt).
+- StageKeys DenseReverb: MIT; the existing scoped notice is retained — [`Licenses/StageKeys-Dense-Reverb-MIT.txt`](Licenses/StageKeys-Dense-Reverb-MIT.txt).
 - IBM Plex Sans fonts: SIL Open Font License 1.1 — [`Resources/Fonts/OFL.txt`](Resources/Fonts/OFL.txt).
 
 Keep required notices with distributions. Sunday Keys/Sunday Sounds libraries, presets, samples, artwork, and proprietary implementation are not StageKeys assets; a local copy, free download, or ability to import does not establish redistribution permission. See [distribution provenance](Docs/DISTRIBUTION-PROVENANCE.md) and [free-patch audit](Docs/FREE-PATCHES.md). StageKeys is independent and does not claim affiliation or endorsement.

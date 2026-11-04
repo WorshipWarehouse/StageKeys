@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		4D4954000000000000000001 /* StageKeys-MIT.txt in Resources */ = {isa = PBXBuildFile; fileRef = 4D4954000000000000000000 /* StageKeys-MIT.txt */; };
+		4D4954000000000000000002 /* StageKeys-MIT.txt in Resources */ = {isa = PBXBuildFile; fileRef = 4D4954000000000000000000 /* StageKeys-MIT.txt */; };
 		011380B41D29CF79051F2807 /* MIDIControlLearnView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A18F515EF20650FB9ED6539 /* MIDIControlLearnView.swift */; };
 		020E4FBA01E167ADA78313A0 /* AudioEffectParameters.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9E6554DAEB5DF850E413F36 /* AudioEffectParameters.swift */; };
 		02AC3283E911E7E5CA6432ED /* AudioDevices.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64C8CEE30B370832012326CB /* AudioDevices.swift */; };
@@ -126,6 +128,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		4D4954000000000000000000 /* StageKeys-MIT.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = StageKeys-MIT.txt; sourceTree = "<group>"; };
 		06CB1E47D8766D6FCE38E05D /* EXSCaptureCompatibility.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EXSCaptureCompatibility.swift; sourceTree = "<group>"; };
 		08168477F8D489D51C2417D1 /* ExternalInstruments.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExternalInstruments.swift; sourceTree = "<group>"; };
 		0965116E8E05937D142ECF99 /* PerformanceControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PerformanceControls.swift; sourceTree = "<group>"; };
@@ -228,6 +231,7 @@
 		2A8EB411247D4328C56A8F98 /* Licenses */ = {
 			isa = PBXGroup;
 			children = (
+				4D4954000000000000000000 /* StageKeys-MIT.txt */,
 				D4B91BEF3486CE615B3CCBF7 /* Airwindows-MIT.txt */,
 				8533AD9834ADBBCA548AE766 /* StageKeys-Dense-Reverb-MIT.txt */,
 				CFB410416D53204E71F7C3D6 /* EXS-Parser-MIT.md */,
@@ -412,6 +416,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				4D4954000000000000000001 /* StageKeys-MIT.txt in Resources */,
 				1BEBCECF4552A195F45BD1C1 /* Airwindows-MIT.txt in Resources */,
 				87699E3BB2C33B9B07A0DFCE /* StageKeys-Dense-Reverb-MIT.txt in Resources */,
 				FACD85820BEFDE0E65386E3A /* EXS-Parser-MIT.md in Resources */,
@@ -428,6 +433,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				AA11BB22CC33DD44EE55FF01 /* Assets.xcassets in Resources */,
+				4D4954000000000000000002 /* StageKeys-MIT.txt in Resources */,
 				C676D610CDA685ABB7E711AC /* Airwindows-MIT.txt in Resources */,
 				E896DBFDA10D53C590280E7F /* StageKeys-Dense-Reverb-MIT.txt in Resources */,
 				62E6379C6EF8630C450EFBCB /* EXS-Parser-MIT.md in Resources */,

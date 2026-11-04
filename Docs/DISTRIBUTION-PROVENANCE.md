@@ -1,11 +1,14 @@
 # Distribution provenance and verification
 
-Refs #21. The application distribution excludes the private library, imported MainStage/Ableton samples, user setlists and AU state. Private backup does not establish redistribution permission.
+Refs #21. StageKeys-authored code/documentation is MIT-licensed by the owner’s 4 November 2026 decision; see [license scope](PROJECT-LICENSE.md). Root `LICENSE` is retained in source, and `Licenses/StageKeys-MIT.txt` is bundled in both app targets alongside existing notices. This does not complete the independent asset/dependency review or grant vendor-content rights.
+
+ The application distribution excludes the private library, imported MainStage/Ableton samples, user setlists and AU state. Private backup does not establish redistribution permission.
 
 `Tools/check-distribution.py` enforces that exclusion in the source checkout (`--repo`, the first step of `Tools/verify-release.sh`) and in a built bundle (`--bundle`). It refuses absent, symlinked or Info.plist-less bundles and missing dependency notices, and refuses content by file name, extension or path component: sampled audio in formats the app can read, including `.aifc` and `.sd2`; sampler instruments, channel strips and host devices/sets (`.exs`, `.aupreset`, `.cst`, `.alp`, `.adg`, `.als`); MainStage documents (any `.patch` or `.concert` bundle); the app's own data files (`sound-library.json`, `manifest.json`, `setlist.json`, `setlist-v<N>-backup.json`); and anything under `Imported Sounds`. These are name-based backstops against accidental commits, not proof that no private content is present — a file the app renames, such as a per-identity file inside a setlist library, is not detectable by name here.
 
 | Included component | Provenance / retained notice |
 | --- | --- |
+| StageKeys-authored code/documentation | Owner-selected MIT, `LICENSE` / bundled `Licenses/StageKeys-MIT.txt` |
 | IBM Plex Sans fonts | IBM, SIL OFL 1.1, `Resources/Fonts/OFL.txt` |
 | CreamCoat-derived DSP | Airwindows / Chris Johnson, `Licenses/Airwindows-MIT.txt` |
 | EXS parser-derived implementation | Matt Allan and contributors, `Licenses/EXS-Parser-MIT.md` |

@@ -38,7 +38,7 @@ Give each agent a concrete question, allowed evidence, files it may change, and 
 
 ## Licensing and content boundaries
 
-- No repository-root `LICENSE` was found when this guide was added. Unless/until the project owner chooses and adds a project-wide license, treat the license of StageKeys-authored code as **unspecified**; do not label the whole repository MIT or grant reuse rights by inference.
+- The project owner selected MIT for StageKeys-authored code and accompanying documentation on 4 November 2026. Retain the root `LICENSE` and identical bundled `Licenses/StageKeys-MIT.txt`; see `Docs/PROJECT-LICENSE.md`. Existing third-party licenses and attribution retain their own scope and terms.
 - Follow the scope written in each notice: Airwindows CreamCoat MIT (`Licenses/Airwindows-MIT.txt`), EXS parser-derived material MIT (`Licenses/EXS-Parser-MIT.md`), and the specifically scoped StageKeys DenseReverb MIT notice (`Licenses/StageKeys-Dense-Reverb-MIT.txt`). IBM Plex fonts are under SIL OFL 1.1 (`Resources/Fonts/OFL.txt`). Keep required notices with distributions.
 - Sunday Keys/Sunday Sounds libraries, presets, samples, artwork, and proprietary implementation are not StageKeys assets. Their presence on a development machine or being downloadable for free does not establish redistribution permission. Keep them out of source/app distributions and public test fixtures. Use only content the user is authorized to use, for the requested local operation.
 - StageKeys is an independent project. Do not imply endorsement, affiliation, or an official relationship. For legal questions, flag the issue for the owner/counsel rather than giving a definitive legal opinion.
@@ -51,7 +51,7 @@ The project has partial implementations and tests, but the release checklist and
 - MainStage conversion is partial. Unsupported synthesizers (including observed ES2, Retro Synth, Sculpture and other engines), routing, buses, effects, macros, MIDI behavior, modern EXS features, and full layered patches may not translate. A retained source archive is not a playable conversion.
 - Halo Shimmer and several proprietary/source effects have independent approximations; DSP-family identification, spectral tests, or UI matching alone do not prove sonic parity.
 - Physical iPhone/iPad operation, hardware MIDI/audio latency, prolonged live-use soak, some third-party AU behavior, and public signing/notarization/install qualification remain unverified as documented.
-- The repo does not specify a project-wide license. Vendor sample/preset redistribution rights are not established.
+- The StageKeys MIT license does not establish vendor sample/preset redistribution rights; those rights remain unverified.
 - Cloud/Prime workflows are outside the current verified scope. A later AI patch builder is only a proposed independent StageKeys feature; it must use authorized content and the documented StageKeys schema.
 
 Before changing any status, read the relevant current evidence and linked issue. The checklists are acceptance criteria, not proof of completion.

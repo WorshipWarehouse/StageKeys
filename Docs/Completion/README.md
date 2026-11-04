@@ -1,3 +1,5 @@
+> License update, 4 November 2026: the owner selected MIT for StageKeys-authored code/documentation. See [the decision record](../PROJECT-LICENSE.md). References below and in the dated audit package to an unspecified root license describe the earlier audit snapshot, not current licensing. Broader provenance and public distribution remain unqualified.
+
 # StageKeys completion playbook
 
 Research/review checkpoint, **2 November 2026**. Source baseline `6a253130196e8beca471a575a45c1834d52cedf8` matched remote main. This package changes documentation only. It prepares concrete local issue drafts and a dependency-aware plan; it does not implement features, publish issue edits, close issues, sign or distribute an app.
