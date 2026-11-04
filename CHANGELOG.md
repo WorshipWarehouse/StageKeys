@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Validate live resources before publishing previous-session recovery files, retaining the running performance on rejection, and restore the recovered patch’s performed audio tempo.
+
 - Validate patch-locked Tonic Pad resources before live patch/setlist recall, retaining the current pad and performance when the recalled preset is missing or has an unsupported pad map.
 
 - Check known first-patch resources before live setlist open/import so missing samples or unavailable AUs retain the current performance instead of releasing notes and replacing the document.

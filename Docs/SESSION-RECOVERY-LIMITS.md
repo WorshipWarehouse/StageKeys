@@ -1,5 +1,7 @@
 # Oversized session recovery
 
+Follow-up, 4 November 2026: [live session recovery](LIVE-SESSION-RECOVERY.md) adds resource admission before publication during running recovery and restores performed tempo; stopped document-only recovery remains available. The byte-preservation and filesystem limits below remain applicable.
+
 Refs #20. Normal session/backup loading remains limited to 64,000,000 bytes, with schema validation and regular-file checks. Previously explicit recovery also tried to load the damaged primary through that bounded reader; a larger damaged file therefore prevented restoration of an otherwise valid previous session.
 
 Recovery now validates the bounded backup first, copies an existing regular primary to a unique `.damaged-<UUID>` file using filesystem copying, then atomically replaces the primary with the validated backup. It does not decode or load the oversized damaged primary into memory. The previous backup remains intact. Both live and dangling symbolic links, directories and invalid backups are rejected. A failure to preserve the primary aborts recovery before replacement. Available disk space and filesystem copy permissions are still required; this is not a disk-full recovery guarantee.
