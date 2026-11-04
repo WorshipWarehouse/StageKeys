@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Honor Patch Lock during setlist file import and recall the imported patch’s Tonic Pad and performed tempo, including the rendered click clock.
+
 - Create independent named local setlists from saved templates without switching the performance; add browser sort/search states and protect preserved library copies when session recovery is required.
 
 - Preserve retired-tail Panic/deadline silence through graph completion and failed-edit rollback, including tails evicted before Panic and later restored from a snapshot.
