@@ -2187,11 +2187,19 @@ final class PerformanceStore: ObservableObject {
         cancelAudition(); capturePluginStates(); try setlist.validate()
         currentSetlistID = try localSetlistLibrary().save(setlist,id:currentSetlistID).id
     }
+    /// Admission only: reject known missing first-patch resources before any
+    /// current-performance capture, note cleanup, document switch or persistence.
+    private func prepareSetlistActivation(_ candidate: Setlist) throws {
+        if started || audio.running {
+            try audio.preparePatchResources(candidate.patches[0].layers)
+        }
+    }
     func openLocalSetlist(_ id: UUID) {
         guard !patchLock else { message = "Unlock patches before changing setlists."; return }
         guard id != currentSetlistID else { return }
         do {
             let loaded = try localSetlistLibrary().load(id:id)
+            try prepareSetlistActivation(loaded)
             try preserveCurrentSetlist()
             panic(); cancelTransition(); setlist = loaded; currentSetlistID = id; selected = 0; activeSnapshot = nil
             applyPatch(); recallTonicPatch(); audio.clock(performedTempo,metronome); save()
@@ -2246,6 +2254,7 @@ final class PerformanceStore: ObservableObject {
             let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
             guard (attributes[.size] as? NSNumber)?.intValue ?? 0 <= 64_000_000 else { throw SetlistError.invalid }
             let loaded = try JSONDecoder().decode(Setlist.self, from: Data(contentsOf: url)); let upgraded = try loaded.upgraded()
+            try prepareSetlistActivation(upgraded)
             try preserveCurrentSetlist()
             panic(); cancelTransition(); setlist = upgraded; currentSetlistID = nil; selected = 0; activeSnapshot = nil
             applyPatch(); recallTonicPatch(); audio.clock(performedTempo,metronome); save()
