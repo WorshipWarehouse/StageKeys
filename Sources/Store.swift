@@ -1188,7 +1188,23 @@ final class PerformanceStore: ObservableObject {
     }
 
     func duplicate() { guard setlist.patches.count < 128 else { return }; capturePluginStates(); let p = patch.duplicate(); setlist.patches.insert(p, at: selected + 1); choose(selected + 1); save() }
-    func removePatch() { guard setlist.patches.count > 1 else { return }; panic(); cancelTransition(); setlist.patches.remove(at: selected); selected = min(selected, setlist.patches.count - 1); activeSnapshot = nil; applyPatch(); save() }
+    func removePatch() {
+        guard !patchLock, setlist.patches.count > 1 else { return }
+        // The item after the removal index wins, or the predecessor for the
+        // last item. Admit it before deleting or silencing the current patch.
+        let successor = selected == setlist.patches.count - 1 ? selected - 1 : selected + 1
+        if started || audio.running {
+            do { try preparePatchActivation(setlist.patches[successor]) }
+            catch { message = error.localizedDescription; return }
+        }
+        cancelAudition(); panic(); cancelTransition()
+        setlist.patches.remove(at: selected)
+        selected = min(selected, setlist.patches.count - 1); activeSnapshot = nil
+        if patch.visualMode != 0 { notesMode = patch.visualMode == 2 }
+        if !started && !audio.running { audio.prepareOfflineEditing() }
+        else { applyPatch(); recallTonicPatch(); audio.clock(performedTempo, metronome) }
+        save()
+    }
     func saveSnapshot() { captureSnapshot(patch.snapshots.firstIndex(where: { $0.isEmptySlot }) ?? patch.snapshots.count) }
     func recall(_ snapshot: Snapshot) {
         guard !snapshot.isEmptySlot else { return }
