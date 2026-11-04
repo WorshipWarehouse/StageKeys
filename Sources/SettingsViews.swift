@@ -202,6 +202,8 @@ struct SettingsEditor: View {
                         Toggle("Display Played Notes", isOn: $store.showPlayedNotes)
                         Text("Screen playability does not disable your MIDI controller. Hiding played notes only changes key highlights.").font(.caption).foregroundStyle(.secondary)
                         Toggle("Show Layer Ranges", isOn: $store.showRanges)
+                        Toggle("Dynamic MIDI Output Ranges", isOn: $store.dynamicMIDIRanges)
+                        Text("Dynamic ranges show the span of active output notes after MIDI effects and transposition. The span can include unplayed pitches. Sustain and audio tails are excluded.").font(.caption).foregroundStyle(.secondary)
                         Text("192 synth voices are shared by all 15 modules and the tonic pad. Each original synth module has its own voice limit in Sound Settings. Imported instruments manage their own polyphony.").font(.caption).foregroundStyle(.secondary)
                     default:
                         Section("Default Transition") { Slider(value: $store.transition, in: 0...15, step: 0.1); Text("\(store.transition, specifier: "%.1f") seconds") }
