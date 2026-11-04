@@ -1011,7 +1011,7 @@ final class PerformanceStore: ObservableObject {
         pluginInterfaceRequest=nil
         guard !patchLock, setlist.patches.indices.contains(index) else { return }
         if started || audio.running {
-            do { try audio.preparePatchResources(setlist.patches[index].layers) }
+            do { try preparePatchActivation(setlist.patches[index]) }
             catch { message = error.localizedDescription; return }
         }
         cancelAudition(); cancelTransition(); panic(preserveTonic:true,preserveEffectTails:!setlist.patches[index].silencePrevious); capturePluginStates(); selected = index; activeSnapshot = nil
@@ -2187,11 +2187,19 @@ final class PerformanceStore: ObservableObject {
         cancelAudition(); capturePluginStates(); try setlist.validate()
         currentSetlistID = try localSetlistLibrary().save(setlist,id:currentSetlistID).id
     }
-    /// Admission only: reject known missing first-patch resources before any
-    /// current-performance capture, note cleanup, document switch or persistence.
+    /// Admission only; validate the recalled pad even when bypassed because
+    /// recall still installs its saved sound. No graph or live intent is changed.
+    private func preparePatchActivation(_ candidate: Patch) throws {
+        try audio.preparePatchResources(candidate.layers)
+        if let sound = candidate.tonicState?.sound {
+            var layer = Layer.empty(); layer.external = sound
+            try audio.prepareSoundChange(15, layer, revalidateResources: true)
+            _ = try tonicEligibility(sound)
+        }
+    }
     private func prepareSetlistActivation(_ candidate: Setlist) throws {
         if started || audio.running {
-            try audio.preparePatchResources(candidate.patches[0].layers)
+            try preparePatchActivation(candidate.patches[0])
         }
     }
     func openLocalSetlist(_ id: UUID) {

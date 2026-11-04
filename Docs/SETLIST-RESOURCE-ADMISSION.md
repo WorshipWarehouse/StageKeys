@@ -1,5 +1,7 @@
 # Live setlist resource admission
 
+Follow-up, 4 November 2026: [Tonic recall admission](TONIC-RECALL-ADMISSION.md) extends live patch/setlist checks to the separately recalled pad. The pad exclusion below describes this original verification scope. Later graph/AU failures and every-later-patch validation remain outside these admission checks.
+
 Opening a saved setlist or importing JSON previously released held notes and changed the active document before `applyPreparedPatch` checked its resource references. A known missing sample could therefore discard the working selection and stop audio. Patch selection already checked known resources first; setlist activation now uses the same `AudioController.preparePatchResources` admission check for its first patch while the engine/performance is running.
 
 The check runs after document decode/upgrade and before current-state capture, Panic, transition cancellation, document/identity replacement or saving. It validates resource references and installed AU inventory without instantiating an AU or editing the graph. Failure reports the preparation error and retains the current document, unit identity, held notes/sustain, click/tempo, snapshot and source/session/library bytes. A repaired candidate may be retried normally. Stopped editing retains its existing behavior.

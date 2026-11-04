@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Validate patch-locked Tonic Pad resources before live patch/setlist recall, retaining the current pad and performance when the recalled preset is missing or has an unsupported pad map.
+
 - Check known first-patch resources before live setlist open/import so missing samples or unavailable AUs retain the current performance instead of releasing notes and replacing the document.
 
 - Adopt owner-selected MIT licensing for StageKeys-authored code/documentation, retaining existing third-party terms and bundling the project notice on both platforms.
