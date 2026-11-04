@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Adopt owner-selected MIT licensing for StageKeys-authored code/documentation, retaining existing third-party terms and bundling the project notice on both platforms.
+
 - Honor Patch Lock during setlist file import and recall the imported patch’s Tonic Pad and performed tempo, including the rendered click clock.
 
 - Create independent named local setlists from saved templates without switching the performance; add browser sort/search states and protect preserved library copies when session recovery is required.

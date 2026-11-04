@@ -4,7 +4,10 @@ import subprocess
 import tempfile
 
 tool = Path(__file__).resolve().parents[1] / 'Tools/check-distribution.py'
-notices = ('Airwindows-MIT.txt', 'EXS-Parser-MIT.md', 'StageKeys-Dense-Reverb-MIT.txt', 'OFL.txt')
+notices = ('StageKeys-MIT.txt','Airwindows-MIT.txt', 'EXS-Parser-MIT.md', 'StageKeys-Dense-Reverb-MIT.txt', 'OFL.txt')
+
+repo = tool.parent.parent
+assert (repo / 'LICENSE').read_bytes() == (repo / 'Licenses/StageKeys-MIT.txt').read_bytes(), 'Bundled MIT text drifted from root license'
 
 # Naming no target would otherwise report PASS after checking nothing.
 bare = subprocess.run(['python3', str(tool)], capture_output=True)
@@ -25,6 +28,11 @@ with tempfile.TemporaryDirectory() as temporary:
     for notice in notices:
         (resources / notice).write_text('fixture notice')
     check(app, True)
+    for notice in notices:
+        path = resources / notice
+        saved = path.read_bytes(); path.unlink()
+        check(app, False)
+        path.write_bytes(saved)
     (resources / 'private.wav').write_bytes(b'fixture')
     check(app, False)
     (resources / 'private.wav').unlink()
