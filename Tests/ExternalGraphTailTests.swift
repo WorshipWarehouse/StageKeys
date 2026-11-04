@@ -112,7 +112,63 @@ struct ExternalGraphTailTests {
             assert(rack.debugRetiredTailCount <= 2, "Retired graph memory/CPU must be bounded")
         }
         assert(rack.debugRetiredTailCount == 2, "The cap should retain only the two newest tails")
-        print("PASS: synthetic piano/organ/pad graph and instrument switches retain reverb tails, Panic clears them, and the tail pool stays bounded")
+        // Start with clean slots, then create one real wet tail per channel.
+        rack.panic()
+        try rack.withGraphChanges {
+            try rack.remove(0); try rack.remove(1); try rack.remove(2)
+        }
+        rack.panic()
+        try load(keys, channel: 2)
+        for channel in [0,1] {
+            try load(piano, channel: channel)
+            try rack.configureImported(channel: channel, rack: ImportedRack(effects: [reverb()]), tempo: 120)
+            rack.volume(channel: channel, gain: 1, pan: 0)
+            try play(channel)
+            try rack.configureImported(channel: channel, rack: ImportedRack(effects: [reverb(),gain(0)]), tempo: 120)
+        }
+        assert(rack.debugRetiredTailCount == 2)
+        assert(Set(rack.debugRetiredTailStates.map(\.channel)) == Set([0,1]))
+        rack.panic(0, preserveEffectTails: true)
+        assert(rack.debugRetiredTailStates.allSatisfy{!$0.silent && $0.gain > 0})
+        let originalUnit = rack.unit(channel: 2)!
+        let originalNodes = rack.debugOwnedNodeCount
+        rack.volume(channel: 2, gain: 0.2, pan: 0)
+        rack.noteOn(channel: 2, key: 67, pitch: 67, velocity: 0.7, sourceID: 77)
+        do {
+            try rack.withGraphChanges {
+                // Adding this third tail evicts channel 0 before Panic. Rollback
+                // must still remember the later channel-specific silence intent.
+                try rack.remove(2)
+                assert(!rack.debugRetiredTailStates.contains{$0.channel == 0})
+                rack.panic(0)
+                throw NSError(domain: "StageKeysGeneratedTailFailure", code: 941)
+            }
+            assertionFailure("Expected generated graph edit failure")
+        } catch { assert((error as NSError).code == 941) }
+        assert(rack.lastGraphFailure?.rollbackSucceeded == true && rack.unit(channel: 2) === originalUnit)
+        assert(rack.debugOwnedNodeCount == originalNodes && rack.debugRetiredTailCount == 2)
+        let restoredMuted = rack.debugRetiredTailStates.filter{$0.channel == 0}
+        assert(restoredMuted.count == 1 && restoredMuted.allSatisfy{$0.silent && $0.gain == 0}, "Rollback must not revive a tail silenced after its snapshot")
+        assert(rack.debugRetiredTailStates.filter{$0.channel == 1}.allSatisfy{!$0.silent && $0.gain > 0}, "Channel Panic must preserve unrelated tail intent")
+        rack.panic(1) // Exclude the unrelated wet tail from the held-note audio check.
+        assert(rack.debugNoteIntentCount(2) == 1 && (try! render(20)) > 0.000001, "An unrelated held instrument must recover and render")
+
+        // Forward completion also restores mixer settings captured before the
+        // old voice became a tail; it must not undo an in-transaction Panic.
+        rack.panic()
+        try load(piano, channel: 3)
+        try rack.configureImported(channel: 3, rack: ImportedRack(effects: [reverb()]), tempo: 120)
+        rack.volume(channel: 3, gain: 1, pan: 0)
+        try play(3)
+        try rack.withGraphChanges {
+            try load(organ, channel: 3)
+            rack.panic(3)
+        }
+        let forwardMuted = rack.debugRetiredTailStates.filter{$0.channel == 3}
+        assert(!forwardMuted.isEmpty && forwardMuted.allSatisfy{$0.silent && $0.gain == 0}, "Graph completion must not restore a muted tail's gain")
+        _ = try render(8)
+        assert(try! render(40) < 0.000001)
+        print("PASS: generated tail rendering/cap, channel Panic across failed rollback/forward completion, retained unrelated notes and permanent muted tails")
     }
 
     private static func importTone(_ url: URL, frequency: Double, rack: ExternalInstrumentRack) throws -> ExternalSound {

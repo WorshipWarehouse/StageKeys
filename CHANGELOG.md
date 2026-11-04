@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Preserve retired-tail Panic/deadline silence through graph completion and failed-edit rollback, including tails evicted before Panic and later restored from a snapshot.
+
 - Add a saved dynamic MIDI-output range display above the keyboard, with per-sound accessible spans after MIDI effects/transposition and unchanged static input ranges by default.
 
 - Keep level calibration bound to the requested Audio Unit state and the performed tempo; pending/rejected replacements retain their authored state, and probe BPM stays visible when retargeting.

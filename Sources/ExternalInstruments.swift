@@ -182,6 +182,7 @@ final class ExternalInstrumentRack {
         }
     }
     private var retiredTails:[RetiredTail]=[]
+    private var tailPanicGenerations = Array(repeating: UInt64(0), count: 16)
     private let maxRetiredTails=2
     static func supportsEffect(kind: Int) -> Bool { (0...17).contains(kind) }
     /// Legacy names accepted by the adapter; the descriptor API exposes all built-in controls.
@@ -796,6 +797,12 @@ final class ExternalInstrumentRack {
         for (node, gain, pan) in state where node.engine === engine {
             node.outputVolume = gain; node.pan = pan
         }
+        // Mixer snapshots describe topology, not permission to revive a tail
+        // that Panic or its deadline has already made permanently silent.
+        let now = ProcessInfo.processInfo.systemUptime
+        for tail in retiredTails where tail.silent || tail.expiresAt <= now {
+            tail.silent = true; tail.mixer.outputVolume = 0
+        }
     }
     // Reconnecting an AVAudioEngine graph can reinitialize AUSampler and clear
     // its instrument even when start() succeeds. Preserve document state (which
@@ -894,6 +901,7 @@ final class ExternalInstrumentRack {
         let notes: [Int: [Int: NoteIntent]]
         let tails: [RetiredTail]
         let tailSilence: [Bool]
+        let tailPanicGenerations: [UInt64]
         let mixers: [(AVAudioMixerNode, Float, Float)]
         let effects: [(BuiltinEffectUnit, [BuiltinEffectUnit.Setting])]
         let branches: [(ImportedBranchVoice, ImportedBranch, Float)]
@@ -914,7 +922,7 @@ final class ExternalInstrumentRack {
         }
         voices.values.forEach { $0.parallel.forEach(capture) }
         return Rollback(nodes: nodes, routes: routes, voices: voices, controllers: controllerValues,
-            notes: noteIntents, tails: retiredTails, tailSilence: retiredTails.map(\.silent),
+            notes: noteIntents, tails: retiredTails, tailSilence: retiredTails.map(\.silent), tailPanicGenerations: tailPanicGenerations,
             mixers: (nodes.compactMap { $0 as? AVAudioMixerNode } + [engine.mainMixerNode]).map { ($0, $0.outputVolume, $0.pan) },
             effects: nodes.compactMap { ($0 as? AVAudioUnit)?.auAudioUnit as? BuiltinEffectUnit }.map { ($0, $0.configurationSnapshot()) }, branches: branches)
     }
@@ -931,7 +939,9 @@ final class ExternalInstrumentRack {
         voices = snapshot.voices; controllerValues = snapshot.controllers; noteIntents = snapshot.notes
         retiredTails = snapshot.tails
         for (index, tail) in retiredTails.enumerated() {
-            tail.silent = snapshot.tailSilence[index]
+            let newerPanic = tailPanicGenerations.indices.contains(tail.channel) &&
+                tailPanicGenerations[tail.channel] != snapshot.tailPanicGenerations[tail.channel]
+            tail.silent = tail.silent || snapshot.tailSilence[index] || newerPanic || tail.expiresAt <= ProcessInfo.processInfo.systemUptime
             scheduleTailExpiry(tail)
         }
         for (unit, state) in states.reversed() where oldIDs.contains(ObjectIdentifier(unit)) {
@@ -1105,8 +1115,8 @@ final class ExternalInstrumentRack {
         let unique=nodes.filter{seen.insert(ObjectIdentifier($0)).inserted}
         let tail=RetiredTail(channel:channel,nodes:unique,mixer:mixer)
         retiredTails.append(tail)
-        // Repeated switches must not accumulate graphs or CPU. The oldest tail
-        // is already silent enough to drop when this bound is exceeded.
+        // Hard count bound: deliberately truncate the oldest tail if needed,
+        // even if it is still audible. This is not a measured CPU/memory budget.
         while retiredTails.count>maxRetiredTails {
             detachRetiredTail(retiredTails.removeFirst())
         }
@@ -1328,6 +1338,9 @@ final class ExternalInstrumentRack {
     func panic(_ channel: Int? = nil,preserveEffectTails:Bool=false) {
         precondition(Thread.isMainThread)
         if !preserveEffectTails {
+            for index in channel.map({ [$0] }) ?? Array(tailPanicGenerations.indices) where tailPanicGenerations.indices.contains(index) {
+                tailPanicGenerations[index] &+= 1
+            }
             for tail in retiredTails where channel.map({$0 == tail.channel}) ?? true {silenceRetiredTail(tail)}
         }
         for index in channel.map({ [$0] }) ?? Array(voices.keys) {
@@ -1352,6 +1365,7 @@ final class ExternalInstrumentRack {
     func debugNoteIntentCount(_ channel: Int) -> Int { noteIntents[channel]?.count ?? 0 }
     var debugOwnedNodeCount: Int { graphNodes().count }
     var debugRetiredTailCount:Int {retiredTails.count}
+    var debugRetiredTailStates:[(channel:Int,silent:Bool,gain:Float)] {retiredTails.map{($0.channel,$0.silent,$0.mixer.outputVolume)}}
     func debugExpireRetiredTails() {for tail in retiredTails {silenceRetiredTail(tail)}}
     #endif
     func restoreState(_ state: [String: Any], channel: Int) {
