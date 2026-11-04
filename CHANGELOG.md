@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Preflight the successor before removing a live patch, honor Patch Lock in the Store, recall successor pad/tempo/visual mode and keep stopped removal free of instrument loading.
+
 - Validate live resources before publishing previous-session recovery files, retaining the running performance on rejection, and restore the recovered patch’s performed audio tempo.
 
 - Validate patch-locked Tonic Pad resources before live patch/setlist recall, retaining the current pad and performance when the recalled preset is missing or has an unsupported pad map.
