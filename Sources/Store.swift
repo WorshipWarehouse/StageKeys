@@ -2159,12 +2159,17 @@ final class PerformanceStore: ObservableObject {
     func recoverPreviousSession() {
         do {
             if sessionRecoveryRequired {
-                let data = try RecoverableSessionFile.restore(saveURL) { _ = try JSONDecoder().decode(Setlist.self, from: $0).upgraded() }
+                let data = try RecoverableSessionFile.restore(saveURL) {
+                    let candidate = try JSONDecoder().decode(Setlist.self, from: $0).upgraded()
+                    // Validate live admission before publishing recovery bytes or
+                    // releasing the currently working performance.
+                    try prepareSetlistActivation(candidate)
+                }
                 let recovered = try JSONDecoder().decode(Setlist.self, from: data).upgraded()
                 panic(); cancelAudition(); cancelTransition()
                 setlist = recovered; selected = 0; activeSnapshot = nil; currentSetlistID = nil
                 sessionRecoveryRequired = false
-                if started { applyPatch(); recallTonicPatch() }
+                if started { applyPatch(); recallTonicPatch(); audio.clock(performedTempo, metronome) }
             }
             if settingsRecoveryRequired {
                 _ = try RecoverableSessionFile.restore(saveURL.deletingLastPathComponent().appendingPathComponent("settings.json")) {
