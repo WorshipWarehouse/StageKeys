@@ -2240,13 +2240,15 @@ final class PerformanceStore: ObservableObject {
         do { _ = try localSetlistLibrary().restore(token:token); refreshSetlists() } catch { message = error.localizedDescription }
     }
     func load(_ url: URL) {
+        guard !patchLock else { message = "Unlock patches before changing setlists."; return }
         let access = url.startAccessingSecurityScopedResource(); defer { if access { url.stopAccessingSecurityScopedResource() } }
         do {
             let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
             guard (attributes[.size] as? NSNumber)?.intValue ?? 0 <= 64_000_000 else { throw SetlistError.invalid }
             let loaded = try JSONDecoder().decode(Setlist.self, from: Data(contentsOf: url)); let upgraded = try loaded.upgraded()
             try preserveCurrentSetlist()
-            panic(); cancelTransition(); setlist = upgraded; currentSetlistID = nil; selected = 0; activeSnapshot = nil; applyPatch(); save()
+            panic(); cancelTransition(); setlist = upgraded; currentSetlistID = nil; selected = 0; activeSnapshot = nil
+            applyPatch(); recallTonicPatch(); audio.clock(performedTempo,metronome); save()
         } catch { message = "Could not import: \(error.localizedDescription)" }
     }
     deinit { snapshotTimer?.invalidate(); notifications.forEach(NotificationCenter.default.removeObserver) }
