@@ -72,9 +72,10 @@ struct SetlistTrashInventory {
     var issues: [SetlistLibraryIssue]
 }
 enum SetlistLibraryError: LocalizedError {
-    case full, oversized, unsafeFile, name, restoreConflict
+    case full, oversized, unsafeFile, name, restoreConflict, recoveryRequired
     var errorDescription: String? {
         switch self {
+        case .recoveryRequired: return "Recover the saved session data in Settings before changing or copying the active setlist."
         case .full: return "The local library holds up to 128 setlists. Move a setlist to Trash before adding another."
         case .oversized: return "This setlist exceeds the 64 MB file limit."
         case .unsafeFile: return "The setlist file is not a regular local library file."
@@ -221,5 +222,22 @@ final class SetlistLibrary {
         // Keep the Trash record as an additional recovery copy. Restore never
         // permanently removes the user's only historical backup.
         return restored
+    }
+}
+
+/// Read-only browser projection. Modification time is not last-opened history.
+enum SetlistBrowserOrder: String, CaseIterable, Identifiable, Hashable {
+    case updated, name
+    var id: String { rawValue }
+    var title: String { self == .updated ? "Recently Updated" : "Name A–Z" }
+    func entries(_ source: [SetlistLibraryDescriptor], search: String) -> [SetlistLibraryDescriptor] {
+        let query = search.trimmingCharacters(in: .whitespacesAndNewlines)
+        return source.filter { query.isEmpty || $0.name.localizedCaseInsensitiveContains(query) }.sorted { left, right in
+            if self == .name {
+                let comparison = left.name.localizedCaseInsensitiveCompare(right.name)
+                if comparison != .orderedSame { return comparison == .orderedAscending }
+            } else if left.modifiedDate != right.modifiedDate { return left.modifiedDate > right.modifiedDate }
+            return left.id.uuidString < right.id.uuidString
+        }
     }
 }
