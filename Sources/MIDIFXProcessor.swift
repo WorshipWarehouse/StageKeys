@@ -22,6 +22,7 @@ final class MIDIFXProcessor {
         var nextRetrigger: TimeInterval?
     }
     private var channels: [Int: Channel] = [:]
+    private var outputPitches: [Int: [Int: Int]] = [:]
     private var tempo: Double = 72
     private var generatedKey = -1
     private var timer: Timer?
@@ -57,7 +58,23 @@ final class MIDIFXProcessor {
         silence(channel)
         channels[channel] = Channel(program: program.validated)
     }
-    private func notify(_ channel:Int,_ key:Int,_ pitch:Int,_ velocity:Float,_ source:Int32?){onNote?(channel,key,pitch,velocity);onNoteWithSource?(channel,key,pitch,velocity,source)}
+    private func notify(_ channel:Int,_ key:Int,_ pitch:Int,_ velocity:Float,_ source:Int32?){outputPitches[channel,default:[:]][key]=pitch;onNote?(channel,key,pitch,velocity);onNoteWithSource?(channel,key,pitch,velocity,source)}
+    private func release(_ channel: Int, _ key: Int, _ force: Bool) {
+        outputPitches[channel]?.removeValue(forKey: key)
+        onOff?(channel, key, force)
+    }
+    /// Main-thread visual snapshot of gated output notes, excluding sustain and
+    /// audio-effect tails. Queries never emit MIDI or alter scheduler state.
+    func activeOutputRange(channel: Int, transpose: Int = 0) -> ClosedRange<Int>? {
+        guard let pitches = outputPitches[channel] else { return nil }
+        var low = 128, high = -1
+        for pitch in pitches.values {
+            let (output, overflow) = pitch.addingReportingOverflow(transpose)
+            guard !overflow, (0...127).contains(output) else { continue }
+            low = min(low, output); high = max(high, output)
+        }
+        return high >= low ? low...high : nil
+    }
     private func newKey() -> Int {
         let key = generatedKey
         generatedKey = generatedKey == Int.min + 1 ? -1 : generatedKey - 1
@@ -115,14 +132,14 @@ final class MIDIFXProcessor {
         c.released.remove(key)
         c.held.removeAll { $0.key == key }
         if force || c.program.releaseGeneratedOnKeyUp != false {
-            for a in c.active where a.source == key { onOff?(channel, a.key, true) }
+            for a in c.active where a.source == key { release(channel, a.key, true) }
             c.active.removeAll { $0.source == key }
         }
         let direct = c.direct.removeValue(forKey: key) ?? []
-        for k in direct { onOff?(channel, k, false) }
+        for k in direct { release(channel, k, false) }
         if c.held.isEmpty {
             if c.program.releaseGeneratedOnKeyUp != false {
-                for a in c.active { onOff?(channel, a.key, true) };c.active.removeAll()
+                for a in c.active { release(channel, a.key, true) };c.active.removeAll()
             }
             c.next = nil;c.nextRetrigger=nil;c.velocityBegan=nil; c.index = 0
         }
@@ -135,7 +152,7 @@ final class MIDIFXProcessor {
         time = now
         for channel in channels.keys.sorted() {
             guard var c = channels[channel] else { continue }
-            for a in c.active where a.release <= now { onOff?(channel, a.key, c.program.releaseGeneratedOnKeyUp != false) }
+            for a in c.active where a.release <= now { release(channel, a.key, c.program.releaseGeneratedOnKeyUp != false) }
             c.active.removeAll { $0.release <= now }
             if let beat=c.nextRetrigger,beat<=now,let beats=c.program.retriggerBeats {
                 c.index=0;c.next=now;c.began=now;c.nominalBeat=0;c.nextRetrigger=now+60/tempo*beats
@@ -191,7 +208,7 @@ final class MIDIFXProcessor {
                     velocity=rawVelocity+(target-rawVelocity)*fraction
                 }
                 // MIDI note-off cannot distinguish overlapping instances of the same pitch.
-                for old in c.active where old.pitch==pitch {onOff?(channel,old.key,c.program.releaseGeneratedOnKeyUp != false)}
+                for old in c.active where old.pitch==pitch {release(channel,old.key,c.program.releaseGeneratedOnKeyUp != false)}
                 c.active.removeAll{$0.pitch==pitch}
                 if let key = emit(channel: channel, pitch: pitch, velocity: velocity,sourceID:c.held.first(where:{$0.key==source})?.sourceID) {
                     c.active.append(Active(key: key, release: now + period * c.program.gate, source: source,pitch:pitch,sourceID:c.held.first(where:{$0.key==source})?.sourceID))
@@ -242,8 +259,8 @@ final class MIDIFXProcessor {
     }
     private func silence(_ channel: Int) {
         guard let c = channels[channel] else { return }
-        for keys in c.direct.values { for key in keys { onOff?(channel, key, true) } }
-        for a in c.active { onOff?(channel, a.key, true) }
+        for keys in c.direct.values { for key in keys { release(channel, key, true) } }
+        for a in c.active { release(channel, a.key, true) }
     }
     func panic(channel: Int) {
         silence(channel)

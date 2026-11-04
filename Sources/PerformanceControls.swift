@@ -232,19 +232,32 @@ struct KeyboardWorkspace: View {
             ModulationWheel(value:$store.modWheel).frame(width:48)
             VStack(spacing: 5) {
                 if store.showRanges {
-                    VStack(spacing: 2) {
-                        ForEach(Array(store.displayedLayers.enumerated()).filter { $0.element.loaded }.reversed(), id: \.element.id) { index, layer in
-                            GeometryReader { g in
-                                let lo = max(21, layer.low), hi = min(108, layer.high)
-                                if hi >= lo { RoundedRectangle(cornerRadius: 3).fill(StageTheme.colors[index].opacity(layer.muted ? 0.25 : 0.95)).frame(width: max(2, g.size.width * (PianoGeometry.position(hi) - PianoGeometry.position(lo) + 1) / 52)).offset(x: g.size.width * max(0, PianoGeometry.position(lo)-0.5) / 52) }
-                            }.frame(height: 15)
+                    if store.dynamicMIDIRanges {
+                        VStack(spacing: 2) {
+                            Text("Active MIDI output spans").font(.caption).foregroundStyle(.secondary)
+                            TimelineView(.periodic(from: .now, by: 0.05)) { _ in rangeBands }
                         }
-                    }.frame(maxHeight: 85).accessibilityLabel("Sound layer ranges")
+                    } else { rangeBands }
                 }
                 PianoKeyboard().disabled(!store.started).opacity(store.started ? 1 : 0.5)
             }
         }.padding(8).background(StageTheme.panel.opacity(0.7), in: RoundedRectangle(cornerRadius: 8))
     }
+    private var rangeBands: some View {
+        VStack(spacing: 2) {
+            ForEach(Array(store.displayedLayers.enumerated()).filter { $0.element.loaded }.reversed(), id: \.element.id) { index, layer in
+                GeometryReader { g in
+                    if let range = store.displayedLayerRange(index) {
+                        let lo = max(21, range.lowerBound), hi = min(108, range.upperBound)
+                        if hi >= lo { RoundedRectangle(cornerRadius: 3).fill(StageTheme.colors[index].opacity(layer.muted ? 0.25 : 0.95)).frame(width: max(2, g.size.width * (PianoGeometry.position(hi) - PianoGeometry.position(lo) + 1) / 52)).offset(x: g.size.width * max(0, PianoGeometry.position(lo)-0.5) / 52) }
+                    }
+                }.frame(minHeight: 2, maxHeight: 15).accessibilityElement(children: .ignore)
+                    .accessibilityLabel("Sound \(index + 1): \(layer.name)")
+                    .accessibilityValue(store.displayedLayerRange(index).map { "MIDI \($0.lowerBound) through \($0.upperBound)" } ?? "No active MIDI output")
+            }
+        }.frame(maxHeight: 85).accessibilityElement(children: .contain).accessibilityLabel(store.dynamicMIDIRanges ? "Active MIDI output spans" : "Sound layer input ranges")
+    }
+
 }
 struct PianoKeyboard: View {
     var body: some View {
