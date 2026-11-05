@@ -16,6 +16,18 @@
 				<string>studio.stagekeys.personal-pack</string>
 			</array>
 		</dict>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>StageKeys Setlist Share</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Owner</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>studio.stagekeys.setlist-share</string>
+			</array>
+		</dict>
 	</array>
 	<key>UTExportedTypeDeclarations</key>
 	<array>
@@ -37,6 +49,36 @@
 				<key>public.mime-type</key>
 				<string>application/vnd.stagekeys.personal-pack</string>
 			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>studio.stagekeys.setlist-share</string>
+			<key>UTTypeDescription</key>
+			<string>StageKeys Setlist Share</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.json</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>stagekeyssetlist</string>
+				</array>
+				<key>public.mime-type</key>
+				<string>application/vnd.stagekeys.setlist-share</string>
+			</dict>
+		</dict>
+	</array>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>studio.stagekeys.setlist-share</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>stagekeys</string>
+			</array>
 		</dict>
 	</array>
 	<key>LSSupportsOpeningDocumentsInPlace</key>

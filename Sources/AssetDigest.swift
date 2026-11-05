@@ -3,6 +3,9 @@ import CryptoKit
 
 /// Streaming content identity for original instruments, samples and library packs.
 enum AssetDigest {
+    static func sha256(_ data: Data) -> String {
+        SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    }
     static func sha256(_ url:URL)throws->String {
         let handle=try FileHandle(forReadingFrom:url);defer{try? handle.close()}
         var hash=SHA256()

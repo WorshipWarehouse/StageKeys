@@ -21,8 +21,14 @@ targets:
       path: Resources/Info-macOS.plist
       properties:
         CFBundleIconFile: StageKeys
-        CFBundleDocumentTypes: [{"CFBundleTypeName": "StageKeys Personal Sound Pack", "CFBundleTypeRole": "Viewer", "LSHandlerRank": "Owner", "LSItemContentTypes": ["studio.stagekeys.personal-pack"]}]
-        UTExportedTypeDeclarations: [{"UTTypeIdentifier": "studio.stagekeys.personal-pack", "UTTypeDescription": "StageKeys Personal Sound Pack", "UTTypeConformsTo": ["public.data"], "UTTypeTagSpecification": {"public.filename-extension": ["stagekeyspack"], "public.mime-type": "application/vnd.stagekeys.personal-pack"}}]
+        CFBundleDocumentTypes:
+          - {"CFBundleTypeName": "StageKeys Personal Sound Pack", "CFBundleTypeRole": "Viewer", "LSHandlerRank": "Owner", "LSItemContentTypes": ["studio.stagekeys.personal-pack"]}
+          - {"CFBundleTypeName": "StageKeys Setlist Share", "CFBundleTypeRole": "Viewer", "LSHandlerRank": "Owner", "LSItemContentTypes": ["studio.stagekeys.setlist-share"]}
+        UTExportedTypeDeclarations:
+          - {"UTTypeIdentifier": "studio.stagekeys.personal-pack", "UTTypeDescription": "StageKeys Personal Sound Pack", "UTTypeConformsTo": ["public.data"], "UTTypeTagSpecification": {"public.filename-extension": ["stagekeyspack"], "public.mime-type": "application/vnd.stagekeys.personal-pack"}}
+          - {"UTTypeIdentifier": "studio.stagekeys.setlist-share", "UTTypeDescription": "StageKeys Setlist Share", "UTTypeConformsTo": ["public.json"], "UTTypeTagSpecification": {"public.filename-extension": ["stagekeyssetlist"], "public.mime-type": "application/vnd.stagekeys.setlist-share"}}
+        CFBundleURLTypes:
+          - {"CFBundleURLName": "studio.stagekeys.setlist-share", "CFBundleURLSchemes": ["stagekeys"]}
         LSSupportsOpeningDocumentsInPlace: true
     sources:
       - path: Sources
@@ -49,8 +55,14 @@ targets:
     info:
       path: Resources/Info-iOS.plist
       properties:
-        CFBundleDocumentTypes: [{"CFBundleTypeName": "StageKeys Personal Sound Pack", "CFBundleTypeRole": "Viewer", "LSHandlerRank": "Owner", "LSItemContentTypes": ["studio.stagekeys.personal-pack"]}]
-        UTExportedTypeDeclarations: [{"UTTypeIdentifier": "studio.stagekeys.personal-pack", "UTTypeDescription": "StageKeys Personal Sound Pack", "UTTypeConformsTo": ["public.data"], "UTTypeTagSpecification": {"public.filename-extension": ["stagekeyspack"], "public.mime-type": "application/vnd.stagekeys.personal-pack"}}]
+        CFBundleDocumentTypes:
+          - {"CFBundleTypeName": "StageKeys Personal Sound Pack", "CFBundleTypeRole": "Viewer", "LSHandlerRank": "Owner", "LSItemContentTypes": ["studio.stagekeys.personal-pack"]}
+          - {"CFBundleTypeName": "StageKeys Setlist Share", "CFBundleTypeRole": "Viewer", "LSHandlerRank": "Owner", "LSItemContentTypes": ["studio.stagekeys.setlist-share"]}
+        UTExportedTypeDeclarations:
+          - {"UTTypeIdentifier": "studio.stagekeys.personal-pack", "UTTypeDescription": "StageKeys Personal Sound Pack", "UTTypeConformsTo": ["public.data"], "UTTypeTagSpecification": {"public.filename-extension": ["stagekeyspack"], "public.mime-type": "application/vnd.stagekeys.personal-pack"}}
+          - {"UTTypeIdentifier": "studio.stagekeys.setlist-share", "UTTypeDescription": "StageKeys Setlist Share", "UTTypeConformsTo": ["public.json"], "UTTypeTagSpecification": {"public.filename-extension": ["stagekeyssetlist"], "public.mime-type": "application/vnd.stagekeys.setlist-share"}}
+        CFBundleURLTypes:
+          - {"CFBundleURLName": "studio.stagekeys.setlist-share", "CFBundleURLSchemes": ["stagekeys"]}
         LSSupportsOpeningDocumentsInPlace: true
     sources:
       - path: Sources

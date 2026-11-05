@@ -654,6 +654,7 @@ final class PerformanceStore: ObservableObject {
     }
     @Published var libraryImportProgress:String?
     @Published var savedSetlists: [SetlistLibraryDescriptor] = []
+    @Published var pendingSetlistShare: SetlistShareImportPlan?
     @Published var setlistLibraryIssues: [SetlistLibraryIssue] = []
     @Published var archivedSetlists: [SetlistTrashEntry] = []
     @Published var currentSetlistID: UUID?
@@ -2357,6 +2358,90 @@ final class PerformanceStore: ObservableObject {
             return copy.id
         } catch { message = error.localizedDescription; return nil }
     }
+    /// Export the current document or a saved copy as a portable package. This
+    /// does not save, activate, or restart audio and never includes sample bytes.
+    func prepareSetlistShare(id: UUID? = nil) -> (name: String, data: Data)? {
+        do {
+            let source: Setlist
+            if let id, id != currentSetlistID { source = try localSetlistLibrary().load(id: id) }
+            else { source = setlist }
+            let package = try SetlistShare.make(source)
+            return (package.content.setlist.name, try SetlistShare.encode(package))
+        } catch {
+            message = "Could not prepare this setlist share: \(error.localizedDescription)"
+            return nil
+        }
+    }
+    func prepareSetlistShareLink(id: UUID? = nil) -> URL? {
+        do {
+            let source: Setlist
+            if let id, id != currentSetlistID { source = try localSetlistLibrary().load(id: id) }
+            else { source = setlist }
+            return try SetlistShareLink.url(for: SetlistShare.make(source))
+        } catch {
+            message = "Could not prepare this setlist link: \(error.localizedDescription)"
+            return nil
+        }
+    }
+    /// Read and validate a file before showing the import plan. Nothing is
+    /// written and the current performance is untouched at this stage. Clear a
+    /// previous plan first so a failed read cannot leave an older share active.
+    func previewSetlistShare(_ url: URL) {
+        pendingSetlistShare = nil
+        let access = url.startAccessingSecurityScopedResource()
+        defer { if access { url.stopAccessingSecurityScopedResource() } }
+        do { try presentSetlistShare(SetlistShare.read(url)) }
+        catch { message = "Could not import this setlist share: \(error.localizedDescription)" }
+    }
+    func previewSetlistShare(link: URL) {
+        pendingSetlistShare = nil
+        do { try presentSetlistShare(SetlistShareLink.package(from: link)) }
+        catch { message = "Could not import this setlist link: \(error.localizedDescription)" }
+    }
+    func dismissSetlistShare() { pendingSetlistShare = nil }
+    func completeSetlistShare(_ action: SetlistShareImportPlan.Action) {
+        guard let plan = pendingSetlistShare else { return }
+        do {
+            switch action {
+            case .saveToLibrary:
+                _ = try SetlistShare.saveToLibrary(plan, library: try localSetlistLibrary())
+                refreshSetlists()
+                message = "Saved “\(plan.proposedName)” to Setlists. The current performance was not changed."
+            case .saveAndLoad:
+                guard !patchLock else { throw SetlistShareError.activationBlocked("Unlock patches before opening a shared setlist.") }
+                guard !sessionRecoveryRequired, !settingsRecoveryRequired else {
+                    throw SetlistShareError.activationBlocked("Recover the previous session in Settings before loading an imported setlist.")
+                }
+                guard plan.canActivate else { throw SetlistShareError.activationBlocked("Install the missing sounds or save this setlist to the library instead.") }
+                let library = try localSetlistLibrary()
+                try prepareSetlistActivation(plan.setlist)
+                try preserveCurrentSetlist()
+                let id = try SetlistShare.saveToLibrary(plan, library: library)
+                panic(); cancelTransition(); setlist = plan.setlist; currentSetlistID = id; selected = 0; activeSnapshot = nil
+                applyPatch(); recallTonicPatch(); audio.clock(performedTempo, metronome); save(); refreshSetlists()
+            }
+            pendingSetlistShare = nil
+        } catch { message = "Could not import this setlist share: \(error.localizedDescription)" }
+    }
+    private func presentSetlistShare(_ package: SetlistSharePackage) throws {
+        let plan = try SetlistShare.preview(package, library: try localSetlistLibrary()) { [weak self] sound in
+            guard let self else { return "StageKeys is not available." }
+            if let rack = self.audio.externalRack {
+                do { try rack.validateSound(sound); return nil }
+                catch { return error.localizedDescription }
+            }
+            guard sound.kind == .audioUnit, let component = sound.component else {
+                return "Start StageKeys audio to check this imported sound on this device."
+            }
+            #if os(iOS)
+            let mobile = true
+            #else
+            let mobile = false
+            #endif
+            return ExternalAUCatalog.unavailableReason(for: component, installed: ExternalInstrumentRack.instruments(), isMobile: mobile)
+        }
+        pendingSetlistShare = plan
+    }
     func archiveLocalSetlist(_ id: UUID) {
         guard id != currentSetlistID else { message = "Open another setlist before moving this one to Trash."; return }
         do { _ = try localSetlistLibrary().delete(id:id); refreshSetlists() } catch { message = error.localizedDescription }
@@ -2385,4 +2470,21 @@ struct SetlistFile: FileDocument {
     init(_ setlist: Setlist) { self.setlist = setlist }
     init(configuration: ReadConfiguration) throws { setlist = try JSONDecoder().decode(Setlist.self, from: configuration.file.regularFileContents ?? Data()).upgraded() }
     func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper { try setlist.validate(); let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys]; let data = try encoder.encode(setlist); guard data.count <= 64_000_000 else { throw SetlistError.invalid }; return FileWrapper(regularFileWithContents: data) }
+}
+/// The document is already a sealed, checksummed package. Writing revalidates it
+/// so a caller cannot hand the exporter arbitrary bytes under the share type.
+struct SetlistShareFile: FileDocument {
+    static var readableContentTypes: [UTType] { [.stageKeysSetlistShare] }
+    static var writableContentTypes: [UTType] { [.stageKeysSetlistShare] }
+    var data: Data
+    init(data: Data = Data()) { self.data = data }
+    init(configuration: ReadConfiguration) throws {
+        let bytes = configuration.file.regularFileContents ?? Data()
+        _ = try SetlistSharePackage.decode(bytes)
+        data = bytes
+    }
+    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
+        _ = try SetlistSharePackage.decode(data)
+        return FileWrapper(regularFileWithContents: data)
+    }
 }
