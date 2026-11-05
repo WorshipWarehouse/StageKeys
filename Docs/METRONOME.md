@@ -32,7 +32,9 @@ Tempo remains the patch tempo (20…300 BPM), so Tap Tempo and the patch control
 update the click. Time signature, tempo and patch/snapshot identity are not
 duplicated inside the metronome. When external clock sync is active, the
 derived clock tempo is shown and used by tempo-synced effects/MIDI FX for the
-duration of the clock run; the patch’s stored tempo is not overwritten.
+duration of the clock run. A tempo edit made during sync is stored as the
+internal patch/live tempo for use after Stop; it does not replace the external
+BPM while the clock owns the timing.
 
 ## Engine behavior
 
@@ -57,6 +59,9 @@ duration of the clock run; the patch’s stored tempo is not overwritten.
   retriggering the current click. Ticks received while stopped are ignored for
   tempo, a discontinuous interval resets the measurement window, and losing the
   source that supplied the clock stops the click and restores the stored tempo.
+  Only one configured source owns a run: Start or Continue selects it, and
+  ticks or Stop from the other source are ignored until the owner stops or
+  disconnects. The owner can restart the run with another Start.
 - Clock ticks reserve queue capacity for Start/Continue/Stop, so a burst of
   pulses cannot make the render thread drop a later Stop when it is delayed.
 - Two presets are generated from a sine burst (Click) and a mixed sine/noise
@@ -102,6 +107,8 @@ scales that peak, and 100% is not a measured sound-pressure level.
 settings, JSON round trips, legacy settings without the metronome block and
 rejection of out-of-range values. It also checks the pure MIDI Clock tempo
 converter, including a reset and a gap that must not be smoothed into tempo.
+The Store-level source-ownership and tempo-storage rules are not covered by the
+C harness; they require the Swift/app test run on macOS.
 `Tests/RackTests.c` retains a guard that the synth clock no longer renders a
 click, which would double-trigger the app metronome.
 
