@@ -25,10 +25,14 @@ Settings → Metronome exposes, and `settings.json` persists, every control:
 | Subdivision | Beats, Eighths, Triplets, Sixteenths | Beats | Adds softer clicks at 55% of the beat velocity. |
 | Beats per bar | 1…16 | 4 | Moves the downbeat. The performance time signature is still displayed as 4/4. |
 | Master volume controls the metronome | on/off | on | When off, the click keeps its own level as the master fader moves. |
+| Count-in bars | 0…8 | 1 | Length of the one-shot **Count In** action. Zero hides the action. |
+| Follow external MIDI clock | on/off | off | Uses MIDI Clock (24 PPQN) Start/Continue/Stop instead of starting the click directly. |
 
 Tempo remains the patch tempo (20…300 BPM), so Tap Tempo and the patch controls
 update the click. Time signature, tempo and patch/snapshot identity are not
-duplicated inside the metronome.
+duplicated inside the metronome. When external clock sync is active, the
+derived clock tempo is shown and used by tempo-synced effects/MIDI FX for the
+duration of the clock run; the patch’s stored tempo is not overwritten.
 
 ## Engine behavior
 
@@ -39,6 +43,16 @@ duplicated inside the metronome.
 - Disabling the metronome truncates the click immediately. Panic silences the
   current click and schedules the next one a full interval later. Turning the
   metronome on starts a fresh bar immediately.
+- **Count In** starts on a downbeat for the configured number of bars. If the
+  click was off it stops after the last count-in bar; if the click was already
+  on it continues without a second start or a phase jump. Count-in uses the
+  internal clock and is unavailable while external clock sync is on.
+- **External MIDI clock** follows 24-pulse-per-quarter MIDI Clock. It ignores
+  Song Position Pointer: Start resets to the first beat, Continue resumes on
+  the next beat, and Stop silences the click without discarding the saved
+  click setting. Tempo is smoothed from the 24-pulse interval and applied at a
+  quarter-note boundary, so a change scales the pending interval rather than
+  retriggering the current click.
 - Two presets are generated from a sine burst (Click) and a mixed sine/noise
   strike (Woodblock). To add a preset, extend `metro_sample` with another
   `preset` branch, add its display name to `MetronomeSettings.presets`, and add
@@ -70,10 +84,16 @@ scales that peak, and 100% is not a measured sound-pressure level.
 - subdivisions and their lower level;
 - both presets being finite, bounded and distinct;
 - level, explicit stop and master-follow behavior;
+- a one-shot count-in that stops after its bars and a count-in that continues
+  an already-running click;
+- external clock Start/Continue/Stop, 24 PPQN tempo derivation, and a rejected
+  discontinuous timestamp;
 - a 60-second 300 BPM run without drift.
 
-`Tests/MetronomeSettingsTests.swift` covers defaults, JSON round trips, legacy
-settings without the metronome block and rejection of out-of-range values.
+`Tests/MetronomeSettingsTests.swift` covers defaults, count-in and clock
+settings, JSON round trips, legacy settings without the metronome block and
+rejection of out-of-range values. It also checks the pure MIDI Clock tempo
+converter, including a reset and a gap that must not be smoothed into tempo.
 `Tests/RackTests.c` retains a guard that the synth clock no longer renders a
 click, which would double-trigger the app metronome.
 
@@ -90,7 +110,12 @@ the default native list.
 
 - The performance time signature is fixed at 4/4. Beats per bar changes the
   accent pattern, not the displayed signature.
-- There is no count-in and no external MIDI-clock sync.
+- External sync is MIDI Clock only. Song Position Pointer, MIDI Time Code and
+  transport recording are not implemented; Continue resumes on the next beat.
+  Clock sync does not persist a new patch tempo and does not replace the
+  patch/live tempo policy once it stops. After audio is stopped, restarted or
+  recovered, the click waits for the next MIDI Start or Continue; it never
+  free-runs against a clock that is not running.
 - Multi-output and category routing are tracked by issue #107; until then the
   click shares the stereo system output without the hall reverb.
 - Physical-device listening and latency remain part of the broader hardware

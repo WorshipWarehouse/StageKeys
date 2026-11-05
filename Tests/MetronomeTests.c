@@ -237,6 +237,74 @@ static void test_long_run(void) {
     sk_metronome_destroy(m);
 }
 
+// A one-shot count-in starts on a downbeat, stops after the requested bars when
+// the click was off, and continues the normal click when it was already on.
+static void test_count_in(void) {
+    SKMetronome *m = sk_metronome_create(48000); assert(m);
+    uint32_t block[1] = {512};
+    SKMetronomeSettings s = defaults();
+    s.beatVelocity = 0.5f; s.downbeatVelocity = 1;
+    sk_metronome_settings(m, s);
+    sk_metronome_tempo(m, 120);
+    sk_metronome_count_in(m, 1);
+    Capture c; capture(&c, m, block, 1, 48000 * 3);
+    assert(c.count == 4);
+    assert(c.peak[0] > c.peak[1]); // count-in begins on the downbeat
+
+    // A count-in while the click is already running keeps the click running.
+    sk_metronome_enable(m, 0);
+    sk_metronome_enable(m, 1);
+    sk_metronome_count_in(m, 1);
+    Capture on; capture(&on, m, block, 1, 48000 * 3);
+    assert(on.count == 6);
+    Capture continued; capture(&continued, m, block, 1, 48000);
+    assert(continued.count == 2); // the normal click kept running after count-in
+    sk_metronome_destroy(m);
+}
+
+// External MIDI Clock waits for Start, derives 90 BPM from 24 PPQN, stops on
+// Stop and resumes without restarting the phase on Continue.
+static void test_external_clock(void) {
+    SKMetronome *m = sk_metronome_create(48000); assert(m);
+    uint32_t block[1] = {512};
+    SKMetronomeSettings s = defaults();
+    s.beatVelocity = 1; s.downbeatVelocity = 1;
+    sk_metronome_settings(m, s);
+    sk_metronome_tempo(m, 120);
+    sk_metronome_clock_enabled(m, 1);
+    sk_metronome_enable(m, 1);
+    Capture idle; capture(&idle, m, block, 1, 48000);
+    assert(idle.count == 0);
+
+    sk_metronome_clock_event(m, 1, 0);
+    for (int i = 1; i <= 24; i++) sk_metronome_clock_event(m, 0, (double)i / 36.0);
+    sk_metronome_render(m, NULL, NULL, 0);
+    // Reapplying settings while a clock is running must not stop the click or
+    // reset its clock phase.
+    sk_metronome_settings(m, s);
+    sk_metronome_render(m, NULL, NULL, 0);
+    Capture c; capture(&c, m, block, 1, 48000 * 2);
+    assert(c.count >= 3);
+    double interval = 48000.0 * 60 / 90;
+    for (int i = 0; i < c.count; i++) assert(fabs((double)c.onset[i] - interval * i) <= 2);
+
+    sk_metronome_clock_event(m, 3, 0);
+    sk_metronome_render(m, NULL, NULL, 0);
+    Capture stopped; capture(&stopped, m, block, 1, 48000);
+    assert(stopped.count == 0);
+
+    sk_metronome_clock_event(m, 2, 10);
+    sk_metronome_render(m, NULL, NULL, 0);
+    Capture resumed; capture(&resumed, m, block, 1, 48000);
+    assert(resumed.count >= 2 && resumed.onset[0] <= 2);
+
+    sk_metronome_clock_enabled(m, 0);
+    sk_metronome_render(m, NULL, NULL, 0);
+    Capture internal; capture(&internal, m, block, 1, 48000 * 2);
+    assert(internal.count >= 2 && fabs((double)(internal.onset[1] - internal.onset[0]) - interval) <= 2);
+    sk_metronome_destroy(m);
+}
+
 // Reset truncates the tail immediately and the next enable starts a new bar.
 static void test_reset(void) {
     SKMetronome *m = sk_metronome_create(48000); assert(m);
@@ -264,6 +332,8 @@ int main(void) {
     test_level_and_stop();
     test_master();
     test_long_run();
+    test_count_in();
+    test_external_clock();
     test_reset();
-    puts("PASS: metronome timing at 44.1/48/96 kHz, block splits, tempo phase, accents, subdivision, presets, levels, master follow, long-run drift and reset");
+    puts("PASS: metronome timing at 44.1/48/96 kHz, block splits, tempo phase, accents, subdivision, presets, levels, master follow, count-in, MIDI clock sync, long-run drift and reset");
 }

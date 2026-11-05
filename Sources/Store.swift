@@ -208,7 +208,20 @@ final class PerformanceStore: ObservableObject {
     @Published var keyboardBase = 48
     @Published var metronome = false { didSet { applyMetronome() } }
     @Published var metronomeSettings = MetronomeSettings() { didSet { applyMetronome() } }
-    private func applyMetronome() { audio.metronome(metronome, settings: metronomeSettings) }
+    private func applyMetronome() {
+        if !metronomeSettings.followsMIDIClock, clockTempo != nil {
+            clockTempo = nil; midiClockTempo.reset()
+            audio.clock(performedTempo, metronome); midiFX.updateTempo(performedTempo)
+        }
+        audio.metronome(metronome, settings: metronomeSettings)
+    }
+    /// Play the persisted count-in. When the click is off it stops by itself;
+    /// when it is already on the normal click continues in phase.
+    func countIn() {
+        guard metronomeSettings.countInBars > 0, !metronomeSettings.followsMIDIClock else { return }
+        if !started { startIfStopped(); guard started else { return } }
+        audio.countIn(bars: metronomeSettings.countInBars)
+    }
     @Published var midiChannel = -1 { didSet { if oldValue != midiChannel { panic() } } }
     @Published var primarySourceID: Int32 = -1 { didSet { if oldValue != primarySourceID { panic() } } }
     @Published var secondarySourceID: Int32 = -2 { didSet { if oldValue != secondarySourceID { panic() } } }
@@ -361,9 +374,17 @@ final class PerformanceStore: ObservableObject {
     private var outputNotes: [Int: [Int: Int]] = [:]
     /// Tempo shared by every patch whose tempo is not locked to the patch.
     @Published var liveTempo: Double = 72
+    /// Last tempo measured from external MIDI Clock. Nil when clock sync is
+    /// off or stopped, so the patch/live tempo policy resumes immediately.
+    @Published private(set) var clockTempo: Double?
+    private var midiClockTempo = MIDIClockTempo()
     /// The tempo actually being performed: a locked patch plays its own tempo,
-    /// an unlocked patch keeps the live tempo across patch switches.
-    var performedTempo: Double { PatchTransposition.resolvedTempo(locked: patch.tempoLocked, patchTempo: patch.tempo, liveTempo: liveTempo) }
+    /// an unlocked patch keeps the live tempo across patch switches, and an
+    /// active external clock supersedes both while it is running.
+    var performedTempo: Double {
+        if metronomeSettings.followsMIDIClock, let clockTempo { return clockTempo }
+        return PatchTransposition.resolvedTempo(locked: patch.tempoLocked, patchTempo: patch.tempo, liveTempo: liveTempo)
+    }
     private var lastTaps: [Date] = []
     private struct Audition {
         let token: UUID
@@ -1491,10 +1512,39 @@ final class PerformanceStore: ObservableObject {
             }
         }
     }
+    private func acceptsMIDIClock(source: Int32) -> Bool {
+        let primary = primarySourceID != -2 && (primarySourceID == -1 || primarySourceID == source)
+        let secondary = secondarySourceID != -2 && (secondarySourceID == -1 || secondarySourceID == source)
+        return primary || secondary
+    }
+    private func handleMIDIClock(_ status: UInt8, source: Int32) {
+        guard metronomeSettings.followsMIDIClock, acceptsMIDIClock(source: source) else { return }
+        let now = ProcessInfo.processInfo.systemUptime
+        switch status {
+        case 0xF8:
+            audio.midiClockTick(at: now)
+            if let tempo = midiClockTempo.tick(at: now), clockTempo == nil || abs(tempo - clockTempo!) > 0.005 {
+                clockTempo = tempo
+                audio.clock(tempo, metronome); midiFX.updateTempo(tempo)
+            }
+        case 0xFA:
+            midiClockTempo.reset(); clockTempo = nil
+            audio.midiClockStart(at: now)
+        case 0xFB:
+            midiClockTempo.reset(); clockTempo = nil
+            audio.midiClockContinue(at: now)
+        case 0xFC:
+            audio.midiClockStop(); midiClockTempo.reset()
+            if clockTempo != nil { clockTempo = nil; audio.clock(performedTempo, metronome); midiFX.updateTempo(performedTempo) }
+        default: break
+        }
+    }
     private func handleMIDI(_ status: UInt8, _ a: UInt8, _ b: UInt8, source: Int32) {
         midiActivity.toggle()
         midiLog.insert((midiSources.first(where: { $0.id == source })?.name ?? "MIDI") + String(format: " · Ch %02d · %02X · %d · %d", Int(status & 15) + 1, status & 0xf0, a, b), at: 0)
         midiLog = Array(midiLog.prefix(15))
+        if status >= 0xF8 { handleMIDIClock(status, source: source); return }
+        if status >= 0xF0 { return }
         let channel=Int(status & 15)
         guard MIDIControllerRules.accepts(sourceID: primarySourceID, channel: midiChannel, source: source, inputChannel: channel) ||
               MIDIControllerRules.accepts(sourceID: secondarySourceID, channel: secondaryChannel, source: source, inputChannel: channel) else { return }

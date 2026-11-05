@@ -16,7 +16,11 @@ struct MetronomeSettings: Codable, Equatable {
     var accentEvery = 0
     var subdivision = 1
     var followsMaster = true
-    enum CodingKeys: String, CodingKey { case visible,preset,level,beatVelocity,downbeatEnabled,downbeatVelocity,beatsPerBar,accentEvery,subdivision,followsMaster }
+    /// Number of bars played by the Count In action. Zero hides the action.
+    var countInBars = 1
+    /// Follow external MIDI Clock instead of the internal tempo scheduler.
+    var followsMIDIClock = false
+    enum CodingKeys: String, CodingKey { case visible,preset,level,beatVelocity,downbeatEnabled,downbeatVelocity,beatsPerBar,accentEvery,subdivision,followsMaster,countInBars,followsMIDIClock }
     init() {}
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -30,14 +34,43 @@ struct MetronomeSettings: Codable, Equatable {
         accentEvery = try c.decodeIfPresent(Int.self, forKey: .accentEvery) ?? 0
         subdivision = try c.decodeIfPresent(Int.self, forKey: .subdivision) ?? 1
         followsMaster = try c.decodeIfPresent(Bool.self, forKey: .followsMaster) ?? true
+        countInBars = try c.decodeIfPresent(Int.self, forKey: .countInBars) ?? 1
+        followsMIDIClock = try c.decodeIfPresent(Bool.self, forKey: .followsMIDIClock) ?? false
     }
     func validate() -> Bool {
-        MetronomeSettings.presets.indices.contains(preset) && level.isFinite && (0...1).contains(level) && beatVelocity.isFinite && (0...1).contains(beatVelocity) && downbeatVelocity.isFinite && (0...1).contains(downbeatVelocity) && (1...16).contains(beatsPerBar) && (0...16).contains(accentEvery) && (1...4).contains(subdivision)
+        MetronomeSettings.presets.indices.contains(preset) && level.isFinite && (0...1).contains(level) && beatVelocity.isFinite && (0...1).contains(beatVelocity) && downbeatVelocity.isFinite && (0...1).contains(downbeatVelocity) && (1...16).contains(beatsPerBar) && (0...16).contains(accentEvery) && (1...4).contains(subdivision) && (0...8).contains(countInBars)
     }
     /// Nil means silent. The value is an engine peak, not a measured output level.
     var levelDBFS: Float? { level > 0 ? Float(20 * log10(Double(max(0.0001, level * MetronomeSettings.peakAmplitude)))) : nil }
     var beatVelocityLabel: String { "\(Int(beatVelocity * 127))" }
     var downbeatVelocityLabel: String { "\(Int(downbeatVelocity * 127))" }
+}
+/// Converts 24-pulse-per-quarter MIDI Clock timestamps into a smoothed tempo.
+/// Timestamps are monotonic seconds. A reset is required after Start; Continue
+/// also resets the measurement window because song position is not inferred.
+struct MIDIClockTempo {
+    static let pulsesPerQuarter = 24
+    private(set) var tempo: Double?
+    private var lastTime: Double?
+    private var elapsed = 0.0
+    private var pulses = 0
+    mutating func reset() { lastTime = nil; elapsed = 0; pulses = 0; tempo = nil }
+    mutating func tick(at time: Double) -> Double? {
+        guard time.isFinite, time >= 0 else { return nil }
+        defer { lastTime = time }
+        guard let previous = lastTime else { return nil }
+        let delta = time - previous
+        guard delta >= 0.001, delta <= 1 else { return nil }
+        elapsed += delta
+        pulses += 1
+        guard pulses >= Self.pulsesPerQuarter else { return nil }
+        let measured = 60 / elapsed
+        elapsed = 0; pulses = 0
+        guard measured.isFinite, (20...300).contains(measured) else { return nil }
+        let smoothed = tempo.map { $0 + (measured - $0) * 0.25 } ?? measured
+        tempo = smoothed
+        return smoothed
+    }
 }
 struct SessionSettings: Codable {
     var selectedPatchID: UUID?

@@ -230,6 +230,9 @@ struct PerformanceView: View {
                     if store.metronomeSettings.visible {
                         Divider().frame(height: 30)
                         Button { store.metronome.toggle() } label: { Image(systemName: "metronome").frame(width: 38, height: 44).foregroundStyle(store.metronome ? StageTheme.selected : .secondary) }.buttonStyle(.plain).accessibilityLabel("Metronome")
+                        if !store.metronomeSettings.followsMIDIClock && store.metronomeSettings.countInBars > 0 {
+                            Button { store.countIn() } label: { Image(systemName: "timer").frame(width: 34, height: 44) }.buttonStyle(.plain).accessibilityLabel("Metronome Count In")
+                        }
                     }
                     Divider().frame(height: 30)
                     Button { store.patchLock.toggle() } label: { Text("Patch\nLock").font(StageTheme.font(12, weight: .semibold)).frame(width: 44, height: 44).foregroundStyle(store.patchLock ? StageTheme.selected : .secondary) }.buttonStyle(.plain).accessibilityLabel("Patch Lock")

@@ -125,6 +125,12 @@ struct SettingsEditor: View {
                             Toggle("Metronome", isOn: $store.metronome)
                             Stepper("\(Int(store.performedTempo)) BPM", value: Binding(get: { store.performedTempo }, set: { store.updateTempo($0) }), in: 20...300)
                             Toggle("Show in toolbar", isOn: $store.metronomeSettings.visible)
+                            Toggle("Follow external MIDI clock", isOn: $store.metronomeSettings.followsMIDIClock)
+                            Text("Listens for MIDI Clock at 24 pulses per quarter note from the primary or secondary controller. Start and Continue begin the click; Stop silences it. Song Position Pointer is not used, so Continue resumes on the next beat rather than guessing a bar.").font(.caption).foregroundStyle(.secondary)
+                            Stepper("Count-in bars: \(store.metronomeSettings.countInBars)", value: $store.metronomeSettings.countInBars, in: 0...8)
+                            Button("Count In") { store.countIn() }
+                                .disabled(store.metronomeSettings.countInBars == 0 || store.metronomeSettings.followsMIDIClock)
+                            Text(store.metronomeSettings.followsMIDIClock ? "Count In uses the internal clock. Turn off external clock sync to use it." : "Count In plays the configured number of bars. If the click was off it stops by itself; if the click was already on it continues in phase.").font(.caption).foregroundStyle(.secondary)
                             Picker("Click sound", selection: $store.metronomeSettings.preset) {
                                 ForEach(MetronomeSettings.presets.indices, id: \.self) { Text(MetronomeSettings.presets[$0]).tag($0) }
                             }

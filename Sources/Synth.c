@@ -706,7 +706,7 @@ void sk_read_midi(const MIDIEventList *list,SKMIDIEvent callback,void *context){
 // host can mix it after the shared reverb and set its level predictably.
 #define METRONOME_QUEUE 64
 #define METRONOME_PEAK 0.2f
-typedef struct { int kind; SKMetronomeSettings settings; float value; int flag; } MetronomeCommand;
+typedef struct { int kind; SKMetronomeSettings settings; float value; int flag; double when; } MetronomeCommand;
 struct SKMetronome {
  double rate;
  SKMetronomeSettings settings;
@@ -714,7 +714,11 @@ struct SKMetronome {
  unsigned beat,step,noise;
  double phase;
  float envelope,decay,woodDecay,master;
- int followsMaster,enabled;
+ int followsMaster,enabled,requestedEnabled;
+ int externalClock,clockHasLast;
+ unsigned clockPulses;
+ double clockLast,clockTick;
+ int countInRemaining,countInOnly,countInStopPending;
  MetronomeCommand queue[METRONOME_QUEUE];
  _Atomic unsigned read,write;
 };
@@ -749,6 +753,9 @@ void sk_metronome_settings(SKMetronome*m,SKMetronomeSettings s){
 void sk_metronome_enable(SKMetronome*m,int enabled){if(m)metro_push(m,(MetronomeCommand){.kind=2,.flag=enabled?1:0});}
 void sk_metronome_tempo(SKMetronome*m,float tempo){if(m)metro_push(m,(MetronomeCommand){.kind=3,.value=isfinite(tempo)?fminf(300,fmaxf(20,tempo)):120});}
 void sk_metronome_master(SKMetronome*m,float volume,int followsMaster){if(m)metro_push(m,(MetronomeCommand){.kind=4,.value=metro_unit(volume),.flag=followsMaster?1:0});}
+void sk_metronome_count_in(SKMetronome*m,int bars){if(m)metro_push(m,(MetronomeCommand){.kind=6,.flag=bars<1?1:bars>16?16:bars});}
+void sk_metronome_clock_enabled(SKMetronome*m,int enabled){if(m)metro_push(m,(MetronomeCommand){.kind=7,.flag=enabled?1:0});}
+void sk_metronome_clock_event(SKMetronome*m,int event,double time){if(m)metro_push(m,(MetronomeCommand){.kind=8,.flag=event<0?0:event>3?3:event,.when=time});}
 void sk_metronome_reset(SKMetronome*m){if(m)metro_push(m,(MetronomeCommand){.kind=5});}
 // Tempo and subdivision edits scale the pending interval instead of restarting
 // it, so a change cannot double-trigger or skip the beat the performer hears.
@@ -763,11 +770,53 @@ static void metro_apply(SKMetronome*m,const MetronomeCommand*c){
   if(m->step>=(unsigned)m->settings.subdivision)m->step=0;
   if(m->beat>=(unsigned)m->settings.beatsPerBar)m->beat=0;
  }else if(c->kind==2){
-  if(c->flag){if(!m->enabled){m->enabled=1;m->beat=0;m->step=0;m->remaining=0;m->envelope=0;m->phase=0;}}
-  else{m->enabled=0;m->envelope=0;}
+  m->requestedEnabled=c->flag;
+  if(c->flag){
+   if(!m->externalClock&&!m->enabled){m->enabled=1;m->beat=0;m->step=0;m->remaining=0;m->envelope=0;m->phase=0;}
+  }else{m->enabled=0;m->envelope=0;m->countInRemaining=0;m->countInOnly=0;m->countInStopPending=0;}
  }else if(c->kind==3){m->tempo=c->value;m->interval=metro_interval(m);metro_rescale(m,old);}
  else if(c->kind==4){m->master=c->value;m->followsMaster=c->flag;}
- else if(c->kind==5){m->beat=0;m->step=0;m->remaining=m->interval;m->envelope=0;m->phase=0;}
+ else if(c->kind==5){m->beat=0;m->step=0;m->remaining=m->interval;m->envelope=0;m->phase=0;m->countInRemaining=0;m->countInOnly=0;m->countInStopPending=0;}
+ else if(c->kind==6){
+  m->countInOnly=!m->enabled;
+  m->countInRemaining=c->flag*m->settings.beatsPerBar*m->settings.subdivision;
+  m->countInStopPending=0;
+  m->enabled=1;m->beat=0;m->step=0;m->remaining=0;m->envelope=0;m->phase=0;
+ }else if(c->kind==7){
+  if(m->externalClock!=c->flag){
+   m->externalClock=c->flag;
+   m->clockPulses=0;m->clockHasLast=0;m->clockTick=0;
+   if(m->externalClock){m->enabled=0;m->envelope=0;}
+   else{m->enabled=m->requestedEnabled;}
+  }
+ }else if(c->kind==8&&m->externalClock&&m->requestedEnabled){
+  if(c->flag==1){
+   m->enabled=1;m->beat=0;m->step=0;m->remaining=0;m->envelope=0;m->phase=0;
+   m->clockPulses=0;m->clockTick=0;m->clockLast=c->when;m->clockHasLast=isfinite(c->when);
+   m->countInRemaining=0;m->countInOnly=0;m->countInStopPending=0;
+  }else if(c->flag==2){
+   m->enabled=1;m->remaining=0;m->envelope=0;m->phase=0;
+   m->clockPulses=0;m->clockTick=0;m->clockLast=c->when;m->clockHasLast=isfinite(c->when);
+   m->countInRemaining=0;m->countInOnly=0;m->countInStopPending=0;
+  }else if(c->flag==3){
+   m->enabled=0;m->envelope=0;m->clockHasLast=0;m->clockPulses=0;
+   m->countInRemaining=0;m->countInOnly=0;m->countInStopPending=0;
+  }else if(c->flag==0&&m->enabled&&isfinite(c->when)){
+   if(m->clockHasLast){
+    double delta=c->when-m->clockLast;
+    if(delta>0.001&&delta<1){
+     if(m->clockTick<=0)m->clockTick=delta;
+     else m->clockTick+=(delta-m->clockTick)*0.125;
+    }
+   }
+   m->clockLast=c->when;m->clockHasLast=1;
+   m->clockPulses++;
+   if(m->clockPulses%24==0&&m->clockTick>0){
+    double tempo=fmin(300,fmax(20,60.0/(m->clockTick*24.0)));
+    m->tempo=tempo;m->interval=metro_interval(m);metro_rescale(m,old);
+   }
+  }
+ }
 }
 static void metro_trigger(SKMetronome*m){
  const SKMetronomeSettings*s=&m->settings;float amp=METRONOME_PEAK*s->level;
@@ -778,6 +827,7 @@ static void metro_trigger(SKMetronome*m){
  m->envelope=amp;m->phase=0;
  m->noise=0x9e3779b9u+(m->beat+1)*2654435761u+(m->step+1)*40503u;
  m->step++;if(m->step>=(unsigned)s->subdivision){m->step=0;m->beat=(m->beat+1)%(unsigned)s->beatsPerBar;}
+ if(m->countInRemaining>0){m->countInRemaining--;if(m->countInRemaining==0&&m->countInOnly)m->countInStopPending=1;}
 }
 // Two independent synthesized timbres; extend with another preset branch and a
 // matching catalog entry. No recorded or vendor click samples are used.
@@ -807,6 +857,7 @@ void sk_metronome_render(SKMetronome*m,float*left,float*right,uint32_t frames){
   if(m->enabled){
    while(m->remaining<=0){metro_trigger(m);m->remaining+=m->interval;}
    m->remaining-=1;y=metro_sample(m)*gain;
+   if(m->countInStopPending&&m->envelope<1e-5f){m->enabled=0;m->countInStopPending=0;m->countInOnly=0;y=0;}
   }else{m->envelope=0;m->phase=0;}
   if(!isfinite(y))y=0;if(fabsf(y)>1)y=y>0?1:-1;
   if(left)left[n]=y;if(right)right[n]=y;
