@@ -155,6 +155,9 @@ final class ExternalInstrumentRack {
         var attackMinimum:Float=0
         var hostVelocityCurve:Int?
         var mixer: AVAudioMixerNode
+        /// Unity-gain tap point downstream of the fader/pan mixer. Taps on the
+        /// fader mixer observe its input, before `outputVolume` is applied.
+        var meterMixer: AVAudioMixerNode
         var filter: AVAudioUnitEQ
         var eq: AVAudioUnitEQ
         var compressor: AVAudioUnitEffect
@@ -351,9 +354,10 @@ final class ExternalInstrumentRack {
         self.libraryURL = libraryURL ?? base.appendingPathComponent("Imported Sounds",isDirectory:true)
         try FileManager.default.createDirectory(at: self.libraryURL, withIntermediateDirectories: true)
     }
-    /// The optional taps live after the per-sound effects and fader/pan, before
-    /// the shared reverb and master limiter. Enabling or disabling this never
-    /// edits the graph and never allocates on the render thread.
+    /// The optional taps live on a unity-gain mixer after the per-sound effects
+    /// and fader/pan, before the shared reverb and master limiter. Enabling or
+    /// disabling this never edits the graph and never allocates on the render
+    /// thread.
     func setMeteringEnabled(_ enabled: Bool) {
         precondition(Thread.isMainThread)
         soundMeters.setEnabled(enabled)
@@ -801,7 +805,7 @@ final class ExternalInstrumentRack {
         var nodes = [engine.mainMixerNode]
         for voice in voices.values {
             nodes.append(voice.mixer)
-
+            nodes.append(voice.meterMixer)
         }
         return nodes.map { ($0, $0.outputVolume, $0.pan) }
     }
@@ -890,7 +894,7 @@ final class ExternalInstrumentRack {
     private func graphNodes() -> [AVAudioNode] {
         var nodes: [AVAudioNode] = []
         for voice in voices.values {
-            nodes += [voice.unit, voice.filter, voice.eq, voice.compressor, voice.builtin, voice.mixer]
+            nodes += [voice.unit, voice.filter, voice.eq, voice.compressor, voice.builtin, voice.mixer, voice.meterMixer]
             nodes += voice.imported
             nodes += voice.parallelNodes
             nodes += voice.audioGraph?.nodes ?? []
@@ -1197,6 +1201,7 @@ final class ExternalInstrumentRack {
             } catch { engine.detach(unit); throw error }
             retire(channel)
             let mixer = AVAudioMixerNode()
+            let meterMixer = AVAudioMixerNode()
             let filter = AVAudioUnitEQ(numberOfBands: 1)
             filter.bands[0].filterType = .resonantLowPass
             filter.bands[0].bypass = true
@@ -1206,17 +1211,18 @@ final class ExternalInstrumentRack {
                 band.bypass = i == 0 || i == 7
             }
             let compressor=BuiltinEffectUnit.make()
-            for node in [mixer as AVAudioNode, filter, eq, compressor] { engine.attach(node) }
+            for node in [mixer as AVAudioNode, meterMixer, filter, eq, compressor] { engine.attach(node) }
             let processingFormat=AVAudioFormat(standardFormatWithSampleRate:engine.isInManualRenderingMode ? engine.manualRenderingFormat.sampleRate:48000,channels:2)!
             engine.connect(unit, to: filter, format: processingFormat)
             engine.connect(filter, to: eq, format: processingFormat)
             engine.connect(eq, to: compressor, format: processingFormat)
             let builtin=BuiltinEffectUnit.make();engine.attach(builtin)
-            let voice = Voice(unit: unit, mixer: mixer, filter: filter, eq: eq, compressor: compressor,builtin:builtin)
+            let voice = Voice(unit: unit, mixer: mixer, meterMixer: meterMixer, filter: filter, eq: eq, compressor: compressor,builtin:builtin)
             connectEffects(voice)
-            engine.connect(mixer, to: engine.mainMixerNode, format: nil)
+            engine.connect(mixer, to: meterMixer, format: nil)
+            engine.connect(meterMixer, to: engine.mainMixerNode, format: nil)
             voices[channel] = voice
-            soundMeters.attach(mixer, channel: channel)
+            soundMeters.attach(meterMixer, channel: channel)
             try ready?()
         }
     }
@@ -1225,7 +1231,7 @@ final class ExternalInstrumentRack {
         soundMeters.detach(channel: channel)
         panic(channel,preserveEffectTails:true)
         guard let old=voices.removeValue(forKey:channel) else{return}
-        var nodes:[AVAudioNode]=[old.unit,old.filter,old.eq,old.compressor,old.mixer,old.builtin]
+        var nodes:[AVAudioNode]=[old.unit,old.filter,old.eq,old.compressor,old.mixer,old.meterMixer,old.builtin]
         nodes += old.imported.map{$0 as AVAudioNode}
         nodes += old.parallelNodes
         nodes += old.audioGraph?.nodes ?? []

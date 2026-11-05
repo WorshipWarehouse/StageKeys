@@ -6,11 +6,13 @@ files without the key load with meters off.
 
 ## Signal point
 
-Each loaded sound is metered at its own channel mixer, after that sound's
-instrument graph, three effect slots, channel fader and pan. The shared hall
+Each loaded sound is metered at a dedicated unity-gain tap mixer, after that
+sound's instrument graph, three effect slots, channel fader and pan. The tap
+mixer is downstream of the fader/pan mixer because `AVAudioMixerNode` taps
+observe audio before that node's own `outputVolume` is applied. The shared hall
 reverb, master fader and output limiter are downstream and are not included.
-This is the same point at which the per-sound fader is applied, so moving the
-fader changes the meter.
+The tap mixer does not change gain, so moving the per-sound fader changes the
+meter.
 
 The Tonic Pad uses its own sound channel and follows the same rule. An empty
 slot has no active meter.

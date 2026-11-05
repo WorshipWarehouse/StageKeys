@@ -3,11 +3,13 @@ import AVFoundation
 
 @main struct SoundMeterTests {
     static func main() throws {
-        // The bank is the production tap owner. Exercise the same mixer output
-        // point used after each sound's effects, fader and pan.
+        // The bank is the production tap owner. Exercise the same topology as a
+        // sound: fader/pan mixer, then a unity-gain mixer whose output is tapped.
+        // A tap on the fader mixer itself observes audio before outputVolume.
         let engine = AVAudioEngine()
         let format = AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 2)!
         let mixer = AVAudioMixerNode()
+        let meterMixer = AVAudioMixerNode()
         let source = AVAudioSourceNode(format: format) { _, _, frames, list in
             let buffers = UnsafeMutableAudioBufferListPointer(list)
             guard buffers.count >= 2,
@@ -21,12 +23,16 @@ import AVFoundation
         }
         engine.attach(source)
         engine.attach(mixer)
+        engine.attach(meterMixer)
         mixer.outputVolume = 1
         mixer.pan = 0
+        meterMixer.outputVolume = 1
+        meterMixer.pan = 0
         engine.connect(source, to: mixer, format: format)
-        engine.connect(mixer, to: engine.mainMixerNode, format: format)
+        engine.connect(mixer, to: meterMixer, format: format)
+        engine.connect(meterMixer, to: engine.mainMixerNode, format: format)
         let bank = SoundMeterBank()
-        bank.attach(mixer, channel: 0)
+        bank.attach(meterMixer, channel: 0)
         bank.setEnabled(true)
         try engine.enableManualRenderingMode(.offline, format: format, maximumFrameCount: 512)
         try engine.start()
