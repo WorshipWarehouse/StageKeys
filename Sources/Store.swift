@@ -2270,6 +2270,23 @@ final class PerformanceStore: ObservableObject {
             return copy.id
         } catch { message = error.localizedDescription; return nil }
     }
+    /// Save the active patch as its own library document. This is an independent
+    /// copy, not a link: it does not save, activate or restart audio, and it never
+    /// changes the current setlist. Exporting again creates another document instead
+    /// of overwriting the previous one; overwriting stays an explicit library action.
+    @discardableResult
+    func exportCurrentPatchToLibrary() -> UUID? {
+        do {
+            guard setlist.patches.indices.contains(selected) else { throw SetlistError.invalid }
+            let descriptor = try localSetlistLibrary().exportPatch(setlist.patches[selected])
+            refreshSetlists()
+            message = "Saved “\(descriptor.name)” as an independent patch in Setlists. The current setlist was not changed."
+            return descriptor.id
+        } catch {
+            message = "Could not export this patch: \(error.localizedDescription)"
+            return nil
+        }
+    }
     /// Export the current document or a saved copy as a portable package. This
     /// does not save, activate, or restart audio and never includes sample bytes.
     func prepareSetlistShare(id: UUID? = nil) -> (name: String, data: Data)? {

@@ -52,6 +52,18 @@ The user then chooses:
 - **Save and Load** — runs the existing live admission check for the first patch, preserves the current saved setlist, saves an independent library copy, then activates it. It is disabled when a known dependency is missing, when patches are locked, or when saved session/settings recovery is required; the sheet explains that recovery must happen in Settings first.
 - **Save to Library** — saves an independent copy without activating it, restarting audio or changing the current performance. Missing dependencies do not block this path.
 
+## Independent patch exports
+
+Saving a patch to the library is a local action, not a share. **Save Patch to Library** in the patch menu writes the active patch as its own one-patch library document:
+
+- the copy gets fresh patch, layer and snapshot identities, so later edits to the source setlist can neither change it nor collide with it when it is added back;
+- authored patch settings (name, tempo, transposition, layers and ranges, snapshots, Tonic Pad state, Program Change opt-in) are preserved, and references between the exported parts still point inside the export;
+- setlist-level MIDI CC assignments are deliberately not copied, because they belong to the source document rather than to the patch;
+- the current setlist is not saved, activated or restarted, and audio keeps playing;
+- exporting the same patch again adds another document. Overwriting a library entry stays an explicit library action; an export never reuses an existing identity.
+
+An exported patch is an ordinary one-patch library document, so it also appears in the patch picker that adds a saved patch to the current setlist. A local library export is not a share: plug-in state and local source references stay in the copy instead of being stripped, and missing sampler or Audio Unit content is not detected at export time. The existing runtime admission and failure handling still apply when the exported patch is loaded.
+
 ## Offline links
 
 A package can also be represented as:
@@ -65,7 +77,7 @@ The link is limited to 1.5 MB of package data and goes through the same format, 
 ## Limits and outstanding acceptance
 
 - This is not a clean-device physical Mac/iPad round-trip qualification. The deterministic suite exercises generated data, not physical devices or an audible stage.
-- Independent patch exports into a user library (as distinct from the setlist document copy) remain outstanding for #114. Personal native sound packs already cover sound transfer and are a separate format.
+- Independent **sound** exports into a user library remain outstanding for #114. Personal native sound packs already cover sound transfer as a separate format; independent patch exports are implemented as described above.
 - Ratings and other library-level metadata are not part of a setlist share; the sender's library metadata is not mutated.
 - Reference-only packages do not grant redistribution rights for vendor samples, presets or plug-ins. Install content you are authorised to use on the destination device.
 - A successful import does not guarantee that a later graph or Audio Unit installation succeeds; live admission and failure handling remain the existing runtime safeguards.
@@ -80,7 +92,8 @@ The link is limited to 1.5 MB of package data and goes through the same format, 
 - offline link round-trip, link-size refusal, and malformed/wrong-host/duplicate-parameter links;
 - unavailable-dependency planning and external MIDI warnings;
 - identity preservation, name/identity collision resolution and independent copies;
-- legacy schema upgrade, atomic writes and refusal to overwrite via an invalid export.
+- legacy schema upgrade, atomic writes and refusal to overwrite via an invalid export;
+- independent patch export into the library: fresh identities, preserved authored settings, source isolation after later edits, and a repeated export adding a second document instead of overwriting.
 
 The test was authored in a Linux checkout without Xcode. Run it on macOS with:
 

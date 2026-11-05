@@ -304,6 +304,7 @@ struct PerformanceView: View {
         Menu {
             Button("Patch Settings…") { sheet = .patch }
             Button("Duplicate Patch") { store.duplicate() }.disabled(store.patchLock)
+            Button("Save Patch to Library") { _ = store.exportCurrentPatchToLibrary() }
             Button("Rename Patch…") { sheet = .renamePatch }.disabled(store.patchLock)
             Button("Remove Patch", role: .destructive) { store.removePatch() }.disabled(store.patchLock || store.setlist.patches.count < 2)
             Button("Save Setlist") { store.save() }

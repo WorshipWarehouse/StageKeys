@@ -183,6 +183,24 @@ final class SetlistLibrary {
         }
         return try save(copy)
     }
+    /// Save one patch as its own one-patch library document. The copy always gets
+    /// fresh patch, layer and snapshot identities, so later edits to the source
+    /// setlist cannot change the export; authored settings and internal references
+    /// are preserved. There is deliberately no identity parameter: exporting again
+    /// adds another document rather than overwriting the earlier one. Setlist-level
+    /// MIDI CC assignments are not copied because they belong to the source
+    /// document, not to the patch.
+    @discardableResult
+    func exportPatch(_ source: Patch, name: String? = nil) throws -> SetlistLibraryDescriptor {
+        let title = (name ?? source.name).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !title.isEmpty, title.count <= 200, !source.name.isEmpty, source.name.count <= 200 else { throw SetlistLibraryError.name }
+        var patch = source.duplicate()
+        patch.name = source.name
+        var document = Setlist()
+        document.name = title
+        document.patches = [patch]
+        return try save(document)
+    }
     @discardableResult
     func delete(id: UUID) throws -> SetlistTrashEntry {
         let setlist = try load(id: id)
