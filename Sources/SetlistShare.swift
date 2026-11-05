@@ -11,13 +11,14 @@ extension UTType {
 }
 
 enum SetlistShareError: LocalizedError {
-    case invalidFormat, unsupportedVersion, tooLarge, checksum, unsafeContent, invalidContent
+    case invalidFormat, unsupportedVersion, tooLarge, linkTooLarge, checksum, unsafeContent, invalidContent
     case activationBlocked(String)
     var errorDescription: String? {
         switch self {
         case .invalidFormat: return "This file is not a StageKeys setlist share package."
         case .unsupportedVersion: return "This setlist share was made by an unsupported StageKeys version."
         case .tooLarge: return "This setlist share exceeds the 8 MB package limit."
+        case .linkTooLarge: return "This setlist is too large for an offline link. Share it as a .stagekeyssetlist file instead."
         case .checksum: return "This setlist share is damaged or was changed after it was exported."
         case .unsafeContent: return "This setlist share contains content StageKeys does not accept from a shared file."
         case .invalidContent: return "This setlist share contains an invalid setlist."
@@ -397,9 +398,12 @@ enum SetlistShare {
         }
         return sound
     }
+    /// Replace a whole local path, including spaces and all remaining path
+    /// segments, through the end of the line. Over-redacting the tail is safer
+    /// than leaving a home-directory or volume fragment in a shared note.
     private static func portableText(_ value: String) -> String {
         value.replacingOccurrences(
-            of: #"(?:file://)?/(?:Users|private|Library|Volumes|var|tmp)/[^\s,;]+"#,
+            of: #"(?:file://)?/(?:Users|home|private|Library|Applications|System|Volumes|opt|var|tmp)/[^\n\r,;]+"#,
             with: "[source location]", options: .regularExpression)
     }
     private static func uniqueName(_ name: String, existing: [String]) -> String {
@@ -455,9 +459,11 @@ enum SetlistShareLink {
     static let maximumDataBytes = 1_500_000
     private static let maximumEncodedCharacters = 2_100_000
 
+    /// Build an offline link from an already validated package. A package can be
+    /// valid as a file yet too large for the 1.5 MB link transport.
     static func url(for package: SetlistSharePackage) throws -> URL {
         let data = try SetlistShare.encode(package)
-        guard data.count <= maximumDataBytes else { throw SetlistShareError.tooLarge }
+        guard data.count <= maximumDataBytes else { throw SetlistShareError.linkTooLarge }
         var components = URLComponents()
         components.scheme = scheme
         components.host = host

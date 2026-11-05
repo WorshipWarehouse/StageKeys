@@ -380,10 +380,13 @@ struct SetlistShareImportView: View {
                         }
                     }
                     if store.patchLock { Text("Unlock patches to load an imported setlist.").font(.caption).foregroundStyle(.orange) }
+                    if store.sessionRecoveryRequired || store.settingsRecoveryRequired {
+                        Text("Recover the previous session in Settings before loading an imported setlist.").font(.caption).foregroundStyle(.orange)
+                    }
                     HStack {
                         Button("Save and Load") { store.completeSetlistShare(.saveAndLoad) }
                             .buttonStyle(StageButtonStyle(selected: true))
-                            .disabled(!plan.canActivate || store.patchLock)
+                            .disabled(!plan.canActivate || store.patchLock || store.sessionRecoveryRequired || store.settingsRecoveryRequired)
                         Button("Save to Library") { store.completeSetlistShare(.saveToLibrary) }
                             .buttonStyle(StageButtonStyle())
                         Spacer()

@@ -14,7 +14,7 @@ Dependency records list the names and stable identifiers needed by the destinati
 - source archives;
 - local absolute source paths in user-visible notes.
 
-Exported notes replace paths such as `/Users/…` with `[source location]`. A saved Audio Unit's local availability, vendor/version display fields and custom-view flags are also omitted; the component triple and display name remain. On import the destination uses its own plug-in state, not the sender's.
+Exported notes replace a local path such as `/Users/…` or `/Volumes/…` with `[source location]`. The redaction consumes the rest of that line (stopping only at a line break, comma or semicolon), so a path containing spaces cannot leave a home-directory or filename fragment behind. It also recognises `/home`, `/Applications`, `/System`, `/opt` and `/private`. Over-redacting trailing prose is intentional for this privacy boundary. A saved Audio Unit's local availability, vendor/version display fields and custom-view flags are also omitted; the component triple and display name remain. On import the destination uses its own plug-in state, not the sender's.
 
 ## Package envelope
 
@@ -49,7 +49,7 @@ Authored patch, layer and snapshot identities are preserved when they do not con
 
 The user then chooses:
 
-- **Save and Load** — runs the existing live admission check for the first patch, preserves the current saved setlist, saves an independent library copy, then activates it. It is disabled when a known dependency is missing, when patches are locked, or when saved session recovery is required.
+- **Save and Load** — runs the existing live admission check for the first patch, preserves the current saved setlist, saves an independent library copy, then activates it. It is disabled when a known dependency is missing, when patches are locked, or when saved session/settings recovery is required; the sheet explains that recovery must happen in Settings first.
 - **Save to Library** — saves an independent copy without activating it, restarting audio or changing the current performance. Missing dependencies do not block this path.
 
 ## Offline links
@@ -60,7 +60,7 @@ A package can also be represented as:
 stagekeys://setlist-share?package=<base64url canonical package>
 ```
 
-The link is limited to 1.5 MB of package data and goes through the same format, checksum, dependency and payload validation as a file. The scheme and host must match exactly and no other query parameters are accepted. File-based sharing remains the baseline; no hosted link service, account or authentication is required or implemented.
+The link is limited to 1.5 MB of package data and goes through the same format, checksum, dependency and payload validation as a file. A package over that link budget reports the link limit and directs the user to a `.stagekeyssetlist` file rather than claiming it exceeds the 8 MB file limit. The scheme and host must match exactly and no other query parameters are accepted. File-based sharing remains the baseline; no hosted link service, account or authentication is required or implemented.
 
 ## Limits and outstanding acceptance
 
@@ -77,7 +77,7 @@ The link is limited to 1.5 MB of package data and goes through the same format, 
 - checksum/version/format and size refusal, malformed/truncated/altered packages;
 - plug-in-state injection and hidden-dependency refusal;
 - exclusion of sample payloads, `pluginState` and local source paths;
-- offline link round-trip and malformed/wrong-host/duplicate-parameter links;
+- offline link round-trip, link-size refusal, and malformed/wrong-host/duplicate-parameter links;
 - unavailable-dependency planning and external MIDI warnings;
 - identity preservation, name/identity collision resolution and independent copies;
 - legacy schema upgrade, atomic writes and refusal to overwrite via an invalid export.

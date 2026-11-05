@@ -2296,14 +2296,17 @@ final class PerformanceStore: ObservableObject {
         }
     }
     /// Read and validate a file before showing the import plan. Nothing is
-    /// written and the current performance is untouched at this stage.
+    /// written and the current performance is untouched at this stage. Clear a
+    /// previous plan first so a failed read cannot leave an older share active.
     func previewSetlistShare(_ url: URL) {
+        pendingSetlistShare = nil
         let access = url.startAccessingSecurityScopedResource()
         defer { if access { url.stopAccessingSecurityScopedResource() } }
         do { try presentSetlistShare(SetlistShare.read(url)) }
         catch { message = "Could not import this setlist share: \(error.localizedDescription)" }
     }
     func previewSetlistShare(link: URL) {
+        pendingSetlistShare = nil
         do { try presentSetlistShare(SetlistShareLink.package(from: link)) }
         catch { message = "Could not import this setlist link: \(error.localizedDescription)" }
     }
@@ -2318,6 +2321,9 @@ final class PerformanceStore: ObservableObject {
                 message = "Saved “\(plan.proposedName)” to Setlists. The current performance was not changed."
             case .saveAndLoad:
                 guard !patchLock else { throw SetlistShareError.activationBlocked("Unlock patches before opening a shared setlist.") }
+                guard !sessionRecoveryRequired, !settingsRecoveryRequired else {
+                    throw SetlistShareError.activationBlocked("Recover the previous session in Settings before loading an imported setlist.")
+                }
                 guard plan.canActivate else { throw SetlistShareError.activationBlocked("Install the missing sounds or save this setlist to the library instead.") }
                 let library = try localSetlistLibrary()
                 try prepareSetlistActivation(plan.setlist)

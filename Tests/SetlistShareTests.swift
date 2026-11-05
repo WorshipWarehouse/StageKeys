@@ -18,6 +18,7 @@ import Foundation
         assert(package.content.warnings.contains { $0.contains("Audio Unit") })
         assert(!json.contains("pluginState"), "Plug-in state must not travel in a setlist share")
         assert(!json.contains("/Users/example"), "Local source paths must be removed from portable notes")
+        assert(!json.contains("Doe"), "A path with spaces must not leave a folder or filename fragment")
         assert(json.contains("[source location]"))
         let decoded = try SetlistSharePackage.decode(data)
         assert(decoded.checksum == package.checksum)
@@ -55,6 +56,17 @@ import Foundation
         let link = try SetlistShareLink.url(for: package)
         let linked = try SetlistShareLink.package(from: link)
         assert(linked.checksum == package.checksum)
+
+        // A package that is valid as a file can still exceed the smaller link
+        // budget. The user must see the link limit and the file alternative.
+        var oversizedContent = package.content
+        oversizedContent.setlist.name = String(repeating: "x", count: 1_600_000)
+        let oversizedLinkPackage = SetlistSharePackage(
+            format: SetlistSharePackage.formatIdentifier,
+            version: SetlistSharePackage.supportedVersion,
+            exportedAt: Date(), checksum: package.checksum, content: oversizedContent)
+        expectFailure("oversized offline link") { _ = try SetlistShareLink.url(for: oversizedLinkPackage) }
+        assert(SetlistShareError.linkTooLarge.errorDescription?.contains(".stagekeyssetlist") == true)
         for bad in ["https://example.com/setlist-share?package=AAAA",
                     "stagekeys://other-host?package=AAAA",
                     "stagekeys://setlist-share",
@@ -153,7 +165,8 @@ import Foundation
             groups: [.init(name: "Generated Layer", layer: 0, low: 0, high: 127,
                            velocityLow: 1, velocityHigh: 127, controller: nil,
                            controllerLow: 0, controllerHigh: 127, enabled: true)],
-            notes: ["Sample at /Users/example/Private/piano.wav and /Volumes/Private/piano.wav"],
+            notes: ["Sample at /Users/example/Private/piano.wav and /Volumes/Private/piano.wav",
+                    "Sample at /Users/Jane Doe/Private/piano.wav"],
             compactGroups: nil, conversionVersion: nil, amplitudeEnvelope: nil, voiceControls: nil)
         let preset = ExternalSound(kind: .samplerPreset, name: "Generated Piano",
                                    fileName: "Generated Piano.aupreset", component: nil,
