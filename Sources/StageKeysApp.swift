@@ -263,6 +263,7 @@ struct PerformanceView: View {
         HStack {
             Button(store.setlist.name) { sheet = .setlists }.buttonStyle(StageButtonStyle())
             Picker("Patch", selection: Binding(get: { store.selected }, set: { store.choose($0) })) { ForEach(store.setlist.patches.indices, id: \.self) { Text(store.setlist.patches[$0].name).tag($0) } }.disabled(store.patchLock)
+            patchMenu
             Button { sheet = .tonic } label: { Image(systemName: "waveform") }.buttonStyle(StageButtonStyle()).accessibilityLabel("Tonic Pad")
         }
     }

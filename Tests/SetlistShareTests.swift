@@ -169,9 +169,10 @@ import Foundation
         assert(exportAfterEdit.name == "Generated Patch")
         assert(exportAfterEdit.patches[0].name == "Generated Patch")
         assert(exportAfterEdit.patches[0].layers[0].name == "Generated Piano")
+        let countBeforeRefusal = try patchLibrary.list().entries.count
         expectFailure("blank patch export title") { _ = try patchLibrary.exportPatch(exportedPatch, name: "   ") }
         let countAfterRefusal = try patchLibrary.list().entries.count
-        assert(countAfterRefusal == 2, "A refused export must not add a document")
+        assert(countAfterRefusal == countBeforeRefusal, "A refused export must not add a document")
 
         // File writes are atomic and a refused export leaves the existing file
         // byte-for-byte unchanged. The document type extension is required.
