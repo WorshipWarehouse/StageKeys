@@ -56,6 +56,11 @@ with tempfile.TemporaryDirectory() as temporary:
     pack.mkdir()
     check(app, False)
     pack.rmdir()
+    for name in ('Shared.stagekeyssetlist', 'Shared.STAGEKEYSSETLIST'):
+        share=resources / name
+        share.write_bytes(b'synthetic setlist share')
+        check(app, False)
+        share.unlink()
     seeded=resources / 'factory.txt'
     seeded.write_text('builtin-0')
     check(app, False)
@@ -93,6 +98,7 @@ repo_check({'Sources/Synth.c': b'void sk_note_on(void) {}'}, True)
 repo_check({'Personal.stagekeyspack': b'fixture personal pack'}, False)
 repo_check({'Personal.STAGEKEYSPACK': b'fixture personal pack'}, False)
 repo_check({'Personal.stagekeyspack/README.txt': b'fixture nested pack'}, False)
+repo_check({'Shared.stagekeyssetlist': b'fixture user setlist share'}, False)
 repo_check({'Docs/stagekeyspack.md': b'fixture format documentation'}, True)
 repo_check({'setlist.json': b'fixture user setlist'}, False)
 repo_check({'setlist-v3-backup.json': b'fixture pre-migration setlist backup'}, False)

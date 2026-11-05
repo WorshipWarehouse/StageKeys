@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Add offline, checksummed `.stagekeyssetlist` setlist shares with dependency and collision previews, Save and Load versus Save to Library import, and `stagekeys://setlist-share` links; samples, plug-in state and local source paths are excluded.
+
 - Preflight the successor before removing a live patch, honor Patch Lock in the Store, recall successor pad/tempo/visual mode and keep stopped removal free of instrument loading.
 
 - Validate live resources before publishing previous-session recovery files, retaining the running performance on rejection, and restore the recovered patch’s performed audio tempo.
