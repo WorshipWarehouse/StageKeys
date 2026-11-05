@@ -93,6 +93,27 @@ import Foundation
         for i in 1...24 { afterGap = gap.tick(at: 2 + Double(i) / 36) }
         assert(afterGap != nil && abs(afterGap! - 90) < 0.01)
 
+        // A deselected clock cannot send Stop through the source filter.
+        // Release it on reassignment so the replacement source can start.
+        let store = PerformanceStore()
+        store.primarySourceID = 101
+        let internalTempo = store.performedTempo
+        store.metronomeSettings.followsMIDIClock = true
+        func playClock(source: Int32, start: Double) {
+            store.debugReceiveMIDIClock(0xFA, source: source, at: start)
+            for pulse in 1...25 {
+                store.debugReceiveMIDIClock(0xF8, source: source, at: start + Double(pulse) / 36)
+            }
+        }
+        playClock(source: 101, start: 0)
+        assert(abs(store.performedTempo - 90) < 0.01)
+        store.primarySourceID = 102
+        assert(store.clockTempo == nil && store.performedTempo == internalTempo)
+        playClock(source: 102, start: 2)
+        assert(abs(store.performedTempo - 90) < 0.01)
+        store.stopAudio()
+        assert(store.clockTempo == nil && store.performedTempo == internalTempo)
+
         print("PASS: metronome defaults, bounded controls, count-in and MIDI-clock settings, legacy settings and JSON round trip")
     }
 }

@@ -224,8 +224,8 @@ final class PerformanceStore: ObservableObject {
         audio.countIn(bars: metronomeSettings.countInBars)
     }
     @Published var midiChannel = -1 { didSet { if oldValue != midiChannel { panic() } } }
-    @Published var primarySourceID: Int32 = -1 { didSet { if oldValue != primarySourceID { panic() } } }
-    @Published var secondarySourceID: Int32 = -2 { didSet { if oldValue != secondarySourceID { panic() } } }
+    @Published var primarySourceID: Int32 = -1 { didSet { if oldValue != primarySourceID { releaseUnselectedMIDIClock(); panic() } } }
+    @Published var secondarySourceID: Int32 = -2 { didSet { if oldValue != secondarySourceID { releaseUnselectedMIDIClock(); panic() } } }
     @Published var secondaryChannel = -1 { didSet { if oldValue != secondaryChannel { panic() } } }
     @Published var velocityMinimum = 0
     @Published var velocityMaximum = 127
@@ -390,6 +390,21 @@ final class PerformanceStore: ObservableObject {
         midiClockTempo.reset()
         clockTempo = nil
     }
+
+    private func stopFollowingMIDIClock() {
+        guard midiClockRunning else { return }
+        audio.midiClockStop()
+        resetMIDIClockTracking()
+        audio.clock(performedTempo, metronome)
+        midiFX.updateTempo(performedTempo)
+    }
+
+    private func releaseUnselectedMIDIClock() {
+        if let source = midiClockSource, !acceptsMIDIClock(source: source) {
+            stopFollowingMIDIClock()
+        }
+    }
+
     /// The tempo actually being performed: a locked patch plays its own tempo,
     /// an unlocked patch keeps the live tempo across patch switches, and an
     /// active external clock supersedes both while it is running.
@@ -844,6 +859,7 @@ final class PerformanceStore: ObservableObject {
     /// Keep musical pad/click intent across an unexpected failure, but revoke
     /// all sounding note/pedal/learn ownership until audio actually recovers.
     private func suspendPerformanceForUnexpectedAudioRecovery() {
+        stopFollowingMIDIClock()
         resumeTonicAfterAudioRecovery = tonic != nil && tonicSound != nil
         let clickEnabled = metronome
         panic(preserveTonic: true); audio.panic(); pressedCCs.removeAll()
@@ -867,6 +883,7 @@ final class PerformanceStore: ObservableObject {
         }
     }
     func stopAudio() {
+        stopFollowingMIDIClock()
         automaticAudioStartAllowed = false
         cancelTransition(pinImmediately: true)
         patchLoadGeneration = UUID(); patchLoading = false
@@ -1004,11 +1021,7 @@ final class PerformanceStore: ObservableObject {
     }
     private func releaseKey(_ key: Int) { held.remove(key); for i in patch.layers.indices { midiFX.noteOff(channel: i, key: key) } }
     private func disconnectMIDI(_ source: Int32) {
-        if source == midiClockSource {
-            audio.midiClockStop()
-            resetMIDIClockTracking()
-            audio.clock(performedTempo, metronome); midiFX.updateTempo(performedTempo)
-        }
+        if source == midiClockSource { stopFollowingMIDIClock() }
         midiFX.releaseSource(source);audio.releaseSource(source)
         for input in Array(hardwareNotes.keys) where input.source == source {
             if let key = hardwareNotes.removeValue(forKey: input) {
@@ -1545,9 +1558,8 @@ final class PerformanceStore: ObservableObject {
     /// Route 24-PPQN clock and transport from the configured controller. Tempo
     /// is measured only after Start/Continue and only until Stop or disconnect,
     /// so ticks from a stopped source cannot replace the stored tempo.
-    private func handleMIDIClock(_ status: UInt8, source: Int32) {
+    private func handleMIDIClock(_ status: UInt8, source: Int32, at now: Double) {
         guard metronomeSettings.followsMIDIClock, acceptsMIDIClock(source: source) else { return }
-        let now = ProcessInfo.processInfo.systemUptime
         switch status {
         case 0xF8:
             // A tick may only advance the run selected by its Start/Continue.
@@ -1571,17 +1583,21 @@ final class PerformanceStore: ObservableObject {
         case 0xFC:
             // Only the source that owns the run may stop it.
             guard midiClockSource == source else { return }
-            audio.midiClockStop()
-            resetMIDIClockTracking()
-            audio.clock(performedTempo, metronome); midiFX.updateTempo(performedTempo)
+            stopFollowingMIDIClock()
         default: break
         }
     }
+    #if DEBUG
+    func debugReceiveMIDIClock(_ status: UInt8, source: Int32, at time: Double) {
+        handleMIDIClock(status, source: source, at: time)
+    }
+    #endif
+
     private func handleMIDI(_ status: UInt8, _ a: UInt8, _ b: UInt8, source: Int32) {
         midiActivity.toggle()
         midiLog.insert((midiSources.first(where: { $0.id == source })?.name ?? "MIDI") + String(format: " · Ch %02d · %02X · %d · %d", Int(status & 15) + 1, status & 0xf0, a, b), at: 0)
         midiLog = Array(midiLog.prefix(15))
-        if status >= 0xF8 { handleMIDIClock(status, source: source); return }
+        if status >= 0xF8 { handleMIDIClock(status, source: source, at: ProcessInfo.processInfo.systemUptime); return }
         if status >= 0xF0 { return }
         let channel=Int(status & 15)
         guard MIDIControllerRules.accepts(sourceID: primarySourceID, channel: midiChannel, source: source, inputChannel: channel) ||
