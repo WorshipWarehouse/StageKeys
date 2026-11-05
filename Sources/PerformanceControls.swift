@@ -108,6 +108,11 @@ struct SoundModule: View {
             }
             Divider().opacity(0.2)
             if layer.loaded {
+                if store.showSoundMeters && store.started {
+                    TimelineView(.periodic(from: .now, by: 0.1)) { _ in
+                        SoundLevelMeter(reading: store.soundMeter(index), color: layer.muted ? .gray : color, label: "Sound \(index+1) output level")
+                    }.frame(height: 6).padding(.horizontal, 2)
+                }
                 if !store.notesMode {
                     if store.patch.layers.contains(where:{$0.loaded && ($0.importedRack?.effectCount ?? 0)>0}) {
                         Group {
@@ -161,6 +166,28 @@ struct SoundModule: View {
             } label: { Image(systemName: "power").font(.system(size: 14)).frame(width: 36, height: 49).background(effect.kind > 0 && effect.enabled ? color.opacity(0.7) : Color.clear) }.buttonStyle(.plain).accessibilityLabel("Sound \(index+1) effect \(slot+1) bypass").accessibilityValue(effect.kind > 0 && effect.enabled ? "On":"Off")
             Button { open(.effect(index, slot)) } label: { VStack(alignment: .leading, spacing: 3) { Text("Audio 0\(slot+1)").font(.system(size: 11)).foregroundStyle(.secondary); Text(effect.title).font(StageTheme.font(14, weight: .semibold)) }.frame(maxWidth: .infinity, alignment: .leading).padding(.leading, 5) }.buttonStyle(.plain).accessibilityLabel("Sound \(index+1) Audio \(slot+1) \(effect.title)")
         }.frame(height: 49).background(StageTheme.raised.opacity(0.55), in: RoundedRectangle(cornerRadius: 6)).clipShape(RoundedRectangle(cornerRadius: 6))
+    }
+}
+struct SoundLevelMeter: View {
+    let reading: OutputMeter.Reading?
+    let color: Color
+    let label: String
+    private func fraction(_ db: Float) -> CGFloat {
+        CGFloat(max(0, min(1, (db + 60) / 60)))
+    }
+    var body: some View {
+        GeometryReader { geometry in
+            ZStack(alignment: .leading) {
+                Capsule().fill(Color.black.opacity(0.35))
+                if let reading {
+                    Capsule().fill(reading.invalid > 0 ? Color.red : reading.overload > 0 ? Color.orange : color)
+                        .frame(width: max(1, geometry.size.width * fraction(reading.peakDB)))
+                }
+            }
+        }.frame(height: 6)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(label)
+        .accessibilityValue(reading.map { "\(Int($0.peakDB.rounded())) dBFS sample peak" } ?? "No signal")
     }
 }
 enum PianoGeometry {

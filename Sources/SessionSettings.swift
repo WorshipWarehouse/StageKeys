@@ -76,6 +76,7 @@ struct SessionSettings: Codable {
     var keyboardPlayable: Bool?
     var showPlayedNotes: Bool?
     var dynamicMIDIRanges: Bool?
+    var showSoundMeters: Bool?
     func validate() -> Bool {
         (0..<12).contains(tonicTimbre ?? 0) && (0..<12).contains(tonicLastRoot ?? 0) && (tonicSound == nil || tonicSound?.kind == .samplerPreset) && (audioBufferFrames.map { (0...8192).contains($0) } ?? true) && (audioOutputUID?.utf8.count ?? 0) <= 4096 && (modWheel.map { $0.isFinite && (0...1).contains($0) } ?? true) && (-1...15).contains(secondaryChannel ?? -1) && (0...127).contains(velocityMinimum ?? 0) && ((velocityMinimum ?? 0)...127).contains(velocityMaximum ?? 127) && (sourceNames?.count ?? 0) <= 512 && master.isFinite && (0...1).contains(master) && reverb.isFinite && (0...65).contains(reverb) && transition.isFinite && (0...15).contains(transition) && (-1...15).contains(midiChannel) && tonicGain.isFinite && (0...1).contains(tonicGain) && tonicBrightness.isFinite && (0...1).contains(tonicBrightness) && tonicShimmer.isFinite && (0...1).contains(tonicShimmer) && (metronomeSettings?.validate() ?? true) && (liveTempo.map { $0.isFinite && (PatchTransposition.minimumTempo...PatchTransposition.maximumTempo).contains($0) } ?? true)
     }

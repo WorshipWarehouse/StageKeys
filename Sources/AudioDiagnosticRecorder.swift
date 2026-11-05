@@ -58,6 +58,70 @@ final class OutputMeter {
 
 }
 
+/// Optional per-channel taps. Installation and removal run on the main queue;
+/// the tap only writes lock-free counters through `OutputMeter`. No tap exists
+/// while metering is disabled, so the default path has no callback overhead.
+final class SoundMeterBank {
+    private var mixers: [Int: AVAudioMixerNode] = [:]
+    private var meters: [Int: OutputMeter] = [:]
+    private var tapped: Set<Int> = []
+    private(set) var enabled = false
+
+    func setEnabled(_ enabled: Bool) {
+        guard self.enabled != enabled else { return }
+        self.enabled = enabled
+        if enabled {
+            for (channel, mixer) in mixers { install(mixer, channel: channel) }
+        } else {
+            for (channel, mixer) in mixers { removeTap(mixer, channel: channel) }
+            meters.removeAll()
+        }
+    }
+
+    /// Keeps the current mixer even while metering is disabled, so enabling the
+    /// option later can attach without rebuilding the audio graph.
+    func attach(_ mixer: AVAudioMixerNode, channel: Int) {
+        guard (0..<16).contains(channel) else { return }
+        if let previous = mixers[channel], previous !== mixer {
+            removeTap(previous, channel: channel)
+        }
+        mixers[channel] = mixer
+        if enabled { install(mixer, channel: channel) }
+    }
+
+    func detach(channel: Int) {
+        if let mixer = mixers[channel] { removeTap(mixer, channel: channel) }
+        mixers.removeValue(forKey: channel)
+        meters.removeValue(forKey: channel)
+    }
+
+    func detachAll() {
+        for channel in Array(mixers.keys) { detach(channel: channel) }
+    }
+
+    func reading(channel: Int) -> OutputMeter.Reading? {
+        guard enabled, let meter = meters[channel] else { return nil }
+        return meter.read()
+    }
+
+    private func install(_ mixer: AVAudioMixerNode, channel: Int) {
+        guard !tapped.contains(channel) else { return }
+        let meter = meters[channel] ?? OutputMeter()
+        meters[channel] = meter
+        mixer.installTap(onBus: 0, bufferSize: 512, format: nil) { buffer, _ in
+            meter.append(buffer)
+        }
+        tapped.insert(channel)
+    }
+
+    private func removeTap(_ mixer: AVAudioMixerNode, channel: Int) {
+        guard tapped.remove(channel) != nil else { return }
+        mixer.removeTap(onBus: 0)
+    }
+
+    deinit { detachAll() }
+}
+
 /// Copies a bounded take from an output tap. File I/O runs on its own queue;
 /// instrument samples and library presets are never opened for writing.
 final class AudioDiagnosticRecorder {

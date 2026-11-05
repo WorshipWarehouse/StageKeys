@@ -201,6 +201,8 @@ final class PerformanceStore: ObservableObject {
     @Published var editRanges = false
     @Published var showRanges = true
     @Published var dynamicMIDIRanges = false
+    @Published var showSoundMeters = false { didSet { audio.setSoundMetering(showSoundMeters) } }
+    func soundMeter(_ index: Int) -> OutputMeter.Reading? { audio.soundMeter(index) }
     @Published var keyboardPlayable = true {
         didSet { if !keyboardPlayable { releaseScreenNotes() } }
     }
@@ -685,6 +687,7 @@ final class PerformanceStore: ObservableObject {
             keyboardPlayable = settings.keyboardPlayable ?? true
             showPlayedNotes = settings.showPlayedNotes ?? true
             dynamicMIDIRanges = settings.dynamicMIDIRanges ?? false
+            showSoundMeters = settings.showSoundMeters ?? false
             tonicVelocitySelector=settings.tonicVelocitySelector ?? false;tonicTimbre=settings.tonicTimbre ?? 0;tonicLastRoot=settings.tonicLastRoot ?? 0;tonicSound=settings.tonicSound
             tonicGain = settings.tonicGain; tonicBrightness = settings.tonicBrightness; tonicShimmer = settings.tonicShimmer
         }
@@ -2147,7 +2150,7 @@ final class PerformanceStore: ObservableObject {
             try RecoverableSessionFile.write(data, to: saveURL) { _ = try JSONDecoder().decode(Setlist.self, from: $0).upgraded() }
             currentSetlistID = try localSetlistLibrary().save(setlist,id:currentSetlistID).id
             refreshSetlists()
-            let settings = SessionSettings(selectedPatchID:patch.id,activeSnapshotID:activeSnapshot,notesMode:notesMode,modWheel:modWheel,master: master, reverb: reverb, transition: transition, midiChannel: midiChannel, primarySourceID: primarySourceID, secondarySourceID: secondarySourceID, secondaryChannel: secondaryChannel, velocityMinimum: velocityMinimum, velocityMaximum: velocityMaximum, sourceNames: midiSourceNames, disableSilent: disableSilent, showRanges: showRanges, tonicGain: tonicGain, tonicBrightness: tonicBrightness, tonicShimmer: tonicShimmer, audioOutputUID: preferredAudioOutputUID, activeSetlistID: currentSetlistID,tonicSound:tonicSound,tonicVelocitySelector:tonicVelocitySelector,tonicTimbre:tonicTimbre,tonicLastRoot:tonicLastRoot,metronomeEnabled:metronome,audioBufferFrames:preferredBufferFrames.map{Int($0)},metronomeSettings:metronomeSettings,liveTempo:liveTempo,keyboardPlayable:keyboardPlayable,showPlayedNotes:showPlayedNotes,dynamicMIDIRanges:dynamicMIDIRanges)
+            let settings = SessionSettings(selectedPatchID:patch.id,activeSnapshotID:activeSnapshot,notesMode:notesMode,modWheel:modWheel,master: master, reverb: reverb, transition: transition, midiChannel: midiChannel, primarySourceID: primarySourceID, secondarySourceID: secondarySourceID, secondaryChannel: secondaryChannel, velocityMinimum: velocityMinimum, velocityMaximum: velocityMaximum, sourceNames: midiSourceNames, disableSilent: disableSilent, showRanges: showRanges, tonicGain: tonicGain, tonicBrightness: tonicBrightness, tonicShimmer: tonicShimmer, audioOutputUID: preferredAudioOutputUID, activeSetlistID: currentSetlistID,tonicSound:tonicSound,tonicVelocitySelector:tonicVelocitySelector,tonicTimbre:tonicTimbre,tonicLastRoot:tonicLastRoot,metronomeEnabled:metronome,audioBufferFrames:preferredBufferFrames.map{Int($0)},metronomeSettings:metronomeSettings,liveTempo:liveTempo,keyboardPlayable:keyboardPlayable,showPlayedNotes:showPlayedNotes,dynamicMIDIRanges:dynamicMIDIRanges,showSoundMeters:showSoundMeters)
             guard settings.validate() else { throw SetlistError.invalid }
             try RecoverableSessionFile.write(encoder.encode(settings), to: saveURL.deletingLastPathComponent().appendingPathComponent("settings.json")) {
                 guard try JSONDecoder().decode(SessionSettings.self, from: $0).validate() else { throw SetlistError.invalid }

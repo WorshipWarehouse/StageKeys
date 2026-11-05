@@ -344,11 +344,23 @@ final class ExternalInstrumentRack {
     }
     private var voices: [Int: Voice] = [:]
     private var generations: [Int: UUID] = [:]
+    private let soundMeters = SoundMeterBank()
     init(engine: AVAudioEngine, libraryURL: URL? = nil) throws {
         self.engine = engine
         let base=ProcessInfo.processInfo.environment["STAGEKEYS_DATA_DIR"].map{URL(fileURLWithPath:$0,isDirectory:true)} ?? FileManager.default.urls(for:.applicationSupportDirectory,in:.userDomainMask)[0].appendingPathComponent("StageKeys",isDirectory:true)
         self.libraryURL = libraryURL ?? base.appendingPathComponent("Imported Sounds",isDirectory:true)
         try FileManager.default.createDirectory(at: self.libraryURL, withIntermediateDirectories: true)
+    }
+    /// The optional taps live after the per-sound effects and fader/pan, before
+    /// the shared reverb and master limiter. Enabling or disabling this never
+    /// edits the graph and never allocates on the render thread.
+    func setMeteringEnabled(_ enabled: Bool) {
+        precondition(Thread.isMainThread)
+        soundMeters.setEnabled(enabled)
+    }
+    func soundMeter(channel: Int) -> OutputMeter.Reading? {
+        precondition(Thread.isMainThread)
+        return soundMeters.reading(channel: channel)
     }
     /// Enumerate installed Audio Units with the metadata the picker needs. Audio
     /// Units installed while StageKeys is running may need a relaunch: Core Audio
@@ -1204,11 +1216,13 @@ final class ExternalInstrumentRack {
             connectEffects(voice)
             engine.connect(mixer, to: engine.mainMixerNode, format: nil)
             voices[channel] = voice
+            soundMeters.attach(mixer, channel: channel)
             try ready?()
         }
     }
     private func retire(_ channel: Int) {
         guard voices[channel] != nil else { return }
+        soundMeters.detach(channel: channel)
         panic(channel,preserveEffectTails:true)
         guard let old=voices.removeValue(forKey:channel) else{return}
         var nodes:[AVAudioNode]=[old.unit,old.filter,old.eq,old.compressor,old.mixer,old.builtin]
@@ -1226,6 +1240,7 @@ final class ExternalInstrumentRack {
         panic()
         let nodes = graphNodes()
         retiredTails.forEach { $0.muteWorkItem?.cancel() }
+        soundMeters.detachAll()
         for node in nodes where node.engine === engine { engine.disconnectNodeOutput(node) }
         for node in nodes.reversed() where node.engine === engine { engine.detach(node) }
         voices.removeAll(); retiredTails.removeAll(); noteIntents.removeAll()

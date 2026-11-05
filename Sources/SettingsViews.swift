@@ -209,6 +209,8 @@ struct SettingsEditor: View {
                         Toggle("Show Layer Ranges", isOn: $store.showRanges)
                         Toggle("Dynamic MIDI Output Ranges", isOn: $store.dynamicMIDIRanges)
                         Text("Dynamic ranges show the span of active output notes after MIDI effects and transposition. The span can include unplayed pitches. Sustain and audio tails are excluded.").font(.caption).foregroundStyle(.secondary)
+                        Toggle("Per-Sound Meters", isOn: $store.showSoundMeters)
+                        Text("Optional sample-peak meters at each loaded sound after its fader/pan and before the shared reverb and master limiter. They are not true-peak or loudness meters.").font(.caption).foregroundStyle(.secondary)
                         Text("192 synth voices are shared by all 15 modules and the tonic pad. Each original synth module has its own voice limit in Sound Settings. Imported instruments manage their own polyphony.").font(.caption).foregroundStyle(.secondary)
                     default:
                         Section("Default Transition") { Slider(value: $store.transition, in: 0...15, step: 0.1); Text("\(store.transition, specifier: "%.1f") seconds") }
