@@ -44,15 +44,21 @@ duration of the clock run; the patch’s stored tempo is not overwritten.
   current click and schedules the next one a full interval later. Turning the
   metronome on starts a fresh bar immediately.
 - **Count In** starts on a downbeat for the configured number of bars. If the
-  click was off it stops after the last count-in bar; if the click was already
-  on it continues without a second start or a phase jump. Count-in uses the
+  click was off it stops after the last count-in bar. If the normal click was
+  already on, Count In leaves its scheduler untouched, so there is no second
+  start, early click or phase jump. Repeated count-in requests while the click
+  setting is off restart as one-shot count-ins and still stop. Count-in uses the
   internal clock and is unavailable while external clock sync is on.
 - **External MIDI clock** follows 24-pulse-per-quarter MIDI Clock. It ignores
   Song Position Pointer: Start resets to the first beat, Continue resumes on
   the next beat, and Stop silences the click without discarding the saved
   click setting. Tempo is smoothed from the 24-pulse interval and applied at a
   quarter-note boundary, so a change scales the pending interval rather than
-  retriggering the current click.
+  retriggering the current click. Ticks received while stopped are ignored for
+  tempo, a discontinuous interval resets the measurement window, and losing the
+  source that supplied the clock stops the click and restores the stored tempo.
+- Clock ticks reserve queue capacity for Start/Continue/Stop, so a burst of
+  pulses cannot make the render thread drop a later Stop when it is delayed.
 - Two presets are generated from a sine burst (Click) and a mixed sine/noise
   strike (Woodblock). To add a preset, extend `metro_sample` with another
   `preset` branch, add its display name to `MetronomeSettings.presets`, and add
@@ -84,10 +90,12 @@ scales that peak, and 100% is not a measured sound-pressure level.
 - subdivisions and their lower level;
 - both presets being finite, bounded and distinct;
 - level, explicit stop and master-follow behavior;
-- a one-shot count-in that stops after its bars and a count-in that continues
-  an already-running click;
-- external clock Start/Continue/Stop, 24 PPQN tempo derivation, and a rejected
-  discontinuous timestamp;
+- a one-shot count-in that stops after its bars, a repeated one-shot that still
+  stops, and a count-in that preserves an already-running click's phase;
+- count-in at 44.1/48/96 kHz with irregular block splits;
+- external clock Start/Continue/Stop, 24 PPQN tempo derivation, a rejected
+  discontinuous timestamp, and a transport slot that survives a tick burst;
+- external clock at 44.1/48/96 kHz with irregular block splits;
 - a 60-second 300 BPM run without drift.
 
 `Tests/MetronomeSettingsTests.swift` covers defaults, count-in and clock
@@ -113,9 +121,10 @@ the default native list.
 - External sync is MIDI Clock only. Song Position Pointer, MIDI Time Code and
   transport recording are not implemented; Continue resumes on the next beat.
   Clock sync does not persist a new patch tempo and does not replace the
-  patch/live tempo policy once it stops. After audio is stopped, restarted or
-  recovered, the click waits for the next MIDI Start or Continue; it never
-  free-runs against a clock that is not running.
+  patch/live tempo policy once it stops. Changing the tempo lock or tempo value
+  during sync writes the stored internal tempo, not the clock BPM. After audio
+  is stopped, restarted or recovered, the click waits for the next MIDI Start or
+  Continue; it never free-runs against a clock that is not running.
 - Multi-output and category routing are tracked by issue #107; until then the
   click shares the stereo system output without the hall reverb.
 - Physical-device listening and latency remain part of the broader hardware

@@ -237,8 +237,26 @@ static void test_long_run(void) {
     sk_metronome_destroy(m);
 }
 
+// Count-in must work at every supported rate and across irregular block splits.
+static void test_count_in_matrix(void) {
+    double rates[3] = {44100, 48000, 96000};
+    uint32_t blocks[3] = {1, 127, 511};
+    for (int i = 0; i < 3; i++) {
+        SKMetronome *m = sk_metronome_create(rates[i]); assert(m);
+        SKMetronomeSettings s = defaults();
+        s.beatVelocity = 0.5f; s.downbeatVelocity = 1;
+        sk_metronome_settings(m, s);
+        sk_metronome_tempo(m, 120);
+        sk_metronome_count_in(m, 1);
+        Capture c; capture(&c, m, &blocks[i], 1, (long)(rates[i] * 3));
+        assert(c.count == 4);
+        assert(c.peak[0] > c.peak[1]); // count-in begins on the downbeat
+        sk_metronome_destroy(m);
+    }
+}
+
 // A one-shot count-in starts on a downbeat, stops after the requested bars when
-// the click was off, and continues the normal click when it was already on.
+// the click was off, and leaves an already-running click untouched.
 static void test_count_in(void) {
     SKMetronome *m = sk_metronome_create(48000); assert(m);
     uint32_t block[1] = {512};
@@ -251,14 +269,81 @@ static void test_count_in(void) {
     assert(c.count == 4);
     assert(c.peak[0] > c.peak[1]); // count-in begins on the downbeat
 
-    // A count-in while the click is already running keeps the click running.
+    // Pressing Count In while the normal click is already running must not
+    // insert an early downbeat; the next click stays on its original boundary.
+    sk_metronome_reset(m);
+    sk_metronome_enable(m, 0);
+    sk_metronome_enable(m, 1);
+    sk_metronome_render(m, NULL, NULL, 12000);
+    sk_metronome_count_in(m, 1);
+    Capture phase; capture(&phase, m, block, 1, 13000);
+    assert(phase.count == 1 && phase.onset[0] >= 11998 && phase.onset[0] <= 12002);
+
+    // A second one-shot request before the first finishes stays temporary and
+    // still stops when the click setting is off.
+    sk_metronome_enable(m, 0);
+    sk_metronome_count_in(m, 1);
+    sk_metronome_render(m, NULL, NULL, 1000);
+    sk_metronome_count_in(m, 1);
+    Capture repeated; capture(&repeated, m, block, 1, 48000 * 3);
+    assert(repeated.count == 4);
+
+    // A normal click is unaffected by Count In and keeps running.
     sk_metronome_enable(m, 0);
     sk_metronome_enable(m, 1);
     sk_metronome_count_in(m, 1);
     Capture on; capture(&on, m, block, 1, 48000 * 3);
     assert(on.count == 6);
     Capture continued; capture(&continued, m, block, 1, 48000);
-    assert(continued.count == 2); // the normal click kept running after count-in
+    assert(continued.count == 2);
+    sk_metronome_destroy(m);
+}
+
+// External clock tempo must be sample-rate independent and tolerant of the
+// same irregular block splits as the internal scheduler.
+static void test_external_clock_matrix(void) {
+    double rates[3] = {44100, 48000, 96000};
+    uint32_t blocks[3] = {1, 127, 511};
+    for (int i = 0; i < 3; i++) {
+        SKMetronome *m = sk_metronome_create(rates[i]); assert(m);
+        SKMetronomeSettings s = defaults();
+        s.beatVelocity = 1; s.downbeatVelocity = 1;
+        sk_metronome_settings(m, s);
+        sk_metronome_tempo(m, 120);
+        sk_metronome_clock_enabled(m, 1);
+        sk_metronome_enable(m, 1);
+        sk_metronome_clock_event(m, 1, 0);
+        for (int tick = 1; tick <= 24; tick++) sk_metronome_clock_event(m, 0, (double)tick / 36.0);
+        sk_metronome_render(m, NULL, NULL, 0);
+        Capture c; capture(&c, m, &blocks[i], 1, (long)(rates[i] * 2));
+        assert(c.count >= 3);
+        double interval = rates[i] * 60 / 90;
+        for (int click = 0; click < c.count; click++)
+            assert(fabs((double)c.onset[click] - interval * click) <= 2);
+        sk_metronome_clock_event(m, 3, 0);
+        sk_metronome_render(m, NULL, NULL, 0);
+        Capture stopped; capture(&stopped, m, &blocks[i], 1, (long)rates[i]);
+        assert(stopped.count == 0);
+        sk_metronome_destroy(m);
+    }
+}
+
+// A burst of clock ticks must not consume the slots reserved for transport, so
+// a Stop that arrives while the render thread is delayed is still delivered.
+static void test_clock_transport_reserve(void) {
+    SKMetronome *m = sk_metronome_create(48000); assert(m);
+    SKMetronomeSettings s = defaults();
+    s.beatVelocity = 1; s.downbeatVelocity = 1;
+    sk_metronome_settings(m, s);
+    sk_metronome_clock_enabled(m, 1);
+    sk_metronome_enable(m, 1);
+    sk_metronome_clock_event(m, 1, 0);
+    for (int tick = 1; tick <= 2000; tick++) sk_metronome_clock_event(m, 0, (double)tick / 36.0);
+    sk_metronome_clock_event(m, 3, 0);
+    sk_metronome_render(m, NULL, NULL, 0);
+    uint32_t block[1] = {512};
+    Capture stopped; capture(&stopped, m, block, 1, 48000);
+    assert(stopped.count == 0);
     sk_metronome_destroy(m);
 }
 
@@ -332,8 +417,11 @@ int main(void) {
     test_level_and_stop();
     test_master();
     test_long_run();
+    test_count_in_matrix();
     test_count_in();
+    test_external_clock_matrix();
+    test_clock_transport_reserve();
     test_external_clock();
     test_reset();
-    puts("PASS: metronome timing at 44.1/48/96 kHz, block splits, tempo phase, accents, subdivision, presets, levels, master follow, count-in, MIDI clock sync, long-run drift and reset");
+    puts("PASS: metronome timing at 44.1/48/96 kHz, block splits, tempo phase, accents, subdivision, presets, levels, master follow, count-in phase/repeat, MIDI clock sync/reserve, long-run drift and reset");
 }

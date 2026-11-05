@@ -60,7 +60,12 @@ struct MIDIClockTempo {
         defer { lastTime = time }
         guard let previous = lastTime else { return nil }
         let delta = time - previous
-        guard delta >= 0.001, delta <= 1 else { return nil }
+        guard delta >= 0.001, delta <= 1 else {
+            // Discard the partial window; a later tick must not combine
+            // measurements from opposite sides of a clock gap.
+            elapsed = 0; pulses = 0
+            return nil
+        }
         elapsed += delta
         pulses += 1
         guard pulses >= Self.pulsesPerQuarter else { return nil }
