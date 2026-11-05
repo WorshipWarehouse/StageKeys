@@ -18,8 +18,12 @@ stopped-engine, pad, and click regression.
    actual sample rate and buffer, and direct USB MIDI controller. Use a
    generated native sampler patch first. Set up a second sounding layer,
    Tonic Pad, and metronome so their behavior can be checked independently.
-2. Hold a note, release a second note under sustain, and change one control
-   at a time: replace a sound, edit an effect, then change a patch setting.
+   For each native and hosted AU pass, use a continuously clocked independent
+   recorder connected to the AudioBox line output. Record a matched no-edit
+   control with the same notes, pad, click and levels. Label edit times and
+   any audible clicks or gaps.
+2. Before each edit, hold one key and release a second note under sustain.
+   Change one control at a time: replace a sound, edit an effect, then change a patch setting.
    Keep the pedal and held key down until the note checks in step 4. Record
    the order and count of attempts. Test output and buffer changes separately
    so they are not mistaken for graph edits.
@@ -36,10 +40,8 @@ stopped-engine, pad, and click regression.
    follow the on-screen recovery action and check whether manual restart
    restores the saved patch, pad and click with fresh key input.
 5. Repeat the edit sequence with a locally installed, authorized hosted AU.
-   Record its version, attempt count and duration. Use a continuously clocked
-   independent recorder connected to the AudioBox line output to measure clicks
-   and gaps. Record a no-edit control with the same notes, pad, click and levels.
-   Label edit times and any audible interruption. **Record 30-Second Audio Check**
+   Record its version, attempt count and duration. Repeat the independent
+   recording and matched control from step 1. **Record 30-Second Audio Check**
    in Audio Settings provides supplemental PCM from the engine tap. It appends
    only received frames, so stopped-engine time can be missing. Record graph
    node counts before and after batches using a diagnostic build or debugger.
