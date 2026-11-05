@@ -794,7 +794,7 @@ final class AudioController {
     }
     /// One-shot count-in. The engine stops after the bars when the click was off
     /// and keeps the normal click running when it was already on.
-    func countIn(bars: Int) { sk_metronome_count_in(metronomeEngine, Int32(max(1, min(16, bars)))) }
+    func countIn(bars: Int) { sk_metronome_count_in(metronomeEngine, Int32(max(0, min(8, bars)))) }
     func midiClockTick(at time: Double) { sk_metronome_clock_event(metronomeEngine, 0, time) }
     func midiClockStart(at time: Double) { sk_metronome_clock_event(metronomeEngine, 1, time) }
     func midiClockContinue(at time: Double) { sk_metronome_clock_event(metronomeEngine, 2, time) }

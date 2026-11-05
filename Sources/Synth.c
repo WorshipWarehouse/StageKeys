@@ -688,7 +688,8 @@ void sk_render(SKSynth *s,float *left,float *right,uint32_t frames){
   left[n]=tanhf(sumL);if(right)right[n]=tanhf(sumR);
  }
 }
-// Decode MIDI 1 UMP and MIDI 2 channel-voice note/CC messages. Packet traversal is C-native.
+// Decode MIDI 1 UMP, including system realtime transport, and MIDI 2
+// channel-voice note/CC messages. Packet traversal is C-native.
 void sk_read_midi(const MIDIEventList *list,SKMIDIEvent callback,void *context){
  const MIDIEventPacket *p=&list->packet[0];
  for(uint32_t i=0;i<list->numPackets;i++,p=MIDIEventPacketNext(p)){
@@ -697,6 +698,7 @@ void sk_read_midi(const MIDIEventList *list,SKMIDIEvent callback,void *context){
    if(j+size>p->wordCount)break;
    uint8_t status=(w>>16)&255,d1=(w>>8)&127,d2=w&127;
    if(type==2)callback(context,status,d1,d2);
+   else if(type==1&&status>=0xF8)callback(context,status,0,0);
    else if(type==4){unsigned kind=status&0xf0;uint32_t data=p->words[j+1];if(kind==0x90||kind==0x80)d2=(data>>25)&127;else if(kind==0xb0)d2=data>>25;else if(kind==0xc0){d1=(data>>24)&127;d2=0;}if(kind==0x90||kind==0x80||kind==0xb0||kind==0xc0)callback(context,status,d1,d2);}
    j+=size;
   }
@@ -705,6 +707,9 @@ void sk_read_midi(const MIDIEventList *list,SKMIDIEvent callback,void *context){
 // Independent metronome. It has no signal path through the synth above, so the
 // host can mix it after the shared reverb and set its level predictably.
 #define METRONOME_QUEUE 64
+// Clock ticks yield this many slots so Start/Continue/Stop can still be queued
+// while the render thread is stopped or delayed.
+#define METRONOME_TRANSPORT_RESERVE 4
 #define METRONOME_PEAK 0.2f
 typedef struct { int kind; SKMetronomeSettings settings; float value; int flag; double when; } MetronomeCommand;
 struct SKMetronome {
@@ -725,12 +730,17 @@ struct SKMetronome {
 static float metro_unit(float x){return isfinite(x)?fminf(1,fmaxf(0,x)):0;}
 static double metro_interval(const SKMetronome*m){return m->rate*60.0/m->tempo/(double)m->settings.subdivision;}
 // Drop rather than block: every setting is idempotent and the next control
-// change republishes the full state.
-static void metro_push(SKMetronome*m,MetronomeCommand c){
+// change republishes the full state. `reserve` keeps room for transport events
+// when the queue is carrying a burst of clock ticks.
+static int metro_push_reserved(SKMetronome*m,MetronomeCommand c,unsigned reserve){
  unsigned w=atomic_load_explicit(&m->write,memory_order_relaxed),next=(w+1)%METRONOME_QUEUE;
- if(next==atomic_load_explicit(&m->read,memory_order_acquire))return;
+ unsigned read=atomic_load_explicit(&m->read,memory_order_acquire);
+ unsigned free=(read+METRONOME_QUEUE-w-1)%METRONOME_QUEUE;
+ if(free<=reserve)return 0;
  m->queue[w]=c;atomic_store_explicit(&m->write,next,memory_order_release);
+ return 1;
 }
+static void metro_push(SKMetronome*m,MetronomeCommand c){(void)metro_push_reserved(m,c,0);}
 SKMetronome *sk_metronome_create(double rate){
  if(!(rate>0))return NULL;
  SKMetronome*m=calloc(1,sizeof(*m));if(!m)return NULL;
@@ -755,7 +765,13 @@ void sk_metronome_tempo(SKMetronome*m,float tempo){if(m)metro_push(m,(MetronomeC
 void sk_metronome_master(SKMetronome*m,float volume,int followsMaster){if(m)metro_push(m,(MetronomeCommand){.kind=4,.value=metro_unit(volume),.flag=followsMaster?1:0});}
 void sk_metronome_count_in(SKMetronome*m,int bars){if(m)metro_push(m,(MetronomeCommand){.kind=6,.flag=bars<1?1:bars>16?16:bars});}
 void sk_metronome_clock_enabled(SKMetronome*m,int enabled){if(m)metro_push(m,(MetronomeCommand){.kind=7,.flag=enabled?1:0});}
-void sk_metronome_clock_event(SKMetronome*m,int event,double time){if(m)metro_push(m,(MetronomeCommand){.kind=8,.flag=event<0?0:event>3?3:event,.when=time});}
+void sk_metronome_clock_event(SKMetronome*m,int event,double time){
+ if(!m)return;
+ int kind=event<0?0:event>3?3:event;
+ MetronomeCommand c={.kind=8,.flag=kind,.when=time};
+ if(kind==0)(void)metro_push_reserved(m,c,METRONOME_TRANSPORT_RESERVE);
+ else metro_push(m,c);
+}
 void sk_metronome_reset(SKMetronome*m){if(m)metro_push(m,(MetronomeCommand){.kind=5});}
 // Tempo and subdivision edits scale the pending interval instead of restarting
 // it, so a change cannot double-trigger or skip the beat the performer hears.
@@ -778,10 +794,20 @@ static void metro_apply(SKMetronome*m,const MetronomeCommand*c){
  else if(c->kind==4){m->master=c->value;m->followsMaster=c->flag;}
  else if(c->kind==5){m->beat=0;m->step=0;m->remaining=m->interval;m->envelope=0;m->phase=0;m->countInRemaining=0;m->countInOnly=0;m->countInStopPending=0;}
  else if(c->kind==6){
-  m->countInOnly=!m->enabled;
-  m->countInRemaining=c->flag*m->settings.beatsPerBar*m->settings.subdivision;
+  int wasEnabled=m->enabled;
+  m->countInOnly=!m->requestedEnabled;
   m->countInStopPending=0;
-  m->enabled=1;m->beat=0;m->step=0;m->remaining=0;m->envelope=0;m->phase=0;
+  if(m->countInOnly){
+   // A temporary count-in starts or restarts on a downbeat. Repeated requests
+   // stay temporary even though `enabled` is already true from the first one.
+   m->countInRemaining=c->flag*m->settings.beatsPerBar*m->settings.subdivision;
+   m->enabled=1;m->beat=0;m->step=0;m->remaining=0;m->envelope=0;m->phase=0;
+  }else{
+   // The normal click is already wanted. Preserve its scheduler phase instead
+   // of inserting an early downbeat; Count In has no audible effect here.
+   m->countInRemaining=0;
+   if(!wasEnabled){m->enabled=1;m->beat=0;m->step=0;m->remaining=0;m->envelope=0;m->phase=0;}
+  }
  }else if(c->kind==7){
   if(m->externalClock!=c->flag){
    m->externalClock=c->flag;

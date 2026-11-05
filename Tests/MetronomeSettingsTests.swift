@@ -87,6 +87,11 @@ import Foundation
         _ = gap.tick(at: 0)
         _ = gap.tick(at: 0.5)
         assert(gap.tick(at: 2) == nil, "a discontinuous timestamp must not change tempo")
+        // The rejected gap must also discard the half-finished window; a later
+        // 24-pulse window must measure 90 BPM, not a mixture across the gap.
+        var afterGap: Double?
+        for i in 1...24 { afterGap = gap.tick(at: 2 + Double(i) / 36) }
+        assert(afterGap != nil && abs(afterGap! - 90) < 0.01)
 
         print("PASS: metronome defaults, bounded controls, count-in and MIDI-clock settings, legacy settings and JSON round trip")
     }

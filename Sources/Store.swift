@@ -209,9 +209,10 @@ final class PerformanceStore: ObservableObject {
     @Published var metronome = false { didSet { applyMetronome() } }
     @Published var metronomeSettings = MetronomeSettings() { didSet { applyMetronome() } }
     private func applyMetronome() {
-        if !metronomeSettings.followsMIDIClock, clockTempo != nil {
-            clockTempo = nil; midiClockTempo.reset()
-            audio.clock(performedTempo, metronome); midiFX.updateTempo(performedTempo)
+        if !metronomeSettings.followsMIDIClock {
+            let wasTracking = midiClockRunning || clockTempo != nil
+            resetMIDIClockTracking()
+            if wasTracking { audio.clock(performedTempo, metronome); midiFX.updateTempo(performedTempo) }
         }
         audio.metronome(metronome, settings: metronomeSettings)
     }
@@ -378,6 +379,17 @@ final class PerformanceStore: ObservableObject {
     /// off or stopped, so the patch/live tempo policy resumes immediately.
     @Published private(set) var clockTempo: Double?
     private var midiClockTempo = MIDIClockTempo()
+    private var midiClockRunning = false
+    private var midiClockSource: Int32?
+    /// Drop every piece of external-clock state so the stored patch/live tempo
+    /// is authoritative again. The caller reapplies `performedTempo` when audio
+    /// needs to leave clock sync immediately.
+    private func resetMIDIClockTracking() {
+        midiClockRunning = false
+        midiClockSource = nil
+        midiClockTempo.reset()
+        clockTempo = nil
+    }
     /// The tempo actually being performed: a locked patch plays its own tempo,
     /// an unlocked patch keeps the live tempo across patch switches, and an
     /// active external clock supersedes both while it is running.
@@ -992,6 +1004,11 @@ final class PerformanceStore: ObservableObject {
     }
     private func releaseKey(_ key: Int) { held.remove(key); for i in patch.layers.indices { midiFX.noteOff(channel: i, key: key) } }
     private func disconnectMIDI(_ source: Int32) {
+        if source == midiClockSource {
+            audio.midiClockStop()
+            resetMIDIClockTracking()
+            audio.clock(performedTempo, metronome); midiFX.updateTempo(performedTempo)
+        }
         midiFX.releaseSource(source);audio.releaseSource(source)
         for input in Array(hardwareNotes.keys) where input.source == source {
             if let key = hardwareNotes.removeValue(forKey: input) {
@@ -1442,6 +1459,12 @@ final class PerformanceStore: ObservableObject {
         save()
     }
     func updateTempo(_ value: Double) {
+        // The external clock is the timing authority while it runs. Keep edits
+        // out of patch/live storage until Stop restores the stored tempo.
+        if metronomeSettings.followsMIDIClock, let clockTempo {
+            audio.clock(clockTempo, metronome); midiFX.updateTempo(clockTempo)
+            return
+        }
         let tempo = PatchTransposition.clampTempo(value)
         liveTempo = tempo
         setlist.patches[selected].tempo = tempo
@@ -1450,13 +1473,14 @@ final class PerformanceStore: ObservableObject {
     /// Locking keeps the patch's own tempo and recalls it with the patch;
     /// unlocking keeps the tempo currently being played for the whole session.
     func setTempoLocked(_ locked: Bool) {
-        // Resolve before the flag changes so locking a patch keeps the tempo that
-        // was actually being played instead of the value it stored earlier.
-        let current = performedTempo
+        // Resolve the stored tempo before the flag changes. Do not use
+        // `performedTempo` here: during clock sync it reports the external BPM,
+        // which must never be written into patch or live session storage.
+        let stored = PatchTransposition.resolvedTempo(locked: patch.tempoLocked, patchTempo: patch.tempo, liveTempo: liveTempo)
         setlist.patches[selected].tempoLocked = locked
-        setlist.patches[selected].tempo = current
-        liveTempo = current
-        audio.clock(current, metronome); midiFX.updateTempo(current)
+        setlist.patches[selected].tempo = stored
+        liveTempo = stored
+        audio.clock(performedTempo, metronome); midiFX.updateTempo(performedTempo)
         save()
     }
     func setTranspose(_ value: Int) {
@@ -1517,25 +1541,35 @@ final class PerformanceStore: ObservableObject {
         let secondary = secondarySourceID != -2 && (secondarySourceID == -1 || secondarySourceID == source)
         return primary || secondary
     }
+    /// Route 24-PPQN clock and transport from the configured controller. Tempo
+    /// is measured only after Start/Continue and only until Stop or disconnect,
+    /// so ticks from a stopped source cannot replace the stored tempo.
     private func handleMIDIClock(_ status: UInt8, source: Int32) {
         guard metronomeSettings.followsMIDIClock, acceptsMIDIClock(source: source) else { return }
         let now = ProcessInfo.processInfo.systemUptime
         switch status {
         case 0xF8:
             audio.midiClockTick(at: now)
+            guard midiClockRunning else { return }
+            midiClockSource = source
             if let tempo = midiClockTempo.tick(at: now), clockTempo == nil || abs(tempo - clockTempo!) > 0.005 {
                 clockTempo = tempo
                 audio.clock(tempo, metronome); midiFX.updateTempo(tempo)
             }
         case 0xFA:
+            midiClockRunning = true
+            midiClockSource = source
             midiClockTempo.reset(); clockTempo = nil
             audio.midiClockStart(at: now)
         case 0xFB:
+            midiClockRunning = true
+            midiClockSource = source
             midiClockTempo.reset(); clockTempo = nil
             audio.midiClockContinue(at: now)
         case 0xFC:
-            audio.midiClockStop(); midiClockTempo.reset()
-            if clockTempo != nil { clockTempo = nil; audio.clock(performedTempo, metronome); midiFX.updateTempo(performedTempo) }
+            audio.midiClockStop()
+            resetMIDIClockTracking()
+            audio.clock(performedTempo, metronome); midiFX.updateTempo(performedTempo)
         default: break
         }
     }
