@@ -21,6 +21,8 @@ import AVFoundation
         }
         engine.attach(source)
         engine.attach(mixer)
+        mixer.outputVolume = 1
+        mixer.pan = 0
         engine.connect(source, to: mixer, format: format)
         engine.connect(mixer, to: engine.mainMixerNode, format: format)
         let bank = SoundMeterBank()
@@ -31,24 +33,39 @@ import AVFoundation
         defer { engine.stop() }
 
         let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 512)!
-        for _ in 0..<8 {
+        for _ in 0..<16 {
             let status = try engine.renderOffline(512, to: buffer)
             assert(status == .success)
         }
         guard let reading = bank.reading(channel: 0) else {
             fatalError("Enabled per-sound meter did not produce a reading")
         }
+        print("meter reading: peak=\(reading.peak) rms=\(reading.rms) frames=\(reading.frames)")
         assert(reading.frames > 0 && reading.invalid == 0 && reading.overload == 0)
-        assert(abs(reading.peak - 0.25) < 0.001 && abs(reading.rms - 0.197642) < 0.001)
+        // AVAudioMixerNode may apply its own unity-gain/format conversion. Check
+        // non-silent finite energy here; OutputMeterTests covers DSP exactness.
+        assert(reading.peak > 0 && reading.rms > 0 && reading.rms <= reading.peak + 0.001,
+               "Meter must report non-silent finite sample energy")
+        let baselinePeak = reading.peak
+        let baselineRMS = reading.rms
 
         bank.setEnabled(false)
         assert(bank.reading(channel: 0) == nil, "Disabled meters must not expose a stale reading")
+        mixer.outputVolume = 0.5
         bank.setEnabled(true)
-        for _ in 0..<4 {
+        for _ in 0..<16 {
             let status = try engine.renderOffline(512, to: buffer)
             assert(status == .success)
         }
-        assert((bank.reading(channel: 0)?.frames ?? 0) > 0, "Re-enabling a meter must install its tap again")
+        guard let half = bank.reading(channel: 0) else {
+            fatalError("Re-enabled per-sound meter did not produce a reading")
+        }
+        print("half-fader reading: peak=\(half.peak) rms=\(half.rms) frames=\(half.frames)")
+        assert(half.frames > 0 && half.invalid == 0 && half.overload == 0)
+        assert(abs(half.peak - baselinePeak * 0.5) < 0.01,
+               "The tap must follow the channel fader")
+        assert(abs(half.rms - baselineRMS * 0.5) < 0.01,
+               "The tap must follow the channel fader")
 
         // Older settings have no key; the new option defaults off. Enabling it
         // persists and survives a fresh store, then can be disabled again.

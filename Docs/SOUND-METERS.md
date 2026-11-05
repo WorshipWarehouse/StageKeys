@@ -40,6 +40,7 @@ reading is not clamped or gain-compensated.
 `SoundMeterBank` to verify:
 
 - an enabled tap reports finite peak/RMS and zero invalid samples;
+- halving the channel fader halves both readings;
 - disabling removes the tap and no stale reading is exposed;
 - re-enabling installs a fresh tap;
 - the setting persists and defaults off for legacy settings.
