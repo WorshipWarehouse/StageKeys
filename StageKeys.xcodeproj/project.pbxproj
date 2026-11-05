@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		B5E7A1100000000000000001 /* SetlistShare.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5E7A1100000000000000000 /* SetlistShare.swift */; };
+		B5E7A1100000000000000002 /* SetlistShare.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5E7A1100000000000000000 /* SetlistShare.swift */; };
 		4D4954000000000000000001 /* StageKeys-MIT.txt in Resources */ = {isa = PBXBuildFile; fileRef = 4D4954000000000000000000 /* StageKeys-MIT.txt */; };
 		4D4954000000000000000002 /* StageKeys-MIT.txt in Resources */ = {isa = PBXBuildFile; fileRef = 4D4954000000000000000000 /* StageKeys-MIT.txt */; };
 		011380B41D29CF79051F2807 /* MIDIControlLearnView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A18F515EF20650FB9ED6539 /* MIDIControlLearnView.swift */; };
@@ -128,6 +130,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		B5E7A1100000000000000000 /* SetlistShare.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetlistShare.swift; sourceTree = "<group>"; };
 		4D4954000000000000000000 /* StageKeys-MIT.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = StageKeys-MIT.txt; sourceTree = "<group>"; };
 		06CB1E47D8766D6FCE38E05D /* EXSCaptureCompatibility.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EXSCaptureCompatibility.swift; sourceTree = "<group>"; };
 		08168477F8D489D51C2417D1 /* ExternalInstruments.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExternalInstruments.swift; sourceTree = "<group>"; };
@@ -323,6 +326,7 @@
 				C3A3010041D10648ABE486A3 /* SamplerInterchange.swift */,
 				BA769779A45E704F134E0AB4 /* SessionSettings.swift */,
 				CA27432EBE775B734A1C07E5 /* SetlistLibrary.swift */,
+				B5E7A1100000000000000000 /* SetlistShare.swift */,
 				F2BE6DDCBC4000BC7F71BDEE /* SettingsViews.swift */,
 				4CC60EE6D79434D00675DEA5 /* SnapshotMorph.swift */,
 				D518EAD59E323D92284C88FE /* SoundBrowser.swift */,
@@ -487,6 +491,7 @@
 				48648164B366ABBB58AE0E9F /* SamplerInterchange.swift in Sources */,
 				7A23F029FF9E9753095632A8 /* SessionSettings.swift in Sources */,
 				AE9A08210DEB414D351C0377 /* SetlistLibrary.swift in Sources */,
+				B5E7A1100000000000000001 /* SetlistShare.swift in Sources */,
 				50F554293EBFFB230FE0FA40 /* SettingsViews.swift in Sources */,
 				DC860CA2E82E9022119BDDBE /* SnapshotMorph.swift in Sources */,
 				52D6B219398AA27F5DB5AEAE /* SoundBrowser.swift in Sources */,
@@ -541,6 +546,7 @@
 				A2681279A4C623A78586EF44 /* SamplerInterchange.swift in Sources */,
 				1EEF2ACBE84AA7387495491E /* SessionSettings.swift in Sources */,
 				0F0691181F56802DC1E1127E /* SetlistLibrary.swift in Sources */,
+				B5E7A1100000000000000002 /* SetlistShare.swift in Sources */,
 				512E9B98BC21BDCB6202E78A /* SettingsViews.swift in Sources */,
 				76B7047A02E103F6DB3079AF /* SnapshotMorph.swift in Sources */,
 				77202719BCBF2C224DD70B16 /* SoundBrowser.swift in Sources */,

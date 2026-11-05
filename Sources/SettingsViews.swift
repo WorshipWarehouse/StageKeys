@@ -1,4 +1,9 @@
 import SwiftUI
+#if os(macOS)
+import AppKit
+#else
+import UIKit
+#endif
 
 struct SettingsEditor: View {
     @EnvironmentObject var store: PerformanceStore
@@ -238,6 +243,9 @@ struct SetlistBrowser: View {
     @State private var templateID: UUID?
     @State private var templateName = ""
     @State private var creationError: String?
+    @State private var shareData: Data?
+    @State private var shareName = "Setlist"
+    @State private var sharing = false
     private var entries: [SetlistLibraryDescriptor] { order.entries(store.savedSetlists, search: search) }
     @State private var renameID: UUID?
     @State private var renameName = ""
@@ -252,6 +260,8 @@ struct SetlistBrowser: View {
                 Menu("Import / Export") {
                     Button("Import Setlist…") { dismiss(); DispatchQueue.main.asyncAfter(deadline:.now()+0.4) { importing=true } }
                     Button("Export Current Setlist…") { store.save(); dismiss(); DispatchQueue.main.asyncAfter(deadline:.now()+0.4) { exporting=true } }
+                    Button("Share Current Setlist…") { shareSetlist(nil) }
+                    Button("Copy Share Link") { copyShareLink(nil) }
                 }
             }.padding(.horizontal,20).padding(.bottom,12)
             if let creationError { Text(creationError).font(.caption).foregroundStyle(.orange).frame(maxWidth:.infinity,alignment:.leading).padding(.horizontal,20).padding(.bottom,8) }
@@ -270,6 +280,8 @@ struct SetlistBrowser: View {
                                 Button("Rename…") { renameName=entry.name; renameID=entry.id }
                                 Button("Use as Template…") { creationError=nil; templateName=String(entry.name.prefix(195))+" Copy"; templateID=entry.id }
                                 Button("Duplicate") { store.duplicateLocalSetlist(entry.id) }
+                                Button("Share…") { shareSetlist(entry.id) }
+                                Button("Copy Share Link") { copyShareLink(entry.id) }
                                 Button("Move to Trash",role:.destructive) { store.archiveLocalSetlist(entry.id) }.disabled(entry.id == store.currentSetlistID)
                             } label: { Image(systemName:"ellipsis").frame(width:36,height:44) }.accessibilityLabel("Options for \(entry.name)")
                         }
@@ -287,6 +299,12 @@ struct SetlistBrowser: View {
             }
             HStack { Text("Stored on this device").font(.caption).foregroundStyle(.secondary); Spacer(); Button("Done") { store.save(); dismiss() }.buttonStyle(StageButtonStyle(selected:true)) }.padding(20)
         }.onAppear { store.save(); store.refreshSetlists() }
+        .sheet(item: $store.pendingSetlistShare, onDismiss: { store.dismissSetlistShare() }) { plan in
+            SetlistShareImportView(plan: plan).environmentObject(store)
+        }
+        .fileExporter(isPresented: $sharing, document: SetlistShareFile(data: shareData ?? Data()), contentType: .stageKeysSetlistShare, defaultFilename: shareName) { result in
+            if case .failure(let error) = result { creationError = error.localizedDescription }
+        }
         .alert(templateID == nil ? "Rename Setlist" : "New Setlist from Template",isPresented:Binding(get:{renameID != nil || templateID != nil},set:{if !$0 {renameID=nil;templateID=nil}}),presenting:templateID ?? renameID) { id in
             if templateID != nil {
                 TextField("Name (1–200 characters)",text:$templateName)
@@ -302,6 +320,78 @@ struct SetlistBrowser: View {
             Button("Cancel",role:.cancel) { renameID=nil;templateID=nil }
         } message: { _ in
             if templateID != nil { Text("Saves an independent local setlist. Your current setlist keeps playing; referenced sounds are shared.") }
+        }
+    }
+    private func shareSetlist(_ id: UUID?) {
+        guard let share = store.prepareSetlistShare(id: id) else { return }
+        shareData = share.data
+        let name = share.name.replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: ":", with: "-")
+        shareName = name.isEmpty ? "Setlist" : name
+        sharing = true
+    }
+    private func copyShareLink(_ id: UUID?) {
+        guard let url = store.prepareSetlistShareLink(id: id) else { return }
+        #if os(macOS)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(url.absoluteString, forType: .string)
+        #else
+        UIPasteboard.general.string = url.absoluteString
+        #endif
+        store.message = "Setlist share link copied. It opens StageKeys on a device with the app installed."
+    }
+}
+/// Review an untrusted package before anything is written or activated. Save and
+/// Load is disabled while a known dependency is unavailable; Save to Library is
+/// always offered so the setlist document is not lost.
+struct SetlistShareImportView: View {
+    @EnvironmentObject var store: PerformanceStore
+    let plan: SetlistShareImportPlan
+    var body: some View {
+        EditorFrame(title: "Setlist Share", width: 680) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    Text(plan.proposedName).font(StageTheme.font(20, weight: .semibold))
+                    Text("\(plan.setlist.patches.count) patches · portable package version \(plan.package.version)")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Text("This package contains the setlist graph and authored metadata only. Samples, plug-ins and vendor content are not included.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    if !plan.missingDependencies.isEmpty {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Unavailable on this device").font(StageTheme.font(14, weight: .semibold)).foregroundStyle(.orange)
+                            ForEach(plan.missingDependencies) { missing in
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text("\(missing.dependency.name) · \(missing.dependency.kindTitle)")
+                                        .font(StageTheme.font(13, weight: .semibold))
+                                    Text(missing.reason).font(.caption).foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                    }
+                    if !plan.collisions.isEmpty {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Identity conflicts resolved").font(StageTheme.font(14, weight: .semibold))
+                            ForEach(plan.collisions, id: \.self) { Text($0).font(.caption).foregroundStyle(.secondary) }
+                        }
+                    }
+                    if !plan.warnings.isEmpty {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Limits").font(StageTheme.font(14, weight: .semibold))
+                            ForEach(plan.warnings, id: \.self) { Text($0).font(.caption).foregroundStyle(.secondary) }
+                        }
+                    }
+                    if store.patchLock { Text("Unlock patches to load an imported setlist.").font(.caption).foregroundStyle(.orange) }
+                    HStack {
+                        Button("Save and Load") { store.completeSetlistShare(.saveAndLoad) }
+                            .buttonStyle(StageButtonStyle(selected: true))
+                            .disabled(!plan.canActivate || store.patchLock)
+                        Button("Save to Library") { store.completeSetlistShare(.saveToLibrary) }
+                            .buttonStyle(StageButtonStyle())
+                        Spacer()
+                        Button("Cancel", role: .cancel) { store.dismissSetlistShare() }
+                            .buttonStyle(StageButtonStyle())
+                    }
+                }.padding(20)
+            }
         }
     }
 }

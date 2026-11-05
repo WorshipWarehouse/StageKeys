@@ -176,7 +176,9 @@ struct PerformanceView: View {
         }
         .alert("StageKeys", isPresented: Binding(get: { store.message != nil }, set: { if !$0 { store.message = nil } })) { Button("OK") { store.message = nil } } message: { Text(store.message ?? "") }
         .onOpenURL {url in
-            if url.pathExtension.lowercased()=="stagekeyspack" {store.importLibraryBackup(url);sheet = .importSounds}
+            if url.scheme?.lowercased()=="stagekeys" {store.previewSetlistShare(link:url);sheet = .setlists}
+            else if url.pathExtension.lowercased()=="stagekeyssetlist" {store.previewSetlistShare(url);sheet = .setlists}
+            else if url.pathExtension.lowercased()=="stagekeyspack" {store.importLibraryBackup(url);sheet = .importSounds}
             else if ["patch","cst"].contains(url.pathExtension.lowercased()) {store.importMainStageAutomatically(url);sheet = .importSounds}
         }
         .onDrop(of:[UTType.fileURL],isTargeted:nil){providers in
@@ -184,8 +186,15 @@ struct PerformanceView: View {
             _ = provider.loadObject(ofClass:URL.self){url,_ in guard let url,["patch","cst"].contains(url.pathExtension.lowercased()) else{return};DispatchQueue.main.async{store.importMainStageAutomatically(url);sheet = .importSounds}}
             return true
         }
-        .fileImporter(isPresented: $importing, allowedContentTypes: [.json]) { result in
-            switch result { case .success(let url): store.load(url); case .failure(let error): store.message = error.localizedDescription }
+        .fileImporter(isPresented: $importing, allowedContentTypes: [.json, .stageKeysSetlistShare]) { result in
+            switch result {
+            case .success(let url):
+                if url.pathExtension.lowercased()=="stagekeyssetlist" {
+                    store.previewSetlistShare(url)
+                    if store.pendingSetlistShare != nil { sheet = .setlists }
+                } else { store.load(url) }
+            case .failure(let error): store.message = error.localizedDescription
+            }
         }
         .fileExporter(isPresented: $exporting, document: SetlistFile(store.setlist), contentType: .json, defaultFilename: store.setlist.name) { result in
             if case .failure(let error) = result { store.message = error.localizedDescription }
