@@ -1,7 +1,8 @@
 import Foundation
 
-/// Analog constant-Q bandwidth in octaves. This intentionally does not model
-/// frequency-dependent digital filter warping; stored DSP state remains Q.
+/// Analog constant-Q bandwidth in octaves, the width the editor displays.
+/// Stored DSP state remains Q; Synth.c realizes that width through the bilinear
+/// transform, so this conversion stays sample-rate independent.
 enum EQBandwidth {
     static let qRange: ClosedRange<Float> = 0.1...10
     static var octaveRange: ClosedRange<Float> { octaves(fromQ: qRange.upperBound)...octaves(fromQ: qRange.lowerBound) }

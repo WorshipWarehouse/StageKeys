@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Render the native EQ's peaking bands at the octave bandwidth the editor displays: the stored constant-Q width is realized through the bilinear transform instead of narrowing toward Nyquist (42% too narrow at 12 kHz/44.1 kHz). Add frequency-response regressions for gain, bandwidth, corners and shelves at 44.1/48/96 kHz.
+
 - Make the native channel compressor's Dry/Wet Mix a true bypass at 0%: output gain no longer lifts the unprocessed signal, and makeup gain applies to the compressed path only. Switching the effect off or back on clears stored detector reduction instead of ducking the first notes for the release time. Add 44.1/48/96 kHz gain-transfer, attack/release, bypass-state and block-split regressions.
 
 - Add offline, checksummed `.stagekeyssetlist` setlist shares with dependency and collision previews, Save and Load versus Save to Library import, and `stagekeys://setlist-share` links; samples, plug-in state and local source paths are excluded.
