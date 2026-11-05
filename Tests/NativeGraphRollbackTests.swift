@@ -33,12 +33,35 @@ import AVFoundation
             }
             return energy
         }
+        // The generated sample is a 261.626 Hz tone. Project the isolated
+        // channel onto the fundamental of each note so either voice can fail
+        // independently, even while the other still contributes energy.
+        func noteAmplitudes() throws -> [Double] {
+            let frequencies = [261.626, 261.626 * pow(2.0, 4.0 / 12.0)]
+            var real = [0.0, 0.0], imaginary = [0.0, 0.0]
+            var frames = 0
+            for _ in 0..<20 {
+                let block = try store.audio.offlineBlock()
+                for frame in 0..<Int(block.frameLength) {
+                    let sample = Double(block.floatChannelData![0][frame])
+                    assert(sample.isFinite)
+                    for note in frequencies.indices {
+                        let phase = 2 * Double.pi * frequencies[note] * Double(frames) / block.format.sampleRate
+                        real[note] += sample * cos(phase)
+                        imaginary[note] += sample * sin(phase)
+                    }
+                    frames += 1
+                }
+            }
+            return frequencies.indices.map { 2 * hypot(real[$0], imaginary[$0]) / Double(frames) }
+        }
         // One physically held note plus one released under the sustain pedal.
         rack.noteOn(channel: 0, key: 60, pitch: 60, velocity: 0.7, sourceID: 41)
         rack.control(channel: 0, controller: 64, value: 127)
         rack.noteOn(channel: 0, key: 64, pitch: 64, velocity: 0.5, sourceID: 42)
         rack.noteOff(channel: 0, key: 64)
-        assert(rack.debugNoteIntentCount(0) == 2 && (try! energy()) > 0.01)
+        let originalAmplitudes = try noteAmplitudes()
+        assert(rack.debugNoteIntentCount(0) == 2 && originalAmplitudes.allSatisfy { $0 > 0.005 })
         for attempt in 0..<6 {
             var starts = 0
             rack.debugGraphFault = { point in
@@ -59,7 +82,10 @@ import AVFoundation
             assert(rack.unit(channel: 0) === oldUnit && rack.unit(channel: 1) === otherUnit)
             assert(store.patch.layers[0] == oldLayer && (try! Data(contentsOf: document)) == saved)
             assert(rack.debugOwnedNodeCount == nodeCount && rack.debugRetiredTailCount == tailCount, "Failed candidates must not accumulate nodes/tails, attempt \(attempt)")
-            assert(rack.debugNoteIntentCount(0) == 2 && (try! energy()) > 0.01, "Rollback must replay held and pedal-released native notes")
+            assert(rack.debugNoteIntentCount(0) == 2)
+            let restoredAmplitudes = try noteAmplitudes()
+            assert(restoredAmplitudes[0] > originalAmplitudes[0] * 0.2, "The held note must render after rollback")
+            assert(restoredAmplitudes[1] > originalAmplitudes[1] * 0.2, "The pedal-released note must render after rollback")
             let diagnostic = store.audio.lastChangeFailure!
             let graph = diagnostic.lastGraphFailure!
             assert(diagnostic.phase == .loadInstrument && diagnostic.soundSlot == 1 && diagnostic.engineRunning)
