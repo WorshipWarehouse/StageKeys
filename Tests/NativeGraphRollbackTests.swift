@@ -44,7 +44,12 @@ import AVFoundation
             rack.debugGraphFault = { point in
                 if case .restartEngine = point {
                     starts += 1
-                    if starts == 1 { return NSError(domain: NSOSStatusErrorDomain, code: 801) }
+                    if starts == 1 {
+                        // Match the reported error shape without implying this
+                        // generated restart fault reproduces the device trigger.
+                        return NSError(domain: "com.apple.coreaudio.avfaudio", code: -1,
+                            userInfo: [NSLocalizedDescriptionKey: "PRIVATE-GENERATED-GRAPH-FAILURE"])
+                    }
                 }
                 return nil
             }
@@ -55,8 +60,24 @@ import AVFoundation
             assert(store.patch.layers[0] == oldLayer && (try! Data(contentsOf: document)) == saved)
             assert(rack.debugOwnedNodeCount == nodeCount && rack.debugRetiredTailCount == tailCount, "Failed candidates must not accumulate nodes/tails, attempt \(attempt)")
             assert(rack.debugNoteIntentCount(0) == 2 && (try! energy()) > 0.01, "Rollback must replay held and pedal-released native notes")
-            let report = store.audio.lastChangeFailure!.lastGraphFailure!
-            assert(report.restart?.code == 801 && report.rollbackSucceeded == true && report.rollback == nil)
+            let diagnostic = store.audio.lastChangeFailure!
+            let graph = diagnostic.lastGraphFailure!
+            assert(diagnostic.phase == .loadInstrument && diagnostic.soundSlot == 1 && diagnostic.engineRunning)
+            assert(diagnostic.errorDomain == "com.apple.coreaudio.avfaudio" && diagnostic.errorCode == -1)
+            assert(graph.restart?.domain == diagnostic.errorDomain && graph.restart?.code == -1)
+            assert(graph.rollbackSucceeded == true && graph.rollback == nil)
+            let support = SupportDiagnostics(version: "test", build: "test", running: store.audio.running,
+                status: nil, latency: nil, midiSources: 0, loadedSlots: 3, limiterBypassed: false,
+                recording: false, lastAudioChangeFailure: diagnostic)
+            let json = try support.json()
+            let decoded = try JSONDecoder().decode(SupportDiagnostics.self, from: Data(json.utf8))
+            assert(decoded.lastAudioChangeFailure == diagnostic && !json.contains("PRIVATE-GENERATED"))
+            assert(store.message?.contains("error -1") == true &&
+                store.message?.contains("The previous sound remains available") == true &&
+                store.message?.contains("try again") == true)
+            assert(store.message?.contains(diagnostic.errorDomain) == false &&
+                store.message?.contains("PRIVATE-GENERATED") == false,
+                "The performer should see recovery guidance without the raw framework error")
         }
         // Fail after wiring a nested imported fan-out, not just at attachment.
         var gain = AudioEffect.factoryDefault(kind: 9); gain.parameters = [-6]
