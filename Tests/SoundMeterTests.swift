@@ -1,5 +1,6 @@
 import Foundation
 import AVFoundation
+import Darwin
 
 @main struct SoundMeterTests {
     static func main() throws {
@@ -57,8 +58,14 @@ import AVFoundation
 
         bank.setEnabled(false)
         assert(bank.reading(channel: 0) == nil, "Disabled meters must not expose a stale reading")
+        // Offline manual rendering does not apply a running mixer's
+        // outputVolume change to the next render pass. Bind the half fader at
+        // engine start so this checks the meter's signal point, not an offline
+        // rendering limitation. The tap is installed again after disabling.
+        engine.stop()
         mixer.outputVolume = 0.5
         bank.setEnabled(true)
+        try engine.start()
         for _ in 0..<16 {
             let status = try engine.renderOffline(512, to: buffer)
             assert(status == .success)
@@ -67,6 +74,7 @@ import AVFoundation
             fatalError("Re-enabled per-sound meter did not produce a reading")
         }
         print("half-fader reading: peak=\(half.peak) rms=\(half.rms) frames=\(half.frames)")
+        fflush(stdout)
         assert(half.frames > 0 && half.invalid == 0 && half.overload == 0)
         assert(abs(half.peak - baselinePeak * 0.5) < 0.01,
                "The tap must follow the channel fader")
