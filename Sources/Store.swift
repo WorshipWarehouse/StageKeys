@@ -1459,15 +1459,16 @@ final class PerformanceStore: ObservableObject {
         save()
     }
     func updateTempo(_ value: Double) {
-        // The external clock is the timing authority while it runs. Keep edits
-        // out of patch/live storage until Stop restores the stored tempo.
+        let tempo = PatchTransposition.clampTempo(value)
+        // Store the bounded internal tempo even while the external clock is
+        // running. Stop restores this value instead of the pre-edit tempo; the
+        // edit must not replace the external BPM while sync is active.
+        liveTempo = tempo
+        setlist.patches[selected].tempo = tempo
         if metronomeSettings.followsMIDIClock, let clockTempo {
             audio.clock(clockTempo, metronome); midiFX.updateTempo(clockTempo)
             return
         }
-        let tempo = PatchTransposition.clampTempo(value)
-        liveTempo = tempo
-        setlist.patches[selected].tempo = tempo
         audio.clock(tempo, metronome); midiFX.updateTempo(tempo)
     }
     /// Locking keeps the patch's own tempo and recalls it with the patch;
@@ -1549,24 +1550,27 @@ final class PerformanceStore: ObservableObject {
         let now = ProcessInfo.processInfo.systemUptime
         switch status {
         case 0xF8:
+            // A tick may only advance the run selected by its Start/Continue.
+            // The other configured source may be sending clock concurrently;
+            // ignoring it avoids double-advancing the click or stealing tempo.
+            guard midiClockRunning, midiClockSource == source else { return }
             audio.midiClockTick(at: now)
-            guard midiClockRunning else { return }
-            midiClockSource = source
             if let tempo = midiClockTempo.tick(at: now), clockTempo == nil || abs(tempo - clockTempo!) > 0.005 {
                 clockTempo = tempo
                 audio.clock(tempo, metronome); midiFX.updateTempo(tempo)
             }
-        case 0xFA:
+        case 0xFA, 0xFB:
+            // Keep one owner for the whole run. A second source must wait for
+            // this source's Stop (or disconnect) before it can start a run.
+            guard !midiClockRunning || midiClockSource == nil || midiClockSource == source else { return }
             midiClockRunning = true
             midiClockSource = source
             midiClockTempo.reset(); clockTempo = nil
-            audio.midiClockStart(at: now)
-        case 0xFB:
-            midiClockRunning = true
-            midiClockSource = source
-            midiClockTempo.reset(); clockTempo = nil
-            audio.midiClockContinue(at: now)
+            if status == 0xFA { audio.midiClockStart(at: now) }
+            else { audio.midiClockContinue(at: now) }
         case 0xFC:
+            // Only the source that owns the run may stop it.
+            guard midiClockSource == source else { return }
             audio.midiClockStop()
             resetMIDIClockTracking()
             audio.clock(performedTempo, metronome); midiFX.updateTempo(performedTempo)
