@@ -441,13 +441,44 @@ final class AudioController {
         #endif
     }
     func stop() { stopAudioCheck();sk_panic(synth); engine.stop() }
-    func noteOn(key: Int, pitch: Int, instrument: Int, layer: Int, velocity: Float,sourceID:Int32? = nil) {
-        if externalSounds[layer] != nil { externalRack?.noteOn(channel: layer, key: key, pitch: pitch, velocity: velocity,sourceID:sourceID) }
+    private var deliveryPolicy = MIDIDeliveryPolicy()
+    /// Reports a channel whose hosted AU can no longer take sample-timed events
+    /// after a rejected install or a retirement, so the scheduler drops its mark.
+    var onLookaheadEligibilityLost: ((Int) -> Void)?
+    /// Convert a musical deadline into an AU event sample time from the last
+    /// render timestamp. Returns nil when the event cannot still be scheduled
+    /// ahead of the render position, in which case the caller delivers now.
+    private func auDelivery(for deadline: TimeInterval?, canSchedule: Bool) -> MIDIEventDelivery {
+        guard deadline != nil, canSchedule else { return .immediate }
+        guard let render = engine.outputNode.lastRenderTime,
+              render.isSampleTimeValid, render.isHostTimeValid else { return .immediate }
+        let now = ProcessInfo.processInfo.systemUptime
+        let elapsed = AVAudioTime.seconds(forHostTime: mach_absolute_time() &- render.hostTime)
+        let current = render.sampleTime + AVAudioFramePosition((elapsed * render.sampleRate).rounded())
+        let timeline = MIDIAudioTimeline(sampleRate: render.sampleRate,
+                                         anchorSample: Int64(current), anchorTime: now)
+        return deliveryPolicy.delivery(deadline: deadline, now: now, timeline: timeline,
+                                       currentSample: Int64(current), canSchedule: canSchedule)
+    }
+    /// True when this slot is a hosted AU whose events can be delivered at a
+    /// future sample time. Parallel imported branches stay immediate.
+    func canScheduleMIDI(channel: Int) -> Bool {
+        // A channel whose replacement is still loading or failed to install must
+        // not be treated as schedulable on its outgoing unit.
+        !unavailableConfigurations.contains(channel) && externalSounds[channel] != nil &&
+            (externalRack?.canSchedule(channel: channel) ?? false)
+    }
+    func noteOn(key: Int, pitch: Int, instrument: Int, layer: Int, velocity: Float,sourceID:Int32? = nil,at deadline: TimeInterval? = nil) {
+        if externalSounds[layer] != nil {
+            let sampleTime = auDelivery(for: deadline, canSchedule: true).sampleTime
+            externalRack?.noteOn(channel: layer, key: key, pitch: pitch, velocity: velocity,sourceID:sourceID,sampleTime:sampleTime)
+        }
         // Synth.c remains the effect/clock core; product notes require user content.
     }
-    func noteOff(key: Int, channel: Int, force: Bool = false) {
+    func noteOff(key: Int, channel: Int, force: Bool = false, at deadline: TimeInterval? = nil) {
         sk_note_off_channel(synth, Int32(key), Int32(channel), force ? 1 : 0)
-        externalRack?.noteOff(channel: channel, key: key, forceRelease: force)
+        let sampleTime = auDelivery(for: deadline, canSchedule: true).sampleTime
+        externalRack?.noteOff(channel: channel, key: key, forceRelease: force, sampleTime: sampleTime)
     }
     func noteOff(_ key: Int) { sk_note_off(synth, Int32(key)); externalRack?.noteOff(key: key) }
     private var patchGain: Float = 1
@@ -624,6 +655,8 @@ final class AudioController {
                     let unchanged = rack.unit(channel: index) === previousUnit && (rack.graphGeneration == previousGeneration || rack.lastGraphFailure?.rollbackSucceeded == true)
                     if unchanged && self.externalSounds[index] != sound {
                         self.unavailableConfigurations.remove(index)
+                    } else {
+                        self.onLookaheadEligibilityLost?(index)
                     }
                     self.onError?(self.changeFailure(error, phase: .loadInstrument, slot: index, retained: unchanged ? true : nil).localizedDescription)
                     completion?(false)
@@ -639,6 +672,7 @@ final class AudioController {
                 return false
             }
             externalSounds[index] = nil
+            onLookaheadEligibilityLost?(index)
             externalStates[index] = layer.pluginState
             samplerAttacks[index] = layer.samplerAttackMinimum
             samplerHostCurves[index] = hostCurve
