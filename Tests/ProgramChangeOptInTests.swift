@@ -26,7 +26,12 @@ import CoreMIDI
   assert(legacy.patches.allSatisfy{$0.programChangeEnabled == nil})
   store.setlist=legacy;store.choose(1);store.captureSnapshot(0)
   let id=store.patch.id,snapshot=store.activeSnapshot,tempo=store.patch.tempo,layers=store.patch.layers.map(\.id)
-  send(0xc0,0);send(0xc0,2)
+  // Power-on Program Change 0 is a controller boot message, not an implicit
+  // permission to select the first legacy patch. The legacy/unconfigured case
+  // stays silent until a patch explicitly opts in.
+  send(0xc0,0)
+  assert(store.patch.id==id && store.activeSnapshot==snapshot && store.patch.tempo==tempo && store.patch.layers.map(\.id)==layers)
+  send(0xc0,2)
   assert(store.patch.id==id && store.activeSnapshot==snapshot && store.patch.tempo==tempo && store.patch.layers.map(\.id)==layers)
   send(0x90,72,100);assert(store.isNoteHeld(72))
   send(0xb0,64,127);assert(store.sustain);send(0x80,72);send(0xb0,64,0);assert(!store.sustain && store.held.isEmpty)
