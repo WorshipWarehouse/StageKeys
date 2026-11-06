@@ -66,9 +66,14 @@ copies the current live tempo into that patch before it starts recalling it.
 Tempo changes are queued to the audio engine (`sk_clock`) and re-apply
 tempo-synced delay/effect values; the MIDI FX scheduler rescales the pending
 musical position, which `PatchTranspositionTests` verifies across a 120 → 60 BPM
-change. The scheduler runs on a 5 ms dispatch timer and the tempo reaches the
-render graph through the engine's command queue, so this is musical phase
-continuity, not a claim of sample-accurate scheduling from the UI.
+change. The scheduler arms a one-shot timer for the next musical deadline
+instead of polling every 5 ms ([MIDIFX-SCHEDULING.md](MIDIFX-SCHEDULING.md)); the
+tempo reaches the render graph through the engine's command queue, so this is
+musical phase continuity and deadline dispatch, not a claim of sample-accurate
+scheduling from the UI. The native
+delay no longer steps its read position on a tempo or subdivision change: it
+crossfades the old and new taps for 20 ms, measured at 1.0× the steady sample
+slope at 44.1/48/96 kHz ([DELAY-TEMPO-CONTINUITY.md](DELAY-TEMPO-CONTINUITY.md)).
 
 ## Verification
 
