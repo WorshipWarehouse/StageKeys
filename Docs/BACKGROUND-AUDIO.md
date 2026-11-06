@@ -29,14 +29,14 @@ by both app targets and exercised by `Tests/BackgroundAudioTests.swift`.
 | --- | --- | --- |
 | App becomes active app-wide (`UIApplication.didBecomeActiveNotification`) | either | Resume only if this app suspended audio for backgrounding, or an interruption left it stopped with resume intent |
 | App becomes transiently inactive (Control Center, banner) | on | Nothing |
-| App becomes transiently inactive (Control Center, banner) | off | Release notes only; the engine keeps running |
+| App becomes transiently inactive (Control Center, banner) | off | Release notes only; the engine and click choice keep running |
 | App enters the background | on | Nothing. Notes, sustain, effect tails, tempo and MIDI ownership continue |
-| App enters the background | off, iOS | Release voices, stop the engine, remember that returning should restart |
+| App enters the background | off, iOS | Release voices, stop the engine, keep the click choice, remember that returning should restart (including a pending startup retry or an interruption that began earlier) |
 | App enters the background | off, macOS | Release on-screen notes only; the engine keeps running |
-| Interruption begins | either | Release voices and stop audio; remember whether audio was running |
+| Interruption begins | either | Release voices and stop audio; keep the click choice; remember whether audio was running |
 | Interruption ends with `shouldResume` | either | Restart once, if audio was running before the interruption |
 | Interruption ends without `shouldResume` | either | Stay stopped; the performer starts audio explicitly |
-| Manual Stop | either | Clears both background and interruption resume intent |
+| Manual Stop | either | Clears both background and interruption resume intent and the click choice |
 
 The iOS lifecycle is observed through app-wide `UIApplication` notifications
 (`didBecomeActive`, `willResignActive`, `didEnterBackground`), not a single
@@ -53,10 +53,13 @@ leave a second engine, an unresolved patch load, a scheduled startup retry or
 voices behind. It preserves the setlist, patch, snapshot, MIDI input observers,
 click choice and saved output/buffer preferences, as the existing startup-recovery
 document requires. Lifecycle suspension calls `stopAudio(clearResumeIntents:
-false)` and records its own reason, so an interruption beginning after a
-background suspension keeps the background intent, and backgrounding before an
-interruption ends keeps the interruption intent. A manual Stop uses the default
-and clears both.
+false, preserveMetronome: true)` and records its own reason, so an interruption
+beginning after a background suspension keeps the background intent.
+Backgrounding before an interruption ends converts that intent into a foreground
+resume and clears it, so the interruption-ended notification cannot start the
+engine while the opt-in is off. It also keeps the performer's click choice and
+treats a pending bounded startup retry as resumable. A manual Stop uses the
+defaults and clears both intents and the click choice.
 
 ## Verification
 

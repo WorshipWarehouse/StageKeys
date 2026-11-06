@@ -783,7 +783,7 @@ final class PerformanceStore: ObservableObject {
                 let wasRunning = self.started
                 // Keep a pending background resume across the interruption; an
                 // interruption can begin after the app has already suspended.
-                self.stopAudio(clearResumeIntents: false)
+                self.stopAudio(clearResumeIntents: false, preserveMetronome: true)
                 self.resumeState.markInterruption(wasRunning: wasRunning)
             case .resumeAudio:
                 self.resumeState.clearInterruption()
@@ -820,18 +820,26 @@ final class PerformanceStore: ObservableObject {
         #if os(macOS)
         releaseScreenNotes()
         #else
+        // A transient inactive phase releases held notes; keep the click
+        // choice instead of persisting a lifecycle-only change.
+        let clickEnabled = metronome
         panic()
+        metronome = clickEnabled
         #endif
     }
     /// Suspends audio without recording a manual Stop, so returning to the
     /// foreground restarts exactly once. Setlist, patch, MIDI input and saved
     /// output/buffer preferences are untouched.
     private func suspendForBackground() {
-        let wasRunning = started
-        // Preserve an interruption intent: the interruption-ended notification
-        // still owns it if the app backgrounds before the interruption ends.
-        stopAudio(clearResumeIntents: false)
-        if wasRunning { resumeState.markBackgroundSuspended() }
+        // A pending startup retry or interruption is resumable work even when
+        // `started` is false; returning to the foreground must start it again.
+        let shouldResume = started || audioStartup.isStarting || resumeState.interruptionResumeIntent
+        stopAudio(clearResumeIntents: false, preserveMetronome: true)
+        // Backgrounding owns the next resume. With background audio off, an
+        // interruption-ended notification must not start the engine while the
+        // app is inactive, so convert that intent into a foreground resume.
+        resumeState.clearInterruption()
+        if shouldResume { resumeState.markBackgroundSuspended() }
     }
     func setBackgroundAudioEnabled(_ enabled: Bool) {
         guard backgroundAudioEnabled != enabled else { return }
@@ -914,10 +922,10 @@ final class PerformanceStore: ObservableObject {
             audioStartup = .failed(failure)
         }
     }
-    /// Stops audio. A manual call clears both lifecycle resume intents so it
-    /// always wins; lifecycle suspension passes `false` and records its own
-    /// intent without erasing the other reason audio may need to resume.
-    func stopAudio(clearResumeIntents: Bool = true) {
+    /// Stops audio. A manual call clears both lifecycle resume intents and the
+    /// click choice so it always wins; lifecycle suspension passes `false` for
+    /// the intents and `true` for the click, then records its own reason.
+    func stopAudio(clearResumeIntents: Bool = true, preserveMetronome: Bool = false) {
         automaticAudioStartAllowed = false
         cancelTransition(pinImmediately: true)
         patchLoadGeneration = UUID(); patchLoading = false
@@ -926,7 +934,9 @@ final class PerformanceStore: ObservableObject {
         resumeTonicAfterAudioRecovery = false
         audioStartGeneration = UUID()
         audioAttempt = 0
+        let clickEnabled = metronome
         panic(); audio.stop(); audio.setPatchLoading(false)
+        if preserveMetronome { metronome = clickEnabled }
         started = false
         audioStartup = .stopped
         // A manual Stop always wins over background or interruption resumption.
