@@ -39,5 +39,5 @@ The authoring environment was a Linux checkout without `xcrun`/`swiftc`. Local v
 
 ## Limits
 
-- The history is not shared, synced or migrated; it is a per-device convenience.
+- The history is not shared or synced; a device backup can still copy `setlist-recents.json` to another device, so it is convenience state rather than a per-device isolation guarantee.
 - No physical Mac or iPad round-trip, native UI interaction, VoiceOver pass or audible stage check is claimed.

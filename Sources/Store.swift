@@ -2208,17 +2208,27 @@ final class PerformanceStore: ObservableObject {
         try? updated.write(to: setlistRecentsURL)
     }
     /// Forget one setlist in the last-opened order. The document itself is untouched.
+    /// The published list changes only after the write succeeds, so a failed write
+    /// stays visible and the action remains retryable.
     func removeRecentSetlist(_ id: UUID) {
         let updated = SetlistRecents(ids: recentSetlistIDs).removing(id)
         guard updated.ids != recentSetlistIDs else { return }
-        recentSetlistIDs = updated.ids
-        try? updated.write(to: setlistRecentsURL)
+        do {
+            try updated.write(to: setlistRecentsURL)
+            recentSetlistIDs = updated.ids
+        } catch {
+            message = "Could not update the recently opened history: \(error.localizedDescription)"
+        }
     }
     /// Forget the whole last-opened order. No setlist is renamed, moved or deleted.
     func clearRecentSetlists() {
         guard !recentSetlistIDs.isEmpty else { return }
-        recentSetlistIDs = []
-        try? SetlistRecents().write(to: setlistRecentsURL)
+        do {
+            try SetlistRecents().write(to: setlistRecentsURL)
+            recentSetlistIDs = []
+        } catch {
+            message = "Could not clear the recently opened history: \(error.localizedDescription)"
+        }
     }
     func refreshSetlists() {
         do {

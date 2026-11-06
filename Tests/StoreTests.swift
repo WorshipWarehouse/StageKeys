@@ -122,6 +122,31 @@ import AVFoundation
         assert(store.displayedLayers[0].low==36 && store.displayedLayers[0].high==48)
         assert(store.patch.layers[0]==beforePreview,"Library selection committed a sound")
         store.previewLibraryRange(0,nil);assert(store.displayedLayers[0]==beforePreview)
-        print("PASS: performance store audio, note lifecycle, range/reorder, snapshot capture, remove, patch switch/lock, duplicate and persistence")
+        // Explicit history edits report a failed write instead of pretending the
+        // history was forgotten, and the control remains retryable.
+        store.createLocalSetlist(); assert(!store.recentSetlistIDs.isEmpty)
+        let recentToForget = store.recentSetlistIDs[0]
+        let historyURL = URL(fileURLWithPath: ProcessInfo.processInfo.environment["STAGEKEYS_DATA_DIR"]!).appendingPathComponent("setlist-recents.json")
+        try? FileManager.default.removeItem(at: historyURL)
+        try FileManager.default.createDirectory(at: historyURL, withIntermediateDirectories: true)
+        store.removeRecentSetlist(recentToForget)
+        assert(store.recentSetlistIDs.contains(recentToForget), "A failed removal must not look forgotten")
+        assert(store.message != nil, "A failed history write must be reported")
+        store.message = nil
+        try FileManager.default.removeItem(at: historyURL)
+        store.removeRecentSetlist(recentToForget)
+        assert(!store.recentSetlistIDs.contains(recentToForget), "Removal must remain retryable")
+        store.createLocalSetlist(); assert(!store.recentSetlistIDs.isEmpty)
+        try? FileManager.default.removeItem(at: historyURL)
+        try FileManager.default.createDirectory(at: historyURL, withIntermediateDirectories: true)
+        let historyBeforeFailedClear = store.recentSetlistIDs
+        store.clearRecentSetlists()
+        assert(store.recentSetlistIDs == historyBeforeFailedClear, "A failed clear must not look cleared")
+        assert(store.message != nil, "A failed clear must be reported")
+        store.message = nil
+        try FileManager.default.removeItem(at: historyURL)
+        store.clearRecentSetlists()
+        assert(store.recentSetlistIDs.isEmpty, "Clearing the history must remain retryable")
+        print("PASS: performance store audio, note lifecycle, range/reorder, snapshot capture, remove, patch switch/lock, duplicate, persistence and retryable history edits")
     }
 }
