@@ -64,6 +64,20 @@ Saving a patch to the library is a local action, not a share. **Save Patch to Li
 
 An exported patch is an ordinary one-patch library document, so it also appears in the patch picker that adds a saved patch to the current setlist. A local library export is not a share: plug-in state and local source references stay in the copy instead of being stripped, and missing sampler or Audio Unit content is not detected at export time. The existing runtime admission and failure handling still apply when the exported patch is loaded.
 
+## Independent sound exports
+
+**Save Sound to Library** in Sound Settings writes the editor's current sound as its own user-library entry:
+
+- the entry and its layer get fresh identities, so later edits to the patch — or to any setlist that contains it — cannot change the exported copy;
+- the authored layer travels with it: name, gain, pan, key range, channel settings, the three visible effects, imported rack metadata, MIDI program and, for a hosted Audio Unit, the plug-in state captured from the running unit;
+- patch and setlist routing are not copied, because they describe where the sound sits rather than the sound itself;
+- the patch is not saved, activated or restarted by the export, and audio keeps playing while the editor's audition stays live;
+- exporting the same sound again adds another entry. Overwriting a library entry stays an explicit library action; an export never reuses an existing identity.
+
+The entry is written through the same locked read-modify-write path as every other library change, so a concurrent import cannot be lost, and it must pass the existing library validation, including the layer validation a normal save performs. A blank or over-long name is refused before anything is written.
+
+A sound export is still not a share: missing sample or Audio Unit content is not detected at export time, and the existing runtime admission checks apply when the sound is added to a patch. Redistribution limits for vendor content are unchanged.
+
 ## Offline links
 
 A package can also be represented as:
@@ -77,7 +91,7 @@ The link is limited to 1.5 MB of package data and goes through the same format, 
 ## Limits and outstanding acceptance
 
 - This is not a clean-device physical Mac/iPad round-trip qualification. The deterministic suite exercises generated data, not physical devices or an audible stage.
-- Independent **sound** exports into a user library remain outstanding for #114. Personal native sound packs already cover sound transfer as a separate format; independent patch exports are implemented as described above.
+- Independent patch and sound exports into the user library are implemented as described above. The personal native sound pack remains a separate format for whole-library device transfer.
 - Ratings and other library-level metadata are not part of a setlist share; the sender's library metadata is not mutated.
 - Reference-only packages do not grant redistribution rights for vendor samples, presets or plug-ins. Install content you are authorised to use on the destination device.
 - A successful import does not guarantee that a later graph or Audio Unit installation succeeds; live admission and failure handling remain the existing runtime safeguards.
@@ -93,7 +107,8 @@ The link is limited to 1.5 MB of package data and goes through the same format, 
 - unavailable-dependency planning and external MIDI warnings;
 - identity preservation, name/identity collision resolution and independent copies;
 - legacy schema upgrade, atomic writes and refusal to overwrite via an invalid export;
-- independent patch export into the library: fresh identities, preserved authored settings, source isolation after later edits, and a repeated export adding a second document instead of overwriting.
+- independent patch export into the library: fresh identities, preserved authored settings, source isolation after later edits, and a repeated export adding a second document instead of overwriting;
+- independent sound export into the library: fresh entry and layer identities, preserved authored sound settings, source isolation after later edits, a repeated export adding a second entry instead of overwriting, and refusal of a blank name without touching the library.
 
 The test was authored in a Linux checkout without Xcode. Run it on macOS with:
 

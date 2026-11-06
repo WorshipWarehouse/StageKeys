@@ -2081,6 +2081,9 @@ final class PerformanceStore: ObservableObject {
         }
     }
     #endif
+    /// Save one layer as an independent library sound. The export always allocates
+    /// a new identity, so later edits to this patch cannot change the saved copy and
+    /// exporting the same sound again adds another entry instead of overwriting one.
     func saveSoundToLibrary(_ source: Layer, index: Int) -> Bool {
         do {
             var layer = source
@@ -2088,9 +2091,10 @@ final class PerformanceStore: ObservableObject {
             var validation = Setlist(); validation.patches = [Patch(name: "Library Validation", layers: [layer], snapshots: [])]
             try validation.validate()
             let library = SoundLibrary(url: saveURL.deletingLastPathComponent().appendingPathComponent("sound-library.json"))
-            var entries = try library.read()
-            entries.append(LibrarySound(id: UUID().uuidString, name: layer.name, collection: "My Sounds", sound: layer.external, layer: layer))
-            try library.write(entries); librarySounds = entries; return true
+            let saved = try library.exportSound(layer)
+            librarySounds = try library.read()
+            refreshLibraryContent()
+            return librarySounds.contains { $0.id == saved.id }
         } catch { message = error.localizedDescription; return false }
     }
     func addLibrarySound(_ entry: LibrarySound, index: Int) {
