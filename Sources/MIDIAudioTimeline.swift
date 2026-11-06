@@ -21,18 +21,19 @@ struct MIDIAudioTimeline {
     /// the anchor returns a sample time before it; the caller decides whether
     /// that is still deliverable or should be treated as immediate.
     func sampleTime(for deadline: TimeInterval) -> Int64 {
-        guard sampleRate.isFinite, sampleRate > 0,
-              deadline.isFinite, anchorTime.isFinite else { return anchorSample }
-        let frames = (deadline - anchorTime) * sampleRate
-        guard frames.isFinite else { return anchorSample }
-        // Bound before narrowing so an absurd deadline cannot trap Int64.
-        let bounded = min(max(frames, -4.0e18), 4.0e18)
-        return anchorSample + Int64(bounded.rounded())
+        let offset = offsetFrames(for: deadline)
+        let (sample, overflow) = anchorSample.addingReportingOverflow(offset)
+        if overflow { return offset < 0 ? Int64.min : Int64.max }
+        return sample
     }
 
     /// Whole frames from the anchor to a deadline.
     func offsetFrames(for deadline: TimeInterval) -> Int64 {
-        sampleTime(for: deadline) - anchorSample
+        guard sampleRate.isFinite, sampleRate > 0,
+              deadline.isFinite, anchorTime.isFinite else { return 0 }
+        let frames = (deadline - anchorTime) * sampleRate
+        guard frames.isFinite else { return 0 }
+        return Int64(min(max(frames, -4.0e18), 4.0e18).rounded())
     }
 
     /// Whether an event at `sampleTime` is still ahead of a render that has

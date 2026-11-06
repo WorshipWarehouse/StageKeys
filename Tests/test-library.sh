@@ -18,6 +18,7 @@ sources=(
     "$repo/Sources/AudioDevices.swift"
     "$repo/Sources/MIDIPrograms.swift"
     "$repo/Sources/MIDIFXProcessor.swift"
+    "$repo/Sources/MIDIAudioTimeline.swift"
     "$repo/Sources/MIDIInput.swift"
     "$repo/Sources/EXSNative.swift"
     "$repo/Sources/ExternalSound.swift"
