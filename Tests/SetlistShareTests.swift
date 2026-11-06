@@ -102,7 +102,8 @@ import Foundation
         let repeatCopy = try cleanLibrary.load(id: repeatID)
         assert(repeatCopy.name == "Generated Share Copy")
         assert(Set(repeatCopy.patches.map(\.id)).isDisjoint(with: Set(cleanReloaded.patches.map(\.id))))
-        assert(try cleanLibrary.list().entries.count == 2)
+        let cleanEntries = try cleanLibrary.list().entries
+        assert(cleanEntries.count == 2)
 
         // An interrupted write leaves a damaged file behind. Listing reports it
         // and leaves the complete entry readable; nothing is silently discarded.
@@ -114,7 +115,8 @@ import Foundation
         let interruptedInventory = try interrupted.list()
         assert(interruptedInventory.entries.map(\.id) == [intact.id])
         assert(interruptedInventory.issues.map(\.fileName) == [damagedID.uuidString + ".json"])
-        assert(try interrupted.load(id: intact.id).patches.count == source.patches.count)
+        let loadedIntact = try interrupted.load(id: intact.id)
+        assert(loadedIntact.patches.count == source.patches.count)
 
         // Existing identities and names are resolved without touching the saved
         // source. Missing dependencies disable activation but not Save to Library.
