@@ -56,7 +56,7 @@ typedef struct {
  double oscSin[8],oscCos[8],stepSin[8],stepCos[8];
  int ready;
 } DenseReverb;
-typedef struct { DenseReverb reverb; float p[32],z[12],coef[8],shiftPhase,stereo; int custom; Biquad eq[8];float shimmerControl[4],delayLevels[2];double clipControl[3];int shimmerReady,clipReady; } EffectState;
+typedef struct { DenseReverb reverb; float p[32],z[12],coef[8],shiftPhase,stereo; int custom; Biquad eq[8];float shimmerControl[4],delayLevels[2];double clipControl[3];int shimmerReady,clipReady;float delayPrevious,delayTarget,delayMix;int delayReady; } EffectState;
 struct SKSynth {
  double rate;
  int delayLength,predelayLength;
@@ -96,7 +96,7 @@ SKSynth *sk_create(double rate){return create_engine(rate,BUSES,2);}
 SKSynth *sk_create_effects(double rate){return create_engine(rate,1,2);}
 SKSynth *sk_create_effects_with_capacity(double rate,double seconds){return create_engine(rate,1,seconds);}
 void sk_destroy(SKSynth *s){if(!s)return;for(int l=0;l<BUSES;l++)for(int k=0;k<3;k++){sk_cream_destroy(atomic_load(&s->cream[l][k]));free(atomic_load(&s->shimmer[l][k]));free(s->delay[l][k]);free(s->predelay[l][k]);}free(s);}
-static void clear_delay(SKSynth*s,int l,int k){SKCreamCoat*c=atomic_load_explicit(&s->cream[l][k],memory_order_acquire);if(c)sk_cream_reset(c);sk_pitch_reset(atomic_load_explicit(&s->shimmer[l][k],memory_order_acquire));if(s->predelay[l][k])memset(s->predelay[l][k],0,s->predelayLength*sizeof(float));s->predelayPosition[l][k]=0;if(s->delay[l][k])memset(s->delay[l][k],0,s->delayLength*sizeof(float));}
+static void clear_delay(SKSynth*s,int l,int k){SKCreamCoat*c=atomic_load_explicit(&s->cream[l][k],memory_order_acquire);if(c)sk_cream_reset(c);sk_pitch_reset(atomic_load_explicit(&s->shimmer[l][k],memory_order_acquire));if(s->predelay[l][k])memset(s->predelay[l][k],0,s->predelayLength*sizeof(float));s->predelayPosition[l][k]=0;if(s->delay[l][k])memset(s->delay[l][k],0,s->delayLength*sizeof(float));EffectState*e=&s->effect[l][k];e->delayReady=0;e->delayMix=0;e->delayPrevious=e->delayTarget=0;}
 static void enqueue(SKSynth *s,Command c) {
  unsigned w=atomic_load_explicit(&s->write,memory_order_relaxed);
  unsigned next=(w+1)%QUEUE;
@@ -255,7 +255,7 @@ static void effectCoefficients(EffectState*e,int kind,double rate){
  if(kind==9)e->coef[0]=p[0]<=-96?0:pow(10,p[0]/20);
  if(kind==5)e->coef[0]=pow(10,p[3]/20);
  if(kind==11){e->coef[0]=1-exp(-TAU*p[1]/rate);e->coef[1]=1-exp(-TAU*p[2]/rate);e->coef[2]=pow(10,p[4]/20);}
- if(kind==3)e->coef[0]=1-exp(-TAU*p[2]/rate);
+ if(kind==3){e->coef[0]=1-exp(-TAU*p[2]/rate);e->coef[1]=1-exp(-1/(rate*.02));}
  if(kind==16){e->coef[0]=1-exp(-TAU*p[4]/rate);e->coef[1]=1-exp(-TAU*p[5]/rate);}
  if(kind==17){
   e->coef[6]=1-exp(-1/(rate*.02));
@@ -377,7 +377,18 @@ static float effectProcess(SKSynth*s,int l,int k,float x){
  switch(kind){
  case 1:y=p[0]>=20000?x:process(&e->eq[0],x);y=dry+(y-dry)*p[2];break;
  case 2:{float mod=.5f+.5f*sinf(phase);y=x*(1-p[0]*mod);y=dry+(y-dry)*p[2];e->stereo=p[3]*p[0]*sinf(phase)*.5f;s->fxPhase[l][k]=fmod(phase+TAU*p[1]/rate,TAU);break;}
- case 3:{float duration=fminf(s->delayLength-2,rate*60/s->clockTempo*p[1]);float t=tap(buffer,pos,duration);e->z[0]+=e->coef[0]*(t-e->z[0]);buffer[pos]=tanhf(x+e->z[0]*p[0]);y=x*(1-p[3])+e->z[0]*p[3];break;}
+ case 3:{
+  // Tempo and subdivision changes move the read position. Stepping it in one
+  // sample clicks (measured 5.3x the steady slope at 48 kHz), so overlap the
+  // old and new taps for 20 ms. Both taps stay fixed during the fade, which
+  // makes this a short crossfade rather than a pitch glide.
+  float target=fminf(s->delayLength-2,rate*60/s->clockTempo*p[1]);
+  if(!e->delayReady){e->delayPrevious=e->delayTarget=target;e->delayMix=1;e->delayReady=1;}
+  else if(e->delayMix>=1&&fabsf(target-e->delayTarget)>1){e->delayPrevious=e->delayTarget;e->delayTarget=target;e->delayMix=0;}
+  float t;
+  if(e->delayMix<1){float a=tap(buffer,pos,e->delayPrevious),b=tap(buffer,pos,e->delayTarget);t=a+(b-a)*e->delayMix;e->delayMix=fminf(1,e->delayMix+e->coef[1]);if(e->delayMix>=1)e->delayPrevious=e->delayTarget;}
+  else t=tap(buffer,pos,e->delayTarget);
+  e->z[0]+=e->coef[0]*(t-e->z[0]);buffer[pos]=tanhf(x+e->z[0]*p[0]);y=x*(1-p[3])+e->z[0]*p[3];break;}
  case 4:{e->z[1]+=p[1]/rate;if(e->z[1]>=1){e->z[1]-=floorf(e->z[1]);float levels=powf(2,roundf(p[0])-1);e->z[0]=roundf(x*levels)/levels;}y=x+(e->z[0]-x)*p[2];break;}
  case 5:case 8:{float hz=p[0],depth=p[1],feedback=p[2],mix=kind==5?p[4]:p[3];float delay=kind==5?rate*(.015f+.01f*depth*(.5f+.5f*sinf(phase))):rate*(.0005f+.004f*depth*(.5f+.5f*sinf(phase)));float t=tap(buffer,pos,delay);buffer[pos]=tanhf(x+t*feedback);y=(x*(1-mix)+t*mix)*(kind==5?e->coef[0]:1);s->fxPhase[l][k]=fmod(phase+TAU*hz/rate,TAU);break;}
  case 6:{float v=x*e->coef[2],level=fabsf(v),a=level>e->z[0]?e->coef[0]:e->coef[1];e->z[0]=a*e->z[0]+(1-a)*level;float db=20*log10f(fmaxf(1e-9,e->z[0]));float reduction=fmaxf(0,db-p[4])*(1-1/p[3]);y=(dry*(1-p[5])+v*powf(10,-reduction/20)*p[5])*e->coef[3];break;}
