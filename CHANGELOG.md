@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Add an opt-in MIDI FX scheduler lookahead (0–50 ms, default off) that generates steps before their deadline while reporting the true musical time; enabling it in the app waits on verified sample-timed AU delivery so immediate consumers are not sent notes early.
+
 - Draft sample-timed AU delivery: schedule hosted-AU note events with `AUEventSampleTime` from the MIDI FX deadline, with immediate fallback inside a safety margin, at the lookahead horizon, for missing render anchors and for AUs without a schedule block; the macOS onset harness is not yet run.
 
 - Carry each MIDI FX event's musical time through `onNoteAt`/`onOffAt`, time gates from the scheduled step rather than a late dispatch, and add a deadline-to-engine-sample clock; audible AU delivery is not wired yet.

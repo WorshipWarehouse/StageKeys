@@ -7,6 +7,7 @@ import Foundation
     static func main() {
         deadlineSelection()
         scheduledTimes()
+        lookaheadEmission()
         pollingQuantization()
         print("PASS: earliest deadline selection, gate/step ordering and polling-grid quantization")
     }
@@ -84,6 +85,50 @@ import Foundation
         assert(abs(ons[2].1 - 0.5) < 1e-9, "A skipped tick reports the due step, not the dispatch time")
         guard let nextGate = p.nextDeadline else { fatalError("Expected the skipped step's gate") }
         assert(abs(nextGate - 0.7) < 1e-9)
+    }
+
+    /// With a lookahead horizon the timer generates the next step before its
+    /// deadline, while the event still reports the deadline itself.
+    static func lookaheadEmission() {
+        let p = MIDIFXProcessor(automaticallySchedule: false, lookahead: 0.01)
+        var ons: [(Int, TimeInterval)] = []
+        var offs: [(Int, TimeInterval)] = []
+        p.onNoteAt = { _, key, _, _, _, at in ons.append((key, at)) }
+        p.onOffAt = { _, key, _, at in offs.append((key, at)) }
+        var arp = MIDIProgram()
+        arp.kind = .arpeggiator
+        arp.subdivision = 0.5
+        arp.gate = 0.8
+        p.configure(channel: 0, program: arp, tempo: 120)
+        p.noteOn(channel: 0, key: 60, pitch: 60, velocity: 1)
+        assert(ons.count == 1)
+
+        // 0.20 s + 10 ms horizon stops before the 0.25 s step but releases the
+        // 0.20 s gate, which is due inside the horizon.
+        p.dispatch(at: 0.20)
+        assert(ons.count == 1, "No step is due before 0.25 s")
+        assert(offs.count == 1)
+        assert(abs(offs[0].1 - 0.2) < 1e-9, "The gate releases at its musical time")
+
+        // 0.24 s + 10 ms reaches 0.25 s: the step is emitted 10 ms early.
+        p.dispatch(at: 0.24)
+        assert(ons.count == 2, "The 0.25 s step is generated inside the horizon")
+        assert(abs(ons[1].1 - 0.25) < 1e-9, "The event still reports 0.25 s")
+        guard let gate = p.nextDeadline else { fatalError("Expected the step gate") }
+        assert(abs(gate - 0.45) < 1e-9)
+
+        // Later dispatches inside the horizon do not emit the same step twice.
+        p.dispatch(at: 0.25)
+        assert(ons.count == 2)
+
+        // No lookahead keeps the old behavior: nothing is generated early.
+        let q = MIDIFXProcessor(automaticallySchedule: false, lookahead: 0)
+        var count = 0
+        q.onNote = { _, _, _, _ in count += 1 }
+        q.configure(channel: 0, program: arp, tempo: 120)
+        q.noteOn(channel: 0, key: 60, pitch: 60, velocity: 1)
+        q.dispatch(at: 0.24)
+        assert(count == 1, "Without a horizon 0.24 s is still before the step")
     }
 
     /// Simulate a 5 ms polling timer versus a timer armed at each deadline. The

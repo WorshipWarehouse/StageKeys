@@ -33,10 +33,16 @@ final class MIDIFXProcessor {
     private var timer: Timer?
     private var timerDeadline: TimeInterval?
     private let automatic: Bool
+    private let lookahead: TimeInterval
     private var time: TimeInterval = 0
 
-    init(automaticallySchedule: Bool = true) {
+    /// `lookahead` lets the timer advance through upcoming deadlines so a
+    /// sample-timed consumer receives events before they are due. It is off by
+    /// default: immediate consumers (external MIDI, sampler startNote, AUs
+    /// without a schedule block) would otherwise receive notes early.
+    init(automaticallySchedule: Bool = true, lookahead: TimeInterval = 0) {
         automatic = automaticallySchedule
+        self.lookahead = lookahead.isFinite ? min(0.05, max(0, lookahead)) : 0
         if automaticallySchedule {time=ProcessInfo.processInfo.systemUptime}
     }
     /// Earliest pending step, gate release or retrigger. Nil when the scheduler
@@ -63,14 +69,22 @@ final class MIDIFXProcessor {
         if let armed = timerDeadline, timer != nil, armed <= deadline + 1e-9 { return }
         timer?.invalidate()
         timerDeadline = deadline
-        let fire = Timer(timeInterval: max(0, deadline - ProcessInfo.processInfo.systemUptime), repeats: false) { [weak self] _ in
+        let now = ProcessInfo.processInfo.systemUptime
+        let fire = Timer(timeInterval: max(0, deadline - lookahead - now), repeats: false) { [weak self] _ in
             guard let self else { return }
             self.timer = nil
             self.timerDeadline = nil
-            self.advance(to: ProcessInfo.processInfo.systemUptime)
+            self.dispatch(at: ProcessInfo.processInfo.systemUptime)
         }
         timer = fire
         RunLoop.main.add(fire, forMode: .common)
+    }
+    /// Advance through the lookahead horizon. The state moves ahead so steps due
+    /// within the horizon are generated now, but each callback still reports its
+    /// musical deadline. Without a horizon this is an ordinary advance.
+    func dispatch(at now: TimeInterval) {
+        guard now.isFinite else { return }
+        advance(to: max(now + lookahead, time))
     }
     deinit { timer?.invalidate() }
     func updateTempo(_ value:Double){
