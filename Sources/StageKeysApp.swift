@@ -201,9 +201,14 @@ struct PerformanceView: View {
         }
         .onChange(of: store.patch.id) { _ in sheet = nil }
         .onChange(of: store.activeSnapshot) { _ in if sheet != nil { sheet=nil } }
-        .onChange(of: scenePhase) { phase in
-            store.handleScenePhase(active: phase == .active, background: phase == .background)
-        }
+        .onChange(of: scenePhase, perform: handleScenePhaseChange)
+    }
+    /// Kept out of `body`: this view's expression is at the compiler's type-check
+    /// budget in Release, and an inline closure pushed it past it.
+    private func handleScenePhaseChange(_ phase: ScenePhase) {
+        let active: Bool = phase == .active
+        let background: Bool = phase == .background
+        store.handleScenePhase(active: active, background: background)
     }
     private var toolbar: some View {
         ScrollView(.horizontal, showsIndicators: false) {
