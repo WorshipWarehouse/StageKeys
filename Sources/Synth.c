@@ -144,9 +144,21 @@ static void coefficients(Biquad*b,double rate,float f,float q,float db,int peak)
  if(peak){a0=1+alpha/A;b->b0=(1+alpha*A)/a0;b->b1=-2*cs/a0;b->b2=(1-alpha*A)/a0;b->a1=-2*cs/a0;b->a2=(1-alpha/A)/a0;}
  else{a0=1+alpha;b->b0=(1-cs)/2/a0;b->b1=(1-cs)/a0;b->b2=b->b0;b->a1=-2*cs/a0;b->a2=(1-alpha)/a0;}
 }
+// A peaking band's stored Q is the analog constant-Q width shown as octaves.
+// Feeding that Q straight into alpha narrows the rendered peak as the bilinear
+// transform compresses the top octave (42% at 12 kHz/44.1 kHz), so the band
+// width is realized with RBJ's BLT form. The rendered midpoint (dBgain/2)
+// bandwidth then matches the displayed width at every centre and rate.
+static void peakBand(Biquad*b,double rate,float f,float db,float q){
+ double w=TAU*fmin(f,rate*.45)/rate,cs=cos(w),sn=sin(w);
+ double bw=2*asinh(1/(2*q))/log(2),alpha=sn*sinh(log(2)/2*bw*w/sn);
+ double A=pow(10,db/40),a0=1+alpha/A;
+ b->b0=(1+alpha*A)/a0;b->b1=-2*cs/a0;b->b2=(1-alpha*A)/a0;
+ b->a1=-2*cs/a0;b->a2=(1-alpha/A)/a0;
+}
 static void equalizer(Biquad*b,double rate,int band,float f,float db,float q){
  if((band==0&&f<=20)||(band==7&&f>=20000)){b->b0=1;b->b1=b->b2=b->a1=b->a2=0;return;}
- if(band>=2&&band<=5){coefficients(b,rate,f,q,db,1);return;}
+ if(band>=2&&band<=5){peakBand(b,rate,f,db,q);return;}
  if(band==7){coefficients(b,rate,f,q,0,0);return;}
  double w=TAU*fmin(f,rate*.45)/rate,c=cos(w),a=sin(w)/(2*q),A=pow(10,db/40),t=2*sqrt(A)*a,a0;
  if(band==0){a0=1+a;b->b0=(1+c)/2/a0;b->b1=-(1+c)/a0;b->b2=b->b0;b->a1=-2*c/a0;b->a2=(1-a)/a0;}

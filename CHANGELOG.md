@@ -1,6 +1,10 @@
 ## Unreleased
 
 - Add an opt-in metronome count-in of one or two bars: whole beats at a higher pitch before the bar, with the bar's downbeat exactly one beat after the last count-in click. It ignores the subdivision, restarts only when the click is switched on, is cancelled by Panic, Stop or turning the click off, and older `settings.json` files read it as off. External MIDI-clock sync remains open in #108.
+
+- Add an opt-in **Run Audio in Background** setting for iPhone/iPad and a lifecycle policy for scene and interruption events: with the setting on, notes, sustain, effect tails and tempo continue while the app is inactive; with it off, leaving the app releases voices, stops audio and restarts once on return. A system interruption suspends audio and resumes only when it reports `shouldResume` and audio was running before it, and a manual Stop always wins. Physical background, interruption and battery behavior remain unverified (#105).
+
+- Render the native EQ's peaking bands at the octave bandwidth the editor displays: the stored constant-Q width is realized through the bilinear transform instead of narrowing toward Nyquist (42% too narrow at 12 kHz/44.1 kHz). Add frequency-response regressions for gain, bandwidth, corners and shelves at 44.1/48/96 kHz.
 - Clear a channel's MIDI FX lookahead mark when a hosted-AU install is rejected or the instrument is retired, and report a channel as not schedulable while its replacement is pending, so a failed plug-in cannot keep a stale eligibility.
 
 - Recompute the per-channel MIDI FX lookahead set once patch activation installs finish and again when the activation drains, so a channel that gained or lost a sample-timed AU is never left marked from the outgoing instrument.
