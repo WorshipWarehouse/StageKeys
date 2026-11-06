@@ -40,7 +40,9 @@ duplicated inside the metronome.
 - A count-in plays one or two bars of whole beats at twice the click pitch
   before the bar. Count-in clicks ignore the subdivision, the last one uses the
   downbeat velocity as the entry cue, and the bar then begins on its own
-  downbeat exactly one beat later. Switching the click on starts a count-in;
+  downbeat exactly one beat later. A subdivision edit during the count-in does
+  not change its beat spacing, including the hand-off beat that becomes the
+  bar's downbeat. Switching the click on starts a count-in;
   repeated enable calls while it is already running do not restart it, and
   Panic, Stop or turning the click off cancels it.
 - Disabling the metronome truncates the click immediately. Panic silences the
@@ -74,8 +76,9 @@ scales that peak, and 100% is not a measured sound-pressure level.
 - click timing at 44.1/48/96 kHz with block sizes from 1 to 511 samples;
 - tempo changes mid-beat, reset and immediate re-enable;
 - downbeat, accent-every and beats-per-bar relationships;
-- count-in length, beat spacing, higher pitch, the bar hand-off, a tempo change
-  during the count-in, restart on a fresh enable and cancellation by reset;
+- count-in length, beat spacing, higher pitch, the bar hand-off, a tempo or
+  subdivision change during the count-in — including the hand-off gap — restart
+  on a fresh enable and cancellation by reset;
 - subdivisions and their lower level;
 - both presets being finite, bounded and distinct;
 - level, explicit stop and master-follow behavior;

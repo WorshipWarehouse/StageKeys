@@ -723,6 +723,9 @@ struct SKMetronome {
  SKMetronomeSettings settings;
  double tempo,interval,remaining;
  unsigned beat,step,noise,countIn;
+ // Nonzero while the pending interval is a count-in beat, which must keep its
+ // length through subdivision edits and the hand-over to the bar.
+ unsigned pendingBeat;
  double phase;
  float envelope,decay,woodDecay,master,pitch;
  int followsMaster,enabled;
@@ -766,15 +769,21 @@ void sk_metronome_master(SKMetronome*m,float volume,int followsMaster){if(m)metr
 void sk_metronome_reset(SKMetronome*m){if(m)metro_push(m,(MetronomeCommand){.kind=5});}
 // Tempo and subdivision edits scale the pending interval instead of restarting
 // it, so a change cannot double-trigger or skip the beat the performer hears.
-static void metro_rescale(SKMetronome*m,double old){
- if(m->enabled&&m->remaining>0&&old>0)m->remaining=m->remaining*(m->interval/old);
- double ceiling=m->countIn>0?metro_beat_interval(m):m->interval;
- if(m->remaining>ceiling)m->remaining=ceiling;
+// Rescale by the ratio of the interval the pending gap actually measures: a
+// count-in gap is a whole beat, so it neither follows a subdivision edit nor
+// loses its beat length in the interval before the bar's downbeat.
+static void metro_rescale(SKMetronome*m,double old,unsigned oldSubdivision){
+ if(!m->enabled||m->remaining<=0||old<=0)return;
+ double from=m->pendingBeat?old*(double)oldSubdivision:old;
+ double to=m->pendingBeat?metro_beat_interval(m):m->interval;
+ if(!(to>0))return;
+ m->remaining=m->remaining*(to/from);
+ if(m->remaining>to)m->remaining=to;
 }
 static void metro_apply(SKMetronome*m,const MetronomeCommand*c){
- double old=m->interval;
+ double old=m->interval;unsigned oldSubdivision=m->settings.subdivision;
  if(c->kind==1){
-  m->settings=c->settings;m->interval=metro_interval(m);metro_rescale(m,old);
+  m->settings=c->settings;m->interval=metro_interval(m); metro_rescale(m,old,oldSubdivision);
   if(m->step>=(unsigned)m->settings.subdivision)m->step=0;
   if(m->beat>=(unsigned)m->settings.beatsPerBar)m->beat=0;
   // A count-in cannot outlive the pattern it precedes: turning it off while it
@@ -782,11 +791,11 @@ static void metro_apply(SKMetronome*m,const MetronomeCommand*c){
   unsigned maxCountIn=(unsigned)(m->settings.countInBars*m->settings.beatsPerBar);
   if(m->countIn>maxCountIn)m->countIn=maxCountIn;
  }else if(c->kind==2){
-  if(c->flag){if(!m->enabled){m->enabled=1;m->beat=0;m->step=0;m->remaining=0;m->envelope=0;m->phase=0;m->pitch=1;m->countIn=(unsigned)(m->settings.countInBars*m->settings.beatsPerBar);}}
-  else{m->enabled=0;m->envelope=0;m->countIn=0;m->pitch=1;}
- }else if(c->kind==3){m->tempo=c->value;m->interval=metro_interval(m);metro_rescale(m,old);}
+  if(c->flag){if(!m->enabled){m->enabled=1;m->beat=0;m->step=0;m->remaining=0;m->envelope=0;m->phase=0;m->pitch=1;m->countIn=(unsigned)(m->settings.countInBars*m->settings.beatsPerBar);m->pendingBeat=0;}}
+  else{m->enabled=0;m->envelope=0;m->countIn=0;m->pitch=1;m->pendingBeat=0;}
+ }else if(c->kind==3){m->tempo=c->value;m->interval=metro_interval(m); metro_rescale(m,old,oldSubdivision);}
  else if(c->kind==4){m->master=c->value;m->followsMaster=c->flag;}
- else if(c->kind==5){m->beat=0;m->step=0;m->remaining=m->interval;m->envelope=0;m->phase=0;m->countIn=0;m->pitch=1;}
+ else if(c->kind==5){m->beat=0;m->step=0;m->remaining=m->interval;m->envelope=0;m->phase=0;m->countIn=0;m->pitch=1;m->pendingBeat=0;}
 }
 // Count-in clicks are whole beats at twice the click pitch, so the pre-roll is
 // audibly distinct from the bar. The last count-in click uses the downbeat
@@ -834,7 +843,7 @@ void sk_metronome_render(SKMetronome*m,float*left,float*right,uint32_t frames){
  for(uint32_t n=0;n<frames;n++){
   float y=0;
   if(m->enabled){
-   while(m->remaining<=0){unsigned counting=m->countIn;metro_trigger(m);m->remaining+=counting>0?metro_beat_interval(m):m->interval;}
+   while(m->remaining<=0){unsigned counting=m->countIn;metro_trigger(m);m->pendingBeat=counting>0;m->remaining+=counting>0?metro_beat_interval(m):m->interval;}
    m->remaining-=1;y=metro_sample(m)*gain;
   }else{m->envelope=0;m->phase=0;}
   if(!isfinite(y))y=0;if(fabsf(y)>1)y=y>0?1:-1;

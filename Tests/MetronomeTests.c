@@ -357,6 +357,68 @@ static void test_reset(void) {
     sk_metronome_destroy(m);
 }
 
+// Continuous onset recorder: unlike capture(), it keeps running across a
+// control change so a mid-interval edit can be measured on the same timeline.
+typedef struct { int count; long onset[MAX_CLICKS]; long t; int quiet; } Onsets;
+
+static void onsets_reset(Onsets *o) { o->count = 0; o->t = 0; o->quiet = 1 << 20; }
+
+static void onsets_render(Onsets *o, SKMetronome *m, long total) {
+    float left[512], right[512];
+    long end = o->t + total;
+    while (o->t < end) {
+        uint32_t n = end - o->t < 512 ? (uint32_t)(end - o->t) : 512;
+        sk_metronome_render(m, left, right, n);
+        for (uint32_t i = 0; i < n; i++) {
+            float a = fabsf(left[i]);
+            if (a > 0.02f) {
+                if (o->quiet > 64 && o->count < MAX_CLICKS) o->onset[o->count++] = o->t;
+                o->quiet = 0;
+            } else { o->quiet++; }
+            o->t++;
+        }
+    }
+}
+
+// Settings edits during the count-in must not shorten a count-in beat, and the
+// final beat before the bar must keep its length when the subdivision changes.
+static void test_count_in_changes(void) {
+    SKMetronome *m = sk_metronome_create(48000); assert(m);
+    SKMetronomeSettings s = defaults();
+    s.beatVelocity = 1; s.downbeatVelocity = 1; s.subdivision = 1; s.beatsPerBar = 4; s.countInBars = 1;
+    sk_metronome_settings(m, s);
+    sk_metronome_tempo(m, 120);
+    sk_metronome_enable(m, 1);
+    Onsets o; onsets_reset(&o);
+    // One beat is 24000 samples at 120 BPM and 48 kHz; the first audible sample
+    // of each click is one sample after its trigger.
+    onsets_render(&o, m, 24000 + 512);
+    assert(o.count == 2 && o.onset[1] - o.onset[0] == 24000);
+    // Quadrupling the subdivision mid-count-in leaves the count-in beats alone:
+    // clicks three and four stay a beat apart, and so does the bar's downbeat.
+    s.subdivision = 4;
+    sk_metronome_settings(m, s);
+    onsets_render(&o, m, 3 * 24000);
+    assert(o.count == 5);
+    assert(o.onset[2] == 48001);
+    for (int i = 1; i < 5; i++) assert(o.onset[i] - o.onset[i - 1] == 24000);
+    // A subdivision change in the gap after the last count-in click cannot pull
+    // the bar's downbeat early: it still lands one beat after that click.
+    s.subdivision = 1;
+    sk_metronome_settings(m, s);
+    sk_metronome_reset(m);
+    sk_metronome_enable(m, 0);
+    sk_metronome_enable(m, 1);
+    onsets_reset(&o);
+    onsets_render(&o, m, 3 * 24000 + 512);
+    assert(o.count == 4 && o.onset[3] == 72001);
+    s.subdivision = 4;
+    sk_metronome_settings(m, s);
+    onsets_render(&o, m, 24000 + 512);
+    assert(o.count == 5 && o.onset[4] - o.onset[3] == 24000);
+    sk_metronome_destroy(m);
+}
+
 int main(void) {
     test_timing();
     test_tempo_change();
@@ -368,5 +430,6 @@ int main(void) {
     test_long_run();
     test_reset();
     test_count_in();
+    test_count_in_changes();
     puts("PASS: metronome timing at 44.1/48/96 kHz, block splits, tempo phase, accents, subdivision, presets, levels, master follow, long-run drift, reset and count-in");
 }
