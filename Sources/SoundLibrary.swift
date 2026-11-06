@@ -174,6 +174,34 @@ struct SoundLibrary {
         guard bytes.count <= 16_000_000 else { throw CocoaError(.fileWriteOutOfSpace) }
         try RecoverableSessionFile.write(bytes,to:url,limit:16_000_000) { _ = try decoded($0) }
     }
+    /// Save one layer as an independent library sound. The entry and its layer get
+    /// fresh identities, so later edits to the source patch cannot change the
+    /// export. There is deliberately no identity parameter: exporting again adds
+    /// another entry rather than overwriting one, and overwriting stays an explicit
+    /// library action. Ordinary sound imports and exports use the same locked
+    /// append operation.
+    @discardableResult
+    func exportSound(_ source: Layer, name: String? = nil) throws -> LibrarySound {
+        let title = (name ?? source.name).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !title.isEmpty, title.count <= 200, source.name.count <= 200 else { throw SetlistError.invalid }
+        guard source.loaded || source.instrument >= 0 else { throw SetlistError.invalid }
+        var layer = source
+        layer.id = UUID()
+        layer.name = title
+        let entry = LibrarySound(id: UUID().uuidString, name: title, collection: "My Sounds", sound: layer.external, layer: layer)
+        try append(entry)
+        return entry
+    }
+
+    /// Read and append while holding the write lock so independent imports
+    /// and exports cannot publish snapshots that omit each other's entries.
+    func append(_ entry: LibrarySound) throws {
+        try withExclusiveWrite {
+            var entries = try read()
+            entries.append(entry)
+            try writeUnlocked(entries)
+        }
+    }
     func recoverPrevious()throws->[LibrarySound] {
         try withExclusiveWrite {
             let data=try RecoverableSessionFile.restore(url,limit:16_000_000) { _ = try decoded($0) }
