@@ -16,6 +16,10 @@ import AVFoundation
         warningReading.invalid=1;warnings.update(warningReading);assert(warnings.invalid && !warnings.overload)
         warningReading.frames=1;warnings.update(warningReading);assert(!warnings.invalid)
         warningReading.overload=1;warnings.update(warningReading);assert(warnings.overload)
+        warningReading.meterID = UUID()
+        warningReading.frames += 1
+        warnings.update(warningReading)
+        assert(warnings.invalid && warnings.overload, "A replacement meter starts a new warning baseline")
         warnings.update(nil);assert(!warnings.invalid && !warnings.overload)
         buffer.floatChannelData![0][0] = .nan;buffer.floatChannelData![1][0] = .infinity
         meter.append(buffer);assert(meter.read().invalid==2 && meter.read().rms.isFinite)

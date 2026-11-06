@@ -41,18 +41,20 @@ struct SupportDiagnostics: Codable {
 
 final class OutputMeter {
     struct Reading: Equatable {
+        var meterID: UUID? = nil
         var peak:Float=0,rms:Float=0
         var frames:UInt64=0,invalid:UInt64=0,overload:UInt64=0
         var peakDB:Float {peak>0 ? 20*log10(peak): -120}
         var rmsDB:Float {rms>0 ? 20*log10(rms): -120}
     }
+    private let meterID = UUID()
     private let meter=sk_output_meter_create()!
     func append(_ buffer:AVAudioPCMBuffer) {
         guard let channels=buffer.floatChannelData,buffer.format.channelCount==2 else{return}
         sk_output_meter_process(meter,channels[0],channels[1],buffer.frameLength)
     }
     func read()->Reading {
-        var r=Reading();sk_output_meter_read(meter,&r.peak,&r.rms,&r.frames,&r.invalid,&r.overload);return r
+        var r=Reading(meterID: meterID);sk_output_meter_read(meter,&r.peak,&r.rms,&r.frames,&r.invalid,&r.overload);return r
     }
     deinit{sk_output_meter_destroy(meter)}
 
@@ -62,6 +64,7 @@ final class OutputMeter {
 /// cumulative, so reading the absolute values would leave a warning color on
 /// screen after clean audio resumes.
 struct MeterWarningState {
+    private var meterID: UUID?
     private var lastInvalid: UInt64 = 0
     private var lastOverload: UInt64 = 0
     private(set) var invalid = false
@@ -69,8 +72,17 @@ struct MeterWarningState {
 
     mutating func update(_ reading: OutputMeter.Reading?) {
         guard let reading else {
-            lastInvalid = 0; lastOverload = 0; invalid = false; overload = false
+            meterID = nil
+            lastInvalid = 0
+            lastOverload = 0
+            invalid = false
+            overload = false
             return
+        }
+        if reading.meterID != meterID {
+            meterID = reading.meterID
+            lastInvalid = 0
+            lastOverload = 0
         }
         invalid = reading.invalid > lastInvalid
         overload = reading.overload > lastOverload
