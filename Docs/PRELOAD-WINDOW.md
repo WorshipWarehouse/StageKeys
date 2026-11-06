@@ -93,12 +93,18 @@ measurement, not inferred from the sound kind.
   existing rollback path, never by mutating the live voice.
 - A warm entry that fails to load is dropped and reported; the active patch, its saved bytes
   and its audible audio are unchanged. A warm failure may never fail the active patch.
-- All work stays on the main queue, matching `validateSound`'s precondition. Nothing is added
-  to the render callback, and the audio thread never performs I/O or allocates.
+- Run blocking resource preparation in a bounded worker with one in-flight job.
+  Recheck cancellation before handing prepared data back to the main queue.
+  Keep graph installation on its required queue. Defer warming any sampler that
+  can still block that queue on file I/O until a safe preparation path exists.
+  The render callback does no preload work.
 
 ### Eviction
 
-- Entries outside the recomputed window are released immediately on selection.
+- Key each entry by patch UUID and the warm-relevant sound and processing
+  configuration. Discard entries when the patch leaves the window or those inputs
+  change. An index can locate a patch but cannot establish cache identity after
+  insertion, removal, reorder or setlist replacement.
 - If the memory ceiling is reached before the window is full, entries are dropped
   farthest-first, then next-before-previous at equal distance.
 - The UI shows the reduced window; it must not present a full window that is not resident.
@@ -116,9 +122,13 @@ implementation will be held to:
 2. **Instrumentation** — `os_signpost` intervals around window construction; `phys_footprint`
    from `task_info(TASK_VM_INFO)` before and after a window is built; activation latency
    measured from patch selection to first rendered block, with and without a warm entry,
-   20 runs each, median and p95.
+   20 runs each, median and p95. Measure process CPU and render deadline misses
+   against the same active performance with preloading off. Report both
+   active warming and steady state with the window resident.
 3. **Pass criteria (to be agreed with the owner)** — zero added render-callback work; steady
-   state footprint increase ≤ X MB per warm entry; p95 activation improvement ≥ Y ms; a
+   state footprint increase ≤ X MB per warm entry; p95 activation improvement ≥ Y ms;
+   peak warming and steady state CPU within agreed limits relative to the
+   no-preload control, with zero additional render deadline misses; a
    cancelled window leaves the node and tail counts unchanged; the active patch survives a
    warm failure with identical saved bytes.
 4. **Recording** — platform, OS build, sample rate, buffer size, patch identity, fixture
