@@ -8,7 +8,7 @@ Audit record for the sound half of #114's export requirement. **This change does
 
 ## What changes
 
-- `SoundLibrary.exportSound(_:name:)` appends one `LibrarySound` to `sound-library.json`. The entry and its layer receive fresh identities, the name is trimmed and bounded to 1–200 characters, and the whole read-modify-write runs inside the existing exclusive library lock so a concurrent import cannot be lost.
+- `SoundLibrary.exportSound(_:name:)` appends one `LibrarySound` to `sound-library.json`. The entry and its layer receive fresh identities, the name is trimmed and bounded to 1–200 characters, and ordinary sound imports and exports append under the same exclusive library lock.
 - The export takes no identity parameter, so every call allocates a new entry. Overwriting remains an explicit library action; there is no path by which an export replaces an existing entry.
 - `PerformanceStore.saveSoundToLibrary` now captures hosted Audio Unit state, validates the layer through the same `Setlist.validate()` path a save uses, writes through `SoundLibrary.exportSound`, refreshes library content issues, and reports whether the entry is present afterwards.
 - `SoundEditor` gains **Save Sound to Library** plus an inline confirmation, so the action is reachable from the per-sound settings sheet used by both the wide sidebar and compact layouts.

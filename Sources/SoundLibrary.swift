@@ -178,8 +178,8 @@ struct SoundLibrary {
     /// fresh identities, so later edits to the source patch cannot change the
     /// export. There is deliberately no identity parameter: exporting again adds
     /// another entry rather than overwriting one, and overwriting stays an explicit
-    /// library action. The read-modify-write runs under the same exclusive lock as
-    /// every other library change so a concurrent import cannot be lost.
+    /// library action. Ordinary sound imports and exports use the same locked
+    /// append operation.
     @discardableResult
     func exportSound(_ source: Layer, name: String? = nil) throws -> LibrarySound {
         let title = (name ?? source.name).trimmingCharacters(in: .whitespacesAndNewlines)
@@ -189,12 +189,18 @@ struct SoundLibrary {
         layer.id = UUID()
         layer.name = title
         let entry = LibrarySound(id: UUID().uuidString, name: title, collection: "My Sounds", sound: layer.external, layer: layer)
+        try append(entry)
+        return entry
+    }
+
+    /// Read and append while holding the write lock so independent imports
+    /// and exports cannot publish snapshots that omit each other's entries.
+    func append(_ entry: LibrarySound) throws {
         try withExclusiveWrite {
             var entries = try read()
             entries.append(entry)
             try writeUnlocked(entries)
         }
-        return entry
     }
     func recoverPrevious()throws->[LibrarySound] {
         try withExclusiveWrite {

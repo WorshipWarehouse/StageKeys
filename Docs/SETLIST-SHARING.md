@@ -74,7 +74,7 @@ An exported patch is an ordinary one-patch library document, so it also appears 
 - the patch is not saved, activated or restarted by the export, and audio keeps playing while the editor's audition stays live;
 - exporting the same sound again adds another entry. Overwriting a library entry stays an explicit library action; an export never reuses an existing identity.
 
-The entry is written through the same locked read-modify-write path as every other library change, so a concurrent import cannot be lost, and it must pass the existing library validation, including the layer validation a normal save performs. A blank or over-long name is refused before anything is written.
+Ordinary sound imports and exports append under the same library lock, preserving both entries if they run concurrently. The export must pass the existing library and layer validation. A blank or over-long name is refused before anything is written.
 
 A sound export is still not a share: missing sample or Audio Unit content is not detected at export time, and the existing runtime admission checks apply when the sound is added to a patch. Redistribution limits for vendor content are unchanged.
 

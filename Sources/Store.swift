@@ -1673,7 +1673,6 @@ final class PerformanceStore: ObservableObject {
     private func installLibrarySound(_ url:URL,sampleRoot:URL?,id:String?=nil)throws->ExternalSound {
         let (sound,notes,layer)=try prepareLibrarySound(url,sampleRoot:sampleRoot)
         let library=SoundLibrary(url:saveURL.deletingLastPathComponent().appendingPathComponent("sound-library.json"))
-        var entries=try library.read()
         var entry=LibrarySound(id:id ?? UUID().uuidString,name:sound.name,collection:"My Sounds",sound:sound,layer:layer,conversionNotes:notes)
         if ["exs","aupreset"].contains(url.pathExtension.lowercased()) {
             let access=url.startAccessingSecurityScopedResource();defer{if access{url.stopAccessingSecurityScopedResource()}}
@@ -1682,8 +1681,7 @@ final class PerformanceStore: ObservableObject {
         if let name=sound.fileName,let rack=audio.externalRack {
             entry.managedFileSHA256=try AssetDigest.sha256(rack.libraryURL.appendingPathComponent(name))
         }
-        entries.append(entry)
-        try library.write(entries);librarySounds=try library.read();refreshLibraryContent()
+        try library.append(entry);librarySounds=try library.read();refreshLibraryContent()
         return librarySounds.last(where:{$0.sound?.fileName==sound.fileName})?.sound ?? sound
     }
     /// One directory-backed check per saved sound, not per keystroke.
