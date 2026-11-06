@@ -138,7 +138,9 @@ the performer to start audio or choose an available output; a specific startup
 failure is not replaced by that message. Stopping, Panic, a graph failure or an
 audio-device recovery resets the engine's count-in state, so a deferred click
 cannot fire after a later start. Count In is unavailable while external MIDI
-clock sync is on, because the external clock owns the timing.
+clock sync is on, because the external clock owns the timing. Turning external
+clock sync on or off cancels a pending Count In, so a later normal click cannot
+inherit its remaining bars.
 
 ## Limits
 

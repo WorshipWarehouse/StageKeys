@@ -812,6 +812,9 @@ static void metro_apply(SKMetronome*m,const MetronomeCommand*c){
   if(m->externalClock!=c->flag){
    m->externalClock=c->flag;
    m->clockPulses=0;m->clockHasLast=0;m->clockTick=0;
+   // Count-in belongs to the internal clock. A mode change cancels it instead
+   // of leaving a temporary stop pending for a later normal click.
+   m->countInRemaining=0;m->countInOnly=0;m->countInStopPending=0;
    if(m->externalClock){m->enabled=0;m->envelope=0;}
    else{m->enabled=m->requestedEnabled;}
   }
