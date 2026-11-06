@@ -1359,6 +1359,7 @@ final class PerformanceStore: ObservableObject {
             }
         }
         midiFX.panic(channel:index); audio.panic(channel:index); cancelTransition(); setlist.patches[selected].layers[index] = layer
+        midiFX.setLookaheadChannels(Set(setlist.patches[selected].layers.indices.filter { audio.canScheduleMIDI(channel: $0) }))
         configureMIDI(index, layer)
         audio.gain(index, layer.loaded && !layer.muted ? layer.gain : 0); updateToneFilters(); save()
     }
@@ -1582,6 +1583,7 @@ final class PerformanceStore: ObservableObject {
             configuredPrograms[index]=program.validated
         }
         midiFX.configure(channel: index, program: program, tempo: performedTempo)
+        midiFX.setLookaheadChannels(Set(patch.layers.indices.filter { audio.canScheduleMIDI(channel: $0) }))
         if let d = layer.midiDestinationID {
             sendMIDI(d, 0xb0 | UInt8(layer.midiOutputChannel), 7, UInt8(layer.muted ? 0 : Int(layer.gain*127)))
             sendMIDI(d, 0xb0 | UInt8(layer.midiOutputChannel), 10, UInt8(max(0,min(127,Int((layer.pan+1)*63.5)))))

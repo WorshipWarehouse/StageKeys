@@ -8,6 +8,7 @@ import Foundation
         deadlineSelection()
         scheduledTimes()
         lookaheadEmission()
+        channelLookahead()
         pollingQuantization()
         print("PASS: earliest deadline selection, gate/step ordering and polling-grid quantization")
     }
@@ -91,6 +92,7 @@ import Foundation
     /// deadline, while the event still reports the deadline itself.
     static func lookaheadEmission() {
         let p = MIDIFXProcessor(automaticallySchedule: false, lookahead: 0.01)
+        p.setLookaheadChannels([0])
         var ons: [(Int, TimeInterval)] = []
         var offs: [(Int, TimeInterval)] = []
         p.onNoteAt = { _, key, _, _, _, at in ons.append((key, at)) }
@@ -129,6 +131,33 @@ import Foundation
         q.noteOn(channel: 0, key: 60, pitch: 60, velocity: 1)
         q.dispatch(at: 0.24)
         assert(count == 1, "Without a horizon 0.24 s is still before the step")
+    }
+
+    /// The horizon applies only to channels marked as sample-timed; an unmarked
+    /// channel must not emit before wall time reaches its deadline.
+    static func channelLookahead() {
+        let p = MIDIFXProcessor(automaticallySchedule: false, lookahead: 0.01)
+        p.setLookaheadChannels([0])
+        var ons: [Int: [(Int, TimeInterval)]] = [:]
+        p.onNoteAt = { channel, key, _, _, _, at in ons[channel, default: []].append((key, at)) }
+        var arp = MIDIProgram()
+        arp.kind = .arpeggiator
+        arp.subdivision = 0.5
+        arp.gate = 0.8
+        p.configure(channel: 0, program: arp, tempo: 120)
+        p.configure(channel: 1, program: arp, tempo: 120)
+        p.noteOn(channel: 0, key: 60, pitch: 60, velocity: 1)
+        p.noteOn(channel: 1, key: 61, pitch: 61, velocity: 1)
+        assert(ons[0]?.count == 1 && ons[1]?.count == 1)
+
+        p.dispatch(at: 0.24)
+        assert(ons[0]?.count == 2, "Channel 0 emits the 0.25 s step through the horizon")
+        assert(abs((ons[0]?.last?.1 ?? 0) - 0.25) < 1e-9)
+        assert(ons[1]?.count == 1, "Channel 1 stops at wall time")
+
+        p.dispatch(at: 0.25)
+        assert(ons[1]?.count == 2, "Channel 1 emits once wall time reaches 0.25 s")
+        assert(abs((ons[1]?.last?.1 ?? 0) - 0.25) < 1e-9)
     }
 
     /// Simulate a 5 ms polling timer versus a timer armed at each deadline. The

@@ -456,6 +456,11 @@ final class AudioController {
         return deliveryPolicy.delivery(deadline: deadline, now: now, timeline: timeline,
                                        currentSample: Int64(current), canSchedule: canSchedule)
     }
+    /// True when this slot is a hosted AU whose events can be delivered at a
+    /// future sample time. Parallel imported branches stay immediate.
+    func canScheduleMIDI(channel: Int) -> Bool {
+        externalSounds[channel] != nil && (externalRack?.canSchedule(channel: channel) ?? false)
+    }
     func noteOn(key: Int, pitch: Int, instrument: Int, layer: Int, velocity: Float,sourceID:Int32? = nil,at deadline: TimeInterval? = nil) {
         if externalSounds[layer] != nil {
             let sampleTime = auDelivery(for: deadline, canSchedule: true).sampleTime

@@ -30,9 +30,7 @@ also feeds consumers that cannot:
 - hosted AUs without `scheduleMIDIEventBlock` fall back to immediate delivery;
 - native `sk_render` note commands are applied at a block boundary.
 
-Those would receive notes up to one horizon early. Enabling the horizon in
-`Store` waits for the AU path in #161 to be verified and for the immediate
-consumers to be deferred or timestamped themselves.
+Those would receive notes up to one horizon early. [MIDIFX-CHANNEL-LOOKAHEAD.md](MIDIFX-CHANNEL-LOOKAHEAD.md) gates the horizon per channel instead, so only hosted AUs with a schedule block advance early; immediate consumers keep deadline dispatch.
 
 ## Verified
 
