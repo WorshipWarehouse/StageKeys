@@ -1594,11 +1594,11 @@ final class PerformanceStore: ObservableObject {
     #endif
 
     private func handleMIDI(_ status: UInt8, _ a: UInt8, _ b: UInt8, source: Int32) {
+        if status >= 0xF8 { handleMIDIClock(status, source: source, at: ProcessInfo.processInfo.systemUptime); return }
+        if status >= 0xF0 { return }
         midiActivity.toggle()
         midiLog.insert((midiSources.first(where: { $0.id == source })?.name ?? "MIDI") + String(format: " · Ch %02d · %02X · %d · %d", Int(status & 15) + 1, status & 0xf0, a, b), at: 0)
         midiLog = Array(midiLog.prefix(15))
-        if status >= 0xF8 { handleMIDIClock(status, source: source, at: ProcessInfo.processInfo.systemUptime); return }
-        if status >= 0xF0 { return }
         let channel=Int(status & 15)
         guard MIDIControllerRules.accepts(sourceID: primarySourceID, channel: midiChannel, source: source, inputChannel: channel) ||
               MIDIControllerRules.accepts(sourceID: secondarySourceID, channel: secondaryChannel, source: source, inputChannel: channel) else { return }
