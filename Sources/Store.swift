@@ -212,6 +212,19 @@ final class PerformanceStore: ObservableObject {
     @Published var preloadNext = 0 { didSet { if oldValue != preloadNext { refreshPreloadWindow() } } }
     /// Patch indices the current counts cover; empty when both counts are 0.
     @Published private(set) var preloadWindow: [Int] = []
+    /// True while the settled window is being warmed. Kept separate from
+    /// `patchLoading` so the screen can distinguish "the active patch is
+    /// loading" from "a neighbour is being prepared". The render path never
+    /// reads either value.
+    @Published private(set) var preloadWarming = false
+    /// Wording for the Performance screen. Counts are the whole story when the
+    /// window is empty: an unsupported setlist does not get a progress reading.
+    var preloadStatusText: String {
+        guard preloadPrevious > 0 || preloadNext > 0 else { return "Preloading off" }
+        let ready = preloadWindow.filter { warmedChannels[$0] != nil }.count
+        if preloadWarming { return "Preparing \(ready) of \(preloadWindow.count)…" }
+        return "Ready \(ready) of \(preloadWindow.count)"
+    }
     /// Nearest-first, clamped at the setlist edges, previous before next at the
     /// same distance, and never containing the active patch. Pure: no disk
     /// access, no graph edit and no render-thread work.
@@ -233,6 +246,7 @@ final class PerformanceStore: ObservableObject {
     /// voice per patch and the counts remain a real bound on the work.
     @Published private(set) var warmedChannels: [Int: Int] = [:]
     private var warmWorkItem: DispatchWorkItem?
+    private var warmGeneration = 0
     /// Eviction is by construction: the window is recomputed from the counts, so
     /// an index that leaves it stops being covered, and its detached voice is
     /// dropped at the next refresh.
@@ -245,11 +259,17 @@ final class PerformanceStore: ObservableObject {
     /// selection path would add the very latency preloading exists to remove.
     func refreshWarmVoices() {
         warmWorkItem?.cancel()
+        // A cancelled pass must not keep building chains for a window that no
+        // longer exists; every scheduled pass carries the generation it was
+        // scheduled for and stops as soon as a newer one arrives.
+        warmGeneration &+= 1
+        let generation = warmGeneration
+        preloadWarming = false
         guard started || audio.running else {
             audio.discardWarmVoices(); warmedChannels.removeAll(); return
         }
         evictUncoveredWarmVoices()
-        let work = DispatchWorkItem { [weak self] in self?.warmCoveredPatches() }
+        let work = DispatchWorkItem { [weak self] in self?.warmCoveredPatches(generation: generation) }
         warmWorkItem = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.2, execute: work)
     }
@@ -260,7 +280,8 @@ final class PerformanceStore: ObservableObject {
             warmedChannels[index] = nil
         }
     }
-    private func warmCoveredPatches() {
+    private func warmCoveredPatches(generation: Int) {
+        guard generation == warmGeneration else { return }
         guard started || audio.running else {
             audio.discardWarmVoices(); warmedChannels.removeAll(); return
         }
@@ -268,9 +289,12 @@ final class PerformanceStore: ObservableObject {
         // stops the engine. Never start one under a held key or a sounding
         // patch; the next selection re-schedules the remaining window.
         guard held.isEmpty, !sustain, !patchLoading else { return }
+        preloadWarming = true
+        defer { if generation == warmGeneration { preloadWarming = false } }
         evictUncoveredWarmVoices()
         var used = Set(warmedChannels.values)
         for index in preloadWindow where warmedChannels[index] == nil {
+            guard generation == warmGeneration else { return }
             guard setlist.patches.indices.contains(index),
                   let (channel, layer) = warmLayer(of: setlist.patches[index]),
                   let sound = layer.external, sound.kind != .audioUnit,

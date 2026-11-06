@@ -54,6 +54,24 @@ import Foundation
         store.setlist = fixture
         assert(store.preloadWindow == [3, 5, 2, 6], "Replacing the setlist adds newly available neighbors")
 
+        // The visible state cannot claim warming without an engine, and the
+        // counts alone decide whether the screen says anything at all.
+        assert(!store.preloadWarming, "Nothing is warming while audio is stopped")
+        assert(store.preloadStatusText.hasPrefix("Ready"), store.preloadStatusText)
+        store.preloadPrevious = 0; store.preloadNext = 0
+        assert(store.preloadStatusText == "Preloading off", "Counts of zero read as off")
+        store.preloadPrevious = 1; store.preloadNext = 1
+
+        // Rapid Prev/Next: each selection recomputes from the settled counts,
+        // and the stopped engine keeps every pass out of the warm path.
+        for step in 0..<40 {
+            store.selected = step % count
+            assert(store.preloadWindow == store.preloadWindowIndices(around: store.selected),
+                   "Rapid selection \(step) must match the window arithmetic")
+            assert(store.warmedChannels.isEmpty && !store.preloadWarming,
+                   "Stopped audio never leaves warm state behind")
+        }
+
         // Persistence round trip, including the window that follows the counts.
         store.preloadPrevious = 2; store.preloadNext = 1
         store.save()

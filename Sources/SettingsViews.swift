@@ -209,6 +209,12 @@ struct SettingsEditor: View {
                         Toggle("Show Layer Ranges", isOn: $store.showRanges)
                         Toggle("Dynamic MIDI Output Ranges", isOn: $store.dynamicMIDIRanges)
                         Text("Dynamic ranges show the span of active output notes after MIDI effects and transposition. The span can include unplayed pitches. Sustain and audio tails are excluded.").font(.caption).foregroundStyle(.secondary)
+                        Stepper("Preload Previous Patches: \(store.preloadPrevious)", value: $store.preloadPrevious, in: 0...SessionSettings.preloadLimitPerDirection)
+                        Stepper("Preload Next Patches: \(store.preloadNext)", value: $store.preloadNext, in: 0...SessionSettings.preloadLimitPerDirection)
+                        Text("StageKeys can prepare up to \(SessionSettings.preloadLimitPerDirection) patches on each side. Preparing a neighbour is a short audio gap, so it waits for a settled selection and is skipped while a key or the sustain pedal is held. Audio Units are not preloaded.").font(.caption).foregroundStyle(.secondary)
+                        Text(store.preloadStatusText).font(.caption).foregroundStyle(.secondary)
+                            .accessibilityLabel("Patch preloading status")
+                            .accessibilityValue(store.preloadStatusText)
                         Text("192 synth voices are shared by all 15 modules and the tonic pad. Each original synth module has its own voice limit in Sound Settings. Imported instruments manage their own polyphony.").font(.caption).foregroundStyle(.secondary)
                     default:
                         Section("Default Transition") { Slider(value: $store.transition, in: 0...15, step: 0.1); Text("\(store.transition, specifier: "%.1f") seconds") }
