@@ -67,3 +67,21 @@ In the matched runs, the engine tap captured 9.600 seconds of PCM over
 11.653 seconds (native) and 11.693 seconds (hosted). The no-edit control
 captured 9.800 seconds over 9.895 seconds. The independent line-output
 recording and real failure capture are still required.
+
+## Patch-selection follow-up
+
+The reported failure happened while playing the keyboard and selecting a patch
+with the mouse. A follow-up on the same AudioBox route used the Store's patch
+selection action with a generated CoreMIDI input. Before each selection, one
+note was held and another was released under sustain. The three test patches
+alternated between native samplers and Apple DLSMusicDevice.
+
+All 36 selections settled with the expected patch, transposition and tempo.
+The locked patches recalled 84 and 132 BPM. The unlocked patch kept the live
+108 BPM. Note and pedal ownership was clear after release on every cycle.
+The running graph had 24–40 tracked nodes and at most two retired tails at the
+post-selection checks. No audio-change error was recorded. The maximum
+selection-to-settled time was 88 ms, measured on the control path.
+
+The probe was muted and used virtual MIDI. The intermittent error remains
+unreproduced, and the control-path timing does not measure audible continuity.
