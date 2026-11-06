@@ -9,6 +9,8 @@ import Foundation
         scheduledTimes()
         lookaheadEmission()
         channelLookahead()
+        refreshableChannelLookahead()
+        clearedChannelLookahead()
         pollingQuantization()
         print("PASS: earliest deadline selection, gate/step ordering and polling-grid quantization")
     }
@@ -158,6 +160,67 @@ import Foundation
         p.dispatch(at: 0.25)
         assert(ons[1]?.count == 2, "Channel 1 emits once wall time reaches 0.25 s")
         assert(abs((ons[1]?.last?.1 ?? 0) - 0.25) < 1e-9)
+    }
+
+    /// Eligibility is re-read when a channel's instrument settles. Marking and
+    /// unmarking after construction must take effect on the next dispatch, which
+    /// is what the Store's post-install refresh relies on.
+    static func refreshableChannelLookahead() {
+        let p = MIDIFXProcessor(automaticallySchedule: false, lookahead: 0.01)
+        var ons: [Int: [(Int, TimeInterval)]] = [:]
+        p.onNoteAt = { channel, key, _, _, _, at in ons[channel, default: []].append((key, at)) }
+        var arp = MIDIProgram()
+        arp.kind = .arpeggiator
+        arp.subdivision = 0.5
+        arp.gate = 0.8
+        p.configure(channel: 0, program: arp, tempo: 120)
+        p.noteOn(channel: 0, key: 60, pitch: 60, velocity: 1)
+        assert(ons[0]?.count == 1)
+
+        // Not marked yet: 0.24 s must not reach the 0.25 s step.
+        p.dispatch(at: 0.24)
+        assert(ons[0]?.count == 1, "An unmarked channel waits for wall time")
+
+        // The AU finished installing and the Store marked the channel, so the
+        // same step is now emitted through the horizon.
+        p.setLookaheadChannels([0])
+        p.dispatch(at: 0.24)
+        assert(ons[0]?.count == 2, "Marking a channel takes effect on the next dispatch")
+        assert(abs((ons[0]?.last?.1 ?? 0) - 0.25) < 1e-9, "The late-marked event still reports 0.25 s")
+
+        // A replacement without a schedule block unmarks it again.
+        p.setLookaheadChannels([])
+        p.noteOn(channel: 0, key: 62, pitch: 62, velocity: 1)
+        let before = ons[0]?.count ?? 0
+        p.dispatch(at: 0.49)
+        assert(ons[0]?.count == before, "An unmarked channel emits nothing before its 0.5 s step")
+        p.dispatch(at: 0.5)
+        assert((ons[0]?.count ?? 0) > before, "The unmarked channel emits once wall time reaches its step")
+    }
+
+    /// A rejected or retired install clears only that channel's mark; the next
+    /// dispatch must stop advancing it through the horizon.
+    static func clearedChannelLookahead() {
+        let p = MIDIFXProcessor(automaticallySchedule: false, lookahead: 0.01)
+        p.setLookaheadChannels([0, 1])
+        var ons: [Int: [(Int, TimeInterval)]] = [:]
+        p.onNoteAt = { channel, key, _, _, _, at in ons[channel, default: []].append((key, at)) }
+        var arp = MIDIProgram()
+        arp.kind = .arpeggiator
+        arp.subdivision = 0.5
+        arp.gate = 0.8
+        p.configure(channel: 0, program: arp, tempo: 120)
+        p.configure(channel: 1, program: arp, tempo: 120)
+        p.noteOn(channel: 0, key: 60, pitch: 60, velocity: 1)
+        p.noteOn(channel: 1, key: 61, pitch: 61, velocity: 1)
+
+        p.clearLookaheadChannel(1)
+        p.dispatch(at: 0.24)
+        assert(ons[0]?.count == 2, "A channel that is still eligible keeps its horizon")
+        assert(ons[1]?.count == 1, "A rejected install stops advancing that channel")
+        p.dispatch(at: 0.25)
+        assert(ons[1]?.count == 2, "The cleared channel emits once wall time reaches its step")
+        assert(abs((ons[1]?.last?.1 ?? 0) - 0.25) < 1e-9, "The cleared channel reports its own step time")
     }
 
     /// Simulate a 5 ms polling timer versus a timer armed at each deadline. The
