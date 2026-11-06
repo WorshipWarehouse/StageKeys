@@ -70,7 +70,7 @@ static double edge(double rate, double f0, double target, int up, int falling) {
             double lo = fmin(prev, f), hi = fmax(prev, f);
             for (int k = 0; k < 40; k++) {
                 double mid = sqrt(lo * hi);
-                if (reached(rate, mid, target, falling)) hi = mid; else lo = mid;
+                if (reached(rate, mid, target, falling) == up) hi = mid; else lo = mid;
             }
             return sqrt(lo * hi);
         }
