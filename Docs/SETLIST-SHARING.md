@@ -74,7 +74,7 @@ An exported patch is an ordinary one-patch library document, so it also appears 
 - the patch is not saved, activated or restarted by the export, and audio keeps playing while the editor's audition stays live;
 - exporting the same sound again adds another entry. Overwriting a library entry stays an explicit library action; an export never reuses an existing identity.
 
-Ordinary sound imports and exports append under the same library lock, preserving both entries if they run concurrently. The export must pass the existing library and layer validation. A blank or over-long name is refused before anything is written.
+Ordinary sound imports and exports append under the same library lock, which prevents stale writes from overwriting entries. If the lock is busy, retry the rejected operation. The export must pass the existing library and layer validation. A blank or over-long name is refused before anything is written.
 
 A sound export is still not a share: missing sample or Audio Unit content is not detected at export time, and the existing runtime admission checks apply when the sound is added to a patch. Redistribution limits for vendor content are unchanged.
 
@@ -108,12 +108,12 @@ The link is limited to 1.5 MB of package data and goes through the same format, 
 - identity preservation, name/identity collision resolution and independent copies;
 - legacy schema upgrade, atomic writes and refusal to overwrite via an invalid export;
 - independent patch export into the library: fresh identities, preserved authored settings, source isolation after later edits, and a repeated export adding a second document instead of overwriting;
-- independent sound export into the library: fresh entry and layer identities, preserved authored sound settings, source isolation after later edits, a repeated export adding a second entry instead of overwriting, and refusal of a blank name without touching the library.
+The default gate also runs `Tests/SoundLibraryTests.swift`. It covers sound export identity, source isolation after later edits, repeat export, and blank-name refusal.
 
 The test was authored in a Linux checkout without Xcode. Run it on macOS with:
 
 ```
-python3 Tests/run-local-library.py . /private/tmp/stagekeys-share
+python3 Tests/run-local-library.py . /private/tmp/stagekeys-share SetlistShareTests SoundLibraryTests
 ```
 
 No passing result is claimed here until that command has run. Physical Mac/iPad round-trips, native UI interaction and audible/live-stage checks remain open in [#114](https://github.com/WorshipWarehouse/StageKeys/issues/114).
