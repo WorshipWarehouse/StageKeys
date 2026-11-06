@@ -202,14 +202,7 @@ struct PerformanceView: View {
         .onChange(of: store.patch.id) { _ in sheet = nil }
         .onChange(of: store.activeSnapshot) { _ in if sheet != nil { sheet=nil } }
         .onChange(of: scenePhase) { phase in
-            if phase != .active {
-                #if os(macOS)
-                store.releaseScreenNotes()
-                #else
-                store.panic()
-                #endif
-                store.save()
-            }
+            store.handleScenePhase(active: phase == .active, background: phase == .background)
         }
     }
     private var toolbar: some View {

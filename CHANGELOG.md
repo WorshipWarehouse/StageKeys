@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Add an opt-in **Run Audio in Background** setting for iPhone/iPad and a lifecycle policy for scene and interruption events: with the setting on, notes, sustain, effect tails and tempo continue while the app is inactive; with it off, leaving the app releases voices, stops audio and restarts once on return. A system interruption suspends audio and resumes only when it reports `shouldResume` and audio was running before it, and a manual Stop always wins. Physical background, interruption and battery behavior remain unverified (#105).
+
 - Make the native channel compressor's Dry/Wet Mix a true bypass at 0%: output gain no longer lifts the unprocessed signal, and makeup gain applies to the compressed path only. Switching the effect off or back on clears stored detector reduction instead of ducking the first notes for the release time. Add 44.1/48/96 kHz gain-transfer, attack/release, bypass-state and block-split regressions.
 
 - Add offline, checksummed `.stagekeyssetlist` setlist shares with dependency and collision previews, Save and Load versus Save to Library import, and `stagekeys://setlist-share` links; samples, plug-in state and local source paths are excluded.

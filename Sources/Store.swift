@@ -16,6 +16,9 @@ final class PerformanceStore: ObservableObject {
     private var patchLoadGeneration = UUID()
     @Published private(set) var started = false
     @Published private(set) var audioStartup: AudioStartupState = .stopped
+    /// Opt-in iOS policy: keep audio, note ownership, sustain and tails while the
+    /// app is inactive. Default off preserves the previous backgrounding behavior.
+    @Published var backgroundAudioEnabled = false
     private var resumeTonicAfterAudioRecovery = false
     private var automaticAudioStartAllowed = true
     @Published var audioOutputs: [AudioOutputDevice] = []
@@ -685,6 +688,7 @@ final class PerformanceStore: ObservableObject {
             keyboardPlayable = settings.keyboardPlayable ?? true
             showPlayedNotes = settings.showPlayedNotes ?? true
             dynamicMIDIRanges = settings.dynamicMIDIRanges ?? false
+            backgroundAudioEnabled = settings.backgroundAudioEnabled ?? false
             tonicVelocitySelector=settings.tonicVelocitySelector ?? false;tonicTimbre=settings.tonicTimbre ?? 0;tonicLastRoot=settings.tonicLastRoot ?? 0;tonicSound=settings.tonicSound
             tonicGain = settings.tonicGain; tonicBrightness = settings.tonicBrightness; tonicShimmer = settings.tonicShimmer
         }
@@ -748,14 +752,78 @@ final class PerformanceStore: ObservableObject {
         notifications.append(NotificationCenter.default.addObserver(forName: NSApplication.willResignActiveNotification, object: nil, queue: .main) { [weak self] _ in self?.releaseScreenNotes(); self?.save() })
         #endif
         #if os(iOS)
-        notifications.append(NotificationCenter.default.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] _ in
-            self?.stopAudio()
+        notifications.append(NotificationCenter.default.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] note in
+            guard let self else { return }
+            let info = note.userInfo
+            // A notification without a readable type is treated as a beginning:
+            // suspending is reversible, while ignoring an interruption can leave
+            // the session silent with the UI still claiming audio is running.
+            var began = true
+            if let raw = (info?[AVAudioSessionInterruptionTypeKey] as? NSNumber)?.uintValue,
+               let type = AVAudioSession.InterruptionType(rawValue: raw) { began = type == .began }
+            let options = AVAudioSession.InterruptionOptions(rawValue: (info?[AVAudioSessionInterruptionOptionKey] as? NSNumber)?.uintValue ?? 0)
+            let restoreAllowed = began ? self.started : self.interruptionResumeIntent
+            switch BackgroundAudioPolicy.interruptionAction(began: began, shouldResume: options.contains(.shouldResume), restoreAllowed: restoreAllowed) {
+            case .ignore:
+                if !began { self.interruptionResumeIntent = false }
+            case .suspendAudio:
+                let wasRunning = self.started
+                self.stopAudio()
+                self.interruptionResumeIntent = wasRunning
+            case .resumeAudio:
+                self.interruptionResumeIntent = false
+                self.start()
+            }
         })
         #endif
         notifications.append(NotificationCenter.default.addObserver(forName: .AVAudioEngineConfigurationChange, object: nil, queue: .main) { [weak self] _ in
             guard let self else { return }
             if AudioStartupRecovery.shouldRestartAfterConfigurationChange(started: self.started, engineRunning: self.audio.running) { self.handleAudioConfigurationChange() }
         })
+    }
+    /// True when this app suspended audio because it left the foreground with
+    /// background audio off, so returning restarts audio exactly once.
+    private var backgroundSuspendPending = false
+    /// True when the system interrupted audio that was running and may report
+    /// `shouldResume`. Manual Stop clears it.
+    private var interruptionResumeIntent = false
+    /// Scene lifecycle entry point. macOS keeps its existing behavior (release
+    /// on-screen notes, engine stays running); iOS either keeps performing or
+    /// suspends audio depending on the persisted opt-in.
+    func handleScenePhase(active: Bool, background: Bool = false) {
+        guard active else {
+            switch BackgroundAudioPolicy.sceneAction(active: false, background: background, backgroundAudioEnabled: backgroundAudioEnabled) {
+            case .none: break
+            case .releaseNotes: releaseNotesForInactiveScene()
+            case .suspendAudio: suspendForBackground()
+            }
+            save()
+            return
+        }
+        guard backgroundSuspendPending || interruptionResumeIntent else { return }
+        backgroundSuspendPending = false
+        interruptionResumeIntent = false
+        if !started { start() }
+    }
+    private func releaseNotesForInactiveScene() {
+        #if os(macOS)
+        releaseScreenNotes()
+        #else
+        panic()
+        #endif
+    }
+    /// Suspends audio without recording a manual Stop, so returning to the
+    /// foreground restarts exactly once. Setlist, patch, MIDI input and saved
+    /// output/buffer preferences are untouched.
+    private func suspendForBackground() {
+        let wasRunning = started
+        stopAudio()
+        if wasRunning { backgroundSuspendPending = true }
+    }
+    func setBackgroundAudioEnabled(_ enabled: Bool) {
+        guard backgroundAudioEnabled != enabled else { return }
+        backgroundAudioEnabled = enabled
+        save()
     }
     func start() {
         guard !audioStartup.isStarting, audioStartup != .running else { return }
@@ -845,6 +913,9 @@ final class PerformanceStore: ObservableObject {
         panic(); audio.stop(); audio.setPatchLoading(false)
         started = false
         audioStartup = .stopped
+        // A manual Stop always wins over background or interruption resumption.
+        backgroundSuspendPending = false
+        interruptionResumeIntent = false
     }
     private func rememberAudioOutputName() {
         if let name = audioStatus?.name, !name.isEmpty { lastAudioOutputName = name; return }
@@ -2147,7 +2218,7 @@ final class PerformanceStore: ObservableObject {
             try RecoverableSessionFile.write(data, to: saveURL) { _ = try JSONDecoder().decode(Setlist.self, from: $0).upgraded() }
             currentSetlistID = try localSetlistLibrary().save(setlist,id:currentSetlistID).id
             refreshSetlists()
-            let settings = SessionSettings(selectedPatchID:patch.id,activeSnapshotID:activeSnapshot,notesMode:notesMode,modWheel:modWheel,master: master, reverb: reverb, transition: transition, midiChannel: midiChannel, primarySourceID: primarySourceID, secondarySourceID: secondarySourceID, secondaryChannel: secondaryChannel, velocityMinimum: velocityMinimum, velocityMaximum: velocityMaximum, sourceNames: midiSourceNames, disableSilent: disableSilent, showRanges: showRanges, tonicGain: tonicGain, tonicBrightness: tonicBrightness, tonicShimmer: tonicShimmer, audioOutputUID: preferredAudioOutputUID, activeSetlistID: currentSetlistID,tonicSound:tonicSound,tonicVelocitySelector:tonicVelocitySelector,tonicTimbre:tonicTimbre,tonicLastRoot:tonicLastRoot,metronomeEnabled:metronome,audioBufferFrames:preferredBufferFrames.map{Int($0)},metronomeSettings:metronomeSettings,liveTempo:liveTempo,keyboardPlayable:keyboardPlayable,showPlayedNotes:showPlayedNotes,dynamicMIDIRanges:dynamicMIDIRanges)
+            let settings = SessionSettings(selectedPatchID:patch.id,activeSnapshotID:activeSnapshot,notesMode:notesMode,modWheel:modWheel,master: master, reverb: reverb, transition: transition, midiChannel: midiChannel, primarySourceID: primarySourceID, secondarySourceID: secondarySourceID, secondaryChannel: secondaryChannel, velocityMinimum: velocityMinimum, velocityMaximum: velocityMaximum, sourceNames: midiSourceNames, disableSilent: disableSilent, showRanges: showRanges, tonicGain: tonicGain, tonicBrightness: tonicBrightness, tonicShimmer: tonicShimmer, audioOutputUID: preferredAudioOutputUID, activeSetlistID: currentSetlistID,tonicSound:tonicSound,tonicVelocitySelector:tonicVelocitySelector,tonicTimbre:tonicTimbre,tonicLastRoot:tonicLastRoot,metronomeEnabled:metronome,audioBufferFrames:preferredBufferFrames.map{Int($0)},metronomeSettings:metronomeSettings,liveTempo:liveTempo,keyboardPlayable:keyboardPlayable,showPlayedNotes:showPlayedNotes,dynamicMIDIRanges:dynamicMIDIRanges,backgroundAudioEnabled:backgroundAudioEnabled)
             guard settings.validate() else { throw SetlistError.invalid }
             try RecoverableSessionFile.write(encoder.encode(settings), to: saveURL.deletingLastPathComponent().appendingPathComponent("settings.json")) {
                 guard try JSONDecoder().decode(SessionSettings.self, from: $0).validate() else { throw SetlistError.invalid }
