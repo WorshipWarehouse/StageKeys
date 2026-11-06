@@ -96,3 +96,22 @@ Until 1–5 are reported, the honest summary is: the musical arithmetic, the
 scheduler's tempo continuity for arpeggiator and sequencer, and the delay
 crossfade have evidence; audible sample placement, tremolo and hardware remain
 open.
+
+## macOS follow-up
+
+- On the #175 integration with the repaired scheduler stack, all three focused
+  programs passed: `TempoContinuityTests`, `TranspositionPersistenceTests`, and
+  `MIDIFXTimerTests`. This exercises the save, duplication and legacy-upgrade
+  assertions that were previously listed as gated.
+- The separate #178 branch passed `PatchTranspositionTests` and
+  `SetlistShareTests` on macOS. Its file and offline-link round trip verifies
+  authored mappings, key direction, octave and the difference between locked
+  patch tempo and the recipient's live tempo.
+- A muted live-engine probe on the AudioBox USB 96 at 48 kHz and 512 frames
+  drove the Store's patch-selection action 36 times. A virtual CoreMIDI source
+  held a key and released a second note under sustain before each selection.
+  Every selection applied the expected transposition. Locked patches recalled
+  84 and 132 BPM, the unlocked patch kept 108 BPM, and note and pedal ownership
+  cleared after release on every cycle. The probe ran on the #177 diagnostics
+  build. It provides live-route Store evidence. Physical MIDI, audio onset
+  timing and audible phase continuity still require qualification.
