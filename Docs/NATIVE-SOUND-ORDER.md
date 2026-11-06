@@ -12,7 +12,7 @@ guards it:
 1. source/sampler gain (`preGain`)
 2. compressor (input gain and makeup on the compressed path, Dry/Wet mix; see [COMPRESSOR-RESPONSE.md](COMPRESSOR-RESPONSE.md))
 3. Mod Filter (low-pass, `filterMin`→`filterMax`, resonance)
-4. the eight-band EQ
+4. the eight-band EQ (peaking bands render the editor's displayed octave width; see [EQ-BANDWIDTH-RESPONSE.md](EQ-BANDWIDTH-RESPONSE.md))
 5. three serial audio-effect slots
 6. stereo pan
 7. performance fader
