@@ -58,6 +58,21 @@ import Foundation
         assert(!resumeState.backgroundSuspendPending && !resumeState.interruptionResumeIntent,
                "Manual Stop must clear both resume intents")
 
+        // Either lifecycle order must retain the reason audio needs to resume:
+        // an interruption during a background suspension keeps the background
+        // intent, and backgrounding during an interruption keeps the
+        // interruption intent.
+        resumeState = BackgroundAudioResumeState()
+        resumeState.markBackgroundSuspended()
+        resumeState.markInterruption(wasRunning: false)
+        assert(resumeState.backgroundSuspendPending && !resumeState.interruptionResumeIntent)
+        assert(resumeState.consumeBackgroundResume())
+        resumeState.markInterruption(wasRunning: true)
+        resumeState.markBackgroundSuspended()
+        assert(resumeState.interruptionResumeIntent)
+        assert(resumeState.consumeBackgroundResume())
+        assert(resumeState.interruptionResumeIntent)
+
         // Guidance must state both the benefit and the battery cost, and must not
         // imply that background audio is guaranteed.
         let on = BackgroundAudioPolicy.guidance(backgroundAudioEnabled: true)

@@ -52,7 +52,11 @@ silent while the UI still reports audio running.
 leave a second engine, an unresolved patch load, a scheduled startup retry or
 voices behind. It preserves the setlist, patch, snapshot, MIDI input observers,
 click choice and saved output/buffer preferences, as the existing startup-recovery
-document requires.
+document requires. Lifecycle suspension calls `stopAudio(clearResumeIntents:
+false)` and records its own reason, so an interruption beginning after a
+background suspension keeps the background intent, and backgrounding before an
+interruption ends keeps the interruption intent. A manual Stop uses the default
+and clears both.
 
 ## Verification
 
@@ -62,8 +66,9 @@ Deterministic (default library gate, no audio device, no scene):
   combination, interruption begin/end with and without `shouldResume`, the rule
   that a stopped engine is never restarted by a notification, foreground
   activation consuming only the background suspension while preserving the
-  interruption resume intent, guidance text that names the battery cost, and
-  settings round-trip plus legacy decoding.
+  interruption resume intent, either event order retaining a pending resume
+  reason, guidance text that names the battery cost, and settings round-trip
+  plus legacy decoding.
 - `python3 Tests/test-library-gate.py .` keeps the new program in the gate.
 
 Not verified here:

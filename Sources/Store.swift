@@ -781,7 +781,9 @@ final class PerformanceStore: ObservableObject {
                 if !began { self.resumeState.clearInterruption() }
             case .suspendAudio:
                 let wasRunning = self.started
-                self.stopAudio()
+                // Keep a pending background resume across the interruption; an
+                // interruption can begin after the app has already suspended.
+                self.stopAudio(clearResumeIntents: false)
                 self.resumeState.markInterruption(wasRunning: wasRunning)
             case .resumeAudio:
                 self.resumeState.clearInterruption()
@@ -826,7 +828,9 @@ final class PerformanceStore: ObservableObject {
     /// output/buffer preferences are untouched.
     private func suspendForBackground() {
         let wasRunning = started
-        stopAudio()
+        // Preserve an interruption intent: the interruption-ended notification
+        // still owns it if the app backgrounds before the interruption ends.
+        stopAudio(clearResumeIntents: false)
         if wasRunning { resumeState.markBackgroundSuspended() }
     }
     func setBackgroundAudioEnabled(_ enabled: Bool) {
@@ -910,7 +914,10 @@ final class PerformanceStore: ObservableObject {
             audioStartup = .failed(failure)
         }
     }
-    func stopAudio() {
+    /// Stops audio. A manual call clears both lifecycle resume intents so it
+    /// always wins; lifecycle suspension passes `false` and records its own
+    /// intent without erasing the other reason audio may need to resume.
+    func stopAudio(clearResumeIntents: Bool = true) {
         automaticAudioStartAllowed = false
         cancelTransition(pinImmediately: true)
         patchLoadGeneration = UUID(); patchLoading = false
@@ -923,7 +930,7 @@ final class PerformanceStore: ObservableObject {
         started = false
         audioStartup = .stopped
         // A manual Stop always wins over background or interruption resumption.
-        resumeState.clear()
+        if clearResumeIntents { resumeState.clear() }
     }
     private func rememberAudioOutputName() {
         if let name = audioStatus?.name, !name.isEmpty { lastAudioOutputName = name; return }
