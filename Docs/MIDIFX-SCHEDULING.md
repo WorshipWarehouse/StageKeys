@@ -73,9 +73,9 @@ assertion-enabled configuration as the macOS library gate.
   and 48 kHz, 10.7 ms at 512 frames). That quantization is unchanged by this
   work and is not sample-accurate.
 - A truly sample-accurate arpeggiator/sequencer needs the step clock on the
-  audio timeline, with generated events carrying sample offsets that the engine
-  applies mid-block. This change does not add that path; it removes the 5 ms
-  polling grid that sat in front of it.
+  audio timeline. Events now carry their musical time and a deadline-to-sample
+  clock exists ([MIDIFX-AUDIO-TIMELINE.md](MIDIFX-AUDIO-TIMELINE.md)), but no
+  AU delivery call site consumes it yet, so audible output is unchanged.
 - An already-armed earlier deadline is not rescheduled when a later deadline is
   added, which is correct for ordering but means a tempo change can leave one
   timer armed for a stale, earlier time; it fires, emits nothing that is not due,

@@ -1,5 +1,17 @@
 ## Unreleased
 
+- Clear a channel's MIDI FX lookahead mark when a hosted-AU install is rejected or the instrument is retired, and report a channel as not schedulable while its replacement is pending, so a failed plug-in cannot keep a stale eligibility.
+
+- Recompute the per-channel MIDI FX lookahead set once patch activation installs finish and again when the activation drains, so a channel that gained or lost a sample-timed AU is never left marked from the outgoing instrument.
+
+- Gate the MIDI FX lookahead per channel: only hosted AUs with a schedule block and no immediate parallel branches advance early, so external MIDI, sampler `startNote` and blockless AUs keep deadline dispatch and are never sent notes early.
+
+- Add an opt-in MIDI FX scheduler lookahead (0–50 ms, default off) that generates steps before their deadline while reporting the true musical time; enabling it in the app waits on verified sample-timed AU delivery so immediate consumers are not sent notes early.
+
+- Draft sample-timed AU delivery: schedule hosted-AU note events with `AUEventSampleTime` from the MIDI FX deadline, with immediate fallback inside a safety margin, at the lookahead horizon, for missing render anchors and for AUs without a schedule block; the macOS onset harness is not yet run.
+
+- Carry each MIDI FX event's musical time through `onNoteAt`/`onOffAt`, time gates from the scheduled step rather than a late dispatch, and add a deadline-to-engine-sample clock; audible AU delivery is not wired yet.
+
 - Arm the MIDI FX arpeggiator/sequencer timers at the next musical deadline instead of polling every 5 ms; the simulated dispatch grid's worst-case lateness falls from 5.000 ms to the 1 ns delivery offset over 260 eighth notes at 132 BPM, while audio-block quantization remains.
 
 - Overlap the native tempo-synced delay's old and new taps for 20 ms across tempo and subdivision changes; the measured worst-case sample step falls from 7.6–11.4× steady at 44.1/48/96 kHz to 1.0×, and the new delay time is reached exactly.

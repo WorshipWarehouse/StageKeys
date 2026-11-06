@@ -1245,8 +1245,15 @@ final class ExternalInstrumentRack {
         guard voices[channel] != nil else { return }
         try editGraph { retire(channel) }
     }
-    private func midi(_ channel: Int, _ status: UInt8, _ data1: UInt8, _ data2: UInt8) {
+    private func midi(_ channel: Int, _ status: UInt8, _ data1: UInt8, _ data2: UInt8, sampleTime: Int64? = nil) {
         guard let unit = voices[channel]?.unit else { return }
+        // A future sample time is only handed to the block API; native-style
+        // sendMIDIEvent has no timestamp and remains the immediate fallback.
+        if let sampleTime, let block = unit.auAudioUnit.scheduleMIDIEventBlock {
+            var bytes = [status, data1, data2]
+            bytes.withUnsafeMutableBufferPointer { block(AUEventSampleTime(sampleTime), 0, 3, $0.baseAddress!) }
+            return
+        }
         if let instrument = unit as? AVAudioUnitMIDIInstrument {
             instrument.sendMIDIEvent(status, data1: data1, data2: data2)
             return
@@ -1255,24 +1262,32 @@ final class ExternalInstrumentRack {
         var bytes = [status, data1, data2]
         bytes.withUnsafeMutableBufferPointer { block(AUEventSampleTimeImmediate, 0, 3, $0.baseAddress!) }
     }
-    func noteOn(channel: Int, key: Int, pitch: Int, velocity: Float,sourceID:Int32? = nil) {
+    /// A hosted AU that accepts sample-timed MIDI and has no immediate parallel
+    /// branches can receive lookahead-scheduled notes.
+    func canSchedule(channel: Int) -> Bool {
+        guard let voice = voices[channel], voice.parallel.isEmpty else { return false }
+        return voice.unit.auAudioUnit.scheduleMIDIEventBlock != nil
+    }
+    func noteOn(channel: Int, key: Int, pitch: Int, velocity: Float,sourceID:Int32? = nil,sampleTime:Int64? = nil) {
         precondition(Thread.isMainThread)
         guard (0...127).contains(pitch), velocity.isFinite, voices[channel] != nil else { return }
         noteIntents[channel, default: [:]][key] = NoteIntent(pitch: pitch, velocity: velocity, source: sourceID)
+        // Parallel imported branches run their own MIDI FX clocks and cannot
+        // share this engine's sample anchor, so they keep immediate delivery.
         if let branches=voices[channel]?.parallel,!branches.isEmpty {branches.forEach{$0.noteOn(key,pitch,velocity,sourceID)};return}
-        if let previous = voices[channel]?.pitches[key] { midi(channel, 0x80, previous, 0) }
+        if let previous = voices[channel]?.pitches[key] { midi(channel, 0x80, previous, 0, sampleTime: sampleTime) }
         let note = UInt8(pitch)
         voices[channel]?.pitches[key] = note
-        midi(channel, 0x90, note, UInt8(max(1, min(127, Int((velocity * 127).rounded())))))
+        midi(channel, 0x90, note, UInt8(max(1, min(127, Int((velocity * 127).rounded())))), sampleTime: sampleTime)
     }
-    func noteOff(channel: Int, key: Int, forceRelease: Bool = false) {
+    func noteOff(channel: Int, key: Int, forceRelease: Bool = false, sampleTime: Int64? = nil) {
         precondition(Thread.isMainThread)
         if !forceRelease && (controllerValues[channel]?[64] ?? 0) >= 64 {
             noteIntents[channel]?[key]?.released = true
         } else { noteIntents[channel]?[key] = nil }
         if let branches=voices[channel]?.parallel,!branches.isEmpty {branches.forEach{$0.midi.noteOff(channel:0,key:key,force:forceRelease)};return}
         if forceRelease { control(channel: channel, controller: 64, value: 0) }
-        if let note = voices[channel]?.pitches.removeValue(forKey: key) { midi(channel, 0x80, note, 0) }
+        if let note = voices[channel]?.pitches.removeValue(forKey: key) { midi(channel, 0x80, note, 0, sampleTime: sampleTime) }
     }
     func noteOff(key: Int) {
         precondition(Thread.isMainThread)
