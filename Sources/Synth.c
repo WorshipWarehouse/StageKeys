@@ -788,6 +788,8 @@ static void metro_apply(SKMetronome*m,const MetronomeCommand*c){
  }else if(c->kind==2){
   m->requestedEnabled=c->flag;
   if(c->flag){
+   // Promoting a temporary count-in must preserve the running phase.
+   m->countInRemaining=0;m->countInOnly=0;m->countInStopPending=0;
    if(!m->externalClock&&!m->enabled){m->enabled=1;m->beat=0;m->step=0;m->remaining=0;m->envelope=0;m->phase=0;}
   }else{m->enabled=0;m->envelope=0;m->countInRemaining=0;m->countInOnly=0;m->countInStopPending=0;}
  }else if(c->kind==3){m->tempo=c->value;m->interval=metro_interval(m);metro_rescale(m,old);}

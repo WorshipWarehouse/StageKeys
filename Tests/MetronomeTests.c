@@ -288,6 +288,15 @@ static void test_count_in(void) {
     Capture repeated; capture(&repeated, m, block, 1, 48000 * 3);
     assert(repeated.count == 4);
 
+    // Turning on the normal click during Count In keeps the running phase
+    // and continues beyond the end of the former one-shot bar.
+    sk_metronome_enable(m, 0);
+    sk_metronome_count_in(m, 1);
+    sk_metronome_render(m, NULL, NULL, 12000);
+    sk_metronome_enable(m, 1);
+    Capture promoted; capture(&promoted, m, block, 1, 48000 * 3);
+    assert(promoted.count == 6 && promoted.onset[0] >= 11998 && promoted.onset[0] <= 12002);
+
     // A normal click is unaffected by Count In and keeps running.
     sk_metronome_enable(m, 0);
     sk_metronome_enable(m, 1);
