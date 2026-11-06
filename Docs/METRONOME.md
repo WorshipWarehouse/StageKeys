@@ -105,7 +105,10 @@ scales that peak, and 100% is not a measured sound-pressure level.
 
 `Tests/MetronomeSettingsTests.swift` covers defaults, count-in and clock
 settings, JSON round trips, legacy settings without the metronome block and
-rejection of out-of-range values. It also checks the pure MIDI Clock tempo
+rejection of out-of-range values. `Tests/MetronomeControlTests.swift` covers the Store
+gate: a stopped engine or external clock sync never reaches the C scheduler,
+an accepted count-in leaves the normal click setting alone, and the chosen bars
+and clock opt-in survive `save()`. It also checks the pure MIDI Clock tempo
 converter, including a reset and a gap that must not be smoothed into tempo.
 The Store-level source-ownership and tempo-storage rules are not covered by the
 C harness; they require the Swift/app test run on macOS.
@@ -120,6 +123,24 @@ python3 Tests/run-local-library.py . /tmp/stagekeys-library MetronomeSettingsTes
 
 Native tests are linked by `Tests/test-library.sh`; `MetronomeTests` is part of
 the default native list.
+
+## Keyboard, accessibility and stopped audio
+
+On macOS, **Shift-Command-M** toggles the click and **Shift-Command-I** starts
+Count In. The toolbar buttons expose their state (On/Off) and Count In exposes
+its bar count to assistive technologies; the level slider reports dBFS and the
+velocity sliders report 0…127 values.
+
+Count In follows the existing start policy. A stopped engine that still allows
+automatic start is started before the count-in is scheduled. After a manual
+**Stop**, or when audio startup fails, no count-in is scheduled and the UI asks
+the performer to start audio or choose an available output; a specific startup
+failure is not replaced by that message. Stopping, Panic, a graph failure or an
+audio-device recovery resets the engine's count-in state, so a deferred click
+cannot fire after a later start. Count In is unavailable while external MIDI
+clock sync is on, because the external clock owns the timing. Turning external
+clock sync on or off cancels a pending Count In, so a later normal click cannot
+inherit its remaining bars.
 
 ## Limits
 

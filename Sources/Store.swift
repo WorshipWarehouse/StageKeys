@@ -219,8 +219,18 @@ final class PerformanceStore: ObservableObject {
     /// Play the persisted count-in. When the click is off it stops by itself;
     /// when it is already on the normal click continues in phase.
     func countIn() {
-        guard metronomeSettings.countInBars > 0, !metronomeSettings.followsMIDIClock else { return }
-        if !started { startIfStopped(); guard started else { return } }
+        guard metronomeSettings.countInBars > 0 else { return }
+        guard !metronomeSettings.followsMIDIClock else {
+            message = "Count In uses the internal clock. Turn off external MIDI clock sync to use it."
+            return
+        }
+        if !started { startIfStopped() }
+        guard started && audio.running else {
+            // A failed start already published its own actionable failure. Do
+            // not replace that with the generic count-in message.
+            if !audioFailed { message = "Count In needs audio to be running. Start audio or choose an available output, then try again." }
+            return
+        }
         audio.countIn(bars: metronomeSettings.countInBars)
     }
     @Published var midiChannel = -1 { didSet { if oldValue != midiChannel { panic() } } }
@@ -1567,7 +1577,9 @@ final class PerformanceStore: ObservableObject {
             // ignoring it avoids double-advancing the click or stealing tempo.
             guard midiClockRunning, midiClockSource == source else { return }
             audio.midiClockTick(at: now)
-            if let tempo = midiClockTempo.tick(at: now), clockTempo == nil || abs(tempo - clockTempo!) > 0.005 {
+            // Clock measurement jitters by a few thousandths of a BPM. Ignore
+            // that noise: `AudioController.clock` rebuilds effect/rack timing.
+            if let tempo = midiClockTempo.tick(at: now), clockTempo == nil || abs(tempo - clockTempo!) > 0.1 {
                 clockTempo = tempo
                 audio.clock(tempo, metronome); midiFX.updateTempo(tempo)
             }
