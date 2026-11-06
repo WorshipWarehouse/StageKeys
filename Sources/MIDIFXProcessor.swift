@@ -33,11 +33,32 @@ final class MIDIFXProcessor {
     private var timer: Timer?
     private var timerDeadline: TimeInterval?
     private let automatic: Bool
+    private var lookahead: TimeInterval
+    private var lookaheadChannels: Set<Int> = []
     private var time: TimeInterval = 0
 
-    init(automaticallySchedule: Bool = true) {
+    /// `lookahead` lets the timer advance through upcoming deadlines so a
+    /// sample-timed consumer receives events before they are due. It is off by
+    /// default: immediate consumers (external MIDI, sampler startNote, AUs
+    /// without a schedule block) would otherwise receive notes early.
+    init(automaticallySchedule: Bool = true, lookahead: TimeInterval = 0) {
         automatic = automaticallySchedule
+        self.lookahead = lookahead.isFinite ? min(0.05, max(0, lookahead)) : 0
         if automaticallySchedule {time=ProcessInfo.processInfo.systemUptime}
+    }
+    /// Enable the horizon only for channels whose events can be delivered at a
+    /// future sample time. Every other channel stops at wall time, so external
+    /// MIDI, sampler startNote and blockless AUs never receive a note early.
+    func setLookaheadChannels(_ channels: Set<Int>) {
+        lookaheadChannels = Set(channels.filter { (0..<16).contains($0) })
+        armTimer()
+    }
+    /// Drop one channel from the marked set without touching the others. A
+    /// rejected or retired install must not keep a stale eligibility while the
+    /// rest of the set is still valid.
+    func clearLookaheadChannel(_ channel: Int) {
+        guard lookaheadChannels.remove(channel) != nil else { return }
+        armTimer()
     }
     /// Earliest pending step, gate release or retrigger. Nil when the scheduler
     /// has nothing to do. Read-only, so tests can assert the armed deadline.
@@ -63,14 +84,23 @@ final class MIDIFXProcessor {
         if let armed = timerDeadline, timer != nil, armed <= deadline + 1e-9 { return }
         timer?.invalidate()
         timerDeadline = deadline
-        let fire = Timer(timeInterval: max(0, deadline - ProcessInfo.processInfo.systemUptime), repeats: false) { [weak self] _ in
+        let now = ProcessInfo.processInfo.systemUptime
+        let lead = lookaheadChannels.isEmpty ? 0 : lookahead
+        let fire = Timer(timeInterval: max(0, deadline - lead - now), repeats: false) { [weak self] _ in
             guard let self else { return }
             self.timer = nil
             self.timerDeadline = nil
-            self.advance(to: ProcessInfo.processInfo.systemUptime)
+            self.dispatch(at: ProcessInfo.processInfo.systemUptime)
         }
         timer = fire
         RunLoop.main.add(fire, forMode: .common)
+    }
+    /// Advance through the lookahead horizon. The state moves ahead so steps due
+    /// within the horizon are generated now, but each callback still reports its
+    /// musical deadline. Without a horizon this is an ordinary advance.
+    func dispatch(at now: TimeInterval) {
+        guard now.isFinite else { return }
+        advance(to: max(now + lookahead, time), wall: now)
     }
     deinit { timer?.invalidate() }
     func updateTempo(_ value:Double){
@@ -126,36 +156,38 @@ final class MIDIFXProcessor {
     func noteOn(channel: Int, key: Int, pitch: Int, velocity: Float, sourceID:Int32? = nil) {
         guard (0..<16).contains(channel), (0...127).contains(pitch), velocity.isFinite else { return }
         if velocity <= 0 { noteOff(channel: channel, key: key); return }
-        if automatic { advance(to: ProcessInfo.processInfo.systemUptime) }
+        let wall = automatic ? ProcessInfo.processInfo.systemUptime : time
+        if automatic { advance(to: wall, wall: wall) }
+        let stamp = lookaheadChannels.contains(channel) ? max(time, wall) : min(time, wall)
         if channels[channel] == nil { channels[channel] = Channel() }
         noteOff(channel: channel, key: key, force: true)
         var c = channels[channel]!
         if c.program.hold == true && !c.released.isEmpty {
             c.held.removeAll{c.released.contains($0.key)};c.released.removeAll()
         }
-        if c.program.kind == .arpeggiator && c.program.retriggerOnNote == true {c.index=0;c.next=time;c.began=time;c.nominalBeat=0;if c.program.retriggerVelocity == true {c.velocityBegan=time}}
+        if c.program.kind == .arpeggiator && c.program.retriggerOnNote == true {c.index=0;c.next=stamp;c.began=stamp;c.nominalBeat=0;if c.program.retriggerVelocity == true {c.velocityBegan=stamp}}
         c.held.append(Held(key: key, pitch: pitch, velocity: min(1, velocity),sourceID:sourceID))
         switch c.program.kind {
         case .bypass:
             c.direct[key] = [key]
-            notify(channel,key,pitch,min(1,velocity),sourceID)
+            notify(channel,key,pitch,min(1,velocity),sourceID,stamp)
         case .octaveUp:
-            let original = emit(channel: channel, pitch: pitch, velocity: velocity,sourceID:sourceID)
-            let extra = emit(channel: channel, pitch: pitch + 12, velocity: velocity * (c.program.octaveBlend ?? 1),sourceID:sourceID)
+            let original = emit(channel: channel, pitch: pitch, velocity: velocity,sourceID:sourceID,at:stamp)
+            let extra = emit(channel: channel, pitch: pitch + 12, velocity: velocity * (c.program.octaveBlend ?? 1),sourceID:sourceID,at:stamp)
             c.direct[key] = [original, extra].compactMap { $0 }
         case .easyChord:
             let outputs: [Int]
             if let mappings = c.program.chordMappings {
                 outputs = mappings.first(where: { $0.input == pitch })?.output ?? [pitch]
             } else { outputs = c.program.chordIntervals.map { pitch + $0 } }
-            c.direct[key] = outputs.compactMap { emit(channel: channel, pitch: $0, velocity: velocity,sourceID:sourceID) }
+            c.direct[key] = outputs.compactMap { emit(channel: channel, pitch: $0, velocity: velocity,sourceID:sourceID,at:stamp) }
         case .sequencer:
             if let mappings = c.program.sequenceMappings, !mappings.contains(where: { $0.input == pitch }) {
                 c.direct[key] = [key]
-                notify(channel,key,pitch,min(1,velocity),sourceID)
-            } else if c.next == nil { c.next = time; c.index = 0;c.began=time;c.nominalBeat=0 }
+                notify(channel,key,pitch,min(1,velocity),sourceID,stamp)
+            } else if c.next == nil { c.next = stamp; c.index = 0;c.began=stamp;c.nominalBeat=0 }
         case .arpeggiator:
-            if c.next == nil { c.next=time;c.index=0;c.began=time;c.nominalBeat=0;c.velocityBegan=time;c.nextRetrigger=c.program.retriggerBeats.map{time+60/tempo*$0} }
+            if c.next == nil { c.next=stamp;c.index=0;c.began=stamp;c.nominalBeat=0;c.velocityBegan=stamp;c.nextRetrigger=c.program.retriggerBeats.map{stamp+60/tempo*$0} }
         }
         channels[channel] = c
         advance(to: time)
@@ -185,33 +217,39 @@ final class MIDIFXProcessor {
     }
     /// Deterministic scheduler entry point; monotonic seconds only. Missed ticks
     /// are skipped after long stalls instead of emitting an unbounded burst.
-    func advance(to now: TimeInterval) {
-        guard now.isFinite, now >= time else { return }
+    func advance(to now: TimeInterval) { advance(to: now, wall: now) }
+    /// Channels with sample-timed AU delivery advance through the horizon; all
+    /// others stop at `wall`, so immediate consumers never receive a note before
+    /// it is due.
+    private func advance(to now: TimeInterval, wall: TimeInterval) {
+        guard now.isFinite, wall.isFinite, now >= time else { return }
         time = now
         for channel in channels.keys.sorted() {
             guard var c = channels[channel] else { continue }
-            for a in c.active where a.release <= now { release(channel, a.key, c.program.releaseGeneratedOnKeyUp != false, a.release) }
-            c.active.removeAll { $0.release <= now }
-            if let beat=c.nextRetrigger,beat<=now,let beats=c.program.retriggerBeats {
-                c.index=0;c.next=now;c.began=now;c.nominalBeat=0;c.nextRetrigger=now+60/tempo*beats
-                if c.program.retriggerVelocity == true {c.velocityBegan=now}
+            let horizon = lookaheadChannels.contains(channel) ? now : min(now, wall)
+            for a in c.active where a.release <= horizon { release(channel, a.key, c.program.releaseGeneratedOnKeyUp != false, a.release) }
+            c.active.removeAll { $0.release <= horizon }
+            if let beat=c.nextRetrigger,beat<=horizon,let beats=c.program.retriggerBeats {
+                c.index=0;c.next=horizon;c.began=horizon;c.nominalBeat=0;c.nextRetrigger=horizon+60/tempo*beats
+                if c.program.retriggerVelocity == true {c.velocityBegan=horizon}
             }
-            guard !c.held.isEmpty, let next = c.next, next <= now else { channels[channel] = c; continue }
+            guard !c.held.isEmpty, let next = c.next, next <= horizon else { channels[channel] = c; continue }
             let period = c.program.freeRateSeconds ?? (60 / tempo * c.program.subdivision)
             // Skip to the latest due musical step using the inverse swing mapping.
             // A straight-period estimate can land on a future swung step after a stall.
             let skipped:Int
             if c.program.freeRateSeconds == nil,let began=c.began {
-                let beat=Self.ungroovedBeat(max(0,(now-began)*tempo/60),program:c.program)
+                let beat=Self.ungroovedBeat(max(0,(horizon-began)*tempo/60),program:c.program)
                 skipped=Int(min(1_000_000,max(0,floor((beat-c.nominalBeat)/c.program.subdivision+1e-8))))
-            } else {skipped=Int(min(1_000_000,max(0,floor((now-next)/period))))}
+            } else {skipped=Int(min(1_000_000,max(0,floor((horizon-next)/period))))}
             if skipped>0 {c.index += skipped;c.nominalBeat += Double(skipped)*c.program.subdivision}
             // A step keeps its musical time even when the tick is dispatched
-            // late. Clamp to `now` so a stalled clock cannot schedule forward.
+            // late. Clamp to the channel horizon so a stalled clock cannot
+            // schedule forward.
             let stepTime: TimeInterval
             if c.program.freeRateSeconds == nil, let began=c.began {
-                stepTime = min(now, began + Self.groovedBeat(c.nominalBeat, program: c.program) * 60/tempo)
-            } else { stepTime = min(now, next + Double(skipped) * period) }
+                stepTime = min(horizon, began + Self.groovedBeat(c.nominalBeat, program: c.program) * 60/tempo)
+            } else { stepTime = min(horizon, next + Double(skipped) * period) }
             let baseCount=c.program.style == .chord ? 1:max(1,c.held.count*c.program.octaves)
             let cycle=(c.program.style == .upDown || c.program.style == .downUp) && baseCount>2 ? baseCount*2-2:baseCount
             let transposeCycle=max(1,(c.program.transposeSteps ?? 0)+1)
