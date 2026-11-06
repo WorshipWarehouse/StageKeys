@@ -38,6 +38,26 @@ import Foundation
         assert(BackgroundAudioPolicy.interruptionAction(began: false, shouldResume: false, restoreAllowed: true) == .ignore,
                "Without shouldResume the performer restarts audio explicitly")
 
+        // Foreground activation consumes only a background suspension. An
+        // interruption's resume intent belongs to the interruption-ended
+        // notification, so an early active callback must not clear it.
+        var resumeState = BackgroundAudioResumeState()
+        resumeState.markInterruption(wasRunning: true)
+        assert(!resumeState.consumeBackgroundResume(),
+               "Interruption intent alone must not be consumed by foreground activation")
+        assert(resumeState.interruptionResumeIntent)
+        resumeState.markBackgroundSuspended()
+        assert(resumeState.consumeBackgroundResume())
+        assert(resumeState.interruptionResumeIntent,
+               "Foreground activation must leave interruption resume intent for the interruption-ended notification")
+        resumeState.clearInterruption()
+        assert(!resumeState.interruptionResumeIntent)
+        resumeState.markBackgroundSuspended()
+        resumeState.markInterruption(wasRunning: true)
+        resumeState.clear()
+        assert(!resumeState.backgroundSuspendPending && !resumeState.interruptionResumeIntent,
+               "Manual Stop must clear both resume intents")
+
         // Guidance must state both the benefit and the battery cost, and must not
         // imply that background audio is guaranteed.
         let on = BackgroundAudioPolicy.guidance(backgroundAudioEnabled: true)

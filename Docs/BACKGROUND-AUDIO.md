@@ -27,7 +27,7 @@ by both app targets and exercised by `Tests/BackgroundAudioTests.swift`.
 
 | Event | Setting | Action |
 | --- | --- | --- |
-| App becomes active | either | Resume only if this app suspended audio for backgrounding, or an interruption left it stopped with resume intent |
+| App becomes active app-wide (`UIApplication.didBecomeActiveNotification`) | either | Resume only if this app suspended audio for backgrounding, or an interruption left it stopped with resume intent |
 | App becomes transiently inactive (Control Center, banner) | on | Nothing |
 | App becomes transiently inactive (Control Center, banner) | off | Release notes only; the engine keeps running |
 | App enters the background | on | Nothing. Notes, sustain, effect tails, tempo and MIDI ownership continue |
@@ -37,6 +37,12 @@ by both app targets and exercised by `Tests/BackgroundAudioTests.swift`.
 | Interruption ends with `shouldResume` | either | Restart once, if audio was running before the interruption |
 | Interruption ends without `shouldResume` | either | Stay stopped; the performer starts audio explicitly |
 | Manual Stop | either | Clears both background and interruption resume intent |
+
+The iOS lifecycle is observed through app-wide `UIApplication` notifications
+(`didBecomeActive`, `willResignActive`, `didEnterBackground`), not a single
+SwiftUI view's `scenePhase`. Shared audio therefore follows the app: one iPad
+window entering the background cannot stop the engine while another window is
+still active.
 
 An interruption notification without a readable type is treated as a beginning:
 suspending is reversible, while ignoring an interruption can leave the session
@@ -54,8 +60,10 @@ Deterministic (default library gate, no audio device, no scene):
 
 - `Tests/BackgroundAudioTests` covers every scene/opt-in/platform-capability
   combination, interruption begin/end with and without `shouldResume`, the rule
-  that a stopped engine is never restarted by a notification, guidance text that
-  names the battery cost, and settings round-trip plus legacy decoding.
+  that a stopped engine is never restarted by a notification, foreground
+  activation consuming only the background suspension while preserving the
+  interruption resume intent, guidance text that names the battery cost, and
+  settings round-trip plus legacy decoding.
 - `python3 Tests/test-library-gate.py .` keeps the new program in the gate.
 
 Not verified here:

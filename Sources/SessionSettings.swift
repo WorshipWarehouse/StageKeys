@@ -85,6 +85,29 @@ struct SessionSettings: Codable {
     }
 }
 
+/// Tracks the two independent reasons audio may need to resume. Foregrounding
+/// consumes only the background suspension; the interruption-ended notification
+/// owns the interruption intent, so an early activation cannot clear it.
+struct BackgroundAudioResumeState: Equatable {
+    private(set) var backgroundSuspendPending = false
+    private(set) var interruptionResumeIntent = false
+
+    mutating func markBackgroundSuspended() { backgroundSuspendPending = true }
+    mutating func markInterruption(wasRunning: Bool) { interruptionResumeIntent = wasRunning }
+    mutating func clearInterruption() { interruptionResumeIntent = false }
+
+    mutating func consumeBackgroundResume() -> Bool {
+        guard backgroundSuspendPending else { return false }
+        backgroundSuspendPending = false
+        return true
+    }
+
+    mutating func clear() {
+        backgroundSuspendPending = false
+        interruptionResumeIntent = false
+    }
+}
+
 /// Lifecycle policy for the opt-in iOS background-audio setting.
 ///
 /// The policy is a value type so the scene and interruption decisions can be

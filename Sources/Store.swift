@@ -752,6 +752,18 @@ final class PerformanceStore: ObservableObject {
         notifications.append(NotificationCenter.default.addObserver(forName: NSApplication.willResignActiveNotification, object: nil, queue: .main) { [weak self] _ in self?.releaseScreenNotes(); self?.save() })
         #endif
         #if os(iOS)
+        // App-wide lifecycle, not a single window's scenePhase: on iPadOS one
+        // window can background while another remains active. Audio is shared by
+        // the app, so only the app-level phase may suspend or resume it.
+        notifications.append(NotificationCenter.default.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+            self?.handleAppLifecycle(active: true)
+        })
+        notifications.append(NotificationCenter.default.addObserver(forName: UIApplication.willResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
+            self?.handleAppLifecycle(active: false)
+        })
+        notifications.append(NotificationCenter.default.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { [weak self] _ in
+            self?.handleAppLifecycle(active: false, background: true)
+        })
         notifications.append(NotificationCenter.default.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] note in
             guard let self else { return }
             let info = note.userInfo
@@ -762,16 +774,16 @@ final class PerformanceStore: ObservableObject {
             if let raw = (info?[AVAudioSessionInterruptionTypeKey] as? NSNumber)?.uintValue,
                let type = AVAudioSession.InterruptionType(rawValue: raw) { began = type == .began }
             let options = AVAudioSession.InterruptionOptions(rawValue: (info?[AVAudioSessionInterruptionOptionKey] as? NSNumber)?.uintValue ?? 0)
-            let restoreAllowed = began ? self.started : self.interruptionResumeIntent
+            let restoreAllowed = began ? self.started : self.resumeState.interruptionResumeIntent
             switch BackgroundAudioPolicy.interruptionAction(began: began, shouldResume: options.contains(.shouldResume), restoreAllowed: restoreAllowed) {
             case .ignore:
-                if !began { self.interruptionResumeIntent = false }
+                if !began { self.resumeState.clearInterruption() }
             case .suspendAudio:
                 let wasRunning = self.started
                 self.stopAudio()
-                self.interruptionResumeIntent = wasRunning
+                self.resumeState.markInterruption(wasRunning: wasRunning)
             case .resumeAudio:
-                self.interruptionResumeIntent = false
+                self.resumeState.clearInterruption()
                 self.start()
             }
         })
@@ -781,16 +793,14 @@ final class PerformanceStore: ObservableObject {
             if AudioStartupRecovery.shouldRestartAfterConfigurationChange(started: self.started, engineRunning: self.audio.running) { self.handleAudioConfigurationChange() }
         })
     }
-    /// True when this app suspended audio because it left the foreground with
-    /// background audio off, so returning restarts audio exactly once.
-    private var backgroundSuspendPending = false
-    /// True when the system interrupted audio that was running and may report
-    /// `shouldResume`. Manual Stop clears it.
-    private var interruptionResumeIntent = false
-    /// Scene lifecycle entry point. macOS keeps its existing behavior (release
-    /// on-screen notes, engine stays running); iOS either keeps performing or
-    /// suspends audio depending on the persisted opt-in.
-    func handleScenePhase(active: Bool, background: Bool = false) {
+    /// Background suspension and interruption resume are separate intents:
+    /// foreground activation consumes the first, while only the
+    /// interruption-ended notification may consume the second.
+    private var resumeState = BackgroundAudioResumeState()
+    /// App-wide lifecycle entry point. macOS keeps its existing behavior
+    /// (release on-screen notes, engine stays running); iOS either keeps
+    /// performing or suspends audio depending on the persisted opt-in.
+    func handleAppLifecycle(active: Bool, background: Bool = false) {
         guard active else {
             switch BackgroundAudioPolicy.sceneAction(active: false, background: background, backgroundAudioEnabled: backgroundAudioEnabled) {
             case .none: break
@@ -800,9 +810,7 @@ final class PerformanceStore: ObservableObject {
             save()
             return
         }
-        guard backgroundSuspendPending || interruptionResumeIntent else { return }
-        backgroundSuspendPending = false
-        interruptionResumeIntent = false
+        guard resumeState.consumeBackgroundResume() else { return }
         if !started { start() }
     }
     private func releaseNotesForInactiveScene() {
@@ -818,7 +826,7 @@ final class PerformanceStore: ObservableObject {
     private func suspendForBackground() {
         let wasRunning = started
         stopAudio()
-        if wasRunning { backgroundSuspendPending = true }
+        if wasRunning { resumeState.markBackgroundSuspended() }
     }
     func setBackgroundAudioEnabled(_ enabled: Bool) {
         guard backgroundAudioEnabled != enabled else { return }
@@ -914,8 +922,7 @@ final class PerformanceStore: ObservableObject {
         started = false
         audioStartup = .stopped
         // A manual Stop always wins over background or interruption resumption.
-        backgroundSuspendPending = false
-        interruptionResumeIntent = false
+        resumeState.clear()
     }
     private func rememberAudioOutputName() {
         if let name = audioStatus?.name, !name.isEmpty { lastAudioOutputName = name; return }
