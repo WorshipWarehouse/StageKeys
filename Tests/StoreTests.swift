@@ -65,11 +65,14 @@ import AVFoundation
         let originalID = store.currentSetlistID!
         let originalName = store.setlist.name
         store.createLocalSetlist(); let newID = store.currentSetlistID!
+        assert(store.recentSetlistIDs.first == newID)
         assert(newID != originalID && store.setlist.patches.count == 1 && store.patch.layers.allSatisfy { !$0.loaded })
         store.renameLocalSetlist(newID,name:"Second Service")
         store.openLocalSetlist(originalID); assert(store.setlist.name == originalName && store.setlist.patches.count == 4)
+        assert(store.recentSetlistIDs.first == originalID && store.recentSetlistIDs.contains(newID))
         store.duplicateLocalSetlist(newID); assert(store.savedSetlists.count == 3)
         store.archiveLocalSetlist(newID); assert(store.archivedSetlists.count == 1)
+        assert(!store.recentSetlistIDs.contains(newID), "Trashed setlists leave the recently opened history")
         store.restoreLocalSetlist(store.archivedSetlists[0].token); assert(store.savedSetlists.contains { $0.id == newID })
         let before = store.patch
         let assignment = store.setlist.assignments[20]!

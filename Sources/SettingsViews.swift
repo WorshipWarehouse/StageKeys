@@ -239,14 +239,14 @@ struct SetlistBrowser: View {
     @Binding var importing: Bool
     @Binding var exporting: Bool
     @State private var search = ""
-    @State private var order = SetlistBrowserOrder.updated
+    @State private var order = SetlistBrowserOrder.recent
     @State private var templateID: UUID?
     @State private var templateName = ""
     @State private var creationError: String?
     @State private var shareData: Data?
     @State private var shareName = "Setlist"
     @State private var sharing = false
-    private var entries: [SetlistLibraryDescriptor] { order.entries(store.savedSetlists, search: search) }
+    private var entries: [SetlistLibraryDescriptor] { order.entries(store.savedSetlists, search: search, recents: store.recentSetlistIDs) }
     @State private var renameID: UUID?
     @State private var renameName = ""
     var body: some View {

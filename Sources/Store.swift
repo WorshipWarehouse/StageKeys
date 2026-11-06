@@ -625,6 +625,9 @@ final class PerformanceStore: ObservableObject {
     @Published var setlistLibraryIssues: [SetlistLibraryIssue] = []
     @Published var archivedSetlists: [SetlistTrashEntry] = []
     @Published var currentSetlistID: UUID?
+    /// Last-opened order for the setlist browser. Advisory state: the library
+    /// documents remain the source of truth, and unknown ids are ignored.
+    @Published private(set) var recentSetlistIDs: [UUID] = []
     private let saveURL: URL
     private let audioRetryPolicy = AudioStartupRetryPolicy()
     private var audioStartGeneration = UUID()
@@ -688,6 +691,7 @@ final class PerformanceStore: ObservableObject {
             tonicVelocitySelector=settings.tonicVelocitySelector ?? false;tonicTimbre=settings.tonicTimbre ?? 0;tonicLastRoot=settings.tonicLastRoot ?? 0;tonicSound=settings.tonicSound
             tonicGain = settings.tonicGain; tonicBrightness = settings.tonicBrightness; tonicShimmer = settings.tonicShimmer
         }
+        recentSetlistIDs = SetlistRecents.read(base.appendingPathComponent("setlist-recents.json")).ids
         if FileManager.default.fileExists(atPath: settingsURL.path) {
             do {
                 let data = try RecoverableSessionFile.read(settingsURL)
@@ -2197,11 +2201,24 @@ final class PerformanceStore: ObservableObject {
         } catch { message = "Recovery could not complete: \(error.localizedDescription). Original files remain preserved." }
     }
     private func localSetlistLibrary() throws -> SetlistLibrary { try SetlistLibrary(root: saveURL.deletingLastPathComponent().appendingPathComponent("Setlists")) }
+    private var setlistRecentsURL: URL { saveURL.deletingLastPathComponent().appendingPathComponent("setlist-recents.json") }
+    private func recordRecentSetlist(_ id: UUID) {
+        let updated = SetlistRecents(ids: recentSetlistIDs).recording(id)
+        recentSetlistIDs = updated.ids
+        try? updated.write(to: setlistRecentsURL)
+    }
+    private func forgetRecentSetlist(_ id: UUID) {
+        let updated = SetlistRecents(ids: recentSetlistIDs).removing(id)
+        guard updated.ids != recentSetlistIDs else { return }
+        recentSetlistIDs = updated.ids
+        try? updated.write(to: setlistRecentsURL)
+    }
     func refreshSetlists() {
         do {
             let library = try localSetlistLibrary(), inventory = try library.list()
             savedSetlists = inventory.entries; setlistLibraryIssues = inventory.issues
             archivedSetlists = try library.listTrash().entries.filter { archived in !savedSetlists.contains(where: { $0.id == archived.originalID }) }
+            recentSetlistIDs = SetlistRecents(ids: recentSetlistIDs).retaining(Set(savedSetlists.map(\.id))).ids
         } catch { message = error.localizedDescription }
     }
     private func preserveCurrentSetlist() throws {
@@ -2233,6 +2250,7 @@ final class PerformanceStore: ObservableObject {
             try preserveCurrentSetlist()
             panic(); cancelTransition(); setlist = loaded; currentSetlistID = id; selected = 0; activeSnapshot = nil
             applyPatch(); recallTonicPatch(); audio.clock(performedTempo,metronome); save()
+            recordRecentSetlist(id)
         } catch { message = error.localizedDescription }
     }
     func createLocalSetlist() {
@@ -2243,6 +2261,7 @@ final class PerformanceStore: ObservableObject {
             let id = try localSetlistLibrary().save(fresh).id
             panic(); cancelTransition(); setlist = fresh; currentSetlistID = id; selected = 0; activeSnapshot = nil
             applyPatch(); recallTonicPatch(); audio.clock(performedTempo,metronome); save()
+            recordRecentSetlist(id)
         } catch { message = error.localizedDescription }
     }
     func renameLocalSetlist(_ id: UUID, name: String) {
@@ -2331,6 +2350,7 @@ final class PerformanceStore: ObservableObject {
                 let id = try SetlistShare.saveToLibrary(plan, library: library)
                 panic(); cancelTransition(); setlist = plan.setlist; currentSetlistID = id; selected = 0; activeSnapshot = nil
                 applyPatch(); recallTonicPatch(); audio.clock(performedTempo, metronome); save(); refreshSetlists()
+                recordRecentSetlist(id)
             }
             pendingSetlistShare = nil
         } catch { message = "Could not import this setlist share: \(error.localizedDescription)" }
@@ -2356,7 +2376,11 @@ final class PerformanceStore: ObservableObject {
     }
     func archiveLocalSetlist(_ id: UUID) {
         guard id != currentSetlistID else { message = "Open another setlist before moving this one to Trash."; return }
-        do { _ = try localSetlistLibrary().delete(id:id); refreshSetlists() } catch { message = error.localizedDescription }
+        do {
+            _ = try localSetlistLibrary().delete(id:id)
+            forgetRecentSetlist(id)
+            refreshSetlists()
+        } catch { message = error.localizedDescription }
     }
     func restoreLocalSetlist(_ token: UUID) {
         do { _ = try localSetlistLibrary().restore(token:token); refreshSetlists() } catch { message = error.localizedDescription }

@@ -91,6 +91,31 @@ import Foundation
         let cleanReloaded = try cleanLibrary.load(id: cleanID)
         assert(cleanReloaded.patches.map(\.id) == source.patches.map(\.id))
 
+        // Importing the same package into the same clean library again is a
+        // duplicate import: it creates a second independent copy and resolves
+        // conflicting identities instead of overwriting or merging with the first.
+        let repeatPlan = try SetlistShare.preview(package, library: cleanLibrary)
+        assert(!repeatPlan.collisions.isEmpty)
+        assert(repeatPlan.proposedName == "Generated Share Copy")
+        let repeatID = try SetlistShare.saveToLibrary(repeatPlan, library: cleanLibrary)
+        assert(repeatID != cleanID)
+        let repeatCopy = try cleanLibrary.load(id: repeatID)
+        assert(repeatCopy.name == "Generated Share Copy")
+        assert(Set(repeatCopy.patches.map(\.id)).isDisjoint(with: Set(cleanReloaded.patches.map(\.id))))
+        assert(try cleanLibrary.list().entries.count == 2)
+
+        // An interrupted write leaves a damaged file behind. Listing reports it
+        // and leaves the complete entry readable; nothing is silently discarded.
+        let interruptedRoot = root.appendingPathComponent("Interrupted Setlists")
+        let interrupted = try SetlistLibrary(root: interruptedRoot)
+        let intact = try interrupted.save(source)
+        let damagedID = UUID()
+        try Data("{\"version\":4".utf8).write(to: interruptedRoot.appendingPathComponent(damagedID.uuidString + ".json"))
+        let interruptedInventory = try interrupted.list()
+        assert(interruptedInventory.entries.map(\.id) == [intact.id])
+        assert(interruptedInventory.issues.map(\.fileName) == [damagedID.uuidString + ".json"])
+        assert(try interrupted.load(id: intact.id).patches.count == source.patches.count)
+
         // Existing identities and names are resolved without touching the saved
         // source. Missing dependencies disable activation but not Save to Library.
         let library = try SetlistLibrary(root: root.appendingPathComponent("Setlists"))
@@ -150,7 +175,7 @@ import Foundation
         expectFailure("wrong file extension") {
             try SetlistShare.write(source, to: root.appendingPathComponent("Generated Share.json"))
         }
-        print("PASS setlist sharing: checksummed portable package, payload exclusions, tamper/injection refusal, offline link, dependency preview, identity collision resolution, independent copies, legacy upgrade and atomic writes")
+        print("PASS setlist sharing: checksummed portable package, payload exclusions, tamper/injection refusal, offline link, dependency preview, identity collision resolution, independent copies, clean-install repeat import, interrupted-write listing, legacy upgrade and atomic writes")
     }
 
     private static func expectFailure(_ label: String, _ body: () throws -> Void) {
