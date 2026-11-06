@@ -150,7 +150,63 @@ import Foundation
         expectFailure("wrong file extension") {
             try SetlistShare.write(source, to: root.appendingPathComponent("Generated Share.json"))
         }
-        print("PASS setlist sharing: checksummed portable package, payload exclusions, tamper/injection refusal, offline link, dependency preview, identity collision resolution, independent copies, legacy upgrade and atomic writes")
+        // Two independent data roots stand in for two installations. The first
+        // exports a saved setlist, the second imports it with no library or
+        // ratings of its own, re-exports it, and the first imports that copy
+        // back. Ratings are per installation and no import may rewrite either
+        // the source document or the destination's ratings.
+        let installARoot = root.appendingPathComponent("Install A")
+        let installBRoot = root.appendingPathComponent("Install B")
+        let installA = try SetlistLibrary(root: installARoot)
+        let installB = try SetlistLibrary(root: installBRoot)
+        let installADescriptor = try installA.save(source)
+        let installARecord = installARoot.appendingPathComponent(installADescriptor.id.uuidString + ".json")
+        let installARatingsFile = installARoot.appendingPathComponent("sound-ratings.json")
+        let installARatings = ["generated-piano": 4, "generated-au": 5]
+        try SoundRatingArchive.save(installARatings, to: installARatingsFile)
+        let installAOriginalBytes = try Data(contentsOf: installARecord)
+
+        let firstPackage = try SetlistShare.make(try installA.load(id: installADescriptor.id))
+        let secondPlan = try SetlistShare.preview(firstPackage, library: installB)
+        assert(secondPlan.collisions.isEmpty && secondPlan.canActivate)
+        let installBID = try SetlistShare.saveToLibrary(secondPlan, library: installB)
+        let installBCopy = try installB.load(id: installBID)
+        assert(installBCopy.patches.map(\.id) == source.patches.map(\.id))
+        assert(installBCopy.patches[0].layers.map(\.id) == source.patches[0].layers.map(\.id))
+        assert(installBCopy.patches[0].snapshots.map(\.id) == source.patches[0].snapshots.map(\.id))
+        assert(installBCopy.patches[0].layers[0].effects == source.patches[0].layers[0].effects)
+        assert(installBCopy.patches[0].layers[0].external?.nativeSampler?.notes ==
+               source.patches[0].layers[0].external?.nativeSampler?.notes)
+        assert(installBCopy.patches[0].tonicState?.sound?.fileName ==
+               source.patches[0].tonicState?.sound?.fileName)
+        let installBRatingsFile = installBRoot.appendingPathComponent("sound-ratings.json")
+        let installBRatingsBeforeImport = try SoundRatingArchive.read(installBRatingsFile)
+        assert(installBRatingsBeforeImport.isEmpty,
+               "Importing a setlist must not invent library ratings")
+        try SoundRatingArchive.save(["generated-piano": 2], to: installBRatingsFile)
+
+        let returnPackage = try SetlistShare.make(try installB.load(id: installBID))
+        let returnPlan = try SetlistShare.preview(returnPackage, library: installA)
+        assert(!returnPlan.collisions.isEmpty)
+        let returnID = try SetlistShare.saveToLibrary(returnPlan, library: installA)
+        assert(returnID != installADescriptor.id)
+        let installAOriginalAfter = try installA.load(id: installADescriptor.id)
+        assert(installAOriginalAfter.name == source.name)
+        assert(installAOriginalAfter.patches.map(\.id) == source.patches.map(\.id))
+        let installABytesAfterReturn = try Data(contentsOf: installARecord)
+        assert(installABytesAfterReturn == installAOriginalBytes,
+               "A return-trip import must not rewrite the original installation's document")
+        let installARatingsAfterReturn = try SoundRatingArchive.read(installARatingsFile)
+        assert(installARatingsAfterReturn == installARatings,
+               "A return-trip import must not change the destination's ratings")
+        let installBRatingsAfterReturn = try SoundRatingArchive.read(installBRatingsFile)
+        assert(installBRatingsAfterReturn == ["generated-piano": 2],
+               "Each installation keeps its own ratings")
+        let reopenedB = try SetlistLibrary(root: installBRoot)
+        let reopenedBCopy = try reopenedB.load(id: installBID)
+        assert(reopenedBCopy.patches[0].layers[0].name == "Generated Piano")
+
+        print("PASS setlist sharing: checksummed portable package, payload exclusions, tamper/injection refusal, offline link, dependency preview, identity collision resolution, independent copies, clean-install two-root round trip with destination ratings intact, legacy upgrade and atomic writes")
     }
 
     private static func expectFailure(_ label: String, _ body: () throws -> Void) {
