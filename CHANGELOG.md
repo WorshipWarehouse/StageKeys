@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Arm the MIDI FX arpeggiator/sequencer timers at the next musical deadline instead of polling every 5 ms; the simulated dispatch grid's worst-case lateness falls from 5.000 ms to the 1 ns delivery offset over 260 eighth notes at 132 BPM, while audio-block quantization remains.
+
 - Overlap the native tempo-synced delay's old and new taps for 20 ms across tempo and subdivision changes; the measured worst-case sample step falls from 9.5–11.4× steady at 44.1/48/96 kHz to 1.0×, and the new delay time is reached exactly.
 
 - Add offline, checksummed `.stagekeyssetlist` setlist shares with dependency and collision previews, Save and Load versus Save to Library import, and `stagekeys://setlist-share` links; samples, plug-in state and local source paths are excluded.

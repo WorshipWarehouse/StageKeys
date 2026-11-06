@@ -26,6 +26,7 @@ final class MIDIFXProcessor {
     private var tempo: Double = 72
     private var generatedKey = -1
     private var timer: Timer?
+    private var timerDeadline: TimeInterval?
     private let automatic: Bool
     private var time: TimeInterval = 0
 
@@ -33,10 +34,38 @@ final class MIDIFXProcessor {
         automatic = automaticallySchedule
         if automaticallySchedule {time=ProcessInfo.processInfo.systemUptime}
     }
-    private func ensureTimer(){
-        guard automatic,timer == nil else{return}
-        timer=Timer(timeInterval:0.005,repeats:true){[weak self] _ in self?.advance(to:ProcessInfo.processInfo.systemUptime)}
-        RunLoop.main.add(timer!,forMode:.common)
+    /// Earliest pending step, gate release or retrigger. Nil when the scheduler
+    /// has nothing to do. Read-only, so tests can assert the armed deadline.
+    var nextDeadline: TimeInterval? {
+        var next: TimeInterval?
+        for c in channels.values {
+            if let value = c.next { next = next.map { min($0, value) } ?? value }
+            if let value = c.nextRetrigger { next = next.map { min($0, value) } ?? value }
+            for active in c.active { next = next.map { min($0, active.release) } ?? active.release }
+        }
+        return next
+    }
+    /// Arm a one-shot timer for the next musical deadline. The previous version
+    /// polled every 5 ms, so an event could be quantized late by nearly that
+    /// interval at every tempo. A single-shot timer fires at the deadline itself;
+    /// a later deadline never replaces an already-armed earlier one.
+    private func armTimer() {
+        guard automatic else { return }
+        guard let deadline = nextDeadline else {
+            timer?.invalidate(); timer = nil; timerDeadline = nil
+            return
+        }
+        if let armed = timerDeadline, timer != nil, armed <= deadline + 1e-9 { return }
+        timer?.invalidate()
+        timerDeadline = deadline
+        let fire = Timer(timeInterval: max(0, deadline - ProcessInfo.processInfo.systemUptime), repeats: false) { [weak self] _ in
+            guard let self else { return }
+            self.timer = nil
+            self.timerDeadline = nil
+            self.advance(to: ProcessInfo.processInfo.systemUptime)
+        }
+        timer = fire
+        RunLoop.main.add(fire, forMode: .common)
     }
     deinit { timer?.invalidate() }
     func updateTempo(_ value:Double){
@@ -49,14 +78,15 @@ final class MIDIFXProcessor {
             channels[index]=channel
         }
         tempo=next
+        armTimer()
     }
     func configure(channel: Int, program: MIDIProgram, tempo: Double) {
         guard (0..<16).contains(channel) else { return }
         updateTempo(tempo)
-        if program.kind == .arpeggiator || program.kind == .sequencer {ensureTimer()}
-        if channels[channel]?.program == program.validated { return }
+        if channels[channel]?.program == program.validated { armTimer(); return }
         silence(channel)
         channels[channel] = Channel(program: program.validated)
+        armTimer()
     }
     private func notify(_ channel:Int,_ key:Int,_ pitch:Int,_ velocity:Float,_ source:Int32?){outputPitches[channel,default:[:]][key]=pitch;onNote?(channel,key,pitch,velocity);onNoteWithSource?(channel,key,pitch,velocity,source)}
     private func release(_ channel: Int, _ key: Int, _ force: Bool) {
@@ -144,6 +174,7 @@ final class MIDIFXProcessor {
             c.next = nil;c.nextRetrigger=nil;c.velocityBegan=nil; c.index = 0
         }
         channels[channel] = c
+        armTimer()
     }
     /// Deterministic scheduler entry point; monotonic seconds only. Missed ticks
     /// are skipped after long stalls instead of emitting an unbounded burst.
@@ -219,6 +250,7 @@ final class MIDIFXProcessor {
             else{c.next=next+Double(skipped+1)*period}
             channels[channel] = c
         }
+        armTimer()
     }
     static func groovedBeat(_ beat:Double,program:MIDIProgram)->Double {
         guard let grid=program.swingGridBeats,grid>0,let amount=program.swingAmount,amount>0 else{return beat}
@@ -265,9 +297,11 @@ final class MIDIFXProcessor {
     func panic(channel: Int) {
         silence(channel)
         if var c = channels[channel] { c.held=[]; c.released=[]; c.active=[]; c.direct=[:]; c.next=nil;c.nextRetrigger=nil;c.velocityBegan=nil; c.index=0; channels[channel]=c }
+        armTimer()
     }
     func panic() {
         for channel in channels.keys { silence(channel) }
         for channel in channels.keys { var c = channels[channel]!; c.held = []; c.released=[]; c.active = []; c.direct = [:]; c.next = nil;c.nextRetrigger=nil;c.velocityBegan=nil; c.index = 0; channels[channel] = c }
+        armTimer()
     }
 }
