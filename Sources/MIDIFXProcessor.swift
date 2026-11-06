@@ -53,6 +53,13 @@ final class MIDIFXProcessor {
         lookaheadChannels = Set(channels.filter { (0..<16).contains($0) })
         armTimer()
     }
+    /// Drop one channel from the marked set without touching the others. A
+    /// rejected or retired install must not keep a stale eligibility while the
+    /// rest of the set is still valid.
+    func clearLookaheadChannel(_ channel: Int) {
+        guard lookaheadChannels.remove(channel) != nil else { return }
+        armTimer()
+    }
     /// Earliest pending step, gate release or retrigger. Nil when the scheduler
     /// has nothing to do. Read-only, so tests can assert the armed deadline.
     var nextDeadline: TimeInterval? {
