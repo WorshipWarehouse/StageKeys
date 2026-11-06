@@ -242,7 +242,17 @@ final class AudioController {
     private let protectedOutput=AVAudioMixerNode()
     private var source: AVAudioSourceNode!
     lazy var deviceController = AudioDeviceController(engine: engine)
-    lazy var externalRack: ExternalInstrumentRack? = try? ExternalInstrumentRack(engine: engine)
+    private var externalRackStorage: ExternalInstrumentRack?
+    private var externalRackLoaded = false
+    private var soundMeteringEnabled = false
+    var externalRack: ExternalInstrumentRack? {
+        if !externalRackLoaded {
+            externalRackLoaded = true
+            externalRackStorage = try? ExternalInstrumentRack(engine: engine)
+            externalRackStorage?.setMeteringEnabled(soundMeteringEnabled)
+        }
+        return externalRackStorage
+    }
     private var externalSounds: [Int: ExternalSound] = [:]
     private var externalStates: [Int: Data] = [:]
     private var samplerAttacks:[Int:Float]=[:]
@@ -252,6 +262,16 @@ final class AudioController {
     private let outputMeter=OutputMeter()
     private var outputTapInstalled=false
     var outputMetrics:OutputMeter.Reading {outputMeter.read()}
+    /// Optional per-sound taps are installed on demand and removed when off.
+    /// This does not create the rack or edit the audio graph.
+    func setSoundMetering(_ enabled: Bool) {
+        soundMeteringEnabled = enabled
+        if externalRackLoaded { externalRackStorage?.setMeteringEnabled(enabled) }
+    }
+    func soundMeter(_ channel: Int) -> OutputMeter.Reading? {
+        guard externalRackLoaded, (0..<16).contains(channel) else { return nil }
+        return externalRackStorage?.soundMeter(channel: channel)
+    }
     private func installOutputTap(recorder:AudioDiagnosticRecorder?=nil) {
         if outputTapInstalled {protectedOutput.removeTap(onBus:0)}
         let meter=outputMeter

@@ -40,22 +40,126 @@ struct SupportDiagnostics: Codable {
 }
 
 final class OutputMeter {
-    struct Reading {
+    struct Reading: Equatable {
+        var meterID: UUID? = nil
         var peak:Float=0,rms:Float=0
         var frames:UInt64=0,invalid:UInt64=0,overload:UInt64=0
         var peakDB:Float {peak>0 ? 20*log10(peak): -120}
         var rmsDB:Float {rms>0 ? 20*log10(rms): -120}
     }
+    private let meterID = UUID()
     private let meter=sk_output_meter_create()!
     func append(_ buffer:AVAudioPCMBuffer) {
         guard let channels=buffer.floatChannelData,buffer.format.channelCount==2 else{return}
         sk_output_meter_process(meter,channels[0],channels[1],buffer.frameLength)
     }
     func read()->Reading {
-        var r=Reading();sk_output_meter_read(meter,&r.peak,&r.rms,&r.frames,&r.invalid,&r.overload);return r
+        var r=Reading(meterID: meterID);sk_output_meter_read(meter,&r.peak,&r.rms,&r.frames,&r.invalid,&r.overload);return r
     }
     deinit{sk_output_meter_destroy(meter)}
 
+}
+
+/// Tracks counter increases between refreshes. The C meter counters are
+/// cumulative, so reading the absolute values would leave a warning color on
+/// screen after clean audio resumes.
+struct MeterWarningState {
+    private var meterID: UUID?
+    private var lastInvalid: UInt64 = 0
+    private var lastOverload: UInt64 = 0
+    private(set) var invalid = false
+    private(set) var overload = false
+
+    mutating func update(_ reading: OutputMeter.Reading?) {
+        guard let reading else {
+            meterID = nil
+            lastInvalid = 0
+            lastOverload = 0
+            invalid = false
+            overload = false
+            return
+        }
+        if reading.meterID != meterID {
+            meterID = reading.meterID
+            lastInvalid = 0
+            lastOverload = 0
+        }
+        invalid = reading.invalid > lastInvalid
+        overload = reading.overload > lastOverload
+        lastInvalid = reading.invalid
+        lastOverload = reading.overload
+    }
+}
+
+/// Optional per-channel taps. Installation and removal run on the main queue;
+/// the tap only writes lock-free counters through `OutputMeter`. No tap exists
+/// while metering is disabled, so the default path has no callback overhead.
+final class SoundMeterBank {
+    private var mixers: [Int: AVAudioMixerNode] = [:]
+    private var meters: [Int: OutputMeter] = [:]
+    private var tapped: Set<Int> = []
+    private(set) var enabled = false
+
+    func setEnabled(_ enabled: Bool) {
+        guard self.enabled != enabled else { return }
+        self.enabled = enabled
+        if enabled {
+            for (channel, mixer) in mixers { install(mixer, channel: channel) }
+        } else {
+            for (channel, mixer) in mixers { removeTap(mixer, channel: channel) }
+            meters.removeAll()
+        }
+    }
+
+    /// Keeps the current mixer even while metering is disabled, so enabling the
+    /// option later can attach without rebuilding the audio graph.
+    func attach(_ mixer: AVAudioMixerNode, channel: Int) {
+        guard (0..<16).contains(channel) else { return }
+        if let previous = mixers[channel], previous !== mixer {
+            removeTap(previous, channel: channel)
+        }
+        mixers[channel] = mixer
+        if enabled { install(mixer, channel: channel) }
+    }
+
+    func detach(channel: Int) {
+        if let mixer = mixers[channel] { removeTap(mixer, channel: channel) }
+        mixers.removeValue(forKey: channel)
+        meters.removeValue(forKey: channel)
+    }
+
+    func detachAll() {
+        for channel in Array(mixers.keys) { detach(channel: channel) }
+    }
+
+    func reading(channel: Int) -> OutputMeter.Reading? {
+        guard enabled, let meter = meters[channel] else { return nil }
+        return meter.read()
+    }
+
+    private func install(_ mixer: AVAudioMixerNode, channel: Int) {
+        // AVAudioEngine raises when a tap is installed on a node that is not
+        // attached to an engine. Leave the channel untracked so a later
+        // `attach` can install once the node is part of the graph.
+        guard !tapped.contains(channel), mixer.engine != nil else { return }
+        let meter = meters[channel] ?? OutputMeter()
+        meters[channel] = meter
+        mixer.installTap(onBus: 0, bufferSize: 512, format: nil) { buffer, _ in
+            meter.append(buffer)
+        }
+        tapped.insert(channel)
+    }
+
+    private func removeTap(_ mixer: AVAudioMixerNode, channel: Int) {
+        guard tapped.remove(channel) != nil else { return }
+        // Removing a tap from a node the graph already detached throws
+        // `NULL != engine`; a detached node is not rendering, so nothing is left
+        // to remove.
+        guard mixer.engine != nil else { return }
+        mixer.removeTap(onBus: 0)
+    }
+
+    deinit { detachAll() }
 }
 
 /// Copies a bounded take from an output tap. File I/O runs on its own queue;

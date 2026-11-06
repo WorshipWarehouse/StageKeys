@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Add optional per-sound sample-peak/RMS meters after each sound's fader and pan, with no taps while disabled and persisted legacy-safe settings; document the signal point and its true-peak/loudness limits.
+
 - Make the native channel compressor's Dry/Wet Mix a true bypass at 0%: output gain no longer lifts the unprocessed signal, and makeup gain applies to the compressed path only. Switching the effect off or back on clears stored detector reduction instead of ducking the first notes for the release time. Add 44.1/48/96 kHz gain-transfer, attack/release, bypass-state and block-split regressions.
 
 - Add offline, checksummed `.stagekeyssetlist` setlist shares with dependency and collision previews, Save and Load versus Save to Library import, and `stagekeys://setlist-share` links; samples, plug-in state and local source paths are excluded.
