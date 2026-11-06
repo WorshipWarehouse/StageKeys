@@ -205,9 +205,8 @@ final class PerformanceStore: ObservableObject {
         didSet { if !keyboardPlayable { releaseScreenNotes() } }
     }
     @Published var showPlayedNotes = true
-    /// Bounded previous/next preload counts (#109). These values only bound a
-    /// window right now: no warm audio is built, so they change no playback,
-    /// disk access or graph work.
+    /// Bounded previous/next preload counts (#109). These values bound the
+    /// window and drive detached warm voices; they change no live playback.
     @Published var preloadPrevious = 0 { didSet { if oldValue != preloadPrevious { refreshPreloadWindow() } } }
     @Published var preloadNext = 0 { didSet { if oldValue != preloadNext { refreshPreloadWindow() } } }
     /// Patch indices the current counts cover; empty when both counts are 0.
@@ -225,6 +224,91 @@ final class PerformanceStore: ObservableObject {
         if preloadWarming { return "Preparing \(ready) of \(preloadWindow.count)…" }
         return "Ready \(ready) of \(preloadWindow.count)"
     }
+    /// Nearest-first, clamped at the setlist edges, previous before next at the
+    /// same distance, and never containing the active patch. Pure: no disk
+    /// access, no graph edit and no render-thread work.
+    func preloadWindowIndices(around index: Int, previous: Int? = nil, next: Int? = nil) -> [Int] {
+        let count = setlist.patches.count
+        guard count > 1, (0..<count).contains(index) else { return [] }
+        let before = min(max(0, previous ?? preloadPrevious), SessionSettings.preloadLimitPerDirection)
+        let after = min(max(0, next ?? preloadNext), SessionSettings.preloadLimitPerDirection)
+        var window: [Int] = []
+        for distance in 1...max(before, after, 1) {
+            if distance <= before, index - distance >= 0 { window.append(index - distance) }
+            if distance <= after, index + distance < count { window.append(index + distance) }
+            if distance >= before && distance >= after { break }
+        }
+        return window
+    }
+    /// Channels currently holding a detached voice, by patch index. Only the
+    /// first external layer of a covered patch is warmed, so this stays one
+    /// voice per patch and the counts remain a real bound on the work.
+    @Published private(set) var warmedChannels: [Int: Int] = [:]
+    private var warmWorkItem: DispatchWorkItem?
+    private var warmGeneration = 0
+    /// Eviction is by construction: the window is recomputed from the counts, so
+    /// an index that leaves it stops being covered, and its detached voice is
+    /// dropped at the next refresh.
+    func refreshPreloadWindow() {
+        let window = preloadWindowIndices(around: selected)
+        if window != preloadWindow { preloadWindow = window }
+        refreshWarmVoices()
+    }
+    /// Warming runs after the selection has settled: loading samples inside the
+    /// selection path would add the very latency preloading exists to remove.
+    func refreshWarmVoices() {
+        warmWorkItem?.cancel()
+        // A cancelled pass must not keep building chains for a window that no
+        // longer exists; every scheduled pass carries the generation it was
+        // scheduled for and stops as soon as a newer one arrives.
+        warmGeneration &+= 1
+        let generation = warmGeneration
+        preloadWarming = false
+        guard started || audio.running else {
+            audio.discardWarmVoices(); warmedChannels.removeAll(); return
+        }
+        evictUncoveredWarmVoices()
+        let work = DispatchWorkItem { [weak self] in self?.warmCoveredPatches(generation: generation) }
+        warmWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2, execute: work)
+    }
+    private func evictUncoveredWarmVoices() {
+        let covered = preloadWindow
+        for (index, channel) in warmedChannels where !covered.contains(index) {
+            audio.discardWarm(channel: channel)
+            warmedChannels[index] = nil
+        }
+    }
+    private func warmCoveredPatches(generation: Int) {
+        guard generation == warmGeneration else { return }
+        guard started || audio.running else {
+            audio.discardWarmVoices(); warmedChannels.removeAll(); return
+        }
+        // Building a chain is a graph transaction, and every graph transaction
+        // stops the engine. Never start one under a held key or a sounding
+        // patch; the next selection re-schedules the remaining window.
+        guard held.isEmpty, !sustain, !patchLoading else { return }
+        preloadWarming = true
+        defer { if generation == warmGeneration { preloadWarming = false } }
+        evictUncoveredWarmVoices()
+        var used = Set(warmedChannels.values)
+        for index in preloadWindow where warmedChannels[index] == nil {
+            guard generation == warmGeneration else { return }
+            guard setlist.patches.indices.contains(index),
+                  let (channel, layer) = warmLayer(of: setlist.patches[index]),
+                  let sound = layer.external, sound.kind != .audioUnit,
+                  !used.contains(channel) else { continue }
+            let curve = layer.importedRack?.mainStageAmplitudeVelocityCurve ?? sound.nativeSampler?.rack.mainStageAmplitudeVelocityCurve
+            if audio.warm(sound, channel: channel, attackMinimum: layer.samplerAttackMinimum, hostVelocityCurve: curve) {
+                warmedChannels[index] = channel; used.insert(channel)
+            }
+        }
+    }
+    private func warmLayer(of patch: Patch) -> (Int, Layer)? {
+        for (channel, layer) in patch.layers.enumerated() where channel < 15 {
+            if layer.external != nil { return (channel, layer) }
+        }
+        return nil
     }
     @Published var keyboardBase = 48
     @Published var metronome = false { didSet { applyMetronome() } }
