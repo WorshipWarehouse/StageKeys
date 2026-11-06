@@ -41,6 +41,9 @@ void sk_voice_limit(SKSynth *s,int layer,int voices);
 void sk_sampler_gain(SKSynth *s,int layer,float gain);
 void sk_filter(SKSynth *s,int layer,float cutoff,float resonance);
 void sk_eq(SKSynth *s,int layer,int band,float frequency,float gainDB,float q);
+// Channel compressor. Mix is a dry/wet crossfade where 0 is a true bypass;
+// input gain and makeup belong to the compressed path only. Disabling (or
+// re-enabling) clears stored detector gain reduction.
 void sk_compressor(SKSynth *s,int layer,int enabled,float thresholdDB,float ratio,float attack,float release,float makeupDB);
 
 // Physical parameter values and indices match AudioEffectCatalog descriptors.
