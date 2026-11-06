@@ -15,8 +15,9 @@ struct MetronomeSettings: Codable, Equatable {
     var beatsPerBar = 4
     var accentEvery = 0
     var subdivision = 1
+    var countInBars = 0
     var followsMaster = true
-    enum CodingKeys: String, CodingKey { case visible,preset,level,beatVelocity,downbeatEnabled,downbeatVelocity,beatsPerBar,accentEvery,subdivision,followsMaster }
+    enum CodingKeys: String, CodingKey { case visible,preset,level,beatVelocity,downbeatEnabled,downbeatVelocity,beatsPerBar,accentEvery,subdivision,countInBars,followsMaster }
     init() {}
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -29,13 +30,16 @@ struct MetronomeSettings: Codable, Equatable {
         beatsPerBar = try c.decodeIfPresent(Int.self, forKey: .beatsPerBar) ?? 4
         accentEvery = try c.decodeIfPresent(Int.self, forKey: .accentEvery) ?? 0
         subdivision = try c.decodeIfPresent(Int.self, forKey: .subdivision) ?? 1
+        countInBars = try c.decodeIfPresent(Int.self, forKey: .countInBars) ?? 0
         followsMaster = try c.decodeIfPresent(Bool.self, forKey: .followsMaster) ?? true
     }
     func validate() -> Bool {
-        MetronomeSettings.presets.indices.contains(preset) && level.isFinite && (0...1).contains(level) && beatVelocity.isFinite && (0...1).contains(beatVelocity) && downbeatVelocity.isFinite && (0...1).contains(downbeatVelocity) && (1...16).contains(beatsPerBar) && (0...16).contains(accentEvery) && (1...4).contains(subdivision)
+        MetronomeSettings.presets.indices.contains(preset) && level.isFinite && (0...1).contains(level) && beatVelocity.isFinite && (0...1).contains(beatVelocity) && downbeatVelocity.isFinite && (0...1).contains(downbeatVelocity) && (1...16).contains(beatsPerBar) && (0...16).contains(accentEvery) && (1...4).contains(subdivision) && (0...2).contains(countInBars)
     }
     /// Nil means silent. The value is an engine peak, not a measured output level.
     var levelDBFS: Float? { level > 0 ? Float(20 * log10(Double(max(0.0001, level * MetronomeSettings.peakAmplitude)))) : nil }
+    /// Count-in length in whole bars before the bar starts; 0 is off.
+    var countInLabel: String { countInBars == 0 ? "Off" : countInBars == 1 ? "1 bar" : "\(countInBars) bars" }
     var beatVelocityLabel: String { "\(Int(beatVelocity * 127))" }
     var downbeatVelocityLabel: String { "\(Int(downbeatVelocity * 127))" }
 }

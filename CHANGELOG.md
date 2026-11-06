@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Add an opt-in metronome count-in of one or two bars: whole beats at a higher pitch before the bar, with the bar's downbeat exactly one beat after the last count-in click. It ignores the subdivision, restarts only when the click is switched on, is cancelled by Panic, Stop or turning the click off, and older `settings.json` files read it as off. External MIDI-clock sync remains open in #108.
+
 - Make the native channel compressor's Dry/Wet Mix a true bypass at 0%: output gain no longer lifts the unprocessed signal, and makeup gain applies to the compressed path only. Switching the effect off or back on clears stored detector reduction instead of ducking the first notes for the release time. Add 44.1/48/96 kHz gain-transfer, attack/release, bypass-state and block-split regressions.
 
 - Add offline, checksummed `.stagekeyssetlist` setlist shares with dependency and collision previews, Save and Load versus Save to Library import, and `stagekeys://setlist-share` links; samples, plug-in state and local source paths are excluded.

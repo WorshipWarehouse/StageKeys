@@ -24,6 +24,7 @@ Settings → Metronome exposes, and `settings.json` persists, every control:
 | Accent every | off, 1…16 beats | off | Accents every Nth beat after the downbeat at 1.25× the beat velocity, bounded to full scale. |
 | Subdivision | Beats, Eighths, Triplets, Sixteenths | Beats | Adds softer clicks at 55% of the beat velocity. |
 | Beats per bar | 1…16 | 4 | Moves the downbeat. The performance time signature is still displayed as 4/4. |
+| Count-in | Off, 1 bar, 2 bars | Off | Plays that many bars of whole beats at a higher pitch before the bar starts. |
 | Master volume controls the metronome | on/off | on | When off, the click keeps its own level as the master fader moves. |
 
 Tempo remains the patch tempo (20…300 BPM), so Tap Tempo and the patch controls
@@ -36,6 +37,12 @@ duplicated inside the metronome.
   44.1, 48 and 96 kHz and across arbitrary host block splits.
 - A tempo or subdivision change scales the pending interval instead of
   restarting it, so the next click does not double-trigger or jump phase.
+- A count-in plays one or two bars of whole beats at twice the click pitch
+  before the bar. Count-in clicks ignore the subdivision, the last one uses the
+  downbeat velocity as the entry cue, and the bar then begins on its own
+  downbeat exactly one beat later. Switching the click on starts a count-in;
+  repeated enable calls while it is already running do not restart it, and
+  Panic, Stop or turning the click off cancels it.
 - Disabling the metronome truncates the click immediately. Panic silences the
   current click and schedules the next one a full interval later. Turning the
   metronome on starts a fresh bar immediately.
@@ -67,6 +74,8 @@ scales that peak, and 100% is not a measured sound-pressure level.
 - click timing at 44.1/48/96 kHz with block sizes from 1 to 511 samples;
 - tempo changes mid-beat, reset and immediate re-enable;
 - downbeat, accent-every and beats-per-bar relationships;
+- count-in length, beat spacing, higher pitch, the bar hand-off, a tempo change
+  during the count-in, restart on a fresh enable and cancellation by reset;
 - subdivisions and their lower level;
 - both presets being finite, bounded and distinct;
 - level, explicit stop and master-follow behavior;
@@ -90,7 +99,10 @@ the default native list.
 
 - The performance time signature is fixed at 4/4. Beats per bar changes the
   accent pattern, not the displayed signature.
-- There is no count-in and no external MIDI-clock sync.
+- There is no external MIDI-clock sync.
+- A count-in is a tempo and entry cue only: there is no recording or transport
+  to start, it never delays notes, and it does not change the patch, snapshot
+  or tempo. Its length follows Beats per bar, so it is 1–32 clicks.
 - Multi-output and category routing are tracked by issue #107; until then the
   click shares the stereo system output without the hall reverb.
 - Physical-device listening and latency remain part of the broader hardware

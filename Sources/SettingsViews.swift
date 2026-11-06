@@ -155,6 +155,8 @@ struct SettingsEditor: View {
                                 ForEach(MetronomeSettings.subdivisionLabels.indices, id: \.self) { index in Text(MetronomeSettings.subdivisionLabels[index]).tag(index + 1) }
                             }
                             Stepper("Beats per bar: \(store.metronomeSettings.beatsPerBar)", value: $store.metronomeSettings.beatsPerBar, in: 1...16)
+                            Stepper("Count-in: \(store.metronomeSettings.countInLabel)", value: $store.metronomeSettings.countInBars, in: 0...2)
+                            Text("A count-in plays that many bars of whole beats at a higher pitch before the bar starts, so you hear the tempo and the entry. It restarts each time the click is switched on; notes, patch, tempo and snapshot are untouched, and Panic or Stop cancels it.").font(.caption).foregroundStyle(.secondary)
                             Text("4/4 is the current performance time signature. Beats per bar only controls which beat receives the downbeat accent.").font(.caption).foregroundStyle(.secondary)
                         }
                     case "MIDI":

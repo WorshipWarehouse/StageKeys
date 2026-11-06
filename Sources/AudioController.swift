@@ -784,7 +784,7 @@ final class AudioController {
     /// clock; no audio-thread allocation or locking is involved.
     func metronome(_ enabled: Bool, settings: MetronomeSettings) {
         metronomeFollowsMaster = settings.followsMaster
-        sk_metronome_settings(metronomeEngine, SKMetronomeSettings(level: settings.level, preset: Int32(settings.preset), beatVelocity: settings.beatVelocity, downbeatEnabled: settings.downbeatEnabled ? 1 : 0, downbeatVelocity: settings.downbeatVelocity, beatsPerBar: Int32(settings.beatsPerBar), accentEvery: Int32(settings.accentEvery), subdivision: Int32(settings.subdivision)))
+        sk_metronome_settings(metronomeEngine, SKMetronomeSettings(level: settings.level, preset: Int32(settings.preset), beatVelocity: settings.beatVelocity, downbeatEnabled: settings.downbeatEnabled ? 1 : 0, downbeatVelocity: settings.downbeatVelocity, beatsPerBar: Int32(settings.beatsPerBar), accentEvery: Int32(settings.accentEvery), subdivision: Int32(settings.subdivision), countInBars: Int32(settings.countInBars)))
         sk_metronome_master(metronomeEngine, masterVolume, metronomeFollowsMaster ? 1 : 0)
         sk_metronome_enable(metronomeEngine, enabled ? 1 : 0)
     }
