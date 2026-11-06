@@ -9,9 +9,11 @@ import Foundation
         let root = URL(fileURLWithPath: ProcessInfo.processInfo.environment["STAGEKEYS_DATA_DIR"]!)
         let settingsURL = root.appendingPathComponent("settings.json")
         let store = PerformanceStore()
-        store.setlist = TestFixtures.setlist()
-        let count = store.setlist.patches.count
-        assert(count >= 6, "The fixture setlist must have room for interior windows")
+        var fixture = TestFixtures.setlist()
+        let template = fixture.patches[0]
+        fixture.patches = (0..<9).map { _ in template.duplicate() }
+        store.setlist = fixture
+        let count = fixture.patches.count
         assert(store.preloadPrevious == 0 && store.preloadNext == 0, "Preloading is off by default")
         assert(store.preloadWindow.isEmpty, "No window is covered while both counts are 0")
         assert(store.preloadWindowIndices(around: 3, previous: 0, next: 0).isEmpty)
@@ -45,6 +47,12 @@ import Foundation
         store.selected = 4
         assert(store.preloadWindow == [3, 2], "A new selection recomputes around it")
         assert(store.warmedChannels.isEmpty, "Nothing is warmed while audio is not running")
+
+        store.preloadNext = 2
+        store.setlist.patches = Array(fixture.patches.prefix(5))
+        assert(store.preloadWindow == [3, 2], "Replacing the setlist drops out-of-range neighbors")
+        store.setlist = fixture
+        assert(store.preloadWindow == [3, 5, 2, 6], "Replacing the setlist adds newly available neighbors")
 
         // Persistence round trip, including the window that follows the counts.
         store.preloadPrevious = 2; store.preloadNext = 1
