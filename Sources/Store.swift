@@ -9,8 +9,8 @@ import UIKit
 #endif
 
 final class PerformanceStore: ObservableObject {
-    @Published var setlist = Setlist()
-    @Published var selected = 0
+    @Published var setlist = Setlist() { didSet { refreshPreloadWindow() } }
+    @Published var selected = 0 { didSet { if oldValue != selected { refreshPreloadWindow() } } }
     @Published private(set) var effectPresets:[EffectPreset]=[]
     @Published private(set) var patchLoading = false
     private var patchLoadGeneration = UUID()
@@ -230,7 +230,10 @@ final class PerformanceStore: ObservableObject {
     }
     /// Eviction is by construction: the window is recomputed from the counts, so
     /// an index that leaves it stops being covered at the next selection.
-    func refreshPreloadWindow() { preloadWindow = preloadWindowIndices(around: selected) }
+    func refreshPreloadWindow() {
+        let window = preloadWindowIndices(around: selected)
+        if window != preloadWindow { preloadWindow = window }
+    }
     @Published var keyboardBase = 48
     @Published var metronome = false { didSet { applyMetronome() } }
     @Published var metronomeSettings = MetronomeSettings() { didSet { applyMetronome() } }
@@ -1043,7 +1046,7 @@ final class PerformanceStore: ObservableObject {
             do { try preparePatchActivation(setlist.patches[index]) }
             catch { message = error.localizedDescription; return }
         }
-        cancelAudition(); cancelTransition(); panic(preserveTonic:true,preserveEffectTails:!setlist.patches[index].silencePrevious); capturePluginStates(); selected = index; activeSnapshot = nil; refreshPreloadWindow()
+        cancelAudition(); cancelTransition(); panic(preserveTonic:true,preserveEffectTails:!setlist.patches[index].silencePrevious); capturePluginStates(); selected = index; activeSnapshot = nil
         if patch.silencePrevious { panic(preserveTonic:true) }
         if patch.visualMode != 0 { notesMode = patch.visualMode == 2 }
         // A locked patch recalls its own tempo without overwriting the shared
