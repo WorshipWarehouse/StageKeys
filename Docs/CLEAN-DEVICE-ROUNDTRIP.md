@@ -35,11 +35,13 @@ These steps are **not executed by CI** and are not claimed by this document. Run
 1. Install a build on Mac A, open it, create or import a setlist that references sounds available on Mac B, and use **Share…** to write a `.stagekeyssetlist` file.
 2. Confirm the package is small enough to be a document only, and that the exported notes show `[source location]` instead of a home-directory path.
 3. On Mac B, which has never opened that setlist, open the file from Finder or use **Setlists → Import / Export → Import Setlist…**.
-4. Confirm the plan lists missing Audio Units or sampler content honestly, shows collisions, and offers **Save to Library** even when **Save and Load** is disabled.
+4. In a separate preview, use a generated package that references a sampler or Audio Unit absent on Mac B. Confirm the plan lists the missing dependency and offers **Save to Library** while **Save and Load** is disabled. Dismiss that preview and reopen the original package.
 5. Choose **Save to Library**, quit, relaunch, and confirm the imported setlist is still listed with the expected name and patches.
-6. Import the same file again and confirm a second independent copy is created rather than the first being replaced.
+6. Preview the same file again. Confirm the collision is listed, then import and confirm a second independent copy is created.
 7. Rate a library sound, import another setlist, and confirm the rating is unchanged.
 8. Repeat the import with a deliberately truncated copy of the file and confirm the error is reported without losing existing setlists.
+
+9. Export the first imported copy from Mac B and import it on Mac A. Confirm the return copy has its own library entry and the original setlist and ratings are unchanged.
 
 ### iPad
 
@@ -47,6 +49,8 @@ These steps are **not executed by CI** and are not claimed by this document. Run
 2. Open it in StageKeys, complete the same plan review, and choose **Save to Library** with the referenced sounds installed.
 3. Relaunch the app and confirm the setlist and its patches, notes, effects and Tonic Pad state are intact.
 4. With a referenced sound removed, confirm **Save and Load** is unavailable and the explanation is visible, while **Save to Library** still works.
+
+5. Export the saved copy from the iPad to Mac A. Import it there and confirm a separate copy is created while the original setlist and ratings are unchanged.
 
 ## Limits
 
