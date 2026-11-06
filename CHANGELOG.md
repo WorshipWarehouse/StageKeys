@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Overlap the native tempo-synced delay's old and new taps for 20 ms across tempo and subdivision changes; the measured worst-case sample step falls from 9.5–11.4× steady at 44.1/48/96 kHz to 1.0×, and the new delay time is reached exactly.
+
 - Add offline, checksummed `.stagekeyssetlist` setlist shares with dependency and collision previews, Save and Load versus Save to Library import, and `stagekeys://setlist-share` links; samples, plug-in state and local source paths are excluded.
 
 - Preflight the successor before removing a live patch, honor Patch Lock in the Store, recall successor pad/tempo/visual mode and keep stopped removal free of instrument loading.

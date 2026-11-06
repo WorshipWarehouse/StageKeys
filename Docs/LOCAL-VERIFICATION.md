@@ -8,7 +8,7 @@ python3 Tests/run-local-library.py . /private/tmp/stagekeys-local-tests
 
 An optional trailing list selects tests. The runner reads the same Sources and default test list as `Tests/test-library.sh`, compiles the complete core once with DEBUG/testable access, then compiles and executes each unchanged test body against it. Every run uses a fresh private data directory; no user session, source library or original samples are overwritten. This changes test build organization, not test assertions. The original shell runner remains available for monolithic builds and private fixture arguments.
 
-The default list also covers the native C DSP regressions (`AudioEffectsTests`, `ChannelDSPTests`, `ChannelPanicTests`, `RackTests`, `SynthTests`), which link the C objects built by the same script and need no Swift sources or audio hardware. The remaining C programs run in the `Tests/test-reverb.sh` ASan/UBSan suite, which is a separate CI job.
+The default list also covers the native C DSP regressions (`AudioEffectsTests`, `DelayTempoTransitionTests`, `ChannelDSPTests`, `ChannelPanicTests`, `RackTests`, `SynthTests`), which link the C objects built by the same script and need no Swift sources or audio hardware. The remaining C programs run in the `Tests/test-reverb.sh` ASan/UBSan suite, which is a separate CI job.
 
 Two tests stay on demand: `AudioDeviceTests` and `LivePatchContentTests` require a live output device, which hosted runners may not provide. Run them on a Mac with `Tests/test-library.sh AudioDeviceTests LivePatchContentTests`.
 
@@ -34,7 +34,7 @@ Run a documented on-demand test explicitly, for example `Tests/test-library.sh A
 
 `PatchGainTests` is back in the default gate after #80 made single-file samples resident before loading. The earlier failure was periodic silent gaps during sustained playback, not moving note onset. On 29 October, 20 consecutive continuity runs and 20 gain runs passed: longest digital-silence run 50 frames (initial onset), +6 dB ratio 1.9952624 and −6 dB ratio 0.5011872. These synthetic offline measurements do not substitute for hardware latency or full library listening checks.
 
-The fast Python runner executes the same five C regressions after the default Swift list. An explicit Swift test selection remains a focused run.
+The fast Python runner executes the same C regressions after the default Swift list. An explicit Swift test selection remains a focused run.
 
 `PianoHeldNoteTests` runs by default but returns immediately unless `STAGEKEYS_PIANO_PRESET` names a private Steinway preset, the same way `EXSImportTests` skips without its fixture arguments.
 
