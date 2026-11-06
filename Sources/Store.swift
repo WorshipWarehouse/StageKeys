@@ -702,13 +702,14 @@ final class PerformanceStore: ObservableObject {
             self?.refreshBlockedAudioUnits(includeCatalog: false)
         }
         audio.onGraphUnavailable = { [weak self] diagnostic in self?.handleGraphUnavailable(diagnostic) }
+        audio.onLookaheadEligibilityLost = { [weak self] channel in self?.midiFX.clearLookaheadChannel(channel) }
         do { midiOutput = try ExternalMIDIOutput() } catch { message = error.localizedDescription }
         midiOutput?.onChange = { [weak self] in self?.refreshMIDIDestinations() }
         midiDestinations = midiOutput?.destinations ?? []
         // Exclude this app's virtual output before the input port starts, so a
         // renamed or looped port cannot feed StageKeys' output back into itself.
         if let own = midiOutput?.ownSourceID, own != 0 { midi.ignoreSources([own]) }
-        midiFX.onNoteWithSource = { [weak self] channel, key, pitch, velocity, sourceID in
+        midiFX.onNoteAt = { [weak self] channel, key, pitch, velocity, sourceID, at in
             guard let self, !self.patchLoading, self.started, self.patch.layers.indices.contains(channel) else { return }
             if let audition=self.audition,audition.isolatedLibrary,audition.index != channel{return}
             let l = self.playbackLayer(channel)
@@ -716,15 +717,15 @@ final class PerformanceStore: ObservableObject {
             if let destination = l.midiDestinationID, (0...127).contains(pitch) {
                 self.outputNotes[channel, default: [:]][key] = pitch
                 self.sendMIDI(destination, 0x90 | UInt8(l.midiOutputChannel), UInt8(pitch), UInt8(max(1,min(127,Int(velocity * 127)))))
-            } else { self.audio.noteOn(key: key, pitch: pitch, instrument: l.instrument, layer: channel, velocity: velocity,sourceID:sourceID) }
+            } else { self.audio.noteOn(key: key, pitch: pitch, instrument: l.instrument, layer: channel, velocity: velocity,sourceID:sourceID,at:at) }
         }
-        midiFX.onOff = { [weak self] channel, key, force in
+        midiFX.onOffAt = { [weak self] channel, key, force, at in
             guard let self, self.patch.layers.indices.contains(channel) else { return }
             let l = self.playbackLayer(channel)
             if let destination = l.midiDestinationID, let pitch = self.outputNotes[channel]?.removeValue(forKey: key) {
                 if force { self.sendMIDI(destination, 0xb0 | UInt8(l.midiOutputChannel), 64, 0) }
                 self.sendMIDI(destination, 0x80 | UInt8(l.midiOutputChannel), UInt8(pitch), 0)
-            } else { self.audio.noteOff(key: key, channel: channel, force: force) }
+            } else { self.audio.noteOff(key: key, channel: channel, force: force, at: at) }
         }
         midi.onSourceEvent = { [weak self] source, status, a, b in self?.handleMIDI(status, a, b, source: source) }
         midi.onInventory = { [weak self] sources, devices in
@@ -1049,6 +1050,7 @@ final class PerformanceStore: ObservableObject {
                 audio.rejectPatchChange(failure)
                 message = audio.lastChangeFailure.map { AudioChangeFailure(diagnostic: $0).localizedDescription }
             } else if pending.isEmpty {
+                refreshLookaheadChannels()
                 patchLoading = false; audio.setPatchLoading(false)
             }
         }
@@ -1084,7 +1086,7 @@ final class PerformanceStore: ObservableObject {
                     }) { [weak self] success in
                         guard let self, self.patchLoadGeneration == generation, self.patch.id == patchID else { return }
                         pending.remove(i)
-                        if !success { rejected = true }
+                        if !success { rejected = true } else { self.refreshLookaheadChannels() }
                         finish()
                     }
                     if !accepted { rejected = true }
@@ -1572,6 +1574,13 @@ final class PerformanceStore: ObservableObject {
         }
     }
     private var configuredPrograms: [Int:MIDIProgram] = [:]
+    /// Recompute lookahead eligibility from the live rack. Only call once the
+    /// instrument assignment has settled: a completed commit, a finished
+    /// activation install, or a drained activation. Reading it mid-configuration
+    /// answers for the outgoing instrument.
+    private func refreshLookaheadChannels() {
+        midiFX.setLookaheadChannels(Set(patch.layers.indices.filter { audio.canScheduleMIDI(channel: $0) }))
+    }
     private func configureMIDI(_ index: Int, _ layer: Layer) {
         var program = layer.midiProgram ?? MIDIProgram()
         if layer.midiProgram == nil && layer.octaveEffect { program.kind = .easyChord; program.chordIntervals = [0,12] }
@@ -1582,6 +1591,7 @@ final class PerformanceStore: ObservableObject {
             configuredPrograms[index]=program.validated
         }
         midiFX.configure(channel: index, program: program, tempo: performedTempo)
+        refreshLookaheadChannels()
         if let d = layer.midiDestinationID {
             sendMIDI(d, 0xb0 | UInt8(layer.midiOutputChannel), 7, UInt8(layer.muted ? 0 : Int(layer.gain*127)))
             sendMIDI(d, 0xb0 | UInt8(layer.midiOutputChannel), 10, UInt8(max(0,min(127,Int((layer.pan+1)*63.5)))))
