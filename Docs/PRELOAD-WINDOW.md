@@ -81,7 +81,7 @@ out rather than assumed:
   without demand can hang the UI.
 
 Recommendation for the first implementation: (c) for native samplers, falling back to (b)
-when a sound's serialized state is small relative to its sample payload, and no AU hosting
+only when the detached candidate cannot be built safely, and no AU hosting
 (d) until #13's containment evidence exists. Per-entry strategy must be recorded with the
 measurement, not inferred from the sound kind.
 
@@ -89,8 +89,10 @@ measurement, not inferred from the sound kind.
 
 - A monotonically increasing window generation is checked between layers; a superseded window
   stops at the next layer boundary.
-- Candidates are built off the live graph. On cancel or failure they are released through the
-  existing rollback path, never by mutating the live voice.
+- Candidates are built off the live graph. On cancel or failure, release the
+  candidate's own resources and discard any late result whose generation has
+  expired. Cleanup must not invoke live rollback, stop the engine or touch the
+  active voice.
 - A warm entry that fails to load is dropped and reported; the active patch, its saved bytes
   and its audible audio are unchanged. A warm failure may never fail the active patch.
 - Run blocking resource preparation in a bounded worker with one in-flight job.
@@ -121,7 +123,10 @@ implementation will be held to:
    content and no vendor samples.
 2. **Instrumentation** — `os_signpost` intervals around window construction; `phys_footprint`
    from `task_info(TASK_VM_INFO)` before and after a window is built; activation latency
-   measured from patch selection to first rendered block, with and without a warm entry,
+   measured from patch selection to the first rendered block containing a
+   distinct test note from the selected patch, with and without a warm entry.
+   Issue the note once the selected patch is ready and unmuted. Previous-patch
+   audio and muted loading blocks do not satisfy the marker. Measure
    20 runs each, median and p95. Measure process CPU and render deadline misses
    against the same active performance with preloading off. Report both
    active warming and steady state with the window resident.
@@ -142,8 +147,12 @@ claim.
 Settled for the first implementation slice.
 
 - **D-P1 — hold strategy: (c), detached native voice graphs.** A native sampler sound is
-  instantiated and wired into a complete voice off the live graph, reusing the existing
-  install path, and attached on activation. Hosted AUs are never warmed (see D-P2).
+  instantiated and wired into a complete voice off the live graph. On activation,
+  validate patch identity and adopt the prepared sampler and processing nodes
+  as one candidate. If reconnection reinitializes the sampler and requires a
+  document reload, treat the attempt as a cold activation and record it as such.
+  Claim warm adoption only when the retained sampler renders without a reload.
+  Hosted AUs are never warmed (see D-P2).
   Strategy (b) survives only as a fallback for a candidate that cannot be built safely; the
   fallback is decided per sound and recorded on the entry, because one sound's serialized
   state is what decides whether the cheaper form is enough. Validation-only (a) stays
