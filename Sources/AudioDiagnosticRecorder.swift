@@ -126,7 +126,10 @@ final class SoundMeterBank {
     }
 
     private func install(_ mixer: AVAudioMixerNode, channel: Int) {
-        guard !tapped.contains(channel) else { return }
+        // AVAudioEngine raises when a tap is installed on a node that is not
+        // attached to an engine. Leave the channel untracked so a later
+        // `attach` can install once the node is part of the graph.
+        guard !tapped.contains(channel), mixer.engine != nil else { return }
         let meter = meters[channel] ?? OutputMeter()
         meters[channel] = meter
         mixer.installTap(onBus: 0, bufferSize: 512, format: nil) { buffer, _ in
@@ -137,6 +140,10 @@ final class SoundMeterBank {
 
     private func removeTap(_ mixer: AVAudioMixerNode, channel: Int) {
         guard tapped.remove(channel) != nil else { return }
+        // Removing a tap from a node the graph already detached throws
+        // `NULL != engine`; a detached node is not rendering, so nothing is left
+        // to remove.
+        guard mixer.engine != nil else { return }
         mixer.removeTap(onBus: 0)
     }
 

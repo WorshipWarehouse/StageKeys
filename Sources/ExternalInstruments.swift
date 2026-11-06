@@ -944,6 +944,10 @@ final class ExternalInstrumentRack {
     }
     private func restoreGraph(_ snapshot: Rollback, samplers: [(AVAudioUnitSampler, [String: Any])], states: [(AVAudioUnit, [String: Any])], wasRunning: Bool) throws {
         engine.stop()
+        // A failed edit may have attached the bank to a candidate mixer that is
+        // about to be discarded. Reconcile before detaching nodes: AVAudioEngine
+        // refuses to remove a tap from a node that has already left the graph.
+        soundMeters.detachAll()
         let oldIDs = Set(snapshot.nodes.map(ObjectIdentifier.init))
         let oldTailIDs = Set(snapshot.tails.map(ObjectIdentifier.init))
         for tail in retiredTails where !oldTailIDs.contains(ObjectIdentifier(tail)) { tail.muteWorkItem?.cancel() }
@@ -954,9 +958,6 @@ final class ExternalInstrumentRack {
         for route in snapshot.routes { engine.connect(route.node, to: route.points, fromBus: route.bus, format: route.format) }
         voices = snapshot.voices; controllerValues = snapshot.controllers; noteIntents = snapshot.notes
         retiredTails = snapshot.tails
-        // A failed edit may have attached the bank to a candidate mixer that is
-        // about to be discarded. Reconcile by channel with the restored voices.
-        soundMeters.detachAll()
         for (channel, voice) in snapshot.voices {
             soundMeters.attach(voice.meterMixer, channel: channel)
         }
