@@ -28,6 +28,13 @@ import Foundation
         let invalidRate = MIDIAudioTimeline(sampleRate: 0, anchorSample: 10, anchorTime: 2)
         assert(invalidRate.sampleTime(for: 3) == 10)
 
+        let upper = MIDIAudioTimeline(sampleRate: 48_000, anchorSample: .max, anchorTime: 0)
+        assert(upper.sampleTime(for: 1) == Int64.max)
+        assert(upper.offsetFrames(for: 1) == 48_000)
+        let lower = MIDIAudioTimeline(sampleRate: 48_000, anchorSample: .min, anchorTime: 0)
+        assert(lower.sampleTime(for: -1) == Int64.min)
+        assert(lower.offsetFrames(for: -1) == -48_000)
+
         print("PASS: deadline to sample time at 44.1/48/96 kHz, rounding, past deadlines, invalid input and deliverability")
     }
 }

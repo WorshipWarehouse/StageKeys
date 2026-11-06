@@ -570,7 +570,12 @@ static void commands(SKSynth *s) {
   else if(c.kind==12)s->preGain[c.layer]=c.value;
   else if(c.kind==13){s->cutoff[c.layer]=c.value;coefficients(&s->filter[c.layer],s->rate,c.value,c.a,0,0);}
   else if(c.kind==14)equalizer(&s->eq[c.layer][c.key],s->rate,c.key,c.value,c.a,c.b);
-  else if(c.kind==15){int l=c.layer;s->compressEnabled[l]=c.key;s->threshold[l]=c.value;s->ratio[l]=c.seconds;s->compAttack[l]=exp(-1/(s->rate*c.a));s->compRelease[l]=exp(-1/(s->rate*c.b));s->makeup[l]=c.d;}
+  else if(c.kind==15){int l=c.layer,wasEnabled=s->compressEnabled[l];s->compressEnabled[l]=c.key;s->threshold[l]=c.value;s->ratio[l]=c.seconds;s->compAttack[l]=exp(-1/(s->rate*c.a));s->compRelease[l]=exp(-1/(s->rate*c.b));s->makeup[l]=c.d;
+   // Bypass must not store gain reduction. A compressor switched off and back
+   // on otherwise starts from the last captured level and ducks the first notes
+   // for the whole release time.
+   if(!c.key||!wasEnabled)s->detector[l]=0;
+  }
   else if(c.kind==22){for(int i=0;i<VOICES;i++)if(s->voices[i].layer==c.layer){s->voices[i].held=0;s->voices[i].releasing=1;}}
   else if(c.kind==18){int l=c.layer;for(int i=0;i<VOICES;i++)if(s->voices[i].layer==l)s->voices[i].active=0;for(int dk=0;dk<3;dk++)clear_delay(s,l,dk);memset(s->tone[l],0,sizeof(s->tone[l]));s->filter[l].z1=s->filter[l].z2=s->detector[l]=0;for(int k=0;k<3;k++){EffectState*e=&s->effect[l][k];memset(e->z,0,sizeof(e->z));memset(&e->reverb,0,sizeof(e->reverb));e->shiftPhase=e->stereo=0;s->delayPosition[l][k]=0;s->fxPhase[l][k]=0;for(int b=0;b<8;b++)e->eq[b].z1=e->eq[b].z2=0;}for(int b=0;b<8;b++)s->eq[l][b].z1=s->eq[l][b].z2=0;}
   else if(c.kind==16){for(int i=0;i<VOICES;i++)if(s->voices[i].active&&s->voices[i].layer==c.layer&&s->voices[i].key==c.key){s->voices[i].held=0;if(c.instrument||!s->sustain||s->blockSustain[c.layer])s->voices[i].releasing=1;}}
@@ -674,7 +679,11 @@ void sk_render(SKSynth *s,float *left,float *right,uint32_t frames){
    // compressor therefore detects the source level, not an EQ boost or a
    // Mod-Filtered signal.
    float x=bus[l]*s->preGain[l];
-   if(s->compressEnabled[l]){float dry=x;x*=s->compressorInput[l];float level=fabsf(x),c=level>s->detector[l]?s->compAttack[l]:s->compRelease[l];s->detector[l]=c*s->detector[l]+(1-c)*level;float db=20*log10f(fmaxf(1e-9,s->detector[l]));float reduction=fmaxf(0,db-s->threshold[l])*(1-1/s->ratio[l]);x*=powf(10,-reduction/20);x=(dry*(1-s->compressorWet[l])+x*s->compressorWet[l])*powf(10,s->makeup[l]/20);}
+   if(s->compressEnabled[l]){
+    // Input gain and makeup belong to the compressed path, so the dry/wet mix
+    // keeps a true bypass at 0%: neither gain may lift the unprocessed signal.
+    float dry=x,wet=x*s->compressorInput[l];float level=fabsf(wet),c=level>s->detector[l]?s->compAttack[l]:s->compRelease[l];s->detector[l]=c*s->detector[l]+(1-c)*level;float db=20*log10f(fmaxf(1e-9,s->detector[l]));float reduction=fmaxf(0,db-s->threshold[l])*(1-1/s->ratio[l]);wet*=powf(10,-reduction/20)*powf(10,s->makeup[l]/20);x=dry+(wet-dry)*s->compressorWet[l];
+   }
    if(s->cutoff[l]<20000)x=process(&s->filter[l],x);
    for(int band=0;band<8;band++)x=process(&s->eq[l][band],x);
 
