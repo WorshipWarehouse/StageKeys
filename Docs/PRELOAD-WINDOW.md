@@ -1,7 +1,8 @@
 # Bounded patch preload window — design and measurement plan
 
-Status: **proposed, not implemented.** Nothing in this document ships behaviour, sets a
-budget, or asserts a measured improvement. It exists so the code that follows can be audited
+Status: **decisions settled, not implemented.** The hold strategy, window shape and hard
+capacity bound below are decided; the byte ceiling is not, because it needs the measurements
+this document describes. Nothing here ships behaviour or asserts a measured improvement. It exists so the code that follows can be audited
 against a stated contract instead of being reverse-engineered from a settings toggle.
 
 Issue [#109](https://github.com/WorshipWarehouse/StageKeys/issues/109) asks for bounded
@@ -126,14 +127,34 @@ implementation will be held to:
 Until those numbers exist, the settings stay at 0 (off) and the feature makes no performance
 claim.
 
-## Decisions needed
+## Decisions
 
-- **D-P1** — hold strategy (b), (c) or (d) for native samplers, and whether the fallback is
-  per sound or per patch.
-- **D-P2** — whether hosted AUs may ever be warmed ahead of demand, or only after #13.
-- **D-P3** — clamp at setlist edges (proposed) versus wrapping past the ends.
-- **D-P4** — the memory ceiling and per-entry budget from the measurements above.
-- **D-P5** — whether the UI exposes the two counts separately or as a single "preload depth".
+Settled for the first implementation slice.
+
+- **D-P1 — hold strategy: (c), detached native voice graphs.** A native sampler sound is
+  instantiated and wired into a complete voice off the live graph, reusing the existing
+  install path, and attached on activation. Hosted AUs are never warmed (see D-P2).
+  Strategy (b) survives only as a fallback for a candidate that cannot be built safely; the
+  fallback is decided per sound and recorded on the entry, because one sound's serialized
+  state is what decides whether the cheaper form is enough. Validation-only (a) stays
+  rejected: it would be a control claiming work it does not do.
+- **D-P2 — no AU warming before #13.** A blocked main queue cannot be contained by a timeout,
+  so hosting a third-party component ahead of demand can hang the UI. Revisit only with that
+  issue's containment evidence.
+- **D-P3 — clamp, do not wrap.** At the first patch the window preloads forward only. Wrapping
+  would warm a patch the player may never reach and would make the window depend on setlist
+  length rather than distance.
+- **D-P4 — count-bounded now, byte-bounded after measurement.** The hard bound is capacity:
+  at most 4 per direction and 8 warm entries in total, which no settings file or code path can
+  exceed. The byte ceiling is one constant, `preloadMemoryCeilingBytes`, left unset until the
+  harness below produces numbers; once set, entries are evicted farthest-first, then
+  next-before-previous, until it holds. No MB figure is claimed before that measurement, and
+  the feature ships off by default (0/0).
+- **D-P5 — two separate counts.** Previous and next remain separate 0...4 values rather than a
+  combined depth control, because the need differs by direction within a set.
+
+Still open: the byte-ceiling value (blocked on measurement), whether the (b) fallback is
+permitted in a release build or debug-only, and the hardware matrix.
 
 ## Not covered here
 
