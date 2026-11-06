@@ -122,6 +122,7 @@ import Foundation
 
         let root = URL(fileURLWithPath: ProcessInfo.processInfo.environment["STAGEKEYS_DATA_DIR"]!)
         let file = root.appendingPathComponent("Portable Transposition.stagekeyssetlist")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         try SetlistShare.write(source, to: file)
         let package = try SetlistShare.read(file)
         let link = try SetlistShareLink.url(for: package)
