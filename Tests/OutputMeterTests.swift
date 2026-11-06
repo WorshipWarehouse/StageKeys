@@ -11,6 +11,12 @@ import AVFoundation
         assert(reading.peak==1 && reading.frames==4 && reading.overload==2 && reading.invalid==0)
         assert(abs(reading.rms-sqrt(2.625/8))<1e-6)
         for i in 0..<4{assert(buffer.floatChannelData![0][i]==l[i] && buffer.floatChannelData![1][i]==r[i])}
+        var warnings=MeterWarningState();var warningReading=OutputMeter.Reading()
+        warnings.update(warningReading);assert(!warnings.invalid && !warnings.overload)
+        warningReading.invalid=1;warnings.update(warningReading);assert(warnings.invalid && !warnings.overload)
+        warningReading.frames=1;warnings.update(warningReading);assert(!warnings.invalid)
+        warningReading.overload=1;warnings.update(warningReading);assert(warnings.overload)
+        warnings.update(nil);assert(!warnings.invalid && !warnings.overload)
         buffer.floatChannelData![0][0] = .nan;buffer.floatChannelData![1][0] = .infinity
         meter.append(buffer);assert(meter.read().invalid==2 && meter.read().rms.isFinite)
         let audio=AudioController();try audio.prepareOffline();defer{audio.stop()}

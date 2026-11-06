@@ -108,9 +108,9 @@ struct SoundModule: View {
             }
             Divider().opacity(0.2)
             if layer.loaded {
-                if store.showSoundMeters && store.started {
+                if store.showSoundMeters && store.started && layer.external != nil {
                     TimelineView(.periodic(from: .now, by: 0.1)) { _ in
-                        SoundLevelMeter(reading: store.soundMeter(index), color: layer.muted ? .gray : color, label: "Sound \(index+1) output level")
+                        SoundLevelMeter(reading: store.soundMeter(index), color: layer.muted ? .gray : color, label: "Sound \(index+1) external output level")
                     }.frame(height: 6).padding(.horizontal, 2)
                 }
                 if !store.notesMode {
@@ -172,6 +172,7 @@ struct SoundLevelMeter: View {
     let reading: OutputMeter.Reading?
     let color: Color
     let label: String
+    @State private var warnings = MeterWarningState()
     private func fraction(_ db: Float) -> CGFloat {
         CGFloat(max(0, min(1, (db + 60) / 60)))
     }
@@ -180,14 +181,17 @@ struct SoundLevelMeter: View {
             ZStack(alignment: .leading) {
                 Capsule().fill(Color.black.opacity(0.35))
                 if let reading {
-                    Capsule().fill(reading.invalid > 0 ? Color.red : reading.overload > 0 ? Color.orange : color)
+                    Capsule().fill(warnings.invalid ? Color.red : warnings.overload ? Color.orange : color)
                         .frame(width: max(1, geometry.size.width * fraction(reading.peakDB)))
                 }
             }
         }.frame(height: 6)
+        .onAppear { warnings.update(reading) }
+        .onChange(of: reading) { newValue in warnings.update(newValue) }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(label)
-        .accessibilityValue(reading.map { "\(Int($0.peakDB.rounded())) dBFS sample peak" } ?? "No signal")
+        .accessibilityValue((reading.map { "\(Int($0.peakDB.rounded())) dBFS sample peak" } ?? "No signal") +
+            (warnings.invalid ? " · invalid input" : warnings.overload ? " · overload" : ""))
     }
 }
 enum PianoGeometry {

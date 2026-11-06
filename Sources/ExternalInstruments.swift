@@ -954,6 +954,12 @@ final class ExternalInstrumentRack {
         for route in snapshot.routes { engine.connect(route.node, to: route.points, fromBus: route.bus, format: route.format) }
         voices = snapshot.voices; controllerValues = snapshot.controllers; noteIntents = snapshot.notes
         retiredTails = snapshot.tails
+        // A failed edit may have attached the bank to a candidate mixer that is
+        // about to be discarded. Reconcile by channel with the restored voices.
+        soundMeters.detachAll()
+        for (channel, voice) in snapshot.voices {
+            soundMeters.attach(voice.meterMixer, channel: channel)
+        }
         for (index, tail) in retiredTails.enumerated() {
             let newerPanic = tailPanicGenerations.indices.contains(tail.channel) &&
                 tailPanicGenerations[tail.channel] != snapshot.tailPanicGenerations[tail.channel]

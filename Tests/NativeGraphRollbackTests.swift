@@ -5,6 +5,7 @@ import AVFoundation
     static func main() throws {
         let store = PerformanceStore()
         store.setlist = TestFixtures.setlist()
+        store.showSoundMeters = true
         try store.audio.prepareOffline()
         store.start()
         defer { store.stopAudio() }
@@ -39,6 +40,7 @@ import AVFoundation
         rack.noteOn(channel: 0, key: 64, pitch: 64, velocity: 0.5, sourceID: 42)
         rack.noteOff(channel: 0, key: 64)
         assert(rack.debugNoteIntentCount(0) == 2 && (try! energy()) > 0.01)
+        assert((store.audio.soundMeter(0)?.frames ?? 0) > 0, "An enabled meter must receive the active voice")
         for attempt in 0..<6 {
             var starts = 0
             rack.debugGraphFault = { point in
@@ -55,6 +57,7 @@ import AVFoundation
             assert(store.patch.layers[0] == oldLayer && (try! Data(contentsOf: document)) == saved)
             assert(rack.debugOwnedNodeCount == nodeCount && rack.debugRetiredTailCount == tailCount, "Failed candidates must not accumulate nodes/tails, attempt \(attempt)")
             assert(rack.debugNoteIntentCount(0) == 2 && (try! energy()) > 0.01, "Rollback must replay held and pedal-released native notes")
+            assert((store.audio.soundMeter(0)?.frames ?? 0) > 0, "Rollback must reattach the meter bank to the restored voice, attempt \(attempt)")
             let report = store.audio.lastChangeFailure!.lastGraphFailure!
             assert(report.restart?.code == 801 && report.rollbackSucceeded == true && report.rollback == nil)
         }

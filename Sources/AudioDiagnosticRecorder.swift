@@ -40,7 +40,7 @@ struct SupportDiagnostics: Codable {
 }
 
 final class OutputMeter {
-    struct Reading {
+    struct Reading: Equatable {
         var peak:Float=0,rms:Float=0
         var frames:UInt64=0,invalid:UInt64=0,overload:UInt64=0
         var peakDB:Float {peak>0 ? 20*log10(peak): -120}
@@ -56,6 +56,27 @@ final class OutputMeter {
     }
     deinit{sk_output_meter_destroy(meter)}
 
+}
+
+/// Tracks counter increases between refreshes. The C meter counters are
+/// cumulative, so reading the absolute values would leave a warning color on
+/// screen after clean audio resumes.
+struct MeterWarningState {
+    private var lastInvalid: UInt64 = 0
+    private var lastOverload: UInt64 = 0
+    private(set) var invalid = false
+    private(set) var overload = false
+
+    mutating func update(_ reading: OutputMeter.Reading?) {
+        guard let reading else {
+            lastInvalid = 0; lastOverload = 0; invalid = false; overload = false
+            return
+        }
+        invalid = reading.invalid > lastInvalid
+        overload = reading.overload > lastOverload
+        lastInvalid = reading.invalid
+        lastOverload = reading.overload
+    }
 }
 
 /// Optional per-channel taps. Installation and removal run on the main queue;
