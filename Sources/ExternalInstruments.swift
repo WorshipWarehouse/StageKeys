@@ -1262,6 +1262,12 @@ final class ExternalInstrumentRack {
         var bytes = [status, data1, data2]
         bytes.withUnsafeMutableBufferPointer { block(AUEventSampleTimeImmediate, 0, 3, $0.baseAddress!) }
     }
+    /// A hosted AU that accepts sample-timed MIDI and has no immediate parallel
+    /// branches can receive lookahead-scheduled notes.
+    func canSchedule(channel: Int) -> Bool {
+        guard let voice = voices[channel], voice.parallel.isEmpty else { return false }
+        return voice.unit.auAudioUnit.scheduleMIDIEventBlock != nil
+    }
     func noteOn(channel: Int, key: Int, pitch: Int, velocity: Float,sourceID:Int32? = nil,sampleTime:Int64? = nil) {
         precondition(Thread.isMainThread)
         guard (0...127).contains(pitch), velocity.isFinite, voices[channel] != nil else { return }

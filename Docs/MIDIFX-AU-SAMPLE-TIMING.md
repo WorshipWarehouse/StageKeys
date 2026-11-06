@@ -65,12 +65,7 @@ instrument AU, and it has not been run.
 
 ## Limits and risks
 
-- **The timer still fires at the deadline, not ahead of it.** Most generated
-  events therefore arrive with little or no lead and take the immediate
-  fallback; the scheduled path only helps when the tick lands early relative to
-  the render boundary. Reliable sample-accurate delivery needs scheduler
-  lookahead (emit events due within a horizon before they are due), which is not
-  implemented here. Do not read this draft as sample-accurate.
+- **Lookahead now exists but is off by default** ([MIDIFX-LOOKAHEAD.md](MIDIFX-LOOKAHEAD.md)). Without it, events arrive at or after their deadline and take the immediate fallback. Enabling it would also feed immediate consumers (external MIDI, `startNote`, AUs without a schedule block) up to one horizon early, so it waits until this path is verified. Do not read this draft as sample-accurate.
 - `AUEventSampleTime` is interpreted in the AU's render timeline; the wiring
   assumes that timeline matches `engine.outputNode.lastRenderTime`. Resampling
   nodes, per-AU timelines, or an engine that has not started may violate that.
