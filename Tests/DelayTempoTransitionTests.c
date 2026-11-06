@@ -60,8 +60,8 @@ int main(void) {
                 const double step = fabs((double)l[i] - previous);
                 previous = l[i];
                 if (m >= rate * 0.60 && m < rate * 0.98) steady = fmax(steady, step);
-                else if (m >= rate * 1.00 && m < rate * 1.04) tempoStep = fmax(tempoStep, step);
-                else if (m >= rate * 1.30 && m < rate * 1.34) subdivisionStep = fmax(subdivisionStep, step);
+                else if (m >= tempoBlock * block && m < rate * 1.04) tempoStep = fmax(tempoStep, step);
+                else if (m >= subdivisionBlock * block && m < rate * 1.34) subdivisionStep = fmax(subdivisionStep, step);
                 else if (m >= rate * 1.50 && m < rate * 1.70) settled = fmax(settled, step);
                 peak = fmax(peak, fabs((double)l[i]));
             }
