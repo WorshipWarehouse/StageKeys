@@ -257,9 +257,10 @@ struct SetlistBrowser: View {
                 Picker("Sort Setlists", selection: $order) {
                     ForEach(SetlistBrowserOrder.allCases) { Text($0.title).tag($0) }
                 }.labelsHidden().pickerStyle(.menu).frame(width:170).accessibilityLabel("Sort Setlists")
-                Button("Clear History") { store.clearRecentSetlists() }
+                Button { store.clearRecentSetlists() } label: { Image(systemName:"clock.arrow.circlepath").frame(width:18) }
                     .buttonStyle(StageButtonStyle())
                     .disabled(store.recentSetlistIDs.isEmpty)
+                    .help("Forget the recently opened order; no setlist is deleted")
                     .accessibilityLabel("Clear Recently Opened History")
                 Menu("Import / Export") {
                     Button("Import Setlist…") { dismiss(); DispatchQueue.main.asyncAfter(deadline:.now()+0.4) { importing=true } }
