@@ -8,7 +8,7 @@ This record covers the clean-install portion of [#114](https://github.com/Worshi
 
 1. **Installation A** saves a generated setlist, writes its own library ratings, and exports the saved copy as a portable package.
 2. **Installation B** starts with no setlist library and no ratings file. It previews and imports the package with **Save to Library**, then is reopened from disk to prove the copy persists.
-3. The check compares patch, layer and snapshot identities, effect values, sampler notes and the Tonic Pad reference against the source. It also asserts that importing did not invent ratings in B.
+3. The check compares patch, layer and snapshot identities, effect values, sampler notes and the Tonic Pad reference against the exported package. It also asserts that importing did not invent ratings in B.
 4. **Installation B** writes its own ratings and re-exports its saved copy.
 5. **Installation A** imports that return copy as a second, independent document. The original document's bytes and A's ratings must be unchanged, B's ratings must be unchanged, and the return copy must receive new identities because A already holds the authored ones.
 
@@ -19,7 +19,7 @@ This stands in for the file-level half of a clean Mac/iPad install. It uses gene
 On macOS with Xcode command-line tools:
 
 ```
-python3 Tests/run-local-library.py . /private/tmp/stagekeys-roundtrip
+python3 Tests/run-local-library.py . /private/tmp/stagekeys-roundtrip SetlistShareTests
 ```
 
 `SetlistShareTests` is part of the default library gate, so `Tests/test-library.sh` and hosted CI run the same checks. The test prints a single `PASS setlist sharing: …` line that names the two-root round trip.

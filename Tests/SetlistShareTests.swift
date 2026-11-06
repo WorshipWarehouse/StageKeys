@@ -167,9 +167,9 @@ import Foundation
         let installAOriginalBytes = try Data(contentsOf: installARecord)
 
         let firstPackage = try SetlistShare.make(try installA.load(id: installADescriptor.id))
-        let secondPlan = try SetlistShare.preview(firstPackage, library: installB)
-        assert(secondPlan.collisions.isEmpty && secondPlan.canActivate)
-        let installBID = try SetlistShare.saveToLibrary(secondPlan, library: installB)
+        let installBPlan = try SetlistShare.preview(firstPackage, library: installB)
+        assert(installBPlan.collisions.isEmpty && installBPlan.canActivate)
+        let installBID = try SetlistShare.saveToLibrary(installBPlan, library: installB)
         let installBCopy = try installB.load(id: installBID)
         assert(installBCopy.patches.map(\.id) == source.patches.map(\.id))
         assert(installBCopy.patches[0].layers.map(\.id) == source.patches[0].layers.map(\.id))
@@ -192,6 +192,13 @@ import Foundation
         assert(!returnPlan.collisions.isEmpty)
         let returnID = try SetlistShare.saveToLibrary(returnPlan, library: installA)
         assert(returnID != installADescriptor.id)
+        let returned = try installA.load(id: returnID)
+        assert(returned.patches.count == source.patches.count)
+        for (original, copy) in zip(source.patches, returned.patches) {
+            assert(copy.id != original.id)
+            assert(Set(copy.layers.map(\.id)).isDisjoint(with: original.layers.map(\.id)))
+            assert(Set(copy.snapshots.map(\.id)).isDisjoint(with: original.snapshots.map(\.id)))
+        }
         let installAOriginalAfter = try installA.load(id: installADescriptor.id)
         assert(installAOriginalAfter.name == source.name)
         assert(installAOriginalAfter.patches.map(\.id) == source.patches.map(\.id))
