@@ -175,8 +175,10 @@ import Foundation
         assert(installBCopy.patches[0].layers.map(\.id) == source.patches[0].layers.map(\.id))
         assert(installBCopy.patches[0].snapshots.map(\.id) == source.patches[0].snapshots.map(\.id))
         assert(installBCopy.patches[0].layers[0].effects == source.patches[0].layers[0].effects)
+        // Export redacts local paths, so compare the installed copy with the
+        // package content rather than the authored source notes.
         assert(installBCopy.patches[0].layers[0].external?.nativeSampler?.notes ==
-               source.patches[0].layers[0].external?.nativeSampler?.notes)
+               firstPackage.content.setlist.patches[0].layers[0].external?.nativeSampler?.notes)
         assert(installBCopy.patches[0].tonicState?.sound?.fileName ==
                source.patches[0].tonicState?.sound?.fileName)
         let installBRatingsFile = installBRoot.appendingPathComponent("sound-ratings.json")
