@@ -7,7 +7,7 @@ import AVFoundation
 /// and discard; they say nothing about measured load time or memory.
 @main struct PreloadWarmVoiceTests {
     static func main() throws {
-        let scratch = URL(fileURLWithPath: CommandLine.arguments[1])
+        let scratch = URL(fileURLWithPath: ProcessInfo.processInfo.environment["STAGEKEYS_DATA_DIR"]!)
         try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
         let library = scratch.appendingPathComponent("library")
         let engine = AVAudioEngine()
