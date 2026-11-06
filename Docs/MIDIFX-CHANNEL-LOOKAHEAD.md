@@ -20,8 +20,9 @@ dispatch and never receive a note early.
 - `ExternalInstrumentRack.canSchedule(channel:)` requires a unit with
   `scheduleMIDIEventBlock` and no parallel imported branches.
   `AudioController.canScheduleMIDI(channel:)` additionally requires an external
-  sound. `Store` recomputes the marked set through one helper,
-  `refreshLookaheadChannels()`, once the rack has settled (see below).
+  sound and refuses a channel whose replacement is pending. `Store` recomputes
+  the marked set through one helper, `refreshLookaheadChannels()`, once the rack
+  has settled (see below).
 
 ## Refresh ordering
 
@@ -34,6 +35,12 @@ it runs:
   is where an asynchronous AU load assigns `externalSounds`;
 - once the activation's pending set drains, which covers patch switch, layer
   move and layer reorder after all installs have reported.
+
+A rejected install or a retirement reports through
+`AudioController.onLookaheadEligibilityLost`, which calls
+`MIDIFXProcessor.clearLookaheadChannel(_:)` for that channel alone. The rest of
+the set stays as it was, so one failed plug-in does not cost every other
+channel its horizon.
 
 ## Verified
 
@@ -48,11 +55,12 @@ Linux, Swift 6.0.3, assertions enabled (`-DDEBUG`, no `-O`):
 
 ## Limits
 
-- The refresh runs when an install *reports*. A rejected replacement keeps the
-  outgoing unit resident, so the marked set can briefly describe the sound that
-  is still playing, and a channel removed outside a configure call is not
-  re-read. The next configure corrects both. Review this on macOS; none of it is
-  exercised by the Linux tests.
+- If a rejected replacement leaves the previous unit resident and usable, the
+  channel keeps its mark on purpose, because that unit is still what sounds.
+  Only a failed rollback or a retirement clears it. A retirement outside
+  `AudioController` is corrected by the next configure.
+- None of the audio-layer paths are exercised by the Linux tests; review them on
+  macOS.
 - A marked channel's parallel branches can still be immediate, which is why
   `canSchedule` refuses channels with parallel branches.
 - The AVFoundation calls remain unbuilt and unrun here; no macOS build, AU run,

@@ -702,6 +702,7 @@ final class PerformanceStore: ObservableObject {
             self?.refreshBlockedAudioUnits(includeCatalog: false)
         }
         audio.onGraphUnavailable = { [weak self] diagnostic in self?.handleGraphUnavailable(diagnostic) }
+        audio.onLookaheadEligibilityLost = { [weak self] channel in self?.midiFX.clearLookaheadChannel(channel) }
         do { midiOutput = try ExternalMIDIOutput() } catch { message = error.localizedDescription }
         midiOutput?.onChange = { [weak self] in self?.refreshMIDIDestinations() }
         midiDestinations = midiOutput?.destinations ?? []
