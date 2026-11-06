@@ -205,6 +205,32 @@ final class PerformanceStore: ObservableObject {
         didSet { if !keyboardPlayable { releaseScreenNotes() } }
     }
     @Published var showPlayedNotes = true
+    /// Bounded previous/next preload counts (#109). These values only bound a
+    /// window right now: no warm audio is built, so they change no playback,
+    /// disk access or graph work.
+    @Published var preloadPrevious = 0 { didSet { if oldValue != preloadPrevious { refreshPreloadWindow() } } }
+    @Published var preloadNext = 0 { didSet { if oldValue != preloadNext { refreshPreloadWindow() } } }
+    /// Patch indices the current counts cover; empty when both counts are 0.
+    @Published private(set) var preloadWindow: [Int] = []
+    /// Nearest-first, clamped at the setlist edges, previous before next at the
+    /// same distance, and never containing the active patch. Pure: no disk
+    /// access, no graph edit and no render-thread work.
+    func preloadWindowIndices(around index: Int, previous: Int? = nil, next: Int? = nil) -> [Int] {
+        let count = setlist.patches.count
+        guard count > 1, (0..<count).contains(index) else { return [] }
+        let before = min(max(0, previous ?? preloadPrevious), SessionSettings.preloadLimitPerDirection)
+        let after = min(max(0, next ?? preloadNext), SessionSettings.preloadLimitPerDirection)
+        var window: [Int] = []
+        for distance in 1...max(before, after, 1) {
+            if distance <= before, index - distance >= 0 { window.append(index - distance) }
+            if distance <= after, index + distance < count { window.append(index + distance) }
+            if distance >= before && distance >= after { break }
+        }
+        return window
+    }
+    /// Eviction is by construction: the window is recomputed from the counts, so
+    /// an index that leaves it stops being covered at the next selection.
+    func refreshPreloadWindow() { preloadWindow = preloadWindowIndices(around: selected) }
     @Published var keyboardBase = 48
     @Published var metronome = false { didSet { applyMetronome() } }
     @Published var metronomeSettings = MetronomeSettings() { didSet { applyMetronome() } }
@@ -685,6 +711,8 @@ final class PerformanceStore: ObservableObject {
             keyboardPlayable = settings.keyboardPlayable ?? true
             showPlayedNotes = settings.showPlayedNotes ?? true
             dynamicMIDIRanges = settings.dynamicMIDIRanges ?? false
+            preloadPrevious = settings.preloadPrevious ?? 0
+            preloadNext = settings.preloadNext ?? 0
             tonicVelocitySelector=settings.tonicVelocitySelector ?? false;tonicTimbre=settings.tonicTimbre ?? 0;tonicLastRoot=settings.tonicLastRoot ?? 0;tonicSound=settings.tonicSound
             tonicGain = settings.tonicGain; tonicBrightness = settings.tonicBrightness; tonicShimmer = settings.tonicShimmer
         }
@@ -1015,7 +1043,7 @@ final class PerformanceStore: ObservableObject {
             do { try preparePatchActivation(setlist.patches[index]) }
             catch { message = error.localizedDescription; return }
         }
-        cancelAudition(); cancelTransition(); panic(preserveTonic:true,preserveEffectTails:!setlist.patches[index].silencePrevious); capturePluginStates(); selected = index; activeSnapshot = nil
+        cancelAudition(); cancelTransition(); panic(preserveTonic:true,preserveEffectTails:!setlist.patches[index].silencePrevious); capturePluginStates(); selected = index; activeSnapshot = nil; refreshPreloadWindow()
         if patch.silencePrevious { panic(preserveTonic:true) }
         if patch.visualMode != 0 { notesMode = patch.visualMode == 2 }
         // A locked patch recalls its own tempo without overwriting the shared
@@ -2147,7 +2175,7 @@ final class PerformanceStore: ObservableObject {
             try RecoverableSessionFile.write(data, to: saveURL) { _ = try JSONDecoder().decode(Setlist.self, from: $0).upgraded() }
             currentSetlistID = try localSetlistLibrary().save(setlist,id:currentSetlistID).id
             refreshSetlists()
-            let settings = SessionSettings(selectedPatchID:patch.id,activeSnapshotID:activeSnapshot,notesMode:notesMode,modWheel:modWheel,master: master, reverb: reverb, transition: transition, midiChannel: midiChannel, primarySourceID: primarySourceID, secondarySourceID: secondarySourceID, secondaryChannel: secondaryChannel, velocityMinimum: velocityMinimum, velocityMaximum: velocityMaximum, sourceNames: midiSourceNames, disableSilent: disableSilent, showRanges: showRanges, tonicGain: tonicGain, tonicBrightness: tonicBrightness, tonicShimmer: tonicShimmer, audioOutputUID: preferredAudioOutputUID, activeSetlistID: currentSetlistID,tonicSound:tonicSound,tonicVelocitySelector:tonicVelocitySelector,tonicTimbre:tonicTimbre,tonicLastRoot:tonicLastRoot,metronomeEnabled:metronome,audioBufferFrames:preferredBufferFrames.map{Int($0)},metronomeSettings:metronomeSettings,liveTempo:liveTempo,keyboardPlayable:keyboardPlayable,showPlayedNotes:showPlayedNotes,dynamicMIDIRanges:dynamicMIDIRanges)
+            let settings = SessionSettings(selectedPatchID:patch.id,activeSnapshotID:activeSnapshot,notesMode:notesMode,modWheel:modWheel,master: master, reverb: reverb, transition: transition, midiChannel: midiChannel, primarySourceID: primarySourceID, secondarySourceID: secondarySourceID, secondaryChannel: secondaryChannel, velocityMinimum: velocityMinimum, velocityMaximum: velocityMaximum, sourceNames: midiSourceNames, disableSilent: disableSilent, showRanges: showRanges, tonicGain: tonicGain, tonicBrightness: tonicBrightness, tonicShimmer: tonicShimmer, audioOutputUID: preferredAudioOutputUID, activeSetlistID: currentSetlistID,tonicSound:tonicSound,tonicVelocitySelector:tonicVelocitySelector,tonicTimbre:tonicTimbre,tonicLastRoot:tonicLastRoot,metronomeEnabled:metronome,audioBufferFrames:preferredBufferFrames.map{Int($0)},metronomeSettings:metronomeSettings,liveTempo:liveTempo,keyboardPlayable:keyboardPlayable,showPlayedNotes:showPlayedNotes,dynamicMIDIRanges:dynamicMIDIRanges,preloadPrevious:preloadPrevious,preloadNext:preloadNext)
             guard settings.validate() else { throw SetlistError.invalid }
             try RecoverableSessionFile.write(encoder.encode(settings), to: saveURL.deletingLastPathComponent().appendingPathComponent("settings.json")) {
                 guard try JSONDecoder().decode(SessionSettings.self, from: $0).validate() else { throw SetlistError.invalid }
