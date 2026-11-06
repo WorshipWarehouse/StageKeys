@@ -88,9 +88,10 @@ a local header shim supplied the MIDI event types; it is not committed.
 ## Limits
 
 - Only the native delay is covered. The arpeggiator and sequencer keep their
-  MIDI FX scheduling; tempo reaches them through the existing 5 ms dispatch
-  timer, not sample-accurate UI scheduling. See
-  [PATCH-TRANSPOSE-AND-TEMPO.md](PATCH-TRANSPOSE-AND-TEMPO.md).
+  main-thread MIDI FX scheduling; tempo reaches them by rescaling the next
+  deadline, and dispatch arms one-shot timers at those deadlines instead of
+  polling every 5 ms ([MIDIFX-SCHEDULING.md](MIDIFX-SCHEDULING.md)). This is
+  still not sample-accurate UI scheduling.
 - Tremolo is set in Hz, not in beats, so it has no tempo retime to smooth.
 - The imported stereo delay is set in seconds and is unchanged.
 - No listening comparison, macOS/Xcode build, Swift suite or hardware timing
