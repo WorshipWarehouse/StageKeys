@@ -6,6 +6,7 @@ import Foundation
 @main struct MIDIFXTimerTests {
     static func main() {
         deadlineSelection()
+        scheduledTimes()
         pollingQuantization()
         print("PASS: earliest deadline selection, gate/step ordering and polling-grid quantization")
     }
@@ -48,6 +49,41 @@ import Foundation
         q.noteOn(channel: 0, key: 60, pitch: 60, velocity: 1)
         guard let first = q.nextDeadline else { fatalError("Expected a retrigger deadline") }
         assert(abs(first - 0.2) < 1e-9, "The earliest deadline still wins when a retrigger is pending")
+    }
+
+    /// Every emitted event must carry the musical time it belongs to, not the
+    /// dispatch time, so a sample-accurate consumer can still place a late tick
+    /// at the correct offset.
+    static func scheduledTimes() {
+        let p = MIDIFXProcessor(automaticallySchedule: false)
+        var ons: [(Int, TimeInterval)] = []
+        var offs: [(Int, TimeInterval)] = []
+        p.onNoteAt = { _, key, _, _, _, at in ons.append((key, at)) }
+        p.onOffAt = { _, key, _, at in offs.append((key, at)) }
+        var arp = MIDIProgram()
+        arp.kind = .arpeggiator
+        arp.subdivision = 0.5
+        arp.gate = 0.8
+        p.configure(channel: 0, program: arp, tempo: 120)
+        p.noteOn(channel: 0, key: 60, pitch: 60, velocity: 1)
+        assert(ons.count == 1)
+        assert(abs(ons[0].1) < 1e-9, "The first step belongs to note-on time")
+
+        // Dispatch the 0.25 s step 10 ms late; it must still report 0.25 s.
+        p.advance(to: 0.26)
+        assert(ons.count == 2)
+        assert(abs(ons[1].1 - 0.25) < 1e-9, "A late tick keeps the step's musical time")
+        assert(offs.count == 1)
+        assert(abs(offs[0].1 - 0.2) < 1e-9, "The first gate closes at its scheduled time")
+        guard let gate = p.nextDeadline else { fatalError("Expected the late step's gate") }
+        assert(abs(gate - 0.45) < 1e-9, "The late step's gate is measured from 0.25 s")
+
+        // A tick that skips a whole period still reports the due step at 0.5 s.
+        p.advance(to: 0.55)
+        assert(ons.count == 3)
+        assert(abs(ons[2].1 - 0.5) < 1e-9, "A skipped tick reports the due step, not the dispatch time")
+        guard let nextGate = p.nextDeadline else { fatalError("Expected the skipped step's gate") }
+        assert(abs(nextGate - 0.7) < 1e-9)
     }
 
     /// Simulate a 5 ms polling timer versus a timer armed at each deadline. The

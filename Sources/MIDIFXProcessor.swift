@@ -6,6 +6,11 @@ final class MIDIFXProcessor {
     var onNoteWithSource: ((Int,Int,Int,Float,Int32?)->Void)?
     var onNote: ((Int, Int, Int, Float) -> Void)?
     var onOff: ((Int, Int, Bool) -> Void)?
+    /// Same events as `onNote`/`onOff`, plus the musical time they belong to.
+    /// When a tick is dispatched late this stays the scheduled time, so an
+    /// audio-timeline consumer can place the event at its real sample offset.
+    var onNoteAt: ((Int,Int,Int,Float,Int32?,TimeInterval)->Void)?
+    var onOffAt: ((Int,Int,Bool,TimeInterval)->Void)?
     private struct Held { var key: Int; var pitch: Int; var velocity: Float; var sourceID:Int32? }
     private struct Active { var key: Int; var release: TimeInterval; var source: Int; var pitch:Int; var sourceID:Int32? }
     private struct Channel {
@@ -88,10 +93,12 @@ final class MIDIFXProcessor {
         channels[channel] = Channel(program: program.validated)
         armTimer()
     }
-    private func notify(_ channel:Int,_ key:Int,_ pitch:Int,_ velocity:Float,_ source:Int32?){outputPitches[channel,default:[:]][key]=pitch;onNote?(channel,key,pitch,velocity);onNoteWithSource?(channel,key,pitch,velocity,source)}
-    private func release(_ channel: Int, _ key: Int, _ force: Bool) {
+    private func notify(_ channel:Int,_ key:Int,_ pitch:Int,_ velocity:Float,_ source:Int32?,_ at:TimeInterval?=nil){let stamp=at ?? time;outputPitches[channel,default:[:]][key]=pitch;onNote?(channel,key,pitch,velocity);onNoteWithSource?(channel,key,pitch,velocity,source);onNoteAt?(channel,key,pitch,velocity,source,stamp)}
+    private func release(_ channel: Int, _ key: Int, _ force: Bool, _ at: TimeInterval? = nil) {
+        let stamp = at ?? time
         outputPitches[channel]?.removeValue(forKey: key)
         onOff?(channel, key, force)
+        onOffAt?(channel, key, force, stamp)
     }
     /// Main-thread visual snapshot of gated output notes, excluding sustain and
     /// audio-effect tails. Queries never emit MIDI or alter scheduler state.
@@ -110,10 +117,10 @@ final class MIDIFXProcessor {
         generatedKey = generatedKey == Int.min + 1 ? -1 : generatedKey - 1
         return key
     }
-    private func emit(channel: Int, pitch: Int, velocity: Float,sourceID:Int32? = nil) -> Int? {
+    private func emit(channel: Int, pitch: Int, velocity: Float,sourceID:Int32? = nil,at:TimeInterval? = nil) -> Int? {
         guard (0...127).contains(pitch), velocity > 0 else { return nil }
         let key = newKey()
-        notify(channel,key,pitch,min(1,max(0,velocity)),sourceID)
+        notify(channel,key,pitch,min(1,max(0,velocity)),sourceID,at)
         return key
     }
     func noteOn(channel: Int, key: Int, pitch: Int, velocity: Float, sourceID:Int32? = nil) {
@@ -183,7 +190,7 @@ final class MIDIFXProcessor {
         time = now
         for channel in channels.keys.sorted() {
             guard var c = channels[channel] else { continue }
-            for a in c.active where a.release <= now { release(channel, a.key, c.program.releaseGeneratedOnKeyUp != false) }
+            for a in c.active where a.release <= now { release(channel, a.key, c.program.releaseGeneratedOnKeyUp != false, a.release) }
             c.active.removeAll { $0.release <= now }
             if let beat=c.nextRetrigger,beat<=now,let beats=c.program.retriggerBeats {
                 c.index=0;c.next=now;c.began=now;c.nominalBeat=0;c.nextRetrigger=now+60/tempo*beats
@@ -199,6 +206,12 @@ final class MIDIFXProcessor {
                 skipped=Int(min(1_000_000,max(0,floor((beat-c.nominalBeat)/c.program.subdivision+1e-8))))
             } else {skipped=Int(min(1_000_000,max(0,floor((now-next)/period))))}
             if skipped>0 {c.index += skipped;c.nominalBeat += Double(skipped)*c.program.subdivision}
+            // A step keeps its musical time even when the tick is dispatched
+            // late. Clamp to `now` so a stalled clock cannot schedule forward.
+            let stepTime: TimeInterval
+            if c.program.freeRateSeconds == nil, let began=c.began {
+                stepTime = min(now, began + Self.groovedBeat(c.nominalBeat, program: c.program) * 60/tempo)
+            } else { stepTime = min(now, next + Double(skipped) * period) }
             let baseCount=c.program.style == .chord ? 1:max(1,c.held.count*c.program.octaves)
             let cycle=(c.program.style == .upDown || c.program.style == .downUp) && baseCount>2 ? baseCount*2-2:baseCount
             let transposeCycle=max(1,(c.program.transposeSteps ?? 0)+1)
@@ -235,14 +248,14 @@ final class MIDIFXProcessor {
                 let pitch=rawPitch+shift
                 var velocity=rawVelocity
                 if let target=c.program.velocityTarget,let decay=c.program.velocityDecaySeconds {
-                    let fraction=Float(min(1,max(0,(now-(c.velocityBegan ?? now))/decay)))
+                    let fraction=Float(min(1,max(0,(stepTime-(c.velocityBegan ?? stepTime))/decay)))
                     velocity=rawVelocity+(target-rawVelocity)*fraction
                 }
                 // MIDI note-off cannot distinguish overlapping instances of the same pitch.
-                for old in c.active where old.pitch==pitch {release(channel,old.key,c.program.releaseGeneratedOnKeyUp != false)}
+                for old in c.active where old.pitch==pitch {release(channel,old.key,c.program.releaseGeneratedOnKeyUp != false,stepTime)}
                 c.active.removeAll{$0.pitch==pitch}
-                if let key = emit(channel: channel, pitch: pitch, velocity: velocity,sourceID:c.held.first(where:{$0.key==source})?.sourceID) {
-                    c.active.append(Active(key: key, release: now + period * c.program.gate, source: source,pitch:pitch,sourceID:c.held.first(where:{$0.key==source})?.sourceID))
+                if let key = emit(channel: channel, pitch: pitch, velocity: velocity,sourceID:c.held.first(where:{$0.key==source})?.sourceID,at:stepTime) {
+                    c.active.append(Active(key: key, release: stepTime + period * c.program.gate, source: source,pitch:pitch,sourceID:c.held.first(where:{$0.key==source})?.sourceID))
                 }
             }
             c.index += 1;c.nominalBeat += c.program.subdivision
