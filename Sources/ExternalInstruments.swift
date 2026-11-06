@@ -182,6 +182,19 @@ final class ExternalInstrumentRack {
         }
     }
     private var retiredTails:[RetiredTail]=[]
+    /// A chain that is fully built and loaded but has no path to the output.
+    /// `install` adopts it for the selected patch; otherwise it is discarded.
+    private struct WarmVoice {
+        let sound: ExternalSound
+        let attackMinimum: Float
+        let hostVelocityCurve: Int?
+        var voice: Voice
+    }
+    private var warmVoices: [Int: WarmVoice] = [:]
+    /// Chains dropped while the engine was running; they are already silent, and
+    /// their nodes are detached at the next transaction that stops the engine.
+    private var pendingWarmDiscards: [[AVAudioNode]] = []
+    var warmVoiceCount: Int { warmVoices.count }
     private var tailPanicGenerations = Array(repeating: UInt64(0), count: 16)
     private let maxRetiredTails=2
     static func supportsEffect(kind: Int) -> Bool { (0...17).contains(kind) }
@@ -649,6 +662,14 @@ final class ExternalInstrumentRack {
         guard (0..<16).contains(channel) else { completion(.failure(ExternalInstrumentError.invalidChannel)); return }
         if graphBatchDepth == 0 { lastGraphFailure = nil }
         do { try validateSound(sound) } catch { completion(.failure(error)); return }
+        if sound.kind != .audioUnit {
+            do {
+                if try adoptWarm(sound, channel: channel, attackMinimum: attackMinimum,
+                                 hostVelocityCurve: hostVelocityCurve, ready: configureCandidate) {
+                    completion(.success(())); return
+                }
+            } catch { completion(.failure(error)); return }
+        }
         if sound.kind == .audioUnit && Self.pendingInstantiations.count >= Self.maximumPendingInstantiations {
             completion(.failure(NSError(domain: Self.loadCapacityErrorDomain, code: 1, userInfo: [NSLocalizedDescriptionKey:
                 "Earlier Audio Unit loads are still finishing. Wait before retrying. If they never finish, save your work and restart StageKeys."])))
@@ -1093,6 +1114,7 @@ final class ExternalInstrumentRack {
             pendingGraphEdit = GraphEdit(rollback: preparedRollback ?? rollbackSnapshot(), mixers: mixerState(), samplers: samplerState(), wasRunning: engine.isRunning)
             if engine.isRunning { engine.stop() }
             purgeSilentRetiredTails()
+            detachPendingWarmDiscards()
         }
         try operation()
     }
@@ -1184,28 +1206,149 @@ final class ExternalInstrumentRack {
                 if let sampler = unit as? AVAudioUnitSampler { rememberSampler(sampler) }
             } catch { engine.detach(unit); throw error }
             retire(channel)
-            let mixer = AVAudioMixerNode()
-            let filter = AVAudioUnitEQ(numberOfBands: 1)
-            filter.bands[0].filterType = .resonantLowPass
-            filter.bands[0].bypass = true
-            let eq = AVAudioUnitEQ(numberOfBands: 8)
-            for (i, band) in eq.bands.enumerated() {
-                band.filterType = i == 0 ? .highPass : i == 1 ? .lowShelf : i == 6 ? .highShelf : i == 7 ? .lowPass : .parametric
-                band.bypass = i == 0 || i == 7
-            }
-            let compressor=BuiltinEffectUnit.make()
-            for node in [mixer as AVAudioNode, filter, eq, compressor] { engine.attach(node) }
-            let processingFormat=AVAudioFormat(standardFormatWithSampleRate:engine.isInManualRenderingMode ? engine.manualRenderingFormat.sampleRate:48000,channels:2)!
-            engine.connect(unit, to: filter, format: processingFormat)
-            engine.connect(filter, to: eq, format: processingFormat)
-            engine.connect(eq, to: compressor, format: processingFormat)
-            let builtin=BuiltinEffectUnit.make();engine.attach(builtin)
-            let voice = Voice(unit: unit, mixer: mixer, filter: filter, eq: eq, compressor: compressor,builtin:builtin)
-            connectEffects(voice)
-            engine.connect(mixer, to: engine.mainMixerNode, format: nil)
+            let voice = connectVoiceChain(unit)
+            engine.connect(voice.mixer, to: engine.mainMixerNode, format: nil)
             voices[channel] = voice
             try ready?()
         }
+    }
+    /// Attach the fixed per-voice chain and connect it up to the voice mixer.
+    /// The chain stops at the mixer: `install` adds the path to the output for a
+    /// live voice, and `warm` deliberately leaves it without one.
+    private func connectVoiceChain(_ unit: AVAudioUnit) -> Voice {
+        let mixer = AVAudioMixerNode()
+        let filter = AVAudioUnitEQ(numberOfBands: 1)
+        filter.bands[0].filterType = .resonantLowPass
+        filter.bands[0].bypass = true
+        let eq = AVAudioUnitEQ(numberOfBands: 8)
+        for (i, band) in eq.bands.enumerated() {
+            band.filterType = i == 0 ? .highPass : i == 1 ? .lowShelf : i == 6 ? .highShelf : i == 7 ? .lowPass : .parametric
+            band.bypass = i == 0 || i == 7
+        }
+        let compressor=BuiltinEffectUnit.make()
+        for node in [mixer as AVAudioNode, filter, eq, compressor] { engine.attach(node) }
+        let processingFormat=AVAudioFormat(standardFormatWithSampleRate:engine.isInManualRenderingMode ? engine.manualRenderingFormat.sampleRate:48000,channels:2)!
+        engine.connect(unit, to: filter, format: processingFormat)
+        engine.connect(filter, to: eq, format: processingFormat)
+        engine.connect(eq, to: compressor, format: processingFormat)
+        let builtin=BuiltinEffectUnit.make();engine.attach(builtin)
+        let voice = Voice(unit: unit, mixer: mixer, filter: filter, eq: eq, compressor: compressor,builtin:builtin)
+        connectEffects(voice)
+        return voice
+    }
+    private func warmNodes(_ voice: Voice) -> [AVAudioNode] {
+        var nodes:[AVAudioNode]=[voice.unit,voice.filter,voice.eq,voice.compressor,voice.builtin,voice.mixer]
+        nodes += voice.imported
+        nodes += voice.parallelNodes
+        nodes += voice.audioGraph?.nodes ?? []
+        return nodes
+    }
+    /// Load the samples for a patch the preload window covers, into a chain that
+    /// has no output path. Building it is the expensive part that warming exists
+    /// to move off the selection; no Audio Unit is instantiated here (D-P2 says
+    /// none before #13), and a detached chain never renders.
+    func warm(_ sound: ExternalSound, channel: Int, attackMinimum: Float = 0, hostVelocityCurve: Int? = nil) throws {
+        precondition(Thread.isMainThread)
+        guard (0..<16).contains(channel) else { throw ExternalInstrumentError.invalidChannel }
+        guard sound.kind != .audioUnit else { throw ExternalInstrumentError.unsupportedFormat }
+        discardWarm(channel)
+        try validateSound(sound)
+        do {
+            guard let name = sound.fileName, name == URL(fileURLWithPath: name).lastPathComponent else {
+                throw ExternalInstrumentError.missingFile
+            }
+            let file = libraryURL.appendingPathComponent(name)
+            guard Self.readableFile(file) else { throw ExternalInstrumentError.missingFile }
+            let sampler = AVAudioUnitSampler()
+            try SamplerRendering.configure(sampler, offline: engine.isInManualRenderingMode,
+                                          resident: sound.nativeSampler != nil || sound.kind == .sample)
+            try editGraph {
+                engine.attach(sampler)
+                var voice: Voice
+                var document: [String: Any]?
+                do {
+                    switch sound.kind {
+                    case .soundBank:
+                        try sampler.loadSoundBankInstrument(at: file, program: sound.program, bankMSB: sound.bankMSB, bankLSB: sound.bankLSB)
+                    case .samplerPreset:
+                        try Self.verifySamples(file)
+                        let prepared = try SamplerAttack.load(sampler, file: file, minimum: attackMinimum, curve: hostVelocityCurve)
+                        document = prepared
+                    default:
+                        try loadSample(sampler, url: file)
+                    }
+                    voice = connectVoiceChain(sampler)
+                } catch {
+                    if sampler.engine === engine { engine.detach(sampler) }
+                    throw error
+                }
+                rememberSampler(sampler, document: document)
+                if sound.kind == .samplerPreset { voice.nativePreset = file }
+                voice.attackMinimum = attackMinimum
+                voice.hostVelocityCurve = hostVelocityCurve
+                warmVoices[channel] = WarmVoice(sound: sound, attackMinimum: attackMinimum, hostVelocityCurve: hostVelocityCurve, voice: voice)
+            }
+        } catch { discardWarm(channel); throw error }
+    }
+    /// Take a warm chain for exactly this sound, or report that none matched. A
+    /// mismatched entry is discarded here rather than kept for a later patch.
+    private func adoptWarm(_ sound: ExternalSound, channel: Int, attackMinimum: Float,
+                           hostVelocityCurve: Int?, ready: (() throws -> Void)?) throws -> Bool {
+        guard let warm = warmVoices[channel] else { return false }
+        guard warm.sound == sound, abs(warm.attackMinimum - attackMinimum) < 0.000001,
+              warm.hostVelocityCurve == hostVelocityCurve, warm.voice.mixer.engine === engine else {
+            discardWarm(channel); return false
+        }
+        try editGraph {
+            engine.disconnectNodeOutput(warm.voice.mixer)
+            retire(channel)
+            // A detached chain receives no controller traffic, so replay the
+            // values this slot already holds before it can be played.
+            if let sampler = warm.voice.unit as? AVAudioUnitSampler {
+                for (controller, value) in (controllerValues[channel] ?? [:]).sorted(by: { $0.key < $1.key }) where controller < 120 {
+                    sampler.sendController(UInt8(controller), withValue: UInt8(value), onChannel: 0)
+                }
+            }
+            engine.connect(warm.voice.mixer, to: engine.mainMixerNode, format: nil)
+            voices[channel] = warm.voice
+            warmVoices.removeValue(forKey: channel)
+            try ready?()
+        }
+        return true
+    }
+    /// Drop a detached chain. Its mixer has no path to the output, so this only
+    /// releases the loaded instrument. While the engine runs, detachment is
+    /// deferred to the next transaction instead of stopping playback for it.
+    func discardWarm(_ channel: Int) {
+        precondition(Thread.isMainThread)
+        guard let warm = warmVoices.removeValue(forKey: channel) else { return }
+        let nodes = warmNodes(warm.voice)
+        if engine.isRunning {
+            warm.voice.mixer.outputVolume = 0
+            pendingWarmDiscards.append(nodes)
+        } else {
+            detachWarmNodes(nodes)
+        }
+    }
+    func discardAllWarmVoices() {
+        precondition(Thread.isMainThread)
+        let channels = Array(warmVoices.keys)
+        for channel in channels { discardWarm(channel) }
+        if !engine.isRunning {
+            let pending = pendingWarmDiscards; pendingWarmDiscards = []
+            for nodes in pending { detachWarmNodes(nodes) }
+        }
+    }
+    private func detachWarmNodes(_ nodes: [AVAudioNode]) {
+        for node in nodes.reversed() where node.engine === engine {
+            engine.disconnectNodeOutput(node)
+            engine.detach(node)
+        }
+    }
+    private func detachPendingWarmDiscards() {
+        guard !pendingWarmDiscards.isEmpty else { return }
+        let pending = pendingWarmDiscards; pendingWarmDiscards = []
+        for nodes in pending { detachWarmNodes(nodes) }
     }
     private func retire(_ channel: Int) {
         guard voices[channel] != nil else { return }
@@ -1224,7 +1367,11 @@ final class ExternalInstrumentRack {
         precondition(Thread.isMainThread && !engine.isRunning && graphBatchDepth == 0)
         for channel in 0..<16 { cancelPendingLoad(channel) }
         panic()
-        let nodes = graphNodes()
+        var nodes = graphNodes()
+        for warm in warmVoices.values { nodes += warmNodes(warm.voice) }
+        nodes += pendingWarmDiscards.flatMap { $0 }
+        pendingWarmDiscards.removeAll()
+        warmVoices.removeAll()
         retiredTails.forEach { $0.muteWorkItem?.cancel() }
         for node in nodes where node.engine === engine { engine.disconnectNodeOutput(node) }
         for node in nodes.reversed() where node.engine === engine { engine.detach(node) }

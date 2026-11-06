@@ -228,9 +228,64 @@ final class PerformanceStore: ObservableObject {
         }
         return window
     }
+    /// Channels currently holding a detached voice, by patch index. Only the
+    /// first external layer of a covered patch is warmed, so this stays one
+    /// voice per patch and the counts remain a real bound on the work.
+    @Published private(set) var warmedChannels: [Int: Int] = [:]
+    private var warmWorkItem: DispatchWorkItem?
     /// Eviction is by construction: the window is recomputed from the counts, so
-    /// an index that leaves it stops being covered at the next selection.
-    func refreshPreloadWindow() { preloadWindow = preloadWindowIndices(around: selected) }
+    /// an index that leaves it stops being covered, and its detached voice is
+    /// dropped at the next refresh.
+    func refreshPreloadWindow() {
+        preloadWindow = preloadWindowIndices(around: selected)
+        refreshWarmVoices()
+    }
+    /// Warming runs after the selection has settled: loading samples inside the
+    /// selection path would add the very latency preloading exists to remove.
+    func refreshWarmVoices() {
+        warmWorkItem?.cancel()
+        guard started || audio.running else {
+            audio.discardWarmVoices(); warmedChannels.removeAll(); return
+        }
+        evictUncoveredWarmVoices()
+        let work = DispatchWorkItem { [weak self] in self?.warmCoveredPatches() }
+        warmWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2, execute: work)
+    }
+    private func evictUncoveredWarmVoices() {
+        let covered = preloadWindow
+        for (index, channel) in warmedChannels where !covered.contains(index) {
+            audio.discardWarm(channel: channel)
+            warmedChannels[index] = nil
+        }
+    }
+    private func warmCoveredPatches() {
+        guard started || audio.running else {
+            audio.discardWarmVoices(); warmedChannels.removeAll(); return
+        }
+        // Building a chain is a graph transaction, and every graph transaction
+        // stops the engine. Never start one under a held key or a sounding
+        // patch; the next selection re-schedules the remaining window.
+        guard held.isEmpty, !sustain, !patchLoading else { return }
+        evictUncoveredWarmVoices()
+        var used = Set(warmedChannels.values)
+        for index in preloadWindow where warmedChannels[index] == nil {
+            guard setlist.patches.indices.contains(index),
+                  let (channel, layer) = warmLayer(of: setlist.patches[index]),
+                  let sound = layer.external, sound.kind != .audioUnit,
+                  !used.contains(channel) else { continue }
+            let curve = layer.importedRack?.mainStageAmplitudeVelocityCurve ?? sound.nativeSampler?.rack.mainStageAmplitudeVelocityCurve
+            if audio.warm(sound, channel: channel, attackMinimum: layer.samplerAttackMinimum, hostVelocityCurve: curve) {
+                warmedChannels[index] = channel; used.insert(channel)
+            }
+        }
+    }
+    private func warmLayer(of patch: Patch) -> (Int, Layer)? {
+        for (channel, layer) in patch.layers.enumerated() where channel < 15 {
+            if layer.external != nil { return (channel, layer) }
+        }
+        return nil
+    }
     @Published var keyboardBase = 48
     @Published var metronome = false { didSet { applyMetronome() } }
     @Published var metronomeSettings = MetronomeSettings() { didSet { applyMetronome() } }
