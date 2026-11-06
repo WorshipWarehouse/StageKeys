@@ -17,7 +17,7 @@ Recorded from the code as it stands; these are the call sites the design has to 
 
 | Step | Location | What it does today |
 | --- | --- | --- |
-| Patch selection | `PerformanceStore.select`-family paths in `Sources/Store.swift` | Panics, commits the patch index, then calls `applyPatch()` (`Sources/Store.swift:1030`). |
+| Patch selection | `PerformanceStore.choose` → `choosePrepared` (`Sources/Store.swift:1012`) | Admission, then panic and commit the patch index, then `applyPatch()` (`Sources/Store.swift:1030`). |
 | Admission | `PerformanceStore.preparePatchActivation` (`Sources/Store.swift:2217`) | Validates the candidate patch's resources before any user state changes. Validation only. |
 | Resource preflight | `AudioController.preparePatchResources` (`Sources/AudioController.swift:371`) → `prepareSoundChange` (`:351`) → `ExternalInstrumentRack.validateSound` (`Sources/ExternalInstruments.swift:623`) | Checks component identity, installation and file references. `validateSound` asserts the main thread. No graph edit. |
 | Installation | per-layer `AudioController.configure` inside `ExternalInstrumentRack.withGraphChanges` | Loads the sampler or hosts the AU and builds/edits the graph; a failure rolls the graph back to the previous voice. |
