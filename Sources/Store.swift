@@ -1577,7 +1577,9 @@ final class PerformanceStore: ObservableObject {
             // ignoring it avoids double-advancing the click or stealing tempo.
             guard midiClockRunning, midiClockSource == source else { return }
             audio.midiClockTick(at: now)
-            if let tempo = midiClockTempo.tick(at: now), clockTempo == nil || abs(tempo - clockTempo!) > 0.005 {
+            // Clock measurement jitters by a few thousandths of a BPM. Ignore
+            // that noise: `AudioController.clock` rebuilds effect/rack timing.
+            if let tempo = midiClockTempo.tick(at: now), clockTempo == nil || abs(tempo - clockTempo!) > 0.1 {
                 clockTempo = tempo
                 audio.clock(tempo, metronome); midiFX.updateTempo(tempo)
             }

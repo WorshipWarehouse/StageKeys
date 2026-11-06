@@ -299,6 +299,25 @@ static void test_count_in(void) {
     sk_metronome_destroy(m);
 }
 
+// Enabling the click during a one-shot count-in must promote it to a
+// continuous click instead of letting the count-in stop it at its end.
+static void test_count_in_promoted_to_click(void) {
+    SKMetronome *m = sk_metronome_create(48000); assert(m);
+    uint32_t block[1] = {512};
+    SKMetronomeSettings s = defaults();
+    s.beatVelocity = 1; s.downbeatVelocity = 1;
+    sk_metronome_settings(m, s);
+    sk_metronome_tempo(m, 120);
+    sk_metronome_count_in(m, 1);
+    sk_metronome_render(m, NULL, NULL, 1000); // count-in starts with the click off
+    sk_metronome_enable(m, 1);                // user enables the click mid-count
+    Capture c; capture(&c, m, block, 1, 48000 * 4);
+    // The first count-in click is still audible at capture start, then three
+    // more count-in clicks and five continuous clicks must follow.
+    assert(c.count == 9);
+    sk_metronome_destroy(m);
+}
+
 // Switching clock mode must cancel a pending one-shot count-in so a later
 // normal click cannot inherit its remaining bars and stop early.
 static void test_count_in_clock_mode_change(void) {
@@ -439,10 +458,11 @@ int main(void) {
     test_long_run();
     test_count_in_matrix();
     test_count_in();
+    test_count_in_promoted_to_click();
     test_count_in_clock_mode_change();
     test_external_clock_matrix();
     test_clock_transport_reserve();
     test_external_clock();
     test_reset();
-    puts("PASS: metronome timing at 44.1/48/96 kHz, block splits, tempo phase, accents, subdivision, presets, levels, master follow, count-in phase/repeat/clock-mode cancel, MIDI clock sync/reserve, long-run drift and reset");
+    puts("PASS: metronome timing at 44.1/48/96 kHz, block splits, tempo phase, accents, subdivision, presets, levels, master follow, count-in phase/repeat/promotion/clock-mode cancel, MIDI clock sync/reserve, long-run drift and reset");
 }
