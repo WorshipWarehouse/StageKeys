@@ -91,6 +91,33 @@ import Foundation
         let cleanReloaded = try cleanLibrary.load(id: cleanID)
         assert(cleanReloaded.patches.map(\.id) == source.patches.map(\.id))
 
+        // Importing the same package into the same clean library again is a
+        // duplicate import: it creates a second independent copy and resolves
+        // conflicting identities instead of overwriting or merging with the first.
+        let repeatPlan = try SetlistShare.preview(package, library: cleanLibrary)
+        assert(!repeatPlan.collisions.isEmpty)
+        assert(repeatPlan.proposedName == "Generated Share Copy")
+        let repeatID = try SetlistShare.saveToLibrary(repeatPlan, library: cleanLibrary)
+        assert(repeatID != cleanID)
+        let repeatCopy = try cleanLibrary.load(id: repeatID)
+        assert(repeatCopy.name == "Generated Share Copy")
+        assert(Set(repeatCopy.patches.map(\.id)).isDisjoint(with: Set(cleanReloaded.patches.map(\.id))))
+        let cleanEntries = try cleanLibrary.list().entries
+        assert(cleanEntries.count == 2)
+
+        // An interrupted write leaves a damaged file behind. Listing reports it
+        // and leaves the complete entry readable; nothing is silently discarded.
+        let interruptedRoot = root.appendingPathComponent("Interrupted Setlists")
+        let interrupted = try SetlistLibrary(root: interruptedRoot)
+        let intact = try interrupted.save(source)
+        let damagedID = UUID()
+        try Data("{\"version\":4".utf8).write(to: interruptedRoot.appendingPathComponent(damagedID.uuidString + ".json"))
+        let interruptedInventory = try interrupted.list()
+        assert(interruptedInventory.entries.map(\.id) == [intact.id])
+        assert(interruptedInventory.issues.map(\.fileName) == [damagedID.uuidString + ".json"])
+        let loadedIntact = try interrupted.load(id: intact.id)
+        assert(loadedIntact.patches.count == source.patches.count)
+
         // Existing identities and names are resolved without touching the saved
         // source. Missing dependencies disable activation but not Save to Library.
         let library = try SetlistLibrary(root: root.appendingPathComponent("Setlists"))
@@ -134,6 +161,45 @@ import Foundation
         let upgraded = try SetlistShare.preview(legacyPackage, library: cleanLibrary)
         assert(upgraded.setlist.version == 4)
         assert(upgraded.warnings.contains { $0.contains("upgraded to 4") })
+
+        // A patch export is a local one-patch document, not a share. It keeps the
+        // authored settings but takes fresh patch/layer/snapshot identities, so
+        // later edits to the source setlist cannot reach it, and exporting twice
+        // adds a second document instead of overwriting the first.
+        let patchLibrary = try SetlistLibrary(root: root.appendingPathComponent("Patch Exports"))
+        let exportedPatch = source.patches[0]
+        let exportID = try patchLibrary.exportPatch(exportedPatch).id
+        let firstExport = try patchLibrary.load(id: exportID)
+        assert(firstExport.name == "Generated Patch")
+        assert(firstExport.patches.count == 1)
+        assert(firstExport.patches[0].id != exportedPatch.id)
+        assert(Set(firstExport.patches[0].layers.map(\.id)).isDisjoint(with: Set(exportedPatch.layers.map(\.id))))
+        assert(Set(firstExport.patches[0].snapshots.map(\.id)).isDisjoint(with: Set(exportedPatch.snapshots.map(\.id))))
+        assert(firstExport.patches[0].name == exportedPatch.name)
+        assert(firstExport.patches[0].layers.map(\.name) == exportedPatch.layers.map(\.name))
+        assert(firstExport.patches[0].layers.map(\.gain) == exportedPatch.layers.map(\.gain))
+        assert(firstExport.patches[0].snapshots.count == exportedPatch.snapshots.count)
+        assert(firstExport.patches[0].snapshots.map(\.name) == exportedPatch.snapshots.map(\.name))
+        assert(firstExport.patches[0].tonicState?.root == exportedPatch.tonicState?.root)
+        assert(firstExport.patches[0].programChangeNumber == exportedPatch.programChangeNumber)
+        assert(firstExport.assignments.isEmpty, "Setlist-level CC assignments belong to the source document")
+        let secondExportID = try patchLibrary.exportPatch(exportedPatch).id
+        assert(secondExportID != exportID)
+        let exportCount = try patchLibrary.list().entries.count
+        assert(exportCount == 2)
+        var editedSource = source
+        editedSource.name = "Edited Source"
+        editedSource.patches[0].name = "Edited Patch"
+        editedSource.patches[0].layers[0].name = "Edited Layer"
+        _ = try patchLibrary.save(editedSource)
+        let exportAfterEdit = try patchLibrary.load(id: exportID)
+        assert(exportAfterEdit.name == "Generated Patch")
+        assert(exportAfterEdit.patches[0].name == "Generated Patch")
+        assert(exportAfterEdit.patches[0].layers[0].name == "Generated Piano")
+        let countBeforeRefusal = try patchLibrary.list().entries.count
+        expectFailure("blank patch export title") { _ = try patchLibrary.exportPatch(exportedPatch, name: "   ") }
+        let countAfterRefusal = try patchLibrary.list().entries.count
+        assert(countAfterRefusal == countBeforeRefusal, "A refused export must not add a document")
 
         // File writes are atomic and a refused export leaves the existing file
         // byte-for-byte unchanged. The document type extension is required.
@@ -215,7 +281,7 @@ import Foundation
         let reopenedBCopy = try reopenedB.load(id: installBID)
         assert(reopenedBCopy.patches[0].layers[0].name == "Generated Piano")
 
-        print("PASS setlist sharing: checksummed portable package, payload exclusions, tamper/injection refusal, offline link, dependency preview, identity collision resolution, independent copies, clean-install two-root round trip with destination ratings intact, legacy upgrade and atomic writes")
+        print("PASS setlist sharing: checksummed portable package, payload exclusions, tamper/injection refusal, offline link, dependency preview, identity collision resolution, independent copies, clean-install repeat import, interrupted-write listing, independent patch export, clean-install two-root round trip with destination ratings intact, legacy upgrade and atomic writes")
     }
 
     private static func expectFailure(_ label: String, _ body: () throws -> Void) {
