@@ -708,7 +708,7 @@ final class PerformanceStore: ObservableObject {
         // Exclude this app's virtual output before the input port starts, so a
         // renamed or looped port cannot feed StageKeys' output back into itself.
         if let own = midiOutput?.ownSourceID, own != 0 { midi.ignoreSources([own]) }
-        midiFX.onNoteWithSource = { [weak self] channel, key, pitch, velocity, sourceID in
+        midiFX.onNoteAt = { [weak self] channel, key, pitch, velocity, sourceID, at in
             guard let self, !self.patchLoading, self.started, self.patch.layers.indices.contains(channel) else { return }
             if let audition=self.audition,audition.isolatedLibrary,audition.index != channel{return}
             let l = self.playbackLayer(channel)
@@ -716,15 +716,15 @@ final class PerformanceStore: ObservableObject {
             if let destination = l.midiDestinationID, (0...127).contains(pitch) {
                 self.outputNotes[channel, default: [:]][key] = pitch
                 self.sendMIDI(destination, 0x90 | UInt8(l.midiOutputChannel), UInt8(pitch), UInt8(max(1,min(127,Int(velocity * 127)))))
-            } else { self.audio.noteOn(key: key, pitch: pitch, instrument: l.instrument, layer: channel, velocity: velocity,sourceID:sourceID) }
+            } else { self.audio.noteOn(key: key, pitch: pitch, instrument: l.instrument, layer: channel, velocity: velocity,sourceID:sourceID,at:at) }
         }
-        midiFX.onOff = { [weak self] channel, key, force in
+        midiFX.onOffAt = { [weak self] channel, key, force, at in
             guard let self, self.patch.layers.indices.contains(channel) else { return }
             let l = self.playbackLayer(channel)
             if let destination = l.midiDestinationID, let pitch = self.outputNotes[channel]?.removeValue(forKey: key) {
                 if force { self.sendMIDI(destination, 0xb0 | UInt8(l.midiOutputChannel), 64, 0) }
                 self.sendMIDI(destination, 0x80 | UInt8(l.midiOutputChannel), UInt8(pitch), 0)
-            } else { self.audio.noteOff(key: key, channel: channel, force: force) }
+            } else { self.audio.noteOff(key: key, channel: channel, force: force, at: at) }
         }
         midi.onSourceEvent = { [weak self] source, status, a, b in self?.handleMIDI(status, a, b, source: source) }
         midi.onInventory = { [weak self] sources, devices in

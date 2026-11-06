@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Draft sample-timed AU delivery: schedule hosted-AU note events with `AUEventSampleTime` from the MIDI FX deadline, with immediate fallback inside a safety margin, at the lookahead horizon, for missing render anchors and for AUs without a schedule block; the macOS onset harness is not yet run.
+
 - Carry each MIDI FX event's musical time through `onNoteAt`/`onOffAt`, time gates from the scheduled step rather than a late dispatch, and add a deadline-to-engine-sample clock; audible AU delivery is not wired yet.
 
 - Arm the MIDI FX arpeggiator/sequencer timers at the next musical deadline instead of polling every 5 ms; the simulated dispatch grid's worst-case lateness falls from 5.000 ms to the 1 ns delivery offset over 260 eighth notes at 132 BPM, while audio-block quantization remains.
