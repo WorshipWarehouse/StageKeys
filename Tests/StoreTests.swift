@@ -74,6 +74,14 @@ import AVFoundation
         store.archiveLocalSetlist(newID); assert(store.archivedSetlists.count == 1)
         assert(!store.recentSetlistIDs.contains(newID), "Trashed setlists leave the recently opened history")
         store.restoreLocalSetlist(store.archivedSetlists[0].token); assert(store.savedSetlists.contains { $0.id == newID })
+        let setlistCountBeforeHistoryEdit = store.savedSetlists.count
+        store.removeRecentSetlist(originalID)
+        assert(!store.recentSetlistIDs.contains(originalID))
+        store.clearRecentSetlists()
+        assert(store.recentSetlistIDs.isEmpty)
+        assert(store.savedSetlists.count == setlistCountBeforeHistoryEdit, "History edits must not change any setlist")
+        let recentsURL = URL(fileURLWithPath: ProcessInfo.processInfo.environment["STAGEKEYS_DATA_DIR"]!).appendingPathComponent("setlist-recents.json")
+        assert(SetlistRecents.read(recentsURL).ids.isEmpty, "Clearing history must persist")
         let before = store.patch
         let assignment = store.setlist.assignments[20]!
         store.reorderLayer(assignment,14)

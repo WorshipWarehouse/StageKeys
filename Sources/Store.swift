@@ -2207,11 +2207,18 @@ final class PerformanceStore: ObservableObject {
         recentSetlistIDs = updated.ids
         try? updated.write(to: setlistRecentsURL)
     }
-    private func forgetRecentSetlist(_ id: UUID) {
+    /// Forget one setlist in the last-opened order. The document itself is untouched.
+    func removeRecentSetlist(_ id: UUID) {
         let updated = SetlistRecents(ids: recentSetlistIDs).removing(id)
         guard updated.ids != recentSetlistIDs else { return }
         recentSetlistIDs = updated.ids
         try? updated.write(to: setlistRecentsURL)
+    }
+    /// Forget the whole last-opened order. No setlist is renamed, moved or deleted.
+    func clearRecentSetlists() {
+        guard !recentSetlistIDs.isEmpty else { return }
+        recentSetlistIDs = []
+        try? SetlistRecents().write(to: setlistRecentsURL)
     }
     func refreshSetlists() {
         do {
@@ -2378,7 +2385,7 @@ final class PerformanceStore: ObservableObject {
         guard id != currentSetlistID else { message = "Open another setlist before moving this one to Trash."; return }
         do {
             _ = try localSetlistLibrary().delete(id:id)
-            forgetRecentSetlist(id)
+            removeRecentSetlist(id)
             refreshSetlists()
         } catch { message = error.localizedDescription }
     }

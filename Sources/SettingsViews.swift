@@ -257,6 +257,10 @@ struct SetlistBrowser: View {
                 Picker("Sort Setlists", selection: $order) {
                     ForEach(SetlistBrowserOrder.allCases) { Text($0.title).tag($0) }
                 }.labelsHidden().pickerStyle(.menu).frame(width:170).accessibilityLabel("Sort Setlists")
+                Button("Clear History") { store.clearRecentSetlists() }
+                    .buttonStyle(StageButtonStyle())
+                    .disabled(store.recentSetlistIDs.isEmpty)
+                    .accessibilityLabel("Clear Recently Opened History")
                 Menu("Import / Export") {
                     Button("Import Setlist…") { dismiss(); DispatchQueue.main.asyncAfter(deadline:.now()+0.4) { importing=true } }
                     Button("Export Current Setlist…") { store.save(); dismiss(); DispatchQueue.main.asyncAfter(deadline:.now()+0.4) { exporting=true } }
@@ -279,6 +283,8 @@ struct SetlistBrowser: View {
                             Menu {
                                 Button("Rename…") { renameName=entry.name; renameID=entry.id }
                                 Button("Use as Template…") { creationError=nil; templateName=String(entry.name.prefix(195))+" Copy"; templateID=entry.id }
+                                Button("Remove from Recently Opened") { store.removeRecentSetlist(entry.id) }
+                                    .disabled(!store.recentSetlistIDs.contains(entry.id))
                                 Button("Duplicate") { store.duplicateLocalSetlist(entry.id) }
                                 Button("Share…") { shareSetlist(entry.id) }
                                 Button("Copy Share Link") { copyShareLink(entry.id) }

@@ -66,12 +66,12 @@ The link is limited to 1.5 MB of package data and goes through the same format, 
 
 The setlist browser keeps a bounded, device-local history of the last 20 setlists you opened or created. **Recently Opened** sorts by that history, with setlists that were never opened ordered by their saved modification date, so a newly saved document still appears near the top. **Recently Updated** remains a pure modification-date order and **Name A–Z** is unchanged; search applies to all three.
 
-The history is stored in `setlist-recents.json` in the app data folder, separately from the setlist documents. A missing, oversized or damaged history file reads as empty instead of blocking the browser, opening a setlist moves it to the front without duplicating entries, and moving a setlist to Trash removes it from the history. The history is advisory: the library files remain the source of truth, deleted or unreadable ids are ignored, and the history never travels in a share package or between devices.
+The history is stored in `setlist-recents.json` in the app data folder, separately from the setlist documents. A missing, oversized or damaged history file reads as empty instead of blocking the browser, opening a setlist moves it to the front without duplicating entries, and moving a setlist to Trash removes it from the history. **Clear History** in the browser header and **Remove from Recently Opened** in an entry's options menu edit only that history; they never rename, move or delete a setlist document. The history is advisory: the library files remain the source of truth, deleted or unreadable ids are ignored, and the history never travels in a share package or between devices.
 
 ## Limits and outstanding acceptance
 
 - This is not a clean-device physical Mac/iPad round-trip qualification. The deterministic suite imports into an empty library root, repeats that import and lists an interrupted write, but it exercises generated data, not physical devices or an audible stage.
-- `setlist-recents.json` is device-local convenience state. It is not part of a share package or a personal sound pack, it is not migrated between devices, and session recovery does not restore it.
+- `setlist-recents.json` is device-local convenience state. It is not part of a share package or a personal sound pack, it is not migrated between devices, and session recovery does not restore it. Clearing or forgetting history edits only that file; the setlist documents themselves stay unchanged.
 - Independent patch exports into a user library (as distinct from the setlist document copy) remain outstanding for #114. Personal native sound packs already cover sound transfer and are a separate format.
 - Ratings and other library-level metadata are not part of a setlist share; the sender's library metadata is not mutated.
 - Reference-only packages do not grant redistribution rights for vendor samples, presets or plug-ins. Install content you are authorised to use on the destination device.
@@ -89,7 +89,7 @@ The history is stored in `setlist-recents.json` in the app data folder, separate
 - identity preservation, name/identity collision resolution and independent copies;
 - legacy schema upgrade, atomic writes and refusal to overwrite via an invalid export;
 - import into an empty library root, a repeated import of the same package creating a second independent copy, and listing a truncated document as an issue while intact entries still load;
-- recently opened ordering, bounded and de-duplicated recording, removal when a setlist moves to Trash, and tolerance of a damaged history file.
+- recently opened ordering, bounded and de-duplicated recording, removal when a setlist moves to Trash, clearing or forgetting history without changing any saved setlist, persistence of a cleared history, and tolerance of a damaged history file.
 
 The test was authored in a Linux checkout without Xcode. Run it on macOS with:
 

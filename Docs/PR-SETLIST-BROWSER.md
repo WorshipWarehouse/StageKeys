@@ -12,8 +12,9 @@ The issue asks for "recent/search/sort browsing" and for round-trip tests betwee
 - `SetlistBrowserOrder.recent` sorts matched entries by recorded history first, then by saved modification date and id. `updated` and `name` keep their previous behaviour, and search applies to every order.
 - `PerformanceStore` publishes `recentSetlistIDs`, loads the history at launch, records a setlist after a successful open, create or **Save and Load** import, and removes an entry when the setlist moves to Trash. Persistence failures are ignored: the history is advisory and never blocks opening a setlist.
 - The browser defaults to **Recently Opened** and passes the published history to the projection. The existing **Recently Updated** and **Name A–Z** options are unchanged.
+- **Clear History** in the browser header and **Remove from Recently Opened** in an entry's options menu edit only the history file. Neither action renames, moves, activates or deletes a setlist, and clearing an empty history is a no-op.
 - `Tests/SetlistShareTests.swift` imports the same package twice into one empty library root, asserting a second independent copy with fresh conflicting identities, and lists a truncated document so the issue is reported while the intact entry still loads.
-- `Tests/SetlistTemplateTests.swift` covers recent ordering, search interaction, capacity, de-duplication, removal and damaged-file tolerance. `Tests/StoreTests.swift` covers replay through the store and removal on Trash.
+- `Tests/SetlistTemplateTests.swift` covers recent ordering, search interaction, capacity, de-duplication, removal and damaged-file tolerance. `Tests/StoreTests.swift` covers replay through the store, removal on Trash, clearing or forgetting history without changing the saved setlists, and persistence of a cleared history.
 
 ## Acceptance mapping for this slice
 
