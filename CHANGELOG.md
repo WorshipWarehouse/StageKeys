@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Recompute the per-channel MIDI FX lookahead set once patch activation installs finish and again when the activation drains, so a channel that gained or lost a sample-timed AU is never left marked from the outgoing instrument.
+
 - Gate the MIDI FX lookahead per channel: only hosted AUs with a schedule block and no immediate parallel branches advance early, so external MIDI, sampler `startNote` and blockless AUs keep deadline dispatch and are never sent notes early.
 
 - Add an opt-in MIDI FX scheduler lookahead (0–50 ms, default off) that generates steps before their deadline while reporting the true musical time; enabling it in the app waits on verified sample-timed AU delivery so immediate consumers are not sent notes early.

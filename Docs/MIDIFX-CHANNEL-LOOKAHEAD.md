@@ -20,8 +20,20 @@ dispatch and never receive a note early.
 - `ExternalInstrumentRack.canSchedule(channel:)` requires a unit with
   `scheduleMIDIEventBlock` and no parallel imported branches.
   `AudioController.canScheduleMIDI(channel:)` additionally requires an external
-  sound. `Store` refreshes the marked set after a channel is configured or a
-  layer is removed.
+  sound. `Store` recomputes the marked set through one helper,
+  `refreshLookaheadChannels()`, once the rack has settled (see below).
+
+## Refresh ordering
+
+The marked set must describe the rack as it is *after* the change, not the
+outgoing instrument. `refreshLookaheadChannels()` is the only computation, and
+it runs:
+
+- inside `configureMIDI`, which covers a committed layer and snapshot recall;
+- from every `audio.configure` completion during patch activation, because that
+  is where an asynchronous AU load assigns `externalSounds`;
+- once the activation's pending set drains, which covers patch switch, layer
+  move and layer reorder after all installs have reported.
 
 ## Verified
 
@@ -36,10 +48,11 @@ Linux, Swift 6.0.3, assertions enabled (`-DDEBUG`, no `-O`):
 
 ## Limits
 
-- `Store` refresh points are configuration and layer removal. If a channel's AU
-  is replaced without a configure call, the marked set can be stale; a marked
-  channel without a schedule block would fall back to immediate delivery and
-  could receive a note up to one horizon early. Review this on macOS.
+- The refresh runs when an install *reports*. A rejected replacement keeps the
+  outgoing unit resident, so the marked set can briefly describe the sound that
+  is still playing, and a channel removed outside a configure call is not
+  re-read. The next configure corrects both. Review this on macOS; none of it is
+  exercised by the Linux tests.
 - A marked channel's parallel branches can still be immediate, which is why
   `canSchedule` refuses channels with parallel branches.
 - The AVFoundation calls remain unbuilt and unrun here; no macOS build, AU run,

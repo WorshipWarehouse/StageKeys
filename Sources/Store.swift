@@ -1049,6 +1049,7 @@ final class PerformanceStore: ObservableObject {
                 audio.rejectPatchChange(failure)
                 message = audio.lastChangeFailure.map { AudioChangeFailure(diagnostic: $0).localizedDescription }
             } else if pending.isEmpty {
+                refreshLookaheadChannels()
                 patchLoading = false; audio.setPatchLoading(false)
             }
         }
@@ -1084,7 +1085,7 @@ final class PerformanceStore: ObservableObject {
                     }) { [weak self] success in
                         guard let self, self.patchLoadGeneration == generation, self.patch.id == patchID else { return }
                         pending.remove(i)
-                        if !success { rejected = true }
+                        if !success { rejected = true } else { self.refreshLookaheadChannels() }
                         finish()
                     }
                     if !accepted { rejected = true }
@@ -1359,7 +1360,6 @@ final class PerformanceStore: ObservableObject {
             }
         }
         midiFX.panic(channel:index); audio.panic(channel:index); cancelTransition(); setlist.patches[selected].layers[index] = layer
-        midiFX.setLookaheadChannels(Set(setlist.patches[selected].layers.indices.filter { audio.canScheduleMIDI(channel: $0) }))
         configureMIDI(index, layer)
         audio.gain(index, layer.loaded && !layer.muted ? layer.gain : 0); updateToneFilters(); save()
     }
@@ -1573,6 +1573,13 @@ final class PerformanceStore: ObservableObject {
         }
     }
     private var configuredPrograms: [Int:MIDIProgram] = [:]
+    /// Recompute lookahead eligibility from the live rack. Only call once the
+    /// instrument assignment has settled: a completed commit, a finished
+    /// activation install, or a drained activation. Reading it mid-configuration
+    /// answers for the outgoing instrument.
+    private func refreshLookaheadChannels() {
+        midiFX.setLookaheadChannels(Set(patch.layers.indices.filter { audio.canScheduleMIDI(channel: $0) }))
+    }
     private func configureMIDI(_ index: Int, _ layer: Layer) {
         var program = layer.midiProgram ?? MIDIProgram()
         if layer.midiProgram == nil && layer.octaveEffect { program.kind = .easyChord; program.chordIntervals = [0,12] }
@@ -1583,7 +1590,7 @@ final class PerformanceStore: ObservableObject {
             configuredPrograms[index]=program.validated
         }
         midiFX.configure(channel: index, program: program, tempo: performedTempo)
-        midiFX.setLookaheadChannels(Set(patch.layers.indices.filter { audio.canScheduleMIDI(channel: $0) }))
+        refreshLookaheadChannels()
         if let d = layer.midiDestinationID {
             sendMIDI(d, 0xb0 | UInt8(layer.midiOutputChannel), 7, UInt8(layer.muted ? 0 : Int(layer.gain*127)))
             sendMIDI(d, 0xb0 | UInt8(layer.midiOutputChannel), 10, UInt8(max(0,min(127,Int((layer.pan+1)*63.5)))))
