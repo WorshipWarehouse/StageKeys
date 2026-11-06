@@ -1,7 +1,7 @@
 import Foundation
 
 @main struct PatchTranspositionTests {
-    static func main() {
+    static func main() throws {
         // Every Play In / Hear In pair resolves to a real, bounded interval.
         for play in 0..<12 {
             for hear in 0..<12 {
@@ -97,6 +97,53 @@ import Foundation
         scheduler.advance(to: 0.7); assert(pitches == [60, 60], "The pending step keeps its rescaled position")
         scheduler.advance(to: 0.75); assert(pitches.count == 3, "The next step lands on the same musical beat at the new tempo")
 
+        try verifyPortablePatch(program: saved)
         print("PASS: Play In/Hear In directions, octave wrapping, no drift, authored-mapping preservation, tempo lock and tempo phase")
     }
+
+    private static func verifyPortablePatch(program: MIDIProgram) throws {
+        var layer = Layer(name: "Portable mapping", instrument: 0, gain: 0.5)
+        layer.midiProgram = program.validated
+        var locked = Patch(name: "Locked transposition", layers: [layer], snapshots: [])
+        locked.playIn = 2
+        locked.hearIn = 0
+        locked.keyDirection = .down
+        locked.octaveShift = -1
+        locked.transpose = -14
+        locked.tempo = 88
+        locked.tempoLocked = true
+        var unlocked = locked.duplicate()
+        unlocked.name = "Unlocked transposition"
+        unlocked.tempo = 96
+        unlocked.tempoLocked = false
+        var source = Setlist()
+        source.name = "Portable transposition"
+        source.patches = [locked, unlocked]
+
+        let root = URL(fileURLWithPath: ProcessInfo.processInfo.environment["STAGEKEYS_DATA_DIR"]!)
+        let file = root.appendingPathComponent("Portable Transposition.stagekeyssetlist")
+        try SetlistShare.write(source, to: file)
+        let package = try SetlistShare.read(file)
+        let link = try SetlistShareLink.url(for: package)
+        let decodedLink = try SetlistShareLink.package(from: link)
+
+        let library = try SetlistLibrary(root: root.appendingPathComponent("Recipient"))
+        let plan = try SetlistShare.preview(decodedLink, library: library)
+        let id = try SetlistShare.saveToLibrary(plan, library: library)
+        let received = try library.load(id: id)
+        assert(received.patches.count == 2)
+        for (expected, actual) in zip(source.patches, received.patches) {
+            assert(actual.playIn == expected.playIn && actual.hearIn == expected.hearIn)
+            assert(actual.keyDirection == expected.keyDirection && actual.octaveShift == expected.octaveShift)
+            assert(actual.transpose == expected.transpose && actual.tempo == expected.tempo)
+            assert(actual.tempoLocked == expected.tempoLocked)
+            assert(actual.layers[0].midiProgram == expected.layers[0].midiProgram,
+                   "A share must carry authored mappings without baking in patch transposition")
+        }
+        let tempos = received.patches.map {
+            PatchTransposition.resolvedTempo(locked: $0.tempoLocked, patchTempo: $0.tempo, liveTempo: 120)
+        }
+        assert(tempos == [88, 120], "The recipient must recall locked tempo and use its own live tempo for unlocked patches")
+    }
+
 }
