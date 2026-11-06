@@ -236,7 +236,7 @@ struct PerformanceView: View {
                     Button { sheet = .tempo } label: { Text("4/4").frame(width: 49, height: 44) }.buttonStyle(.plain)
                     if store.metronomeSettings.visible {
                         Divider().frame(height: 30)
-                        Button { store.metronome.toggle() } label: { Image(systemName: "metronome").frame(width: 38, height: 44).foregroundStyle(store.metronome ? StageTheme.selected : .secondary) }.buttonStyle(.plain).accessibilityLabel("Metronome").accessibilityValue(store.metronome ? "On" : "Off").accessibilityHint("Turns the metronome click on or off.")
+                        Button { store.metronome.toggle() } label: { Image(systemName: "metronome").frame(width: 38, height: 44).foregroundStyle(store.metronome ? StageTheme.selected : .secondary) }.buttonStyle(.plain).accessibilityLabel("Metronome").accessibilityValue(store.metronome ? "On" : "Off").accessibilityHint(store.metronomeSettings.followsMIDIClock ? "The click waits for the next MIDI Start or Continue when enabled." : "Turns the metronome click on or off.")
                         if !store.metronomeSettings.followsMIDIClock && store.metronomeSettings.countInBars > 0 {
                             Button { store.countIn() } label: { Image(systemName: "timer").frame(width: 34, height: 44) }.buttonStyle(.plain).accessibilityLabel("Metronome Count In").accessibilityValue("\(store.metronomeSettings.countInBars) bars").accessibilityHint("Plays the configured count-in bars from a downbeat. Audio must be running.")
                         }

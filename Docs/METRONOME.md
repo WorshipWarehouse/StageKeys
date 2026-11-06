@@ -14,7 +14,7 @@ Settings → Metronome exposes, and `settings.json` persists, every control:
 
 | Control | Range | Default | Behavior |
 | --- | --- | --- | --- |
-| Metronome | on/off | off | Enables the click. Turning it on starts a fresh bar immediately. |
+| Metronome | on/off | off | Enables the click. Internal clock starts a fresh bar immediately. External clock waits for Start or Continue. |
 | Show in toolbar | on/off | on | Hides or shows the toolbar metronome button. |
 | Click sound | Click, Woodblock | Click | Two independently synthesized timbres. |
 | Level | 0…100% | 60% | Scales the engine's bounded click peak; the UI shows the equivalent dBFS. |
@@ -44,7 +44,7 @@ BPM while the clock owns the timing.
   restarting it, so the next click does not double-trigger or jump phase.
 - Disabling the metronome truncates the click immediately. Panic silences the
   current click and schedules the next one a full interval later. Turning the
-  metronome on starts a fresh bar immediately.
+  metronome on starts a fresh bar immediately with the internal clock. With external clock enabled, the click waits for the next Start or Continue.
 - **Count In** starts on a downbeat for the configured number of bars. If the
   click was off it stops after the last count-in bar. If the normal click was
   already on, Count In leaves its scheduler untouched, so there is no second

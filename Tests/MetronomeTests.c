@@ -288,6 +288,15 @@ static void test_count_in(void) {
     Capture repeated; capture(&repeated, m, block, 1, 48000 * 3);
     assert(repeated.count == 4);
 
+    // Turning on the normal click during Count In keeps the running phase
+    // and continues beyond the end of the former one-shot bar.
+    sk_metronome_enable(m, 0);
+    sk_metronome_count_in(m, 1);
+    sk_metronome_render(m, NULL, NULL, 12000);
+    sk_metronome_enable(m, 1);
+    Capture promoted; capture(&promoted, m, block, 1, 48000 * 3);
+    assert(promoted.count == 6 && promoted.onset[0] >= 11998 && promoted.onset[0] <= 12002);
+
     // A normal click is unaffected by Count In and keeps running.
     sk_metronome_enable(m, 0);
     sk_metronome_enable(m, 1);
@@ -296,25 +305,6 @@ static void test_count_in(void) {
     assert(on.count == 6);
     Capture continued; capture(&continued, m, block, 1, 48000);
     assert(continued.count == 2);
-    sk_metronome_destroy(m);
-}
-
-// Enabling the click during a one-shot count-in must promote it to a
-// continuous click instead of letting the count-in stop it at its end.
-static void test_count_in_promoted_to_click(void) {
-    SKMetronome *m = sk_metronome_create(48000); assert(m);
-    uint32_t block[1] = {512};
-    SKMetronomeSettings s = defaults();
-    s.beatVelocity = 1; s.downbeatVelocity = 1;
-    sk_metronome_settings(m, s);
-    sk_metronome_tempo(m, 120);
-    sk_metronome_count_in(m, 1);
-    sk_metronome_render(m, NULL, NULL, 1000); // count-in starts with the click off
-    sk_metronome_enable(m, 1);                // user enables the click mid-count
-    Capture c; capture(&c, m, block, 1, 48000 * 4);
-    // The first count-in click is still audible at capture start, then three
-    // more count-in clicks and five continuous clicks must follow.
-    assert(c.count == 9);
     sk_metronome_destroy(m);
 }
 
@@ -458,7 +448,6 @@ int main(void) {
     test_long_run();
     test_count_in_matrix();
     test_count_in();
-    test_count_in_promoted_to_click();
     test_count_in_clock_mode_change();
     test_external_clock_matrix();
     test_clock_transport_reserve();
