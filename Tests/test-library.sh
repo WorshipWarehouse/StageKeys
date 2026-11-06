@@ -18,6 +18,8 @@ sources=(
     "$repo/Sources/AudioDevices.swift"
     "$repo/Sources/MIDIPrograms.swift"
     "$repo/Sources/MIDIFXProcessor.swift"
+    "$repo/Sources/MIDIAudioTimeline.swift"
+    "$repo/Sources/MIDIDeliveryPolicy.swift"
     "$repo/Sources/MIDIInput.swift"
     "$repo/Sources/EXSNative.swift"
     "$repo/Sources/ExternalSound.swift"
@@ -64,7 +66,7 @@ for test in "${tests[@]}"; do
 done
 # Native C regressions. They include ../Sources/Synth.h and link the objects built
 # above, so they need no Swift sources, fixtures or audio hardware.
-for test in DelayIndependentLevelsTests DelayTempoTransitionTests AudioEffectsTests ChannelDSPTests ChannelPanicTests RackTests SynthTests MetronomeTests NativeSoundOrderTests; do
+for test in DelayIndependentLevelsTests DelayTempoTransitionTests AudioEffectsTests ChannelDSPTests ChannelPanicTests RackTests SynthTests MetronomeTests NativeSoundOrderTests CompressorResponseTests; do
     xcrun clang -I "$repo/Sources" -std=c11 -O1 -g \
         "$repo/Tests/$test.c" "$build/Synth.o" "$build/CreamCoat.o" \
         -framework CoreMIDI -o "$build/$test"
