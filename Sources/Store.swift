@@ -2242,13 +2242,22 @@ final class PerformanceStore: ObservableObject {
             message = "Could not clear the recently opened history: \(error.localizedDescription)"
         }
     }
-    func refreshSetlists() {
+    #if DEBUG
+    var debugBeforeSetlistListing: ((SetlistLibrary) -> Void)?
+    #endif
+    @discardableResult
+    func refreshSetlists() -> Error? {
         do {
-            let library = try localSetlistLibrary(), inventory = try library.list()
+            let library = try localSetlistLibrary()
+            #if DEBUG
+            debugBeforeSetlistListing?(library)
+            #endif
+            let inventory = try library.list()
             savedSetlists = inventory.entries; setlistLibraryIssues = inventory.issues
             archivedSetlists = try library.listTrash().entries.filter { archived in !savedSetlists.contains(where: { $0.id == archived.originalID }) }
             recentSetlistIDs = SetlistRecents(ids: recentSetlistIDs).retaining(Set(savedSetlists.map(\.id))).ids
-        } catch { message = error.localizedDescription }
+            return nil
+        } catch { message = error.localizedDescription; return error }
     }
     private func preserveCurrentSetlist() throws {
         guard !sessionRecoveryRequired, !settingsRecoveryRequired else { throw SetlistLibraryError.recoveryRequired }
@@ -2326,9 +2335,17 @@ final class PerformanceStore: ObservableObject {
     func exportCurrentPatchToLibrary() -> UUID? {
         do {
             guard setlist.patches.indices.contains(selected) else { throw SetlistError.invalid }
-            let descriptor = try localSetlistLibrary().exportPatch(setlist.patches[selected])
-            refreshSetlists()
-            message = "Saved “\(descriptor.name)” as an independent patch in Setlists. The current setlist was not changed."
+            var exported = setlist.patches[selected]
+            for (index, layer) in exported.layers.enumerated() where layer.external?.kind == .audioUnit {
+                if audition?.patchID == exported.id && audition?.index == index { continue }
+                if let state = try audio.pluginStateData(channel: index, sound: layer.external) {
+                    exported.layers[index].pluginState = state
+                }
+            }
+            let descriptor = try localSetlistLibrary().exportPatch(exported)
+            let refreshError = refreshSetlists()
+            let savedMessage = "Saved “\(descriptor.name)” as an independent patch in Setlists. The current setlist was not changed."
+            message = savedMessage + (refreshError.map { " Could not refresh Setlists: \($0.localizedDescription)" } ?? "")
             return descriptor.id
         } catch {
             message = "Could not export this patch: \(error.localizedDescription)"
