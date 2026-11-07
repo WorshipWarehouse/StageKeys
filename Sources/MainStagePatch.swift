@@ -214,7 +214,11 @@ enum MainStagePatch {
             if let name=String(data:suffix,encoding:.utf8),name.lowercased().hasSuffix(".exs"),name==URL(fileURLWithPath:name).lastPathComponent {names.append(name)}
             start=range.upperBound
         }
-        return Array(Set(names)).sorted()
+        // Keep first-seen order: this array's index becomes the layer's
+        // original sampler slot, the conversion-ID suffix and the assembled
+        // layer order, so sorting would reorder authored layers.
+        var seen=Set<String>()
+        return names.filter{seen.insert($0).inserted}
     }
     /// Host-only sampler state is not included in the referenced EXS file.
     /// Read bounded parameter pairs inside sampler devices, never arbitrary archive bytes.

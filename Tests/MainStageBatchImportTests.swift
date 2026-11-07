@@ -34,6 +34,14 @@ import Foundation
         store.assembleConvertedMainStagePatch(readyOnly:true)
         guard let assembled=store.setlist.patches.last,assembled.layers.count>=2 else{fatalError("No layered patch was assembled")}
         assert(assembled.layers[0].name=="Keys · One" && assembled.layers[1].name=="Keys · Two","Deterministic layer order must survive assembly")
+        // Non-alphabetical references must keep source order, not sorted order.
+        let ordered=try makePatch("Ordered",channel:"Ordered",instruments:["Zebra.exs","Alpha.exs"])
+        store.importMainStageAutomatically(ordered,locations:[.init(instruments:ordered,samples:ordered,label:"Synthetic ordered")])
+        try await wait()
+        assert(store.mainStageOutcomes.count==1 && store.mainStageOutcomes[0].state == .converted,store.libraryImportProgress ?? "No ordered outcome")
+        store.assembleConvertedMainStagePatch(readyOnly:true)
+        guard let orderedPatch=store.setlist.patches.last,orderedPatch.layers.count==2 else{fatalError("No ordered layered patch was assembled")}
+        assert(orderedPatch.layers[0].name=="Ordered · Zebra" && orderedPatch.layers[1].name=="Ordered · Alpha","Source sampler order must survive assembly")
         let concert=root.appendingPathComponent("Set.concert",isDirectory:true)
         try FileManager.default.createDirectory(at:concert,withIntermediateDirectories:true)
         for (bundle,instrument) in [("First","First.exs"),("Second","Second.exs")] {
