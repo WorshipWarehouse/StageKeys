@@ -613,10 +613,11 @@ final class PerformanceStore: ObservableObject {
                 while libraryImportBusy {try? await Task.sleep(nanoseconds:20_000_000)}
                 let states=mainStageOutcomes.map(\.state)
                 let sourceConverted=states.filter{[.converted,.prepared].contains($0)}.count
+                let sourceDuplicates=states.filter{$0 == .duplicate}.count
                 converted+=sourceConverted
-                duplicates+=states.filter{$0 == .duplicate}.count
+                duplicates+=sourceDuplicates
                 needsAttention+=states.filter{[.needsSamples,.unsupported,.failed,.cancelled].contains($0)}.count
-                if sourceConverted+states.filter{$0 == .duplicate}.count>0 {importedSources+=1} else {notImported.append(source.lastPathComponent)}
+                if sourceConverted+sourceDuplicates>0 {importedSources+=1} else {notImported.append(source.lastPathComponent)}
                 if libraryImportCancelRequested {notImported.append("cancelled");break}
             }
             let summary="Batch import: \(importedSources) of \(sources.count) sources imported · \(converted) channels converted · \(duplicates) already installed · \(needsAttention) need attention."
@@ -1968,7 +1969,8 @@ final class PerformanceStore: ObservableObject {
                             let processing=try mainStageProcessing(channelIndex)
                             // A single-instrument channel keeps its original identity, so a sound
                             // installed by an earlier import stays a duplicate, not a re-import.
-                            let variant=layered ? "sampler-\(instrumentIndex)-"+AssetDigest.sha256(file):AssetDigest.sha256(file)
+                            let fileHash=try AssetDigest.sha256(file)
+                            let variant=layered ? "sampler-\(instrumentIndex)-"+fileHash:fileHash
                             let id=try MainStagePatch.conversionID(report,channel:channel,variant:variant)
                             if let existing=entries.firstIndex(where:{$0.id==id}) {
                                 entries[existing].sourceArchiveID=report.sourceArchiveID
