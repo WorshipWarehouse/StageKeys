@@ -115,12 +115,33 @@ enum MainStagePatch {
                 guard entry.sourceArchiveID==archive,entry.id.hasPrefix("mainstage-channel-"+channel.sha256+"-") else{return false}
                 return !entry.id.contains("-v2-") || modernPrefix.map{entry.id.hasPrefix($0)} == true
             }
-            guard matches.count==1,let entry=matches.first,var layer=entry.layer,
-                  let kind=layer.external?.kind,kind == .samplerPreset || kind == .audioUnit else {
-                throw Failure.invalid("\(channel.name): convert the channel first and resolve multiple converted versions before assembling this patch.")
+            guard !matches.isEmpty else {
+                throw Failure.invalid("\(channel.name): convert the channel first before assembling this patch.")
             }
-            layer.id=UUID();layer.name=channel.name;layers.append(layer)
-            notes += (entry.conversionNotes ?? []).map{channel.name+": "+$0}
+            // One source channel can reference several sampler instruments. Keep
+            // every converted layer in deterministic instrument-reference order; a missing
+            // layer is reported by the import outcome instead of hiding the rest.
+            let ordered=matches.sorted{
+                let left=$0.mainStageLayerIndex ?? -1,right=$1.mainStageLayerIndex ?? -1
+                if left != right {return left<right}
+                return $0.name<$1.name
+            }
+            var variants=Set<String>()
+            for entry in ordered {
+                let variant=(entry.mainStageLayerIndex.map(String.init) ?? "legacy")+"|"+entry.name
+                guard variants.insert(variant).inserted else {
+                    throw Failure.invalid("\(channel.name): multiple converted versions of \(entry.name) exist; remove the duplicate before assembling this patch.")
+                }
+                guard var layer=entry.layer,let kind=layer.external?.kind,
+                      kind == .samplerPreset || kind == .audioUnit else {
+                    throw Failure.invalid("\(entry.name): the converted layer is not playable. Convert the channel again before assembling this patch.")
+                }
+                layer.id=UUID();layer.name=entry.name;layers.append(layer)
+                notes += (entry.conversionNotes ?? []).map{entry.name+": "+$0}
+            }
+        }
+        guard layers.count<=15 else {
+            throw Failure.invalid("The converted layers exceed the 15-layer patch limit. Choose fewer channels or instruments.")
         }
         layers += (layers.count..<15).map{_ in Layer.empty()}
         var patch=Patch(name:String(report.name.prefix(180))+" · Converted",layers:layers,snapshots:[])
@@ -226,6 +247,37 @@ enum MainStagePatch {
         }
         guard curves.count<=1 else{throw Failure.invalid("Conflicting sampler amplitude velocity curves; select a single instrument channel.")}
         return curves.first
+    }
+    /// Expand a selected patch, channel strip, concert or folder into the bounded
+    /// list of source patches the batch importer will retain. A patch bundle is a
+    /// single source; its channel strips are internal and must not be imported as
+    /// independent patches.
+    static func importSources(at url:URL)throws->[URL] {
+        if ["patch","cst"].contains(url.pathExtension.lowercased()) {return [url]}
+        let values=try url.resourceValues(forKeys:[.isDirectoryKey,.isSymbolicLinkKey])
+        guard values.isDirectory==true,values.isSymbolicLink != true else {
+            throw Failure.invalid("Choose a MainStage .patch, .cst, .concert or a folder of patches.")
+        }
+        guard let files=FileManager.default.enumerator(at:url,includingPropertiesForKeys:[.isDirectoryKey,.isRegularFileKey,.isSymbolicLinkKey],options:[.skipsHiddenFiles]) else {
+            throw Failure.invalid("Could not read the selected folder.")
+        }
+        var sources:[URL]=[],visited=0
+        for case let file as URL in files {
+            visited+=1
+            guard visited<=100_000 else{throw Failure.invalid("The selected folder contains too many files; choose a smaller folder.")}
+            if files.level>24 {files.skipDescendants();continue}
+            let item=try file.resourceValues(forKeys:[.isDirectoryKey,.isRegularFileKey,.isSymbolicLinkKey])
+            if item.isSymbolicLink==true {files.skipDescendants();continue}
+            let ext=file.pathExtension.lowercased()
+            if ext=="patch",item.isDirectory==true {
+                sources.append(file);files.skipDescendants()
+            } else if ext=="cst",item.isRegularFile==true {
+                sources.append(file)
+            }
+            guard sources.count<=64 else{throw Failure.invalid("This folder contains more than 64 MainStage patches; choose a smaller folder.")}
+        }
+        guard !sources.isEmpty else{throw Failure.invalid("No MainStage .patch or .cst files were found in this folder.")}
+        return sources.sorted{$0.path<$1.path}
     }
     static func findSamplerInstruments(_ names:Set<String>,in folder:URL)throws->[URL] {
         guard !names.isEmpty,names.count<=64 else{throw Failure.invalid("Invalid instrument reference list.")}

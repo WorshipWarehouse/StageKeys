@@ -32,14 +32,14 @@ struct SoundImportView:View {
 
                 Text("IMPORT FROM").font(StageTheme.font(11,weight:.bold)).tracking(1.2).foregroundStyle(.secondary)
                 LazyVGrid(columns:[GridItem(.flexible(),spacing:12),GridItem(.flexible(),spacing:12)],spacing:12) {
-                    ImportSourceCard(icon:"pianokeys",title:"MainStage",detail:"Patch or channel strip · choose the effects that fill StageKeys’ visible slots",accent:StageTheme.selected){choice = .mainStage;choosing=true}
+                    ImportSourceCard(icon:"pianokeys",title:"MainStage",detail:"Patch, channel strip or concert · automatic discovery, one step",accent:StageTheme.selected){choice = .mainStage;choosing=true}
                     ImportSourceCard(icon:"waveform.badge.plus",title:"Instrument File",detail:"StageKeys Sampler, EXS, AUPRESET, audio file or supported sound bank",accent:StageTheme.colors[1]){choice = .file;choosing=true}
                     ImportSourceCard(icon:"folder.badge.plus",title:"Sampler Folder",detail:"Scan a folder for EXS and AUPRESET instruments with their original samples",accent:StageTheme.colors[2]){choice = .library;choosing=true}
                     ImportSourceCard(icon:"shippingbox.fill",title:"Sound Pack",detail:"Install a personal StageKeys pack or a separately downloaded sound library",accent:StageTheme.colors[3]){choice = .backup;choosing=true}
                 }
                 HStack(spacing:10) {
                     Image(systemName:"arrow.down.doc").foregroundStyle(StageTheme.selected)
-                    Text("Drop a MainStage .patch or .cst file anywhere in this window").font(StageTheme.font(11,weight:.semibold))
+                    Text("Drop a .patch, .cst, .concert or a folder of patches anywhere in this window").font(StageTheme.font(11,weight:.semibold))
                     Spacer()
                     Text("Original source stays unchanged").font(.caption).foregroundStyle(.secondary)
                 }.padding(.horizontal,16).frame(height:44).background(StageTheme.raised.opacity(0.28),in:RoundedRectangle(cornerRadius:8)).overlay {RoundedRectangle(cornerRadius:8).stroke(style:StrokeStyle(lineWidth:1,dash:[5,4])).foregroundStyle(.white.opacity(0.12))}
@@ -95,22 +95,22 @@ struct SoundImportView:View {
                     }
                     }.padding(18).background(StageTheme.panel,in:RoundedRectangle(cornerRadius:10)).overlay {RoundedRectangle(cornerRadius:10).stroke(.white.opacity(0.06))}
                 }
-                if store.libraryImportBusy || store.libraryImportProgress != nil || status != nil {
+                if store.libraryImportBusy || store.mainStageBatchBusy || store.libraryImportProgress != nil || status != nil {
                     HStack(alignment:.top,spacing:12) {
-                        if store.libraryImportBusy {ProgressView().controlSize(.small).padding(.top,2)}
+                        if store.libraryImportBusy || store.mainStageBatchBusy {ProgressView().controlSize(.small).padding(.top,2)}
                         else {Image(systemName:status == nil ? "checkmark.circle.fill":"info.circle.fill").foregroundStyle(status == nil ? StageTheme.selected:.orange)}
                         VStack(alignment:.leading,spacing:4) {
-                            Text(store.libraryImportBusy ? "Importing…":"Import status").font(StageTheme.font(13,weight:.semibold))
+                            Text(store.libraryImportBusy || store.mainStageBatchBusy ? "Importing…":"Import status").font(StageTheme.font(13,weight:.semibold))
                             if let progress=store.libraryImportProgress {Text(progress).font(.caption).textSelection(.enabled)}
                             if let status {Text(status).font(.caption).textSelection(.enabled)}
-                            if store.libraryImportBusy {ProgressView().progressViewStyle(.linear).padding(.top,4)}
+                            if store.libraryImportBusy || store.mainStageBatchBusy {if store.mainStageBatchTotal>1 {Text("\(store.mainStageBatchCompleted) of \(store.mainStageBatchTotal) patches").font(.caption2).foregroundStyle(.secondary)};ProgressView().progressViewStyle(.linear).padding(.top,4)}
                         }
                     }.padding(16).frame(maxWidth:.infinity,alignment:.leading).background(StageTheme.raised.opacity(0.3),in:RoundedRectangle(cornerRadius:9))
                 }
                 Spacer()
-            }.padding(28).disabled(store.libraryImportBusy)
+            }.padding(28).disabled(store.libraryImportBusy || store.mainStageBatchBusy)
             }.overlay(alignment:.bottom) {
-                if store.libraryImportBusy {Button("Cancel Import Before Commit") {store.cancelLibraryImport()}.buttonStyle(StageButtonStyle()).padding().background(StageTheme.base)}
+                if store.libraryImportBusy || store.mainStageBatchBusy {Button("Cancel Import Before Commit") {store.cancelLibraryImport()}.buttonStyle(StageButtonStyle()).padding().background(StageTheme.base)}
             }
         }.fileImporter(isPresented:$choosing,allowedContentTypes:choice == .file ? [.audio,.data] : choice == .mainStage ? [.package,.folder,.data] : choice == .backup ? [.folder,.data]:[.folder]) {result in
             switch result {
@@ -140,7 +140,12 @@ struct SoundImportView:View {
             }
         }.onDrop(of:[UTType.fileURL],isTargeted:nil){providers in
             guard let provider=providers.first else{return false}
-            _ = provider.loadObject(ofClass:URL.self){url,_ in guard let url,["patch","cst"].contains(url.pathExtension.lowercased()) else{return};DispatchQueue.main.async{store.importMainStageAutomatically(url)}}
+            _ = provider.loadObject(ofClass:URL.self){url,_ in
+                guard let url else{return}
+                let directory=(try? url.resourceValues(forKeys:[.isDirectoryKey]).isDirectory)==true
+                guard directory || ["patch","cst","concert"].contains(url.pathExtension.lowercased()) else{return}
+                DispatchQueue.main.async{store.importMainStageAutomatically(url)}
+            }
             return true
         }.sheet(item:$effectRequest){request in MainStageEffectSelectionSheet(request:request).environmentObject(store)}
     }
