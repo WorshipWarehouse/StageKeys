@@ -593,6 +593,37 @@ final class PerformanceStore: ObservableObject {
             importMainStageSamplers(retained,installedAudioUnits:installedAudioUnits,allowPartial:true)
         }
     }
+    /// Convert a whole concert or a folder of patches/channel strips one source at a
+    /// time. One unreadable or unsupported source is reported without discarding the
+    /// rest of the selection, and every source keeps its own retained archive.
+    func importMainStageBatch(_ url:URL,locations:[MainStageDiscovery.Location]?=nil) {
+        guard !libraryImportBusy else{return}
+        let sources:[URL]
+        do {sources=try MainStageBatch.sources(in:url)}
+        catch {message=error.localizedDescription;return}
+        guard sources.count>1 else {importMainStageAutomatically(sources[0],locations:locations);return}
+        Task { @MainActor in
+            var converted=0,duplicates=0,needsAttention=0,importedSources=0
+            var notImported:[String]=[]
+            for (index,source) in sources.enumerated() {
+                while libraryImportBusy {try? await Task.sleep(nanoseconds:20_000_000)}
+                libraryImportProgress="Importing MainStage source \(index+1) of \(sources.count): "+source.lastPathComponent
+                importMainStageAutomatically(source,locations:locations)
+                guard libraryImportBusy else {notImported.append(source.lastPathComponent+": not readable as a MainStage source");continue}
+                while libraryImportBusy {try? await Task.sleep(nanoseconds:20_000_000)}
+                let states=mainStageOutcomes.map(\.state)
+                let sourceConverted=states.filter{[.converted,.prepared].contains($0)}.count
+                converted+=sourceConverted
+                duplicates+=states.filter{$0 == .duplicate}.count
+                needsAttention+=states.filter{[.needsSamples,.unsupported,.failed,.cancelled].contains($0)}.count
+                if sourceConverted+states.filter{$0 == .duplicate}.count>0 {importedSources+=1} else {notImported.append(source.lastPathComponent)}
+                if libraryImportCancelRequested {notImported.append("cancelled");break}
+            }
+            let summary="Batch import: \(importedSources) of \(sources.count) sources imported · \(converted) channels converted · \(duplicates) already installed · \(needsAttention) need attention."
+            libraryImportProgress=summary+(notImported.isEmpty ? "":" Not imported: "+notImported.prefix(6).joined(separator: ", ")+".")
+            libraryImportBusy=false
+        }
+    }
     var selectedMainStageChannels:Set<Int> {
         guard let report=mainStageImportReport else{return []}
         return (mainStageChannelSelection ?? Set(report.channels.indices)).filter{report.channels.indices.contains($0) && report.channels[$0].isConvertible}
@@ -1918,46 +1949,69 @@ final class PerformanceStore: ObservableObject {
                 var entries=original,imported=0,skipped=0,failures:[String]=[]
                 for (channelIndex,channel) in report.channels.enumerated() where selection.contains(channelIndex) && !channel.instruments.isEmpty {
                     guard channel.unsupportedInstrumentFamily == nil else {outcome(channelIndex,.unsupported,channel.nativeInstrumentStatus);failures.append(channel.name+": "+channel.nativeInstrumentStatus);continue}
-                    guard channel.instruments.count==1,let name=channel.instruments.first else{outcome(channelIndex,.unsupported,"Multiple sampler instruments require channel topology translation; none were silently flattened.");failures.append(channel.name+": layered sampler selection requires translation");continue}
-                    let candidates=try discovered?[name] ?? files.filter{$0.lastPathComponent==name}.map{MainStageDiscovery.Candidate(file:$0,samples:folder,sha256:try AssetDigest.sha256($0))}
-                    guard !candidates.isEmpty,Set(candidates.map(\.sha256)).count==1 else{let reason=candidates.isEmpty ? "Instrument not found in searched locations; choose its sample folder.":"Different instruments share this filename; choose a narrower folder.";outcome(channelIndex,.needsSamples,reason);failures.append(name+": "+reason);continue}
-                    let file=candidates[0].file
-                    libraryImportProgress="Importing MainStage channel: "+channel.name
-                    await Task.yield();try checkLibraryImportCancellation()
-                    let assetsBefore=managedImportAssets()
-                    var createdSound:ExternalSound?,createdOriginal:StageKeysSampler.Original?
-                    do {
-                        let processing=try mainStageProcessing(channelIndex)
-                        let id=try MainStagePatch.conversionID(report,channel:channel,variant:AssetDigest.sha256(file))
-                        if let existing=entries.firstIndex(where:{$0.id==id}) {
-                            entries[existing].sourceArchiveID=report.sourceArchiveID
-                            outcome(channelIndex,.duplicate,"Already installed; personal edits retained.",id)
-                            skipped+=1;continue
-                        }
-                        var prepared:(ExternalSound,[String]?,Layer?)?
-                        var preparationError:Error?
-                        for candidate in candidates {
-                            let access=candidate.samples.startAccessingSecurityScopedResource();defer{if access{candidate.samples.stopAccessingSecurityScopedResource()}}
-                            do {prepared=try prepareLibrarySound(candidate.file,sampleRoot:candidate.samples);break}
-                            catch{preparationError=error}
-                        }
-                        guard let (sound,notes,template)=prepared else{throw preparationError ?? ExternalInstrumentError.missingFile}
-                        createdSound=sound
-                        var layer=template ?? Layer(name:channel.name,instrument:-1,gain:1)
-                        layer.name=channel.name;layer.external=sound
-                        let applied=try processing.applying(to:layer,selection:mainStageSelection(channelIndex))
-                        layer=applied.layer
-                        let original=try StageKeysSampler.retainOriginal(file,library:saveURL.deletingLastPathComponent())
-                        createdOriginal=original
-                        // One layer hosts one instrument: a channel that also saved an Audio
-                        // Unit keeps that state in the archive instead of losing it silently.
-                        let audioUnitNotes=channel.thirdPartyAudioUnits.first.map{["the channel also saved \($0.name); this layer hosts the converted sampler only, so its plug-in state stays in the archive."]} ?? []
-                        let entry=LibrarySound(id:id,name:channel.name,collection:"MainStage Patches",sound:sound,layer:layer,sourceArchiveID:report.sourceArchiveID,conversionNotes:(notes ?? [])+processing.issues+applied.notes+applied.omitted+audioUnitNotes,originalInstrument:original)
-                        entries.append(entry)
-                        outcome(channelIndex,.prepared,"Converted with source settings; review compatibility notes.",id)
-                        preparedAssets.formUnion(assetsForImportedSound(createdSound,original:createdOriginal).subtracting(assetsBefore))
-                        imported+=1
-                    }catch{for asset in assetsForImportedSound(createdSound,original:createdOriginal).subtracting(assetsBefore){try? FileManager.default.removeItem(at:asset)};outcome(channelIndex,.failed,error.localizedDescription);failures.append(channel.name+": "+error.localizedDescription)}
+                    let instrumentNames=channel.instruments
+                    // A channel can reference several sampler instruments. Each one becomes
+                    // its own layer of the converted channel; nothing is flattened or dropped.
+                    guard instrumentNames.count<=8 else {outcome(channelIndex,.unsupported,"This channel references more than 8 sampler instruments; split it into separate channels in MainStage first. No sound was substituted.");failures.append(channel.name+": more than 8 layered sampler references");continue}
+                    var convertedIDs:[String]=[],detailParts:[String]=[],convertedCount=0,duplicateCount=0,needsSamplesCount=0
+                    for (instrumentIndex,name) in instrumentNames.enumerated() {
+                        let layered=instrumentNames.count>1
+                        let label=layered ? channel.name+" · "+URL(fileURLWithPath:name).deletingPathExtension().lastPathComponent:channel.name
+                        let candidates=try discovered?[name] ?? files.filter{$0.lastPathComponent==name}.map{MainStageDiscovery.Candidate(file:$0,samples:folder,sha256:try AssetDigest.sha256($0))}
+                        guard !candidates.isEmpty,Set(candidates.map(\.sha256)).count==1 else{let reason=candidates.isEmpty ? "Instrument not found in searched locations; choose its sample folder.":"Different instruments share this filename; choose a narrower folder.";needsSamplesCount+=1;detailParts.append(label+": "+reason);failures.append(name+": "+reason);continue}
+                        let file=candidates[0].file
+                        libraryImportProgress="Importing MainStage channel: "+label
+                        await Task.yield();try checkLibraryImportCancellation()
+                        let assetsBefore=managedImportAssets()
+                        var createdSound:ExternalSound?,createdOriginal:StageKeysSampler.Original?
+                        do {
+                            let processing=try mainStageProcessing(channelIndex)
+                            // A single-instrument channel keeps its original identity, so a sound
+                            // installed by an earlier import stays a duplicate, not a re-import.
+                            let variant=layered ? "sampler-\(instrumentIndex)-"+AssetDigest.sha256(file):AssetDigest.sha256(file)
+                            let id=try MainStagePatch.conversionID(report,channel:channel,variant:variant)
+                            if let existing=entries.firstIndex(where:{$0.id==id}) {
+                                entries[existing].sourceArchiveID=report.sourceArchiveID
+                                entries[existing].sourceChannelIndex=channelIndex
+                                entries[existing].sourceInstrumentIndex=layered ? instrumentIndex:nil
+                                convertedIDs.append(id);duplicateCount+=1;detailParts.append(label+": already installed")
+                                skipped+=1;continue
+                            }
+                            var prepared:(ExternalSound,[String]?,Layer?)?
+                            var preparationError:Error?
+                            for candidate in candidates {
+                                let access=candidate.samples.startAccessingSecurityScopedResource();defer{if access{candidate.samples.stopAccessingSecurityScopedResource()}}
+                                do {prepared=try prepareLibrarySound(candidate.file,sampleRoot:candidate.samples);break}
+                                catch{preparationError=error}
+                            }
+                            guard let (sound,notes,template)=prepared else{throw preparationError ?? ExternalInstrumentError.missingFile}
+                            createdSound=sound
+                            var layer=template ?? Layer(name:label,instrument:-1,gain:1)
+                            layer.name=label;layer.external=sound
+                            let applied=try processing.applying(to:layer,selection:mainStageSelection(channelIndex))
+                            layer=applied.layer
+                            // The source channel had one fader for all of its sampler layers.
+                            // Split that gain evenly so the converted channel keeps the source
+                            // channel's summed level; per-instrument balance stays archived.
+                            if layered {layer.gain/=Float(instrumentNames.count)}
+                            let original=try StageKeysSampler.retainOriginal(file,library:saveURL.deletingLastPathComponent())
+                            createdOriginal=original
+                            // One layer hosts one instrument: a channel that also saved an Audio
+                            // Unit keeps that state in the archive instead of losing it silently.
+                            var audioUnitNotes=channel.thirdPartyAudioUnits.first.map{["the channel also saved \($0.name); this layer hosts the converted sampler only, so its plug-in state stays in the archive."]} ?? []
+                            if layered {audioUnitNotes.append("one of \(instrumentNames.count) sampler layers: the source channel's gain was split evenly across them, so the layers' relative balance is not recovered.")}
+                            let entry=LibrarySound(id:id,name:label,collection:"MainStage Patches",sound:sound,layer:layer,sourceArchiveID:report.sourceArchiveID,conversionNotes:(notes ?? [])+processing.issues+applied.notes+applied.omitted+audioUnitNotes,originalInstrument:original,sourceChannelIndex:channelIndex,sourceInstrumentIndex:layered ? instrumentIndex:nil)
+                            entries.append(entry)
+                            convertedIDs.append(id);convertedCount+=1;detailParts.append(label+": converted")
+                            preparedAssets.formUnion(assetsForImportedSound(createdSound,original:createdOriginal).subtracting(assetsBefore))
+                            imported+=1
+                        }catch{for asset in assetsForImportedSound(createdSound,original:createdOriginal).subtracting(assetsBefore){try? FileManager.default.removeItem(at:asset)};detailParts.append(label+": "+error.localizedDescription);failures.append(channel.name+": "+error.localizedDescription)}
+                    }
+                    if let index=mainStageOutcomes.firstIndex(where:{$0.id==channelIndex}) {
+                        mainStageOutcomes[index].soundIDs=convertedIDs
+                        mainStageOutcomes[index].detail=detailParts.joined(separator:"; ")
+                        mainStageOutcomes[index].state = convertedCount>0 ? .prepared:(duplicateCount>0 ? .duplicate:(needsSamplesCount>0 ? .needsSamples:.failed))
+                    }
                 }
                 if !audioUnitChannels.isEmpty {
                     let installed=installedAudioUnits ?? ExternalInstrumentRack.instruments()

@@ -109,18 +109,35 @@ enum MainStagePatch {
             throw Failure.invalid("Choose a source patch with 1–15 converted instrument channels. More complex patch routing requires manual setup.")
         }
         var layers:[Layer]=[],notes=["Converted channel strips only. Patch-level buses/sends, tempo, scripts and routing require review; this is not full MainStage topology parity."]
-        for channel in channels {
+        for (channelIndex,channel) in channels {
             let modernPrefix=try? conversionID(report,channel:channel,variant:"")
             let matches=entries.filter{entry in
+                if let source=entry.sourceChannelIndex {return entry.sourceArchiveID==archive && source==channelIndex}
                 guard entry.sourceArchiveID==archive,entry.id.hasPrefix("mainstage-channel-"+channel.sha256+"-") else{return false}
                 return !entry.id.contains("-v2-") || modernPrefix.map{entry.id.hasPrefix($0)} == true
-            }
-            guard matches.count==1,let entry=matches.first,var layer=entry.layer,
-                  let kind=layer.external?.kind,kind == .samplerPreset || kind == .audioUnit else {
+            }.sorted{($0.sourceInstrumentIndex ?? 0,$0.name)<($1.sourceInstrumentIndex ?? 0,$1.name)}
+            guard !matches.isEmpty else {
                 throw Failure.invalid("\(channel.name): convert the channel first and resolve multiple converted versions before assembling this patch.")
             }
-            layer.id=UUID();layer.name=channel.name;layers.append(layer)
-            notes += (entry.conversionNotes ?? []).map{channel.name+": "+$0}
+            // Several converted versions of one channel are interchangeable only when
+            // each records its own sampler position from a decomposed channel.
+            if matches.count>1 {
+                let positions=matches.compactMap(\.sourceInstrumentIndex)
+                guard positions.count==matches.count,Set(positions).count==positions.count,
+                      positions.allSatisfy({(0..<max(1,channel.instruments.count)).contains($0)}) else {
+                    throw Failure.invalid("\(channel.name): convert the channel first and resolve multiple converted versions before assembling this patch.")
+                }
+            }
+            guard layers.count+matches.count<=15 else {
+                throw Failure.invalid("\(channel.name): the converted channels need more than 15 layers. Convert fewer channels, or combine the layered source channels in MainStage first.")
+            }
+            for entry in matches {
+                guard var layer=entry.layer,let kind=layer.external?.kind,kind == .samplerPreset || kind == .audioUnit else {
+                    throw Failure.invalid("\(channel.name): convert the channel first and resolve multiple converted versions before assembling this patch.")
+                }
+                layer.id=UUID();layer.name=matches.count>1 ? entry.name:channel.name;layers.append(layer)
+                notes += (entry.conversionNotes ?? []).map{channel.name+": "+$0}
+            }
         }
         layers += (layers.count..<15).map{_ in Layer.empty()}
         var patch=Patch(name:String(report.name.prefix(180))+" · Converted",layers:layers,snapshots:[])
@@ -548,6 +565,48 @@ enum MainStageDiscovery {
             } catch {result.searches.append(Search(id:String(index),location:location.label,detail:"\(location.instruments.path): \(error.localizedDescription)"))}
         }
         return result
+    }
+}
+/// Bounded enumeration of the MainStage sources one import may cover. This only
+/// selects documents; nothing is opened, converted or modified here.
+enum MainStageBatch {
+    static let sourceLimit=24
+    static let depthLimit=8
+    /// True for a patch, a channel strip, a concert or any folder.
+    static func canImport(_ url:URL)->Bool {
+        if ["patch","cst","concert"].contains(url.pathExtension.lowercased()) {return true}
+        return (try? url.resourceValues(forKeys:[.isDirectoryKey]).isDirectory)==true
+    }
+    static func sources(in url:URL)throws->[URL] {
+        let values=try? url.resourceValues(forKeys:[.isDirectoryKey,.isSymbolicLinkKey])
+        guard values?.isSymbolicLink != true else{throw MainStagePatch.Failure.invalid("Symbolic links are not imported. Choose the real MainStage document or folder.")}
+        let fileExtension=url.pathExtension.lowercased()
+        if fileExtension=="patch" {
+            guard values?.isDirectory==true else{throw MainStagePatch.Failure.invalid("A MainStage .patch is a folder; choose the patch folder itself.")}
+            return [url]
+        }
+        if fileExtension=="cst" {
+            guard values?.isDirectory != true else{throw MainStagePatch.Failure.invalid("A channel strip is a document, not a folder.")}
+            return [url]
+        }
+        guard values?.isDirectory==true else{throw MainStagePatch.Failure.invalid("Choose a MainStage patch, channel strip, concert or folder.")}
+        guard let enumeration=FileManager.default.enumerator(at:url,includingPropertiesForKeys:[.isDirectoryKey,.isSymbolicLinkKey]) else{throw MainStagePatch.Failure.invalid("Could not read the selected folder.")}
+        var found:[URL]=[],visited=0
+        for case let file as URL in enumeration {
+            visited+=1;guard visited<=100_000 else{throw MainStagePatch.Failure.invalid("The selected folder contains too many files; choose a smaller concert or folder.")}
+            if enumeration.level>depthLimit {enumeration.skipDescendants();continue}
+            let attributes=try file.resourceValues(forKeys:[.isDirectoryKey,.isSymbolicLinkKey])
+            if attributes.isSymbolicLink==true {enumeration.skipDescendants();continue}
+            switch file.pathExtension.lowercased() {
+            case "cst" where attributes.isDirectory != true: found.append(file)
+            case "patch" where attributes.isDirectory==true: found.append(file);enumeration.skipDescendants()
+            default: break
+            }
+            guard found.count<=sourceLimit else{throw MainStagePatch.Failure.invalid("This selection contains more than \(sourceLimit) MainStage sources. Choose a smaller concert or folder so each source can be reviewed.")}
+        }
+        let sorted=found.sorted{$0.path<$1.path}
+        guard !sorted.isEmpty else{throw MainStagePatch.Failure.invalid("No MainStage .patch or .cst documents were found here. Concerts and folders are searched up to \(depthLimit) folders deep.")}
+        return sorted
     }
 }
 struct MainStageChannelOutcome:Identifiable,Codable {
