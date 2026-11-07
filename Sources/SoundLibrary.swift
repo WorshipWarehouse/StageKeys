@@ -16,6 +16,9 @@ struct LibrarySound: Codable, Identifiable, Equatable {
     var sourceTagsApplied:Bool?
     var originalInstrument:StageKeysSampler.Original?
     var managedFileSHA256:String?
+    /// Original sampler slot when one MainStage channel produced several layers.
+    /// Nil on older entries and on single-instrument channels.
+    var mainStageLayerIndex:Int? = nil
 }
 
 /// User-owned sounds stay outside the application bundle and survive upgrades.
@@ -258,6 +261,7 @@ struct SoundLibrary {
                 }
             }
             if let source=entry.sourceArchiveID {guard !source.isEmpty,source.count<=256 else{throw SetlistError.invalid}}
+            if let index=entry.mainStageLayerIndex {guard (0..<128).contains(index) else{throw SetlistError.invalid}}
             if let layer = entry.layer {
                 guard layer.loaded || layer.instrument >= 0 else { throw SetlistError.invalid } // Retain legacy metadata; it is not a playable source.
                 var validation = Setlist(); validation.patches = [Patch(name:"Saved Sound",layers:[layer],snapshots:[])]; try validation.validate()
