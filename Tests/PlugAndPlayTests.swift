@@ -1,6 +1,7 @@
 import Foundation
 import CoreMIDI
 @main struct PlugAndPlayTests {
+ /// Exercises Primary/Secondary routing and learned controls through virtual CoreMIDI.
  static func main() throws {
     let store=PerformanceStore(); store.setlist=TestFixtures.setlist(); store.primarySourceID = -1; store.midiChannel = -1; store.secondarySourceID = -2
     try store.audio.prepareOffline(); store.start()

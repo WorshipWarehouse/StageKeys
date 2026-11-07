@@ -1374,6 +1374,7 @@ final class PerformanceStore: ObservableObject {
         var l = Layer.empty(); l.id = patch.layers[index].id; commitLayer(index, l)
     }
     func toggleMIDIEffect(_ index: Int) { guard patch.layers.indices.contains(index) else{return};var l = patch.layers[index]; l.midiEffectEnabled.toggle(); commitLayer(index,l) }
+    /// Reconfigures one effect and optionally persists the change.
     @discardableResult
     func setEffect(_ index: Int, _ slot: Int, _ effect: AudioEffect, saveChanges: Bool = true) -> Bool {
         guard patch.layers.indices.contains(index),patch.layers[index].effects.indices.contains(slot),
@@ -1525,6 +1526,7 @@ final class PerformanceStore: ObservableObject {
             }
         }
     }
+    /// Routes an incoming event only to its accepted controller slot and target type.
     private func handleMIDI(_ status: UInt8, _ a: UInt8, _ b: UInt8, source: Int32) {
         midiActivity.toggle()
         midiLog.insert((midiSources.first(where: { $0.id == source })?.name ?? "MIDI") + String(format: " · Ch %02d · %02X · %d · %d", Int(status & 15) + 1, status & 0xf0, a, b), at: 0)
@@ -1609,6 +1611,7 @@ final class PerformanceStore: ObservableObject {
         if learningTarget == target { learningTarget=nil }
         if saveChanges { save() }
     }
+    /// Applies a learned CC value to its validated performance control.
     private func applyMIDIControl(_ target:MIDIControlTarget,value:UInt8,key:CCKey,rising:Bool) {
         guard target.valid, !target.isRisingEdge || rising else { return }
         switch target {

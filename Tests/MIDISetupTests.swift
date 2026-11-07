@@ -4,6 +4,7 @@ import CoreMIDI
 /// Model tests for external MIDI routing and controller setup. These run without
 /// hardware or external apps; ExternalMIDITests covers the real virtual port.
 @main struct MIDISetupTests {
+    /// Verifies controller rules, target descriptors, routing, and settings persistence.
     static func main() throws {
         // Velocity scaling: endpoints, midpoint, a narrowed range and an inverted
         // range (which must clamp instead of inverting the response).

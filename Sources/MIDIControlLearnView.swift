@@ -4,6 +4,7 @@ struct MIDIControlLearnView: View {
     @EnvironmentObject private var store: PerformanceStore
     @Environment(\.dismiss) private var dismiss
     private let general: [MIDIControlTarget] = [.master, .modulation, .sustain, .previousPatch, .nextPatch, .panic]
+    /// Builds learnable bypass and parameter targets for effects in loaded sounds.
     private var effectTargets: [MIDIControlTarget] {
         var targets: [MIDIControlTarget] = []
         for layer in store.patch.layers.indices where store.patch.layers[layer].loaded {

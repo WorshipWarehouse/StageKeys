@@ -38,6 +38,7 @@ enum MIDIControlTarget: Codable, Hashable, Identifiable {
         AudioEffectCatalog.names.indices.contains(kind) ? AudioEffectCatalog.names[kind] : "Effect"
     }
 
+    /// Returns the stable key used to persist and identify this learn target.
     var id: String {
         switch self {
         case .soundLevel(let index): return "soundLevel:\(index)"
@@ -56,6 +57,7 @@ enum MIDIControlTarget: Codable, Hashable, Identifiable {
             return "effectParameter:\(layer):\(slot):\(kind):\(parameter)"
         }
     }
+    /// Returns the user-facing name shown beside this target's learn control.
     var title: String {
         switch self {
         case .soundLevel(let index): return "Sound \(index + 1) Level"
@@ -78,6 +80,7 @@ enum MIDIControlTarget: Codable, Hashable, Identifiable {
             return "Sound \(layer + 1) Effect \(slot + 1) \(Self.effectName(kind)) \(name)"
         }
     }
+    /// Indicates whether the target indexes an available sound, effect, or parameter.
     var valid: Bool {
         switch self {
         case .soundLevel(let index): return (0..<15).contains(index)
