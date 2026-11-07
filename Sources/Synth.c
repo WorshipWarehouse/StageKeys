@@ -144,9 +144,21 @@ static void coefficients(Biquad*b,double rate,float f,float q,float db,int peak)
  if(peak){a0=1+alpha/A;b->b0=(1+alpha*A)/a0;b->b1=-2*cs/a0;b->b2=(1-alpha*A)/a0;b->a1=-2*cs/a0;b->a2=(1-alpha/A)/a0;}
  else{a0=1+alpha;b->b0=(1-cs)/2/a0;b->b1=(1-cs)/a0;b->b2=b->b0;b->a1=-2*cs/a0;b->a2=(1-alpha)/a0;}
 }
+// A peaking band's stored Q is the analog constant-Q width shown as octaves.
+// Feeding that Q straight into alpha narrows the rendered peak as the bilinear
+// transform compresses the top octave (42% at 12 kHz/44.1 kHz), so the band
+// width is realized with RBJ's BLT form. The rendered midpoint (dBgain/2)
+// bandwidth then matches the displayed width at every centre and rate.
+static void peakBand(Biquad*b,double rate,float f,float db,float q){
+ double w=TAU*fmin(f,rate*.45)/rate,cs=cos(w),sn=sin(w);
+ double bw=2*asinh(1/(2*q))/log(2),alpha=sn*sinh(log(2)/2*bw*w/sn);
+ double A=pow(10,db/40),a0=1+alpha/A;
+ b->b0=(1+alpha*A)/a0;b->b1=-2*cs/a0;b->b2=(1-alpha*A)/a0;
+ b->a1=-2*cs/a0;b->a2=(1-alpha/A)/a0;
+}
 static void equalizer(Biquad*b,double rate,int band,float f,float db,float q){
  if((band==0&&f<=20)||(band==7&&f>=20000)){b->b0=1;b->b1=b->b2=b->a1=b->a2=0;return;}
- if(band>=2&&band<=5){coefficients(b,rate,f,q,db,1);return;}
+ if(band>=2&&band<=5){peakBand(b,rate,f,db,q);return;}
  if(band==7){coefficients(b,rate,f,q,0,0);return;}
  double w=TAU*fmin(f,rate*.45)/rate,c=cos(w),a=sin(w)/(2*q),A=pow(10,db/40),t=2*sqrt(A)*a,a0;
  if(band==0){a0=1+a;b->b0=(1+c)/2/a0;b->b1=-(1+c)/a0;b->b2=b->b0;b->a1=-2*c/a0;b->a2=(1-a)/a0;}
@@ -722,15 +734,20 @@ struct SKMetronome {
  double rate;
  SKMetronomeSettings settings;
  double tempo,interval,remaining;
- unsigned beat,step,noise;
+ unsigned beat,step,noise,countIn;
+ // Nonzero while the pending interval is a count-in beat, which must keep its
+ // length through subdivision edits and the hand-over to the bar.
+ unsigned pendingBeat;
  double phase;
- float envelope,decay,woodDecay,master;
+ float envelope,decay,woodDecay,master,pitch;
  int followsMaster,enabled;
  MetronomeCommand queue[METRONOME_QUEUE];
  _Atomic unsigned read,write;
 };
 static float metro_unit(float x){return isfinite(x)?fminf(1,fmaxf(0,x)):0;}
 static double metro_interval(const SKMetronome*m){return m->rate*60.0/m->tempo/(double)m->settings.subdivision;}
+// Count-in clicks are whole beats regardless of the subdivision.
+static double metro_beat_interval(const SKMetronome*m){return m->rate*60.0/m->tempo;}
 // Drop rather than block: every setting is idempotent and the next control
 // change republishes the full state.
 static void metro_push(SKMetronome*m,MetronomeCommand c){
@@ -741,8 +758,8 @@ static void metro_push(SKMetronome*m,MetronomeCommand c){
 SKMetronome *sk_metronome_create(double rate){
  if(!(rate>0))return NULL;
  SKMetronome*m=calloc(1,sizeof(*m));if(!m)return NULL;
- m->rate=rate;m->tempo=120;m->interval=rate/2;m->master=1;m->followsMaster=1;
- m->settings=(SKMetronomeSettings){.level=0.6f,.preset=0,.beatVelocity=0.7f,.downbeatEnabled=1,.downbeatVelocity=1,.beatsPerBar=4,.accentEvery=0,.subdivision=1};
+ m->rate=rate;m->tempo=120;m->interval=rate/2;m->master=1;m->followsMaster=1;m->pitch=1;
+ m->settings=(SKMetronomeSettings){.level=0.6f,.preset=0,.beatVelocity=0.7f,.downbeatEnabled=1,.downbeatVelocity=1,.beatsPerBar=4,.accentEvery=0,.subdivision=1,.countInBars=0};
  m->decay=(float)exp(-1.0/(rate*0.012));m->woodDecay=(float)exp(-1.0/(rate*0.006));
  atomic_init(&m->read,0);atomic_init(&m->write,0);
  return m;
@@ -755,6 +772,7 @@ void sk_metronome_settings(SKMetronome*m,SKMetronomeSettings s){
  s.beatsPerBar=s.beatsPerBar<1?1:s.beatsPerBar>16?16:s.beatsPerBar;
  s.accentEvery=s.accentEvery<0?0:s.accentEvery>16?16:s.accentEvery;
  s.subdivision=s.subdivision<1?1:s.subdivision>4?4:s.subdivision;
+ s.countInBars=s.countInBars<0?0:s.countInBars>2?2:s.countInBars;
  metro_push(m,(MetronomeCommand){.kind=1,.settings=s});
 }
 void sk_metronome_enable(SKMetronome*m,int enabled){if(m)metro_push(m,(MetronomeCommand){.kind=2,.flag=enabled?1:0});}
@@ -763,32 +781,53 @@ void sk_metronome_master(SKMetronome*m,float volume,int followsMaster){if(m)metr
 void sk_metronome_reset(SKMetronome*m){if(m)metro_push(m,(MetronomeCommand){.kind=5});}
 // Tempo and subdivision edits scale the pending interval instead of restarting
 // it, so a change cannot double-trigger or skip the beat the performer hears.
-static void metro_rescale(SKMetronome*m,double old){
- if(m->enabled&&m->remaining>0&&old>0)m->remaining=m->remaining*(m->interval/old);
- if(m->remaining>m->interval)m->remaining=m->interval;
+// Rescale by the ratio of the interval the pending gap actually measures: a
+// count-in gap is a whole beat, so it neither follows a subdivision edit nor
+// loses its beat length in the interval before the bar's downbeat.
+static void metro_rescale(SKMetronome*m,double old,unsigned oldSubdivision){
+ if(!m->enabled||m->remaining<=0||old<=0)return;
+ double from=m->pendingBeat?old*(double)oldSubdivision:old;
+ double to=m->pendingBeat?metro_beat_interval(m):m->interval;
+ if(!(to>0))return;
+ m->remaining=m->remaining*(to/from);
+ if(m->remaining>to)m->remaining=to;
 }
 static void metro_apply(SKMetronome*m,const MetronomeCommand*c){
- double old=m->interval;
+ double old=m->interval;unsigned oldSubdivision=m->settings.subdivision;
  if(c->kind==1){
-  m->settings=c->settings;m->interval=metro_interval(m);metro_rescale(m,old);
+  m->settings=c->settings;m->interval=metro_interval(m); metro_rescale(m,old,oldSubdivision);
   if(m->step>=(unsigned)m->settings.subdivision)m->step=0;
   if(m->beat>=(unsigned)m->settings.beatsPerBar)m->beat=0;
+  // A count-in cannot outlive the pattern it precedes: turning it off while it
+  // plays shortens it to the beats already counted down.
+  unsigned maxCountIn=(unsigned)(m->settings.countInBars*m->settings.beatsPerBar);
+  if(m->countIn>maxCountIn)m->countIn=maxCountIn;
  }else if(c->kind==2){
-  if(c->flag){if(!m->enabled){m->enabled=1;m->beat=0;m->step=0;m->remaining=0;m->envelope=0;m->phase=0;}}
-  else{m->enabled=0;m->envelope=0;}
- }else if(c->kind==3){m->tempo=c->value;m->interval=metro_interval(m);metro_rescale(m,old);}
+  if(c->flag){if(!m->enabled){m->enabled=1;m->beat=0;m->step=0;m->remaining=0;m->envelope=0;m->phase=0;m->pitch=1;m->countIn=(unsigned)(m->settings.countInBars*m->settings.beatsPerBar);m->pendingBeat=0;}}
+  else{m->enabled=0;m->envelope=0;m->countIn=0;m->pitch=1;m->pendingBeat=0;}
+ }else if(c->kind==3){m->tempo=c->value;m->interval=metro_interval(m); metro_rescale(m,old,oldSubdivision);}
  else if(c->kind==4){m->master=c->value;m->followsMaster=c->flag;}
- else if(c->kind==5){m->beat=0;m->step=0;m->remaining=m->interval;m->envelope=0;m->phase=0;}
+ else if(c->kind==5){m->beat=0;m->step=0;m->remaining=m->interval;m->envelope=0;m->phase=0;m->countIn=0;m->pitch=1;m->pendingBeat=0;}
 }
+// Count-in clicks are whole beats at twice the click pitch, so the pre-roll is
+// audibly distinct from the bar. The last count-in click uses the downbeat
+// velocity as the entry cue; the next click is the bar's own downbeat.
 static void metro_trigger(SKMetronome*m){
  const SKMetronomeSettings*s=&m->settings;float amp=METRONOME_PEAK*s->level;
- if(m->step>0)amp*=s->beatVelocity*0.55f;
- else if(m->beat==0&&s->downbeatEnabled)amp*=s->downbeatVelocity;
- else if(m->beat>0&&s->accentEvery>0&&m->beat%(unsigned)s->accentEvery==0)amp*=fminf(1,s->beatVelocity*1.25f);
- else amp*=s->beatVelocity;
+ if(m->countIn>0){
+  m->pitch=2;m->beat=0;m->step=0;
+  amp*=m->countIn==1?fminf(1,s->downbeatVelocity):s->beatVelocity;
+  m->countIn--;
+ }else{
+  m->pitch=1;
+  if(m->step>0)amp*=s->beatVelocity*0.55f;
+  else if(m->beat==0&&s->downbeatEnabled)amp*=s->downbeatVelocity;
+  else if(m->beat>0&&s->accentEvery>0&&m->beat%(unsigned)s->accentEvery==0)amp*=fminf(1,s->beatVelocity*1.25f);
+  else amp*=s->beatVelocity;
+  m->step++;if(m->step>=(unsigned)s->subdivision){m->step=0;m->beat=(m->beat+1)%(unsigned)s->beatsPerBar;}
+ }
  m->envelope=amp;m->phase=0;
  m->noise=0x9e3779b9u+(m->beat+1)*2654435761u+(m->step+1)*40503u;
- m->step++;if(m->step>=(unsigned)s->subdivision){m->step=0;m->beat=(m->beat+1)%(unsigned)s->beatsPerBar;}
 }
 // Two independent synthesized timbres; extend with another preset branch and a
 // matching catalog entry. No recorded or vendor click samples are used.
@@ -799,8 +838,8 @@ static float metro_sample(SKMetronome*m){
   unsigned x=m->noise;x^=x<<13;x^=x>>17;x^=x<<5;m->noise=x;
   float noise=(float)(x>>9)/4194304.0f-1;
   y=(0.6f*sinf((float)m->phase)+0.25f*sinf((float)m->phase*2.37f)+0.15f*noise)*env;
-  m->phase+=TAU*920.0/m->rate;m->envelope*=m->woodDecay;
- }else{y=sinf((float)m->phase)*env;m->phase+=TAU*1760.0/m->rate;m->envelope*=m->decay;}
+  m->phase+=TAU*920.0*m->pitch/m->rate;m->envelope*=m->woodDecay;
+ }else{y=sinf((float)m->phase)*env;m->phase+=TAU*1760.0*m->pitch/m->rate;m->envelope*=m->decay;}
  if(m->phase>TAU)m->phase-=TAU;
  return y;
 }
@@ -816,7 +855,7 @@ void sk_metronome_render(SKMetronome*m,float*left,float*right,uint32_t frames){
  for(uint32_t n=0;n<frames;n++){
   float y=0;
   if(m->enabled){
-   while(m->remaining<=0){metro_trigger(m);m->remaining+=m->interval;}
+   while(m->remaining<=0){unsigned counting=m->countIn;metro_trigger(m);m->pendingBeat=counting>0;m->remaining+=counting>0?metro_beat_interval(m):m->interval;}
    m->remaining-=1;y=metro_sample(m)*gain;
   }else{m->envelope=0;m->phase=0;}
   if(!isfinite(y))y=0;if(fabsf(y)>1)y=y>0?1:-1;

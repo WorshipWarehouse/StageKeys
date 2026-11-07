@@ -141,6 +141,19 @@ import AVFoundation
         rack.debugGraphFault = nil
         try verifyFreshNotes()
 
+        // Preflight takes place before the rack starts a new graph operation.
+        // Its diagnostic must describe the new failure, even if the rack still
+        // holds the preceding operation's rollback report.
+        assert(rack.lastGraphFailure?.operation?.code == 705)
+        store.audio.debugSoundPreparationFailure = NSError(domain: NSOSStatusErrorDomain, code: 709)
+        store.commitLayer(0, TestFixtures.layer(1, gain: 0.3))
+        store.audio.debugSoundPreparationFailure = nil
+        let preflight = store.audio.lastChangeFailure!
+        assert(preflight.phase == .prepareSound && preflight.errorCode == 709)
+        assert(preflight.lastGraphFailure == nil, "A preparation failure must not report an earlier graph edit")
+        assert(preflight.bufferFrames == nil, "Offline rendering has no hardware buffer")
+        assert(store.started && store.audio.running && rack.unit(channel: 0) === retained)
+
         // The Tonic picker calls the rack directly: it must enter the same
         // stopped state and keep its previous selection instead of recursively
         // trying to restore a graph whose completion already failed.

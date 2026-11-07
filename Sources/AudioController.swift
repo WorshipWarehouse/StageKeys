@@ -290,12 +290,13 @@ final class AudioController {
     @discardableResult
     private func changeFailure(_ error: Error, phase: AudioChangeDiagnostic.Phase,
                                slot: Int? = nil, retained: Bool? = nil, forceUnavailable: Bool = false,
-                               includeGraphFailure: Bool = true, bufferFrames: UInt32? = nil) -> AudioChangeFailure {
+                               includeGraphFailure: Bool = true) -> AudioChangeFailure {
         let rate = engine.isInManualRenderingMode ? engine.manualRenderingFormat.sampleRate : engine.mainMixerNode.outputFormat(forBus: 0).sampleRate
         let graphFailure = includeGraphFailure ? externalRack?.lastGraphFailure : nil
         let diagnostic = AudioChangeDiagnostic(error: error, phase: phase, slot: slot,
             generation: externalRack?.graphGeneration ?? 0, running: engine.isRunning,
-            sampleRate: rate, bufferFrames: bufferFrames, previousSoundRetained: retained, lastGraphFailure: graphFailure)
+            sampleRate: rate, bufferFrames: deviceController.diagnosticBufferFrames(),
+            previousSoundRetained: retained, lastGraphFailure: graphFailure)
         lastChangeFailure = diagnostic
         let graphUnavailable = includeGraphFailure && (diagnostic.lastGraphFailure.map { $0.edited && $0.wasRunning && !engine.isRunning && handledGraphFailure != $0.id } ?? false)
         if forceUnavailable || graphUnavailable {
@@ -322,8 +323,7 @@ final class AudioController {
         let cause: Error
         if let device = error as? AudioDeviceError, case .resumeFailed(let underlying) = device { cause = underlying }
         else { cause = error }
-        let frames = (try? deviceController.status())?.bufferFrames
-        return changeFailure(cause, phase: .audioDevice, includeGraphFailure: false, bufferFrames: frames)
+        return changeFailure(cause, phase: .audioDevice, includeGraphFailure: false)
     }
     /// Check known unavailable resources before the store changes snapshots,
     /// panics held notes, or persists the proposed sound. Does not load an AU or
@@ -341,7 +341,8 @@ final class AudioController {
             try rack.validateSound(sound, checkInstallation: checkInstallation)
         } catch {
             throw changeFailure(error, phase: .prepareSound, slot: index,
-                                retained: externalRack?.unit(channel: index) != nil && engine.isRunning ? true : nil)
+                                retained: externalRack?.unit(channel: index) != nil && engine.isRunning ? true : nil,
+                                includeGraphFailure: false)
         }
     }
     func withInstrumentCatalog<T>(_ operation: () throws -> T) rethrows -> T {
@@ -818,7 +819,7 @@ final class AudioController {
     /// clock; no audio-thread allocation or locking is involved.
     func metronome(_ enabled: Bool, settings: MetronomeSettings) {
         metronomeFollowsMaster = settings.followsMaster
-        sk_metronome_settings(metronomeEngine, SKMetronomeSettings(level: settings.level, preset: Int32(settings.preset), beatVelocity: settings.beatVelocity, downbeatEnabled: settings.downbeatEnabled ? 1 : 0, downbeatVelocity: settings.downbeatVelocity, beatsPerBar: Int32(settings.beatsPerBar), accentEvery: Int32(settings.accentEvery), subdivision: Int32(settings.subdivision)))
+        sk_metronome_settings(metronomeEngine, SKMetronomeSettings(level: settings.level, preset: Int32(settings.preset), beatVelocity: settings.beatVelocity, downbeatEnabled: settings.downbeatEnabled ? 1 : 0, downbeatVelocity: settings.downbeatVelocity, beatsPerBar: Int32(settings.beatsPerBar), accentEvery: Int32(settings.accentEvery), subdivision: Int32(settings.subdivision), countInBars: Int32(settings.countInBars)))
         sk_metronome_master(metronomeEngine, masterVolume, metronomeFollowsMaster ? 1 : 0)
         sk_metronome_enable(metronomeEngine, enabled ? 1 : 0)
     }

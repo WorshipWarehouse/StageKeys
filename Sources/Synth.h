@@ -40,6 +40,10 @@ void sk_envelope(SKSynth *s,int layer,float attack,float decay,float sustain,flo
 void sk_voice_limit(SKSynth *s,int layer,int voices);
 void sk_sampler_gain(SKSynth *s,int layer,float gain);
 void sk_filter(SKSynth *s,int layer,float cutoff,float resonance);
+// Eight-band channel EQ. Peaking bands (2...5) treat q as an analog constant-Q
+// width and realize it through the bilinear transform, so the rendered midpoint
+// (gainDB/2) octave bandwidth matches the editor's displayed value at every
+// centre frequency and sample rate.
 void sk_eq(SKSynth *s,int layer,int band,float frequency,float gainDB,float q);
 // Channel compressor. Mix is a dry/wet crossfade where 0 is a true bypass;
 // input gain and makeup belong to the compressed path only. Disabling (or
@@ -68,6 +72,7 @@ typedef struct {
     int beatsPerBar;        // 1...16
     int accentEvery;        // 0 off, 1...16 beats
     int subdivision;        // 1...4 clicks per beat
+    int countInBars;        // 0 off, 1...2 bars of higher-pitched beats first
 } SKMetronomeSettings;
 SKMetronome *sk_metronome_create(double sampleRate);
 void sk_metronome_destroy(SKMetronome *m);
