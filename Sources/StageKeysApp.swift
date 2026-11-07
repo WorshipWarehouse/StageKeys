@@ -263,6 +263,7 @@ struct PerformanceView: View {
         HStack {
             Button(store.setlist.name) { sheet = .setlists }.buttonStyle(StageButtonStyle())
             Picker("Patch", selection: Binding(get: { store.selected }, set: { store.choose($0) })) { ForEach(store.setlist.patches.indices, id: \.self) { Text(store.setlist.patches[$0].name).tag($0) } }.disabled(store.patchLock)
+            patchMenu
             Button { sheet = .tonic } label: { Image(systemName: "waveform") }.buttonStyle(StageButtonStyle()).accessibilityLabel("Tonic Pad")
         }
     }
@@ -304,6 +305,7 @@ struct PerformanceView: View {
         Menu {
             Button("Patch Settings…") { sheet = .patch }
             Button("Duplicate Patch") { store.duplicate() }.disabled(store.patchLock)
+            Button("Save Patch to Library") { _ = store.exportCurrentPatchToLibrary() }
             Button("Rename Patch…") { sheet = .renamePatch }.disabled(store.patchLock)
             Button("Remove Patch", role: .destructive) { store.removePatch() }.disabled(store.patchLock || store.setlist.patches.count < 2)
             Button("Save Setlist") { store.save() }
