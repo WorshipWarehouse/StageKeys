@@ -52,7 +52,9 @@ import Foundation
         layer.channelSettings.filterMax=9000
         layer.channelSettings.resonance=2.5
         let before=layer.channelSettings
-        let applied=try draft.applying(to:layer)
+        // The conversion path is the selection overload; the rack-only overload
+        // deliberately writes no source record.
+        let applied=try draft.applying(to:layer,selection:MainStageProcessing.Selection()).layer
         check(applied.channelSettings==before,"conversion must not substitute source shaping values into the destination")
         check(applied.gain==1 && applied.pan == -0.25,"the source fader and pan must still apply")
         guard let record=applied.mainStageSource else {
