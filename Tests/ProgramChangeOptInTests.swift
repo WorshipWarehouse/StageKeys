@@ -2,7 +2,7 @@ import Foundation
 import CoreMIDI
 @main struct ProgramChangeOptInTests {
  static func main() throws {
-  let store=PerformanceStore();store.setlist=TestFixtures.setlist();store.primarySourceID = -1;store.midiChannel = -1;store.secondarySourceID = -2
+  let store=PerformanceStore();var fixtures=TestFixtures.setlist();fixtures.patches[0].layers[0].external=TestFixtures.sound(2);store.setlist=fixtures;store.primarySourceID = -1;store.midiChannel = -1;store.secondarySourceID = -2
   try store.audio.prepareOffline();store.start();defer{store.audio.stop()}
   var client=MIDIClientRef(),source=MIDIEndpointRef()
   assert(MIDIClientCreateWithBlock("StageKeys Program Change Contract" as CFString,&client,nil)==noErr)
@@ -24,15 +24,34 @@ import CoreMIDI
   // Legacy absent flags survive decoding; runtime semantics are explicitly off.
   let legacy=try JSONDecoder().decode(Setlist.self,from:JSONEncoder().encode(store.setlist))
   assert(legacy.patches.allSatisfy{$0.programChangeEnabled == nil})
-  store.setlist=legacy;store.choose(1);store.captureSnapshot(0)
+  store.setlist=legacy
+  let rack=store.audio.externalRack!
+  wait{rack.unit(channel:0) != nil}
+  let originalUnit=rack.unit(channel:0)!
+  store.choose(1)
+  wait{rack.unit(channel:0) != nil && rack.unit(channel:0) !== originalUnit}
+  store.captureSnapshot(0)
+  store.setlist.patches[1].tempoLocked=false;store.liveTempo=132
   let id=store.patch.id,snapshot=store.activeSnapshot,tempo=store.patch.tempo,layers=store.patch.layers.map(\.id)
+  let appliedLayers=try JSONEncoder().encode(store.patch.layers),performedTempo=store.performedTempo
+  let soundingUnit=rack.unit(channel:0)!
+  for _ in 0..<10 {_ = try store.audio.offlineBlock()}
+  store.audio.noteOn(key:60,pitch:60,instrument:0,layer:0,velocity:0.8)
+  var soundEnergy=0.0
+  for _ in 0..<40 {let buffer=try store.audio.offlineBlock();for sample in 0..<Int(buffer.frameLength){let value=Double(buffer.floatChannelData![0][sample]);soundEnergy+=value*value}}
+  store.audio.noteOff(key:60,channel:0,force:true)
+  assert(soundEnergy > 0.0001,"The selected patch must produce audible output before Program Change messages")
   // Power-on Program Change 0 is a controller boot message, not an implicit
   // permission to select the first legacy patch. The legacy/unconfigured case
   // stays silent until a patch explicitly opts in.
   send(0xc0,0)
   assert(store.patch.id==id && store.activeSnapshot==snapshot && store.patch.tempo==tempo && store.patch.layers.map(\.id)==layers)
+  let afterProgramZero=try JSONEncoder().encode(store.patch.layers)
+  assert(afterProgramZero==appliedLayers && rack.unit(channel:0) === soundingUnit && store.performedTempo==performedTempo && store.liveTempo==132)
   send(0xc0,2)
   assert(store.patch.id==id && store.activeSnapshot==snapshot && store.patch.tempo==tempo && store.patch.layers.map(\.id)==layers)
+  let afterUnmappedProgram=try JSONEncoder().encode(store.patch.layers)
+  assert(afterUnmappedProgram==appliedLayers && rack.unit(channel:0) === soundingUnit && store.performedTempo==performedTempo && store.liveTempo==132)
   send(0x90,72,100);assert(store.isNoteHeld(72))
   send(0xb0,64,127);assert(store.sustain);send(0x80,72);send(0xb0,64,0);assert(!store.sustain && store.held.isEmpty)
   store.setlist.patches[0].programChangeEnabled=true;store.setlist.patches[0].programChangeNumber=99
