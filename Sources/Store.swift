@@ -1982,7 +1982,9 @@ final class PerformanceStore: ObservableObject {
                         var createdSound:ExternalSound?,createdOriginal:StageKeysSampler.Original?
                         do {
                             let processing=try mainStageProcessing(channelIndex)
-                            let id=try MainStagePatch.conversionID(report,channel:channel,variant:AssetDigest.sha256(file))
+                            let contentHash=try AssetDigest.sha256(file)
+                            let variant=channel.instruments.count>1 ? contentHash+"-layer-\(instrumentIndex)" : contentHash
+                            let id=try MainStagePatch.conversionID(report,channel:channel,variant:variant)
                             if let existing=entries.firstIndex(where:{$0.id==id}) {
                                 entries[existing].sourceArchiveID=report.sourceArchiveID
                                 entries[existing].mainStageLayerIndex=instrumentIndex
