@@ -96,9 +96,33 @@ import AVFoundation
         store.noteOff(64)
         store.setSustain(false)
 
+        // A MIDI output-channel edit must release through the old route, and a
+        // sampler setting that reloads the unit must clear its MIDI FX ownership.
+        var routed = replacement
+        routed.midiDestinationID = ExternalMIDIOutput.broadcastID
+        routed.midiOutputChannel = 2
+        store.commitLayer(0, routed)
+        store.noteOn(67)
+        check(store.midiFX.activeOutputRange(channel: 0) == 67...67,
+              "MIDI output note is owned before the route changes")
+        routed.midiOutputChannel = 3
+        store.commitLayer(0, routed)
+        check(store.midiFX.activeOutputRange(channel: 0) == nil,
+              "MIDI output-channel change released the old note")
+        store.noteOff(67)
+
+        store.noteOn(69)
+        check(store.midiFX.activeOutputRange(channel: 0) == 69...69,
+              "MIDI output note is owned before the voice reload")
+        routed.channelSettings.samplerAttackMinimum = 0.01
+        store.commitLayer(0, routed)
+        check(store.midiFX.activeOutputRange(channel: 0) == nil,
+              "sampler voice reload cleared MIDI FX ownership")
+        store.noteOff(69)
+
         // Panic remains the explicit way to clear a channel.
         store.panic()
         check(store.held.isEmpty && !store.sustain, "Panic cleared notes and pedal")
-        print("PASS: a shaping-only sound edit keeps the held note, pedal and instrument while a replaced instrument takes over the channel")
+        print("PASS: Confirm preserves shaped held notes; voice replacement, MIDI rerouting and sampler reload clear old note ownership")
     }
 }
