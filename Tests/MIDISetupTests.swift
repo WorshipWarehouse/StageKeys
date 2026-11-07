@@ -50,6 +50,18 @@ import CoreMIDI
         assert(MIDIControllerRules.assigning(128, to: next, assignments: [:], soundLevels: [:]).reserved)
         assert(MIDIControllerRules.assigning(24, to: .soundLevel(15), assignments: [:], soundLevels: [:]).reserved)
         assert(MIDIControllerRules.assigning(24, to: .snapshot(16), assignments: [:], soundLevels: [:]).reserved)
+        assert(MIDIControlTarget.tonicLevel.valid && MIDIControlTarget.tonicBrightness.valid && MIDIControlTarget.tonicShimmer.valid)
+        assert(MIDIControlTarget.effectEnabled(0, 0, 1).valid)
+        assert(MIDIControlTarget.effectParameter(0, 0, 1, 0).valid)
+        assert(!MIDIControlTarget.effectParameter(0, 0, 1, 99).valid)
+        assert(MIDIControlTarget.effectEnabled(15, 0, 1).valid == false)
+        assert(MIDIControlTarget.effectParameter(0, 0, 1, 0).title == "Sound 1 Effect 1 Tone Frequency")
+        var delay = AudioEffect.factoryDefault(kind: 3)
+        delay.importedDelay = ImportedDelay(left: 0.5, right: 0.5, leftSynced: true, rightSynced: true,
+                                            lowCut: 40, highCut: 12000, dryGain: 0.8, wetGain: 0.4)
+        assert(delay.macroDescriptor(4)?.minimum == 0 && delay.macroDescriptor(5)?.maximum == 1)
+        assert(delay.macroDescriptor(26)?.minimum == 20 && delay.macroDescriptor(26)?.maximum == 12000)
+        assert(delay.macroDescriptor(27)?.minimum == 40 && delay.macroDescriptor(27)?.maximum == 20000)
 
         // Destination ordering keeps the hosted port first, then online devices by
         // name, then offline devices so a disconnected interface stays visible.

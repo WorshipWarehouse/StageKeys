@@ -27,7 +27,16 @@ enum MIDIControlTarget: Codable, Hashable, Identifiable {
     case nextPatch
     case previousPatch
     case panic
+    case tonicLevel
+    case tonicBrightness
+    case tonicShimmer
     case snapshot(Int)
+    case effectEnabled(Int, Int, Int)
+    case effectParameter(Int, Int, Int, Int)
+
+    private static func effectName(_ kind: Int) -> String {
+        AudioEffectCatalog.names.indices.contains(kind) ? AudioEffectCatalog.names[kind] : "Effect"
+    }
 
     var id: String {
         switch self {
@@ -38,7 +47,13 @@ enum MIDIControlTarget: Codable, Hashable, Identifiable {
         case .nextPatch: return "nextPatch"
         case .previousPatch: return "previousPatch"
         case .panic: return "panic"
+        case .tonicLevel: return "tonicLevel"
+        case .tonicBrightness: return "tonicBrightness"
+        case .tonicShimmer: return "tonicShimmer"
         case .snapshot(let index): return "snapshot:\(index)"
+        case .effectEnabled(let layer, let slot, let kind): return "effectEnabled:\(layer):\(slot):\(kind)"
+        case .effectParameter(let layer, let slot, let kind, let parameter):
+            return "effectParameter:\(layer):\(slot):\(kind):\(parameter)"
         }
     }
     var title: String {
@@ -50,13 +65,29 @@ enum MIDIControlTarget: Codable, Hashable, Identifiable {
         case .nextPatch: return "Next Patch"
         case .previousPatch: return "Previous Patch"
         case .panic: return "Panic"
+        case .tonicLevel: return "Tonic Level"
+        case .tonicBrightness: return "Tonic Brightness"
+        case .tonicShimmer: return "Tonic Shimmer"
         case .snapshot(let index): return "Snapshot \(index + 1)"
+        case .effectEnabled(let layer, let slot, let kind):
+            return "Sound \(layer + 1) Effect \(slot + 1) \(Self.effectName(kind)) Bypass"
+        case .effectParameter(let layer, let slot, let kind, let parameter):
+            let name = AudioEffectCatalog.descriptors(for: kind).first(where: { $0.index == parameter })?.name
+                ?? (kind == 3 && parameter == 4 ? "Dry" : kind == 3 && parameter == 5 ? "Wet" :
+                    kind == 3 && parameter == 26 ? "Low Cut" : kind == 3 && parameter == 27 ? "High Cut" : "Parameter \(parameter + 1)")
+            return "Sound \(layer + 1) Effect \(slot + 1) \(Self.effectName(kind)) \(name)"
         }
     }
     var valid: Bool {
         switch self {
         case .soundLevel(let index): return (0..<15).contains(index)
         case .snapshot(let index): return (0..<16).contains(index)
+        case .effectEnabled(let layer, let slot, let kind):
+            return (0..<15).contains(layer) && (0..<3).contains(slot) && (1...17).contains(kind)
+        case .effectParameter(let layer, let slot, let kind, let parameter):
+            return (0..<15).contains(layer) && (0..<3).contains(slot) && (1...17).contains(kind) &&
+                (AudioEffectCatalog.descriptors(for: kind).contains(where: { $0.index == parameter }) ||
+                 (kind == 3 && [4, 5, 26, 27].contains(parameter)))
         default: return true
         }
     }
@@ -113,4 +144,3 @@ enum MIDIControllerRules {
                           displaced: existing == target ? nil : existing, reserved: false)
     }
 }
-

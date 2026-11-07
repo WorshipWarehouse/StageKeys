@@ -111,6 +111,8 @@ struct AudioEffect: Codable, Equatable {
     var title: String { AudioEffectCatalog.names.indices.contains(kind) ? AudioEffectCatalog.names[kind] : "No Effect" }
     func macroDescriptor(_ index:Int)->AudioEffectParameterDescriptor? {
         if kind==3,importedDelay?.dryGain != nil,[4,5].contains(index) {return .init(index:index,name:index==4 ? "Dry":"Wet",minimum:0,maximum:1,defaultValue:1,unit:"%")}
+        if kind==3,let delay=importedDelay,index==26 {return .init(index:index,name:"Low Cut",minimum:20,maximum:delay.highCut,defaultValue:20,unit:"Hz")}
+        if kind==3,let delay=importedDelay,index==27 {return .init(index:index,name:"High Cut",minimum:delay.lowCut,maximum:20000,defaultValue:20000,unit:"Hz")}
         return AudioEffectCatalog.descriptors(for:kind).first{$0.index==index}
     }
     var values: [Float] {

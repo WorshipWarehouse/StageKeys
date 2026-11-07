@@ -460,6 +460,7 @@ final class PerformanceStore: ObservableObject {
     }
     private var snapshotTimer: Timer?
     private var snapshotTransitionGeneration = UUID()
+    private var midiEffectSaveWork: DispatchWorkItem?
     private var notifications: [NSObjectProtocol] = []
     let audio = AudioController()
     let midi = MIDIInput()
@@ -1373,22 +1374,49 @@ final class PerformanceStore: ObservableObject {
         var l = Layer.empty(); l.id = patch.layers[index].id; commitLayer(index, l)
     }
     func toggleMIDIEffect(_ index: Int) { guard patch.layers.indices.contains(index) else{return};var l = patch.layers[index]; l.midiEffectEnabled.toggle(); commitLayer(index,l) }
-    func setEffect(_ index: Int, _ slot: Int, _ effect: AudioEffect) {
-        guard patch.layers.indices.contains(index),patch.layers[index].effects.indices.contains(slot),effect.validate() else{return}
+    @discardableResult
+    func setEffect(_ index: Int, _ slot: Int, _ effect: AudioEffect, saveChanges: Bool = true) -> Bool {
+        guard patch.layers.indices.contains(index),patch.layers[index].effects.indices.contains(slot),
+              effect.validate(),patch.layers[index].effects[slot] != effect else{return false}
         var proposed = patch.layers[index]
         proposed.effects[slot] = effect
         if !started && !audio.running { audio.prepareOfflineEditing() }
-        else { guard audio.configureSnapshot(index, effects: proposed.effects, pan: proposed.pan, importedRack: proposed.importedRack ?? proposed.external?.nativeSampler?.rack) else { return } }
+        else { guard audio.configureSnapshot(index, effects: proposed.effects, pan: proposed.pan, importedRack: proposed.importedRack ?? proposed.external?.nativeSampler?.rack) else { return false } }
         cancelTransition()
         let changedKind = patch.layers[index].effects[slot].kind != effect.kind
         if changedKind {
+            let staleAssignments = setlist.controlAssignments?.compactMap { cc, target -> Int? in
+                switch target {
+                case .effectEnabled(let layer, let effectSlot, _),
+                     .effectParameter(let layer, let effectSlot, _, _):
+                    return layer == index && effectSlot == slot ? cc : nil
+                default: return nil
+                }
+            } ?? []
+            if !staleAssignments.isEmpty {
+                for cc in staleAssignments { setlist.controlAssignments?.removeValue(forKey: cc) }
+                if setlist.controlAssignments?.isEmpty == true { setlist.controlAssignments = nil }
+                message = "The effect changed; learned assignments for its previous controls were cleared."
+            }
             for i in patch.snapshots.indices {
                 if setlist.patches[selected].snapshots[i].sounds == nil { setlist.patches[selected].snapshots[i].sounds = patch.layers.map(SnapshotSoundState.init) }
                 setlist.patches[selected].snapshots[i].sounds![index].effects[slot] = effect
             }
         }
         setlist.patches[selected].layers[index].effects[slot] = effect
-        updateToneFilters(); save()
+        updateToneFilters()
+        if saveChanges { save() }
+        return true
+    }
+    private func scheduleMIDIEffectSave() {
+        midiEffectSaveWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.midiEffectSaveWork = nil
+            self.save()
+        }
+        midiEffectSaveWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: work)
     }
     func clearSnapshot(_ index: Int) {
         guard patch.snapshots.indices.contains(index) else { return }
@@ -1502,17 +1530,33 @@ final class PerformanceStore: ObservableObject {
         midiLog.insert((midiSources.first(where: { $0.id == source })?.name ?? "MIDI") + String(format: " · Ch %02d · %02X · %d · %d", Int(status & 15) + 1, status & 0xf0, a, b), at: 0)
         midiLog = Array(midiLog.prefix(15))
         let channel=Int(status & 15)
-        guard MIDIControllerRules.accepts(sourceID: primarySourceID, channel: midiChannel, source: source, inputChannel: channel) ||
-              MIDIControllerRules.accepts(sourceID: secondarySourceID, channel: secondaryChannel, source: source, inputChannel: channel) else { return }
+        let isPrimary = MIDIControllerRules.accepts(sourceID: primarySourceID, channel: midiChannel, source: source, inputChannel: channel)
+        let isSecondary = MIDIControllerRules.accepts(sourceID: secondarySourceID, channel: secondaryChannel, source: source, inputChannel: channel)
+        guard isPrimary || isSecondary else { return }
         switch status & 0xf0 {
-        case 0x90: if b == 0 { hardwareOff(source: source, channel: Int(status & 15), note: Int(a)) } else { hardwareOn(source: source, channel: Int(status & 15), note: Int(a), velocity: MIDIControllerRules.velocity(b, minimum: velocityMinimum, maximum: velocityMaximum)) }
-        case 0x80: hardwareOff(source: source, channel: Int(status & 15), note: Int(a))
+        case 0x90:
+            guard isPrimary else { return }
+            if b == 0 { hardwareOff(source: source, channel: channel, note: Int(a)) }
+            else { hardwareOn(source: source, channel: channel, note: Int(a), velocity: MIDIControllerRules.velocity(b, minimum: velocityMinimum, maximum: velocityMaximum)) }
+        case 0x80:
+            guard isPrimary else { return }
+            hardwareOff(source: source, channel: channel, note: Int(a))
         case 0xb0:
-            if learningTarget == nil && learning == nil {applyImportedController(Int(a),value:b,channel:channel)}
-            if a == 1 { modWheel = Float(b)/127 }
-            else if a == 64 { let pedal = PedalSource(source: source, channel: Int(status & 15)); if b >= 64 { pedalSources.insert(pedal) } else { pedalSources.remove(pedal) }; applySustain() }
+            if a == 1 {
+                guard isPrimary else { return }
+                modWheel = Float(b)/127
+            }
+            else if a == 64 {
+                guard isPrimary else { return }
+                let pedal = PedalSource(source: source, channel: channel)
+                if b >= 64 { pedalSources.insert(pedal) } else { pedalSources.remove(pedal) }
+                applySustain()
+            }
             else if a == 120 || a == 123 { panic() }
             else {
+                if isPrimary && learningTarget == nil && learning == nil {
+                    applyImportedController(Int(a), value: b, channel: channel)
+                }
                 let cc=Int(a), key=CCKey(source:source,channel:channel,cc:Int(a)), down=b>=64
                 let rising=down && !(pressedCCs[key] ?? false); pressedCCs[key]=down
                 if let target = learningTarget ?? learning.map({ MIDIControlTarget.soundLevel($0) }) {
@@ -1531,6 +1575,7 @@ final class PerformanceStore: ObservableObject {
                 else if let index=setlist.assignments[cc] { setGain(index,Float(b)/127) }
             }
         case 0xc0:
+            guard isPrimary else { return }
             if let index=setlist.patches.indices.first(where:{setlist.patches[$0].programChangeEnabled == true && setlist.patches[$0].programChangeNumber == Int(a)}) { choose(index) }
             // Missing legacy flags are unconfigured, never an implicit index mapping.
         default: break
@@ -1571,10 +1616,52 @@ final class PerformanceStore: ObservableObject {
         case .master: master=Float(value)/127
         case .modulation: modWheel=Float(value)/127
         case .sustain: if value>=64 { mappedPedals.insert(key) } else { mappedPedals.remove(key) }; applySustain()
+        case .tonicLevel: tonicGain = Float(value)/127
+        case .tonicBrightness: tonicBrightness = Float(value)/127
+        case .tonicShimmer: tonicShimmer = Float(value)/127
         case .nextPatch: if selected+1<setlist.patches.count { choose(selected+1) }
         case .previousPatch: if selected>0 { choose(selected-1) }
         case .panic: panic()
         case .snapshot(let index): if patch.snapshots.indices.contains(index) { recall(patch.snapshots[index]) }
+        case .effectEnabled(let index, let slot, let kind):
+            guard patch.layers.indices.contains(index), patch.layers[index].effects.indices.contains(slot),
+                  patch.layers[index].effects[slot].kind == kind else { return }
+            var effect = patch.layers[index].effects[slot]
+            let enabled = value >= 64
+            guard effect.enabled != enabled else { return }
+            effect.enabled = enabled
+            if setEffect(index, slot, effect, saveChanges: false) { scheduleMIDIEffectSave() }
+        case .effectParameter(let index, let slot, let kind, let parameter):
+            guard patch.layers.indices.contains(index), patch.layers[index].effects.indices.contains(slot) else { return }
+            var effect = patch.layers[index].effects[slot]
+            guard effect.kind == kind, let descriptor = effect.macroDescriptor(parameter) else { return }
+            let fraction = Float(value) / 127
+            let logarithmic = descriptor.unit == "Hz" && descriptor.minimum > 0 && descriptor.maximum / descriptor.minimum > 100
+            var parameterValue = logarithmic
+                ? descriptor.minimum * pow(descriptor.maximum / descriptor.minimum, fraction)
+                : descriptor.minimum + fraction * (descriptor.maximum - descriptor.minimum)
+            if descriptor.unit == "bits" || descriptor.unit == "semitones" { parameterValue = parameterValue.rounded() }
+            if kind == 3, var delay = effect.importedDelay {
+                let oldValue: Float?
+                switch parameter {
+                case 4: oldValue = delay.dryGain; delay.dryGain = parameterValue
+                case 5: oldValue = delay.wetGain; delay.wetGain = parameterValue
+                case 26: oldValue = delay.lowCut; delay.lowCut = parameterValue
+                case 27: oldValue = delay.highCut; delay.highCut = parameterValue
+                default: oldValue = nil
+                }
+                if [4, 5, 26, 27].contains(parameter) {
+                    guard oldValue != parameterValue else { return }
+                    effect.importedDelay = delay
+                    if setEffect(index, slot, effect, saveChanges: false) { scheduleMIDIEffectSave() }
+                    return
+                }
+            }
+            var values = effect.values
+            guard values.indices.contains(parameter), values[parameter] != parameterValue else { return }
+            values[parameter] = parameterValue
+            effect.parameters = values
+            if setEffect(index, slot, effect, saveChanges: false) { scheduleMIDIEffectSave() }
         }
     }
     private var configuredPrograms: [Int:MIDIProgram] = [:]
@@ -2151,6 +2238,8 @@ final class PerformanceStore: ObservableObject {
             message = "Automatic saves are blocked because saved session data could not be loaded. Recover the previous session in Settings; the original files remain untouched."
             return
         }
+        midiEffectSaveWork?.cancel()
+        midiEffectSaveWork = nil
         capturePluginStates()
         do { try setlist.validate(); try FileManager.default.createDirectory(at: saveURL.deletingLastPathComponent(), withIntermediateDirectories: true); if let legacyData {
                 let backup = saveURL.deletingLastPathComponent().appendingPathComponent("setlist-v\(legacyVersion)-backup.json")
