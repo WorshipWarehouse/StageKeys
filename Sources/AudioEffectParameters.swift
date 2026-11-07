@@ -37,8 +37,8 @@ enum AudioEffectCatalog {
             .init(index: 2, name: "Mix", minimum: 0, maximum: 1, defaultValue: 1, unit: "%"),
         ]
         case 5: return [
-            .init(index: 0, name: "Frequency", minimum: 0, maximum: 20, defaultValue: 0.68, unit: "Hz"),
-            .init(index: 1, name: "Depth", minimum: 0, maximum: 1, defaultValue: 0.4, unit: "%"),
+            .init(index: 0, name: "Frequency", minimum: 0, maximum: 20, defaultValue: 0.65, unit: "Hz"),
+            .init(index: 1, name: "Depth", minimum: 0, maximum: 1, defaultValue: 0.25, unit: "%"),
             .init(index: 2, name: "Feedback", minimum: 0, maximum: 0.95, defaultValue: 0.2, unit: "%"),
             .init(index: 3, name: "Output Boost", minimum: -24, maximum: 12, defaultValue: 1, unit: "dB"),
             .init(index: 4, name: "Mix", minimum: 0, maximum: 1, defaultValue: 1, unit: "%"),
