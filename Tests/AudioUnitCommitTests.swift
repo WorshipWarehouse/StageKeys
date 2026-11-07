@@ -132,6 +132,31 @@ import AVFoundation
         assert(liveState.isEqual(captureState))
         assert(try! Data(contentsOf: path) == bytesBeforeCapture)
 
+        // Export captures live state into an independent copy, including while
+        // another layer is auditioned, without changing the authored document.
+        let library = try SetlistLibrary(root: root.appendingPathComponent("Setlists"))
+        let storedState = store.patch.layers[0].pluginState
+        store.setlist.patches[store.selected].layers[0].pluginState = authoredState
+        let beforeExport = store.setlist
+        let exportEncoder = JSONEncoder(); exportEncoder.outputFormatting = .sortedKeys
+        for auditionIndex in [nil, 1, 0] as [Int?] {
+            let token = auditionIndex.flatMap { store.beginAudition($0) }
+            let id = store.exportCurrentPatchToLibrary()!
+            let exported = try library.load(id: id).patches[0]
+            if auditionIndex == 0 {
+                assert(exported.layers[0].pluginState == authoredState, "Keep authored state for the auditioned layer")
+            } else {
+                let state = try PropertyListSerialization.propertyList(from: exported.layers[0].pluginState!, options: [], format: nil) as! NSDictionary
+                assert(state.isEqual(liveState), "Export must capture the current installed AU")
+            }
+            assert(try! exportEncoder.encode(store.setlist) == exportEncoder.encode(beforeExport))
+            assert(store.audio.running)
+            assert(try! Data(contentsOf: path) == bytesBeforeCapture)
+            if let token { store.endAudition(token) }
+            store.setlist = beforeExport
+        }
+        store.setlist.patches[store.selected].layers[0].pluginState = storedState
+
         // An installed AU must not supply state to another AU's pending draft,
         // even when the two components use the same display name.
         var other = proposed

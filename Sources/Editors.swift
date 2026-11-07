@@ -47,6 +47,7 @@ struct SoundEditor: View {
     @State private var editingName = false
     @State private var processingPreview:MainStageProcessing.Draft?
     @State private var processingIssue:String?
+    @State private var librarySaveMessage:String?
     @State private var auditionToken: UUID?
     init(index: Int, initial: Layer) { self.index = index; _draft = State(initialValue: initial); if initial.midiDestinationID != nil { _tab = State(initialValue: "Settings") } }
     private var tabs: [String] { draft.midiDestinationID != nil ? ["Settings"] : ["FX A: Equalizer", "FX B: Compressor", "Settings"] }
@@ -159,6 +160,12 @@ struct SoundEditor: View {
             HStack {
                 if tab == "FX A: Equalizer" { Toggle("Effect ON",isOn:$draft.channelSettings.eqEnabled).toggleStyle(.switch) }
                 if tab == "FX B: Compressor" { Toggle("Effect ON",isOn:$draft.channelSettings.compressorEnabled).toggleStyle(.switch) }
+                if draft.loaded {
+                    Button("Save Sound to Library") {
+                        librarySaveMessage = store.saveSoundToLibrary(draft, index: index) ? "Saved to My Sounds." : (store.message ?? "Could not save this sound.")
+                    }.buttonStyle(StageButtonStyle())
+                }
+                if let librarySaveMessage { Text(librarySaveMessage).font(.caption).foregroundStyle(.secondary) }
                 Spacer()
                 Button("Discard Changes") { dismiss() }.buttonStyle(StageButtonStyle())
                 Button("Confirm") {
