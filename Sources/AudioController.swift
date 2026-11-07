@@ -592,6 +592,13 @@ final class AudioController {
         externalStates[channel] = state
         return true
     }
+    /// Adopt a confirmed audition's captured state for the installed unit so
+    /// the commit does not reload (and retire) a voice that is still holding
+    /// notes. This captured state is what the next load restores.
+    func adoptPluginState(channel: Int, sound: ExternalSound?, unit: AVAudioUnit, state: Data) {
+        guard loadedUnit(channel: channel, sound: sound) === unit else { return }
+        externalStates[channel] = state
+    }
     /// Capture only the draft's installed AU. A pending/rejected replacement
     /// must retain its authored state instead of borrowing the old unit's state.
     func calibrationSource(_ layer: Layer, channel: Int) throws -> Layer {

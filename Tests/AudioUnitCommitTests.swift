@@ -133,7 +133,8 @@ import AVFoundation
                 return kind == 0x80 || kind == 0x90 ||
                     ($0.status & 0xf0 == 0xb0 && ($0.data1 == 120 || $0.data1 == 123 || ($0.data1 == 64 && $0.data2 < 64)))
             }
-            assert(!disruptive, "\(phase) must not send note, panic, or sustain-off MIDI events")
+            let sent=rack.debugMIDIEvents.map{String(format:"%02X %02X %02X",$0.status,$0.data1,$0.data2)}.joined(separator:",")
+            assert(!disruptive, "\(phase) must not send note, panic, or sustain-off MIDI events (sent: \(sent))")
             assert(rack.debugActiveNoteCount(0)==activeNotes && rack.debugNoteIntentCount(0)==noteIntents,
                    "\(phase) must preserve active Audio Unit notes")
             assert(rack.unit(channel:0) === accepted && rack.graphGeneration==generation)

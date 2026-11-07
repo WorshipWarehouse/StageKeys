@@ -435,7 +435,7 @@ final class PerformanceStore: ObservableObject {
         previous.midiEffectEnabled != proposed.midiEffectEnabled ||
         previous.midiProgram != proposed.midiProgram
     }
-    func endAudition(_ token: UUID?) {
+    func endAudition(_ token: UUID?, keepPluginState: Data? = nil) {
         guard let session = audition, token == session.token else { return }
         guard session.patchID == patch.id, patch.layers.indices.contains(session.index), patch.layers[session.index].id == session.layerID else { audition=nil; return }
         let current=patch.layers[session.index]
@@ -443,7 +443,12 @@ final class PerformanceStore: ObservableObject {
             midiFX.panic(channel:session.index); audio.panic(channel:session.index)
         }
         audition=nil
-        if let state=session.pluginState {
+        if let keep=keepPluginState {
+            if let unit=session.pluginUnit {
+                audio.adoptPluginState(channel:session.index,sound:current.external,unit:unit,state:keep)
+            }
+            setlist.patches[selected].layers[session.index].pluginState=keep
+        } else if let state=session.pluginState {
             let keptCurrentState: Bool
             if let unit=session.pluginUnit {
                 do {
@@ -482,11 +487,18 @@ final class PerformanceStore: ObservableObject {
     func confirmAudition(_ token: UUID?, index: Int, layer: Layer) {
         guard let session=audition, session.token == token, session.patchID == patch.id, session.index == index, patch.layers.indices.contains(index), patch.layers[index].id == session.layerID else { return }
         var final=layer; final.gain=patch.layers[index].gain; final.muted=patch.layers[index].muted
+        var keptState: Data?
         if layer.external?.kind == .audioUnit {
             guard audio.loadedUnit(channel:index,sound:layer.external) != nil else {message="Wait for the selected instrument to finish loading before confirming its settings.";return}
-            do { final.pluginState=try audio.pluginStateData(channel:index,sound:layer.external) } catch { message=error.localizedDescription; return }
+            do {
+                final.pluginState=try audio.pluginStateData(channel:index,sound:layer.external)
+                keptState=final.pluginState
+            } catch { message=error.localizedDescription; return }
         }
-        endAudition(token); commitLayer(index,final)
+        // Keep the confirmed AU state on its installed unit. Ending the
+        // audition through the discard path would restore the old state and
+        // replace the voice, resetting notes the settings preview preserved.
+        endAudition(token, keepPluginState: keptState); commitLayer(index,final)
     }
     private var snapshotTimer: Timer?
     private var snapshotTransitionGeneration = UUID()
