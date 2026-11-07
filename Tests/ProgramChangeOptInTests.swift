@@ -33,7 +33,7 @@ import CoreMIDI
   store.captureSnapshot(0)
   store.setlist.patches[1].tempoLocked=false;store.liveTempo=132
   let id=store.patch.id,snapshot=store.activeSnapshot,tempo=store.patch.tempo,layers=store.patch.layers.map(\.id)
-  let appliedLayers=try JSONEncoder().encode(store.patch.layers),performedTempo=store.performedTempo
+  let appliedLayers=store.patch.layers,performedTempo=store.performedTempo
   let soundingUnit=rack.unit(channel:0)!
   for _ in 0..<10 {_ = try store.audio.offlineBlock()}
   store.audio.noteOn(key:60,pitch:60,instrument:0,layer:0,velocity:0.8)
@@ -46,12 +46,10 @@ import CoreMIDI
   // stays silent until a patch explicitly opts in.
   send(0xc0,0)
   assert(store.patch.id==id && store.activeSnapshot==snapshot && store.patch.tempo==tempo && store.patch.layers.map(\.id)==layers)
-  let afterProgramZero=try JSONEncoder().encode(store.patch.layers)
-  assert(afterProgramZero==appliedLayers && rack.unit(channel:0) === soundingUnit && store.performedTempo==performedTempo && store.liveTempo==132)
+  assert(store.patch.layers==appliedLayers && rack.unit(channel:0) === soundingUnit && store.performedTempo==performedTempo && store.liveTempo==132)
   send(0xc0,2)
   assert(store.patch.id==id && store.activeSnapshot==snapshot && store.patch.tempo==tempo && store.patch.layers.map(\.id)==layers)
-  let afterUnmappedProgram=try JSONEncoder().encode(store.patch.layers)
-  assert(afterUnmappedProgram==appliedLayers && rack.unit(channel:0) === soundingUnit && store.performedTempo==performedTempo && store.liveTempo==132)
+  assert(store.patch.layers==appliedLayers && rack.unit(channel:0) === soundingUnit && store.performedTempo==performedTempo && store.liveTempo==132)
   send(0x90,72,100);assert(store.isNoteHeld(72))
   send(0xb0,64,127);assert(store.sustain);send(0x80,72);send(0xb0,64,0);assert(!store.sustain && store.held.isEmpty)
   store.setlist.patches[0].programChangeEnabled=true;store.setlist.patches[0].programChangeNumber=99
