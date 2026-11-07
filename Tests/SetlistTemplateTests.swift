@@ -103,6 +103,28 @@ import Foundation
         try Data("damaged history".utf8).write(to: recentsURL)
         assert(SetlistRecents.read(recentsURL).ids.isEmpty)
         try recents.write(to: recentsURL)
+
+        // Fail each inventory boundary after export has saved its document.
+        // Replacing a directory with a file makes listing fail even as root.
+        for failTrash in [false, true] {
+            let target = failTrash ? library.root.appendingPathComponent("Trash") : library.root
+            let backup = target.deletingLastPathComponent().appendingPathComponent(UUID().uuidString)
+            store.debugBeforeSetlistListing = { _ in
+                try! FileManager.default.moveItem(at: target, to: backup)
+                try! Data("generated listing obstruction".utf8).write(to: target)
+            }
+            let before = store.setlist
+            let exportedID = store.exportCurrentPatchToLibrary()
+            store.debugBeforeSetlistListing = nil
+            try FileManager.default.removeItem(at: target)
+            try FileManager.default.moveItem(at: backup, to: target)
+            assert(exportedID != nil, "A refresh failure must retain the saved export ID")
+            assert(store.message?.contains("Saved “") == true && store.message?.contains("Could not refresh Setlists:") == true)
+            assert(try! library.load(id: exportedID!).patches.count == 1)
+            assert(try! encoder.encode(store.setlist) == encoder.encode(before))
+            assert(store.currentSetlistID == originalID)
+            assert(store.held.contains(60) && store.sustain && store.audio.running)
+        }
         // Failed capacity admission must retain the playing document and copies.
         let existingFiles = try FileManager.default.contentsOfDirectory(at: library.root, includingPropertiesForKeys: nil).filter{$0.pathExtension == "json"}.count
         for _ in existingFiles..<128 { try Data("generated damaged entry".utf8).write(to: library.root.appendingPathComponent(UUID().uuidString + ".json")) }
