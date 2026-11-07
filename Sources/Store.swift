@@ -598,11 +598,15 @@ final class PerformanceStore: ObservableObject {
     /// rest of the selection, and every source keeps its own retained archive.
     func importMainStageBatch(_ url:URL,locations:[MainStageDiscovery.Location]?=nil) {
         guard !libraryImportBusy else{return}
+        // Enumeration and the whole run stay inside the selected folder's security
+        // scope: a picked concert or folder can live outside the app container.
+        let access=url.startAccessingSecurityScopedResource()
         let sources:[URL]
         do {sources=try MainStageBatch.sources(in:url)}
-        catch {message=error.localizedDescription;return}
-        guard sources.count>1 else {importMainStageAutomatically(sources[0],locations:locations);return}
+        catch {if access{url.stopAccessingSecurityScopedResource()};message=error.localizedDescription;return}
+        guard sources.count>1 else {if access{url.stopAccessingSecurityScopedResource()};importMainStageAutomatically(sources[0],locations:locations);return}
         Task { @MainActor in
+            defer{if access{url.stopAccessingSecurityScopedResource()}}
             var converted=0,duplicates=0,needsAttention=0,importedSources=0
             var notImported:[String]=[]
             for (index,source) in sources.enumerated() {
@@ -1969,7 +1973,9 @@ final class PerformanceStore: ObservableObject {
                             let processing=try mainStageProcessing(channelIndex)
                             // A single-instrument channel keeps its original identity, so a sound
                             // installed by an earlier import stays a duplicate, not a re-import.
-                            let fileHash=try AssetDigest.sha256(file)
+                            // Discovery already hashed every candidate and refused a
+                            // filename with two different digests.
+                            let fileHash=candidates[0].sha256
                             let variant=layered ? "sampler-\(instrumentIndex)-"+fileHash:fileHash
                             let id=try MainStagePatch.conversionID(report,channel:channel,variant:variant)
                             if let existing=entries.firstIndex(where:{$0.id==id}) {
@@ -1982,7 +1988,10 @@ final class PerformanceStore: ObservableObject {
                             var prepared:(ExternalSound,[String]?,Layer?)?
                             var preparationError:Error?
                             for candidate in candidates {
-                                let access=candidate.samples.startAccessingSecurityScopedResource();defer{if access{candidate.samples.stopAccessingSecurityScopedResource()}}
+                                let samplesAccess=candidate.samples.startAccessingSecurityScopedResource()
+                                let instrumentURL=candidate.file.deletingLastPathComponent()
+                                let instrumentAccess=instrumentURL.startAccessingSecurityScopedResource()
+                                defer{if samplesAccess{candidate.samples.stopAccessingSecurityScopedResource()};if instrumentAccess{instrumentURL.stopAccessingSecurityScopedResource()}}
                                 do {prepared=try prepareLibrarySound(candidate.file,sampleRoot:candidate.samples);break}
                                 catch{preparationError=error}
                             }
@@ -2010,9 +2019,13 @@ final class PerformanceStore: ObservableObject {
                         }catch{for asset in assetsForImportedSound(createdSound,original:createdOriginal).subtracting(assetsBefore){try? FileManager.default.removeItem(at:asset)};detailParts.append(label+": "+error.localizedDescription);failures.append(channel.name+": "+error.localizedDescription)}
                     }
                     if let index=mainStageOutcomes.firstIndex(where:{$0.id==channelIndex}) {
+                        // A layered channel is ready only when every sampler layer exists;
+                        // assembly refuses a partial channel by design.
+                        let incompleteLayers=instrumentNames.count>1 && convertedCount+duplicateCount<instrumentNames.count
+                        if incompleteLayers {failures.append(channel.name+": converted \(convertedCount+duplicateCount) of \(instrumentNames.count) sampler layers; the channel needs all of them")}
                         mainStageOutcomes[index].soundIDs=convertedIDs
                         mainStageOutcomes[index].detail=detailParts.joined(separator:"; ")
-                        mainStageOutcomes[index].state = convertedCount>0 ? .prepared:(duplicateCount>0 ? .duplicate:(needsSamplesCount>0 ? .needsSamples:.failed))
+                        mainStageOutcomes[index].state = incompleteLayers ? .needsSamples : (convertedCount>0 ? .prepared:(duplicateCount>0 ? .duplicate:(needsSamplesCount>0 ? .needsSamples:.failed)))
                     }
                 }
                 if !audioUnitChannels.isEmpty {

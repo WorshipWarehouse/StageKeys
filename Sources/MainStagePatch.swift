@@ -121,10 +121,12 @@ enum MainStagePatch {
             }
             // Several converted versions of one channel are interchangeable only when
             // each records its own sampler position from a decomposed channel.
-            if matches.count>1 {
+            // A decomposed channel assembles only as a complete set: a partial
+            // conversion would produce a quieter patch with missing layers.
+            if matches.count>1 || matches.contains(where:{$0.sourceInstrumentIndex != nil}) {
                 let positions=matches.compactMap{$0.sourceInstrumentIndex}
-                guard positions.count==matches.count,Set(positions).count==positions.count,
-                      positions.allSatisfy({(0..<max(1,channel.instruments.count)).contains($0)}) else {
+                let expected=Set(0..<max(1,channel.instruments.count))
+                guard positions.count==matches.count,Set(positions)==expected else {
                     throw Failure.invalid("\(channel.name): convert the channel first and resolve multiple converted versions before assembling this patch.")
                 }
             }

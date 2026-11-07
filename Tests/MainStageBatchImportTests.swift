@@ -68,6 +68,25 @@ import Foundation
         layered.assembleConvertedMainStagePatch(readyOnly:true)
         assert(layered.patch.layers.prefix(2).map(\.name)==["Layered · Fixture","Layered · Second"],layered.patch.layers.prefix(2).map(\.name).joined(separator:", "))
         assert(layered.patch.conversionNotes?.contains{note in note.contains("split evenly")}==true)
+        // A layered channel with one missing instrument is reported, not assembled:
+        // partial layers would silently perform a quieter, incomplete channel.
+        setenv("STAGEKEYS_DATA_DIR",root.appendingPathComponent("partial").path,1)
+        let partial=PerformanceStore()
+        let partialPatch=root.appendingPathComponent("Partial.patch",isDirectory:true)
+        _ = try TestFixtures.exs(in:partialPatch)
+        try TestFixtures.mainStageStrip(["Fixture.exs","Missing.exs"]).write(to:partialPatch.appendingPathComponent("Partial.cst"))
+        let partialDocument:[String:Any]=["patch":["engineNode":["name":"Partial"]],"channels":[["Filename":"Partial.cst","Channel_name":"Partial"]]]
+        try PropertyListSerialization.data(fromPropertyList:partialDocument,format:.binary,options:0).write(to:partialPatch.appendingPathComponent("data.plist"))
+        partial.importMainStageAutomatically(partialPatch,locations:[.init(instruments:partialPatch,samples:partialPatch,label:"Synthetic partial")])
+        for _ in 0..<1500 where partial.libraryImportBusy {try await Task.sleep(nanoseconds:10_000_000)}
+        assert(partial.mainStageOutcomes.first.map{$0.state == .needsSamples}==true,partial.mainStageOutcomes.map(\.state.rawValue).joined(separator:", "))
+        if let report=partial.mainStageImportReport {
+            var refused=false
+            do {_ = try MainStagePatch.assembledChannels(report,entries:partial.librarySounds)}catch{refused=true}
+            assert(refused,"A partial layered channel must not assemble")
+        } else {assertionFailure("The partial patch should stay imported for review")}
+        partial.assembleConvertedMainStagePatch(readyOnly:true)
+        assert(partial.patch.layers.allSatisfy{$0.external == nil},"A partial layered channel must not become a patch")
         print("PASS: bounded concert/folder selection, per-source batch import and multi-instrument channel layers with split gain")
     }
 }
