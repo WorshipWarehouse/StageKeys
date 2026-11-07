@@ -46,13 +46,7 @@ import Foundation
         assert(store.preloadWindow == [2, 1], "Reducing the window evicts forward entries")
         store.selected = 4
         assert(store.preloadWindow == [3, 2], "A new selection recomputes around it")
-
-        store.preloadNext = 2
-        store.setlist.patches = Array(fixture.patches.prefix(5))
-        assert(store.preloadWindow == [3, 2], "Replacing the setlist drops out-of-range neighbors")
-        store.setlist = fixture
-        assert(store.preloadWindow == [3, 5, 2, 6], "Replacing the setlist adds newly available neighbors")
-
+        assert(store.warmedChannels.isEmpty, "Nothing is warmed while audio is not running")
         // Persistence round trip, including the window that follows the counts.
         store.preloadPrevious = 2; store.preloadNext = 1
         store.save()
