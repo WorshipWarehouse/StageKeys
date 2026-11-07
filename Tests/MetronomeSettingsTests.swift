@@ -16,6 +16,12 @@ import Foundation
 
         var settings = MetronomeSettings()
         assert(settings.validate() && settings.visible && settings.followsMaster)
+        // Count-in is off for new and existing settings and reads back as a label.
+        assert(settings.countInBars == 0 && settings.countInLabel == "Off")
+        var metroObject = try JSONSerialization.jsonObject(with: JSONEncoder().encode(settings)) as! [String: Any]
+        metroObject.removeValue(forKey: "countInBars")
+        let legacyMetronome = try JSONDecoder().decode(MetronomeSettings.self, from: JSONSerialization.data(withJSONObject: metroObject))
+        assert(legacyMetronome.countInBars == 0 && legacyMetronome.validate())
         assert(settings.level > 0 && settings.levelDBFS != nil)
 
         // Every control round-trips through settings.json.
@@ -28,6 +34,7 @@ import Foundation
         settings.beatsPerBar = 7
         settings.accentEvery = 3
         settings.subdivision = 4
+        settings.countInBars = 2
         settings.followsMaster = false
         assert(settings.validate() && settings.levelDBFS == nil)
         legacy.metronomeSettings = settings
@@ -55,11 +62,13 @@ import Foundation
         assert(rejected { $0.accentEvery = 17 })
         assert(rejected { $0.subdivision = 0 })
         assert(rejected { $0.subdivision = 5 })
+        assert(rejected { $0.countInBars = -1 })
+        assert(rejected { $0.countInBars = 3 })
         var invalid = SessionSettings(selectedPatchID: nil, activeSnapshotID: nil, notesMode: nil, modWheel: nil)
         invalid.metronomeSettings = MetronomeSettings()
         invalid.metronomeSettings?.level = 2
         assert(!invalid.validate())
 
-        print("PASS: metronome defaults, bounded controls, legacy settings and JSON round trip")
+        print("PASS: metronome defaults, bounded controls, count-in, legacy settings and JSON round trip")
     }
 }

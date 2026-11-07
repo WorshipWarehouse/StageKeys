@@ -15,8 +15,9 @@ struct MetronomeSettings: Codable, Equatable {
     var beatsPerBar = 4
     var accentEvery = 0
     var subdivision = 1
+    var countInBars = 0
     var followsMaster = true
-    enum CodingKeys: String, CodingKey { case visible,preset,level,beatVelocity,downbeatEnabled,downbeatVelocity,beatsPerBar,accentEvery,subdivision,followsMaster }
+    enum CodingKeys: String, CodingKey { case visible,preset,level,beatVelocity,downbeatEnabled,downbeatVelocity,beatsPerBar,accentEvery,subdivision,countInBars,followsMaster }
     init() {}
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -29,13 +30,16 @@ struct MetronomeSettings: Codable, Equatable {
         beatsPerBar = try c.decodeIfPresent(Int.self, forKey: .beatsPerBar) ?? 4
         accentEvery = try c.decodeIfPresent(Int.self, forKey: .accentEvery) ?? 0
         subdivision = try c.decodeIfPresent(Int.self, forKey: .subdivision) ?? 1
+        countInBars = try c.decodeIfPresent(Int.self, forKey: .countInBars) ?? 0
         followsMaster = try c.decodeIfPresent(Bool.self, forKey: .followsMaster) ?? true
     }
     func validate() -> Bool {
-        MetronomeSettings.presets.indices.contains(preset) && level.isFinite && (0...1).contains(level) && beatVelocity.isFinite && (0...1).contains(beatVelocity) && downbeatVelocity.isFinite && (0...1).contains(downbeatVelocity) && (1...16).contains(beatsPerBar) && (0...16).contains(accentEvery) && (1...4).contains(subdivision)
+        MetronomeSettings.presets.indices.contains(preset) && level.isFinite && (0...1).contains(level) && beatVelocity.isFinite && (0...1).contains(beatVelocity) && downbeatVelocity.isFinite && (0...1).contains(downbeatVelocity) && (1...16).contains(beatsPerBar) && (0...16).contains(accentEvery) && (1...4).contains(subdivision) && (0...2).contains(countInBars)
     }
     /// Nil means silent. The value is an engine peak, not a measured output level.
     var levelDBFS: Float? { level > 0 ? Float(20 * log10(Double(max(0.0001, level * MetronomeSettings.peakAmplitude)))) : nil }
+    /// Count-in length in whole bars before the bar starts; 0 is off.
+    var countInLabel: String { countInBars == 0 ? "Off" : countInBars == 1 ? "1 bar" : "\(countInBars) bars" }
     var beatVelocityLabel: String { "\(Int(beatVelocity * 127))" }
     var downbeatVelocityLabel: String { "\(Int(downbeatVelocity * 127))" }
 }
@@ -76,7 +80,97 @@ struct SessionSettings: Codable {
     var keyboardPlayable: Bool?
     var showPlayedNotes: Bool?
     var dynamicMIDIRanges: Bool?
+    /// Opt-in iOS policy for keeping audio, note ownership, sustain and tails
+    /// while the app is inactive. Absent in older settings files, which keeps the
+    /// previous behavior: leaving the foreground releases notes and stops audio.
+    var backgroundAudioEnabled: Bool? = nil
     func validate() -> Bool {
         (0..<12).contains(tonicTimbre ?? 0) && (0..<12).contains(tonicLastRoot ?? 0) && (tonicSound == nil || tonicSound?.kind == .samplerPreset) && (audioBufferFrames.map { (0...8192).contains($0) } ?? true) && (audioOutputUID?.utf8.count ?? 0) <= 4096 && (modWheel.map { $0.isFinite && (0...1).contains($0) } ?? true) && (-1...15).contains(secondaryChannel ?? -1) && (0...127).contains(velocityMinimum ?? 0) && ((velocityMinimum ?? 0)...127).contains(velocityMaximum ?? 127) && (sourceNames?.count ?? 0) <= 512 && master.isFinite && (0...1).contains(master) && reverb.isFinite && (0...65).contains(reverb) && transition.isFinite && (0...15).contains(transition) && (-1...15).contains(midiChannel) && tonicGain.isFinite && (0...1).contains(tonicGain) && tonicBrightness.isFinite && (0...1).contains(tonicBrightness) && tonicShimmer.isFinite && (0...1).contains(tonicShimmer) && (metronomeSettings?.validate() ?? true) && (liveTempo.map { $0.isFinite && (PatchTransposition.minimumTempo...PatchTransposition.maximumTempo).contains($0) } ?? true)
+    }
+}
+
+/// Tracks the two independent reasons audio may need to resume. Foregrounding
+/// consumes only the background suspension; the interruption-ended notification
+/// owns the interruption intent, so an early activation cannot clear it.
+struct BackgroundAudioResumeState: Equatable {
+    private(set) var backgroundSuspendPending = false
+    private(set) var interruptionResumeIntent = false
+
+    mutating func markBackgroundSuspended() { backgroundSuspendPending = true }
+    mutating func markInterruption(wasRunning: Bool) { interruptionResumeIntent = wasRunning }
+    mutating func clearInterruption() { interruptionResumeIntent = false }
+
+    mutating func consumeBackgroundResume() -> Bool {
+        guard backgroundSuspendPending else { return false }
+        backgroundSuspendPending = false
+        return true
+    }
+
+    mutating func clear() {
+        backgroundSuspendPending = false
+        interruptionResumeIntent = false
+    }
+}
+
+/// Lifecycle policy for the opt-in iOS background-audio setting.
+///
+/// The policy is a value type so the scene and interruption decisions can be
+/// exercised without an audio device, a scene or a real interruption. It makes no
+/// claim about battery, thermal state or whether the system will honour
+/// background audio; those remain physical-device gates (#105).
+enum BackgroundAudioPolicy {
+    enum SceneAction: Equatable {
+        /// Audio, held notes, sustain, ticks and tails continue unchanged.
+        case none
+        /// Release on-screen notes but keep the engine running (macOS).
+        case releaseNotes
+        /// Stop audio after releasing voices; foregrounding restarts once.
+        case suspendAudio
+    }
+    enum InterruptionAction: Equatable {
+        /// Not an interruption that changes audio, or a resume that is not allowed.
+        case ignore
+        /// Release voices and stop audio, remembering intent to resume.
+        case suspendAudio
+        /// Restart audio because the system reported the interruption ended.
+        case resumeAudio
+    }
+
+    /// macOS keeps its engine alive while the app is inactive; iOS stops it when
+    /// the performer has not opted into background audio.
+    static var canSuspendAudio: Bool {
+        #if os(macOS)
+        return false
+        #else
+        return true
+        #endif
+    }
+
+    static func sceneAction(active: Bool,
+                            background: Bool,
+                            backgroundAudioEnabled: Bool,
+                            canSuspendAudio: Bool = BackgroundAudioPolicy.canSuspendAudio) -> SceneAction {
+        guard !active else { return .none }
+        // The opt-in owns the whole inactive-to-background transition: releasing
+        // notes at the transient inactive phase would clear sustain before the
+        // background phase is ever reported.
+        if backgroundAudioEnabled { return .none }
+        // Without the opt-in a transient inactive phase (Control Center, a
+        // notification banner) only releases notes: the performer has not left the
+        // app, so the engine must not be torn down and rebuilt for it.
+        guard background else { return .releaseNotes }
+        return canSuspendAudio ? .suspendAudio : .releaseNotes
+    }
+
+    /// `began` is also the safe reading of a notification without a readable type.
+    static func interruptionAction(began: Bool, shouldResume: Bool, restoreAllowed: Bool) -> InterruptionAction {
+        if began { return .suspendAudio }
+        return shouldResume && restoreAllowed ? .resumeAudio : .ignore
+    }
+
+    static func guidance(backgroundAudioEnabled: Bool) -> String {
+        backgroundAudioEnabled
+            ? "Audio, held notes, sustain, effect tails and tempo continue when you switch apps or lock the screen. This uses battery; turn it off when the device is not performing."
+            : "Leaving the app releases held notes and stops audio; StageKeys restarts audio when you return. Turn this on only while performing."
     }
 }

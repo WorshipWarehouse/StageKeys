@@ -74,7 +74,6 @@ enum StageSheet: Identifiable {
 }
 struct PerformanceView: View {
     @EnvironmentObject var store: PerformanceStore
-    @Environment(\.scenePhase) var scenePhase
     @State private var sheet: StageSheet?
     @State private var menuExpanded = false
     @State private var addingPatch = false
@@ -201,16 +200,6 @@ struct PerformanceView: View {
         }
         .onChange(of: store.patch.id) { _ in sheet = nil }
         .onChange(of: store.activeSnapshot) { _ in if sheet != nil { sheet=nil } }
-        .onChange(of: scenePhase) { phase in
-            if phase != .active {
-                #if os(macOS)
-                store.releaseScreenNotes()
-                #else
-                store.panic()
-                #endif
-                store.save()
-            }
-        }
     }
     private var toolbar: some View {
         ScrollView(.horizontal, showsIndicators: false) {
