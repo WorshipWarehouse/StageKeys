@@ -165,6 +165,10 @@ struct MainStageSourceRecord: Codable, Equatable {
     var midiEnabled: Bool
     var hasMIDITransform: Bool
     var omitted: [String]
+    /// Source sound-shaping values retained as data. Channel-scope envelope and
+    /// filter keys have no observed unit or encoding, so they are preserved and
+    /// reported per key rather than guessed into destination controls.
+    var retainedShaping: [String: String]? = nil
     var valid: Bool {
         effects.count == sourceNames.count && effects.count == effectNotes.count && effects.count <= 12 &&
         effects.allSatisfy { $0.validate() } && sourceNames.allSatisfy { $0.count <= 200 } &&
@@ -174,6 +178,7 @@ struct MainStageSourceRecord: Codable, Equatable {
         (selectedMIDI.map { $0 == $0.validated } ?? true) && macros.count <= 128 &&
         macros.allSatisfy { (0..<128).contains($0.index) && $0.name.count <= 200 && $0.value.isFinite && (0...127).contains($0.value) } &&
         omitted.count <= 128 && omitted.allSatisfy { $0.count <= 2000 } &&
+        (retainedShaping.map { $0.count <= 64 && $0.allSatisfy { !$0.key.isEmpty && $0.key.count <= 96 && $0.value.count <= 160 } } ?? true) &&
         issues.count <= 128 && issues.allSatisfy { $0.count <= 2000 }
     }
 }

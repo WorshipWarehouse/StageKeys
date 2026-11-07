@@ -50,12 +50,30 @@ saved, and the model still validates the pair.
 
 ## Conversion reporting
 
-MainStage source documents can carry envelope and filter parameters that this
-converter does not translate. The conversion report now names every retained
-key that looks like sound shaping (attack, decay, sustain, release, cutoff,
-resonance, filter, ADSR, envelope) and states that the destination keeps its own
-values. Nothing is silently replaced with a StageKeys default, and the original
-source document stays in the patch archive.
+MainStage source documents can carry envelope and filter parameters at channel
+scope. No observed channel record defines their unit or encoding, so translating
+them would be a guess; the converter preserves them as data instead.
+
+- Each field whose name looks like sound shaping (attack, decay, sustain,
+  release, cutoff, resonance, filter, ADSR, envelope) is reported individually
+  with its archived value, e.g. `Channel_filterCutoff = 2754: retained in the
+  source record and not translated`. Numbers keep their archived spelling and
+  containers are described by size rather than expanded. The already-translated
+  `Channel_filterSustainPedal` is not reported as untranslated shaping.
+- The values are stored in `MainStageSourceRecord.retainedShaping`, so they
+  survive library persistence, backup and setlist sharing (local paths are
+  redacted there) and remain reviewable after the conversion. A hostile document
+  is bounded to 32 reported fields, 64 stored fields and 160 characters each.
+- The destination's own envelope and Mod Filter values are never replaced by a
+  source value, and the report says so. It also names where each control can
+  actually be changed: a converted sampler or hosted Audio Unit owns its
+  amplitude envelope, so Sound Settings hides the native envelope for that sound,
+  while the Mod Filter is a separate StageKeys stage and stays available there.
+
+A converted sampler instrument's own EXS amplitude envelope and low-pass filter
+are translated separately into the generated preset ([NATIVE-EXS-PLAYBACK.md](NATIVE-EXS-PLAYBACK.md));
+this section covers only the channel-scope fields that have no supported
+mapping. The original source document stays in the patch archive.
 
 ## Snapshots
 

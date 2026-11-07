@@ -228,6 +228,7 @@ enum SetlistShare {
                     record.effectNotes = record.effectNotes.map { $0.map(portableText) }
                     record.issues = record.issues.map(portableText)
                     record.omitted = record.omitted.map(portableText)
+                    record.retainedShaping = record.retainedShaping?.mapValues { portableText($0) }
                     setlist.patches[p].layers[l].mainStageSource = record
                 }
             }
