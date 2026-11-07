@@ -40,6 +40,27 @@ struct ExternalGraphTailTests {
             }
             return energy
         }
+        func frequencyEnergies(_ frequencies: [Double], blocks: Int) throws -> [Double] {
+            var cosine = Array(repeating: 0.0, count: frequencies.count)
+            var sine = Array(repeating: 0.0, count: frequencies.count)
+            var sampleCount = 0
+            for _ in 0..<blocks {
+                let buffer = try audio.offlineBlock()
+                let rate = buffer.format.sampleRate
+                for frame in 0..<Int(buffer.frameLength) {
+                    let sample = Double(buffer.floatChannelData![0][frame])
+                    for index in frequencies.indices {
+                        let phase = 2 * Double.pi * frequencies[index] * Double(sampleCount) / rate
+                        cosine[index] += sample * cos(phase)
+                        sine[index] += sample * sin(phase)
+                    }
+                    sampleCount += 1
+                }
+            }
+            return frequencies.indices.map {
+                (cosine[$0] * cosine[$0] + sine[$0] * sine[$0]) / Double(sampleCount * sampleCount)
+            }
+        }
         func reverb() -> AudioEffect {
             var effect = AudioEffect.factoryDefault(kind: 15)
             var values = effect.values
@@ -61,6 +82,14 @@ struct ExternalGraphTailTests {
             rack.noteOff(channel: channel, key: 60)
             _ = try render(80)
         }
+
+        // Establish a matched dry reference for the replacement's generated pitch.
+        try load(organ, channel: 4)
+        rack.volume(channel: 4, gain: 1, pan: 0)
+        rack.noteOn(channel: 4, key: 60, pitch: 60, velocity: 0.8)
+        let dryOrganEnergy = try frequencyEnergies([329.628], blocks: 40)[0]
+        rack.noteOff(channel: 4, key: 60)
+        _ = try render(80)
 
         // A changed imported-rack topology must keep its old graph's wet tail.
         try load(piano, channel: 0)
@@ -89,6 +118,18 @@ struct ExternalGraphTailTests {
         let voiceAfter = try render(40)
         FileHandle.standardError.write(Data("voice tail before/after: \(voiceBefore) / \(voiceAfter)\n".utf8))
         assert(voiceBefore > 1e-8 && voiceAfter > 1e-9, "A replaced instrument must retain its old reverb tail")
+        rack.noteOn(channel: 1, key: 60, pitch: 60, velocity: 0.8, sourceID: 42)
+        let replacementEnergies = try frequencyEnergies([329.628, 261.626], blocks: 40)
+        let newOrganEnergy = replacementEnergies[0]
+        let retiredPianoEnergy = replacementEnergies[1]
+        assert(rack.debugNoteIntentCount(1) == 1, "The replacement note must have one active owner")
+        assert(retiredPianoEnergy > 1e-12, "The old instrument's generated tail must still be audible during the replacement note")
+        assert(newOrganEnergy > dryOrganEnergy * 0.5 && newOrganEnergy < dryOrganEnergy * 2,
+               "The replacement must render at the matched dry-reference level rather than silence or double its note")
+        assert(newOrganEnergy > retiredPianoEnergy * 4,
+               "The replacement's pitch must dominate while the retired voice tail remains connected")
+        rack.noteOff(channel: 1, key: 60)
+        _ = try render(40)
         rack.panic(1)
         _ = try render(8)
         let voiceCleared = try render(40)
@@ -106,10 +147,19 @@ struct ExternalGraphTailTests {
 
         // Repeated switches are capped; old samplers must not accumulate or be
         // restored on every later transaction.
-        for sound in [piano, organ, pad, keys] {
+        var nodeCountBound: Int?
+        for (index, sound) in [piano, organ, pad, keys].enumerated() {
             try load(sound, channel: 2)
             _ = try render(1)
             assert(rack.debugRetiredTailCount <= 2, "Retired graph memory/CPU must be bounded")
+            if index >= 2 {
+                let nodeCount = rack.debugOwnedNodeCount
+                if let nodeCountBound {
+                    assert(nodeCount <= nodeCountBound, "Repeated same-size replacements must not accumulate graph nodes")
+                } else {
+                    nodeCountBound = nodeCount
+                }
+            }
         }
         assert(rack.debugRetiredTailCount == 2, "The cap should retain only the two newest tails")
         // Start with clean slots, then create one real wet tail per channel.
@@ -168,7 +218,7 @@ struct ExternalGraphTailTests {
         assert(!forwardMuted.isEmpty && forwardMuted.allSatisfy{$0.silent && $0.gain == 0}, "Graph completion must not restore a muted tail's gain")
         _ = try render(8)
         assert(try! render(40) < 0.000001)
-        print("PASS: generated tail rendering/cap, channel Panic across failed rollback/forward completion, retained unrelated notes and permanent muted tails")
+        print("PASS: new voice renders over retired tail, generated tail cap, Panic rollback/forward completion, and retained unrelated notes")
     }
 
     private static func importTone(_ url: URL, frequency: Double, rack: ExternalInstrumentRack) throws -> ExternalSound {

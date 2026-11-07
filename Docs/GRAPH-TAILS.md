@@ -22,11 +22,12 @@ StageKeys keeps a replaced audio graph connected through a dedicated tail mixer 
 `Tests/ExternalGraphTailTests.swift` uses generated tones and synthetic imported racks to exercise:
 
 - an imported-rack topology change and a full instrument replacement;
+- the replacement instrument's distinct 329.628 Hz generated voice at a matched synthetic dry-reference level while the retired 261.626 Hz instrument tail is still audible, with one active note intent;
 - a held sustain release;
 - stacked reverbs;
 - explicit Panic clearing the retained tail;
-- four rapid switches with a maximum of two retained tails.
+- four rapid switches with a maximum of two retained tails and a bounded rack-node count after repeated same-size replacements.
 
 `Tests/ReverbTransitionTests.swift` additionally checks the native effect path: compatible patch changes keep the tail, while `Silence Previous` and explicit Panic clear it.
 
-The synthetic test does not establish perceptual equality, third-party AU behavior, or physical-device CPU/memory budgets. macOS/iOS builds, sanitizer runs, third-party AU lifecycle checks and a live listening test remain required. This document does not claim full Sunday Keys parity.
+The generated frequency measurement confirms that the new instrument signal is present over the old tail on the offline test graph; it is not a recorded acoustic test for clicks or real-instrument note doubling. The synthetic test does not establish perceptual equality, third-party AU behavior, or physical-device CPU/memory budgets. macOS/iOS builds, sanitizer runs, third-party AU lifecycle checks and a live listening test remain required. This document does not claim full Sunday Keys parity.
