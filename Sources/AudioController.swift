@@ -363,18 +363,6 @@ final class AudioController {
     func panic(channel:Int,preserveEffectTails:Bool=false) { if preserveEffectTails {sk_release_voices(synth,Int32(channel))} else {sk_panic_channel(synth,Int32(channel))}; externalRack?.panic(channel,preserveEffectTails:preserveEffectTails) }
     /// Mark a sampler already installed directly by a transactional pad load so
     /// the following control/effect configuration does not detach and reload it.
-    /// Build a detached chain for a patch the preload window covers. Samples
-    /// load now; the chain has no output path, so only adoption can play it.
-    /// Best effort: a refused or failed warm only loses the preload.
-    @discardableResult
-    func warm(_ sound: ExternalSound, channel: Int, attackMinimum: Float, hostVelocityCurve: Int?) -> Bool {
-        guard sound.kind != .audioUnit, let rack = externalRack else { return false }
-        do { try rack.warm(sound, channel: channel, attackMinimum: attackMinimum, hostVelocityCurve: hostVelocityCurve); return true }
-        catch { return false }
-    }
-    func discardWarm(channel: Int) { externalRack?.discardWarm(channel) }
-    func discardWarmVoices() { externalRack?.discardAllWarmVoices() }
-    var warmVoiceCount: Int { externalRack?.warmVoiceCount ?? 0 }
     func adoptExternalSound(_ sound:ExternalSound?,channel:Int) {
         unavailableConfigurations.remove(channel)
         externalSounds[channel]=sound

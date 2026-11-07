@@ -2,8 +2,9 @@
 
 Status: **decisions settled, not implemented.** The hold strategy, window shape and hard
 capacity bound below are decided; the byte ceiling is not, because it needs the measurements
-this document describes. Nothing here ships behaviour or asserts a measured improvement. It exists so the code that follows can be audited
-against a stated contract instead of being reverse-engineered from a settings toggle.
+this document describes. Nothing here ships behaviour or asserts a measured improvement. It
+exists so a future implementation can be audited against a stated contract instead of being
+reverse-engineered from a settings toggle.
 
 Issue [#109](https://github.com/WorshipWarehouse/StageKeys/issues/109) asks for bounded
 previous/next preload counts with a visible loading state, memory/CPU limits and eviction
@@ -83,16 +84,20 @@ out rather than assumed:
 Recommendation for the first implementation: (c) for native samplers, falling back to (b)
 only when the detached candidate cannot be built safely, and no AU hosting
 (d) until #13's containment evidence exists. Per-entry strategy must be recorded with the
-measurement, not inferred from the sound kind.
+measurement, not inferred from the sound kind. The fallback is a deliberate capability
+decision made before preparation; it must not mask a load, graph-transaction, restoration or
+restart failure as a successful warm.
 
 ### Cancellation and failure
 
 - A monotonically increasing window generation is checked between layers; a superseded window
   stops at the next layer boundary.
-- Candidates are built off the live graph. On cancel or failure, release the
-  candidate's own resources and discard any late result whose generation has
-  expired. Cleanup must not invoke live rollback, stop the engine or touch the
-  active voice.
+- A candidate is detached from the audible graph and has no path to the output. Staging must
+  not enter the live graph-edit/rollback path if that path stops the running engine. On cancel
+  or failure, release the candidate's own resources and discard any late result whose
+  generation has expired. Cleanup must not invoke live rollback, stop the engine or touch the
+  active voice. If the framework cannot safely stage a candidate without those live effects,
+  defer warming until a safe preparation path exists.
 - A warm entry that fails to load is dropped and reported; the active patch, its saved bytes
   and its audible audio are unchanged. A warm failure may never fail the active patch.
 - Run blocking resource preparation in a bounded worker with one in-flight job.
@@ -127,9 +132,11 @@ implementation will be held to:
    distinct test note from the selected patch, with and without a warm entry.
    Issue the note once the selected patch is ready and unmuted. Previous-patch
    audio and muted loading blocks do not satisfy the marker. Measure
-   20 runs each, median and p95. Measure process CPU and render deadline misses
-   against the same active performance with preloading off. Report both
-   active warming and steady state with the window resident.
+   20 activation runs per condition and report median and p95. For CPU, capture
+   process CPU use and render deadline misses over matched fixed-duration intervals with
+   preloading off, while the window is actively warming, and after the window is resident.
+   Keep the active performance and audio configuration the same across conditions and report
+   the measurements; do not infer a CPU budget from a visual spot check.
 3. **Pass criteria (to be agreed with the owner)** — zero added render-callback work; steady
    state footprint increase ≤ X MB per warm entry; p95 activation improvement ≥ Y ms;
    peak warming and steady state CPU within agreed limits relative to the
@@ -139,15 +146,16 @@ implementation will be held to:
 4. **Recording** — platform, OS build, sample rate, buffer size, patch identity, fixture
    provenance and the exact command, per `AGENTS.md`.
 
-Until those numbers exist, the settings stay at 0 (off) and the feature makes no performance
-claim.
+Until those numbers exist, the future settings default to 0/0 (off) and the feature makes no
+performance claim.
 
 ## Decisions
 
 Settled for the first implementation slice.
 
 - **D-P1 — hold strategy: (c), detached native voice graphs.** A native sampler sound is
-  instantiated and wired into a complete voice off the live graph. On activation,
+  instantiated and wired into a complete voice without editing or stopping the live graph.
+  On activation,
   validate patch identity and adopt the prepared sampler and processing nodes
   as one candidate. If reconnection reinitializes the sampler and requires a
   document reload, treat the attempt as a cold activation and record it as such.
@@ -163,12 +171,12 @@ Settled for the first implementation slice.
 - **D-P3 — clamp, do not wrap.** At the first patch the window preloads forward only. Wrapping
   would warm a patch the player may never reach and would make the window depend on setlist
   length rather than distance.
-- **D-P4 — count-bounded now, byte-bounded after measurement.** The hard bound is capacity:
-  at most 4 per direction and 8 warm entries in total, which no settings file or code path can
-  exceed. The byte ceiling is one constant, `preloadMemoryCeilingBytes`, left unset until the
-  harness below produces numbers; once set, entries are evicted farthest-first, then
-  next-before-previous, until it holds. No MB figure is claimed before that measurement, and
-  the feature ships off by default (0/0).
+- **D-P4 — count-bounded before byte-bounded.** The intended hard capacity is at most 4 per
+  direction and 8 warm entries in total; the implementation must enforce that limit regardless
+  of settings-file contents. The byte ceiling is one constant, `preloadMemoryCeilingBytes`,
+  left unset until the harness below produces numbers; once set, entries are evicted
+  farthest-first, then next-before-previous, until it holds. No MB figure is claimed before
+  that measurement. When introduced, the feature defaults to off (0/0).
 - **D-P5 — two separate counts.** Previous and next remain separate 0...4 values rather than a
   combined depth control, because the need differs by direction within a set.
 
