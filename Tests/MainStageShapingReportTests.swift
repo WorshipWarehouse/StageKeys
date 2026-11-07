@@ -85,6 +85,17 @@ import Foundation
         let wideDraft=shapingDraft(wide)
         check(wideDraft.retainedShaping.count==32,"at most 32 shaping fields are retained, got \(wideDraft.retainedShaping.count)")
         check(wideDraft.issues.contains{$0.contains("45 sound-shaping fields")},"the report must count fields beyond the retention limit")
+        // A key that cannot fit the record bounds is reported and skipped, so one
+        // oversized source key cannot invalidate the record and block the import.
+        let oversizedKey="Channel_envelope"+String(repeating:"k",count:96)
+        let oversizedDraft=shapingDraft([oversizedKey:NSNumber(value:1)])
+        check(oversizedDraft.retainedShaping[oversizedKey]==nil,"an oversized shaping key must not be retained")
+        check(oversizedDraft.retainedShaping.count==5,"an oversized shaping key must not displace the retainable ones")
+        check(oversizedDraft.issues.contains{$0.contains("1 source sound-shaping key is longer than 96 characters")},"the report must name an oversized key by length")
+        check(!oversizedDraft.issues.contains{$0.contains(oversizedKey)},"the report must not repeat an oversized key")
+        var bounded=record
+        bounded.retainedShaping=oversizedDraft.retainedShaping
+        check(bounded.valid,"a record that skipped an oversized key must still validate")
         // A shared setlist must not carry a local source path in a retained value.
         var shared=applied
         shared.mainStageSource?.retainedShaping=["Channel_envelopePath":"/Users/owner/Private/Attack.exs"]
@@ -94,6 +105,17 @@ import Foundation
         SetlistShare.sanitize(&setlist)
         check(setlist.patches[0].layers[0].mainStageSource?.retainedShaping?["Channel_envelopePath"]=="[source location]","a shared record must not carry a local source path")
         check(setlist.patches[0].layers[0].mainStageSource?.valid==true,"a sanitized record must still validate")
+        // A retained key can itself be a local path, so sharing redacts keys too.
+        var keyed=applied
+        keyed.mainStageSource?.retainedShaping=["/Users/owner/Private/Attack.exs":"1","Channel_attack":"0.042"]
+        var keyedSetlist=Setlist()
+        keyedSetlist.patches=[Patch(name:"Shaping keys",layers:[keyed],snapshots:[])]
+        SetlistShare.sanitize(&keyedSetlist)
+        let sharedKeys=keyedSetlist.patches[0].layers[0].mainStageSource?.retainedShaping
+        check(sharedKeys?["/Users/owner/Private/Attack.exs"]==nil,"a shared record must not carry a local path in a shaping key")
+        check(sharedKeys?["[source location]"]=="1","a redacted key must keep its own value")
+        check(sharedKeys?["Channel_attack"]=="0.042","a portable key and value must be left unchanged")
+        check(keyedSetlist.patches[0].layers[0].mainStageSource?.valid==true,"a record with a redacted key must still validate")
         print("PASS: each retained source shaping value is named with its value, the destination keeps its own values, records validate, persist and sanitize, and hostile sizes are bounded")
     }
 }

@@ -61,9 +61,12 @@ them would be a guess; the converter preserves them as data instead.
   containers are described by size rather than expanded. The already-translated
   `Channel_filterSustainPedal` is not reported as untranslated shaping.
 - The values are stored in `MainStageSourceRecord.retainedShaping`, so they
-  survive library persistence, backup and setlist sharing (local paths are
-  redacted there) and remain reviewable after the conversion. A hostile document
-  is bounded to 32 reported fields, 64 stored fields and 160 characters each.
+  survive library persistence, backup and setlist sharing (local paths in values
+  and in keys are redacted there) and remain reviewable after the conversion. A
+  hostile document is bounded to 32 retained fields, 64 stored fields, 96
+  characters per key and 160 per value; a key above the limit is reported with
+  its length and skipped rather than truncated or stored, so one oversized field
+  cannot invalidate the record and block the import.
 - The destination's own envelope and Mod Filter values are never replaced by a
   source value, and the report says so. It also names where each control can
   actually be changed: a converted sampler or hosted Audio Unit owns its

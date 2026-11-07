@@ -183,12 +183,19 @@ enum MainStageProcessing {
                   shapingKeys.contains(where: { lower.contains($0) }) else{return nil}
             return (key,shapingText(source[key]))
         }.sorted{$0.0<$1.0}
-        for (key,value) in shapingFields.prefix(32) {
+        // A key that cannot be stored without breaking the record's bounds is
+        // skipped, never truncated: distinct keys can share a prefix, and an
+        // invalid record would stop a library import from committing.
+        for (key,value) in shapingFields.filter({$0.0.count<=96}).prefix(32) {
             draft.retainedShaping[key]=value
             draft.issues.append("\(key) = \(value): retained in the source record and not translated; no StageKeys value was derived from it.")
         }
+        let oversized=shapingFields.filter{$0.0.count>96}
+        if !oversized.isEmpty {
+            draft.issues.append("\(oversized.count) source sound-shaping \(oversized.count==1 ? "key is":"keys are") longer than 96 characters and \(oversized.count==1 ? "was":"were") not retained or translated; the longest is \(oversized.map{$0.0.count}.max() ?? 0) characters. Those values remain in the patch archive.")
+        }
         if shapingFields.count>32 {
-            draft.issues.append("The source channel has \(shapingFields.count) sound-shaping fields; the first 32 are retained and named, and none is translated.")
+            draft.issues.append("The source channel has \(shapingFields.count) sound-shaping fields; only the first 32 are considered for retention, and none is translated.")
         }
         if !shapingFields.isEmpty {
             draft.issues.append("No destination shaping value was substituted from the source. A converted sampler or hosted Audio Unit owns its amplitude envelope, so Sound Settings hides the native envelope for that sound; the Mod Filter is a separate StageKeys stage and is available there.")

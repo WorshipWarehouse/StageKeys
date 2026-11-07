@@ -1,6 +1,6 @@
 ## Unreleased
 
-- Report each retained MainStage channel shaping value individually with its archived value, store it in the layer's source record so it survives persistence, backup and setlist sharing, and stop telling users to set an envelope that Sound Settings hides for a converted sampler or hosted plug-in (#112).
+- Report each retained MainStage channel shaping value individually with its archived value, store it in the layer's source record so it survives persistence, backup and setlist sharing, and stop telling users to set an envelope that Sound Settings hides for a converted sampler or hosted plug-in (#112). Shaping keys longer than the record limit are reported and skipped instead of stored, and sharing redacts path-bearing keys, so one oversized or path-like field cannot block an import or leak a local location.
 
 - Clear a channel's MIDI FX lookahead mark when a hosted-AU install is rejected or the instrument is retired, and report a channel as not schedulable while its replacement is pending, so a failed plug-in cannot keep a stale eligibility.
 
