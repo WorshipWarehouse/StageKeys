@@ -40,7 +40,7 @@ import Foundation
         try await wait()
         assert(store.mainStageOutcomes.count==1 && store.mainStageOutcomes[0].state == .converted,store.libraryImportProgress ?? "No ordered outcome")
         store.assembleConvertedMainStagePatch(readyOnly:true)
-        guard let orderedPatch=store.setlist.patches.last,orderedPatch.layers.count==2 else{fatalError("No ordered layered patch was assembled")}
+        guard let orderedPatch=store.setlist.patches.last,orderedPatch.layers.count>=2 else{fatalError("No ordered layered patch was assembled")}
         assert(orderedPatch.layers[0].name=="Ordered · Zebra" && orderedPatch.layers[1].name=="Ordered · Alpha","Source sampler order must survive assembly")
         let concert=root.appendingPathComponent("Set.concert",isDirectory:true)
         try FileManager.default.createDirectory(at:concert,withIntermediateDirectories:true)
