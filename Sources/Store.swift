@@ -374,6 +374,7 @@ final class PerformanceStore: ObservableObject {
         /// Updated when the instrument interface closes so its edits survive the
         /// audition teardown instead of reverting to the state captured on open.
         var pluginState: Data?
+        var retainPluginState = false
         var draft: Layer
         var isolatedLibrary = false
     }
@@ -435,19 +436,19 @@ final class PerformanceStore: ObservableObject {
         previous.midiEffectEnabled != proposed.midiEffectEnabled ||
         previous.midiProgram != proposed.midiProgram
     }
-    func endAudition(_ token: UUID?, keepPluginState: Data? = nil) {
+    func endAudition(_ token: UUID?) {
         guard let session = audition, token == session.token else { return }
         guard session.patchID == patch.id, patch.layers.indices.contains(session.index), patch.layers[session.index].id == session.layerID else { audition=nil; return }
         let current=patch.layers[session.index]
-        if requiresNoteReset(from:session.draft,to:current) {
+        if !session.retainPluginState && requiresNoteReset(from:session.draft,to:current) {
             midiFX.panic(channel:session.index); audio.panic(channel:session.index)
         }
         audition=nil
-        if let keep=keepPluginState {
+        if session.retainPluginState {
             if let unit=session.pluginUnit {
-                audio.adoptPluginState(channel:session.index,sound:current.external,unit:unit,state:keep)
+                audio.adoptPluginState(channel:session.index,sound:current.external,unit:unit,state:session.pluginState)
             }
-            setlist.patches[selected].layers[session.index].pluginState=keep
+            setlist.patches[selected].layers[session.index].pluginState=session.pluginState
         } else if let state=session.pluginState {
             let keptCurrentState: Bool
             if let unit=session.pluginUnit {
@@ -487,18 +488,17 @@ final class PerformanceStore: ObservableObject {
     func confirmAudition(_ token: UUID?, index: Int, layer: Layer) {
         guard let session=audition, session.token == token, session.patchID == patch.id, session.index == index, patch.layers.indices.contains(index), patch.layers[index].id == session.layerID else { return }
         var final=layer; final.gain=patch.layers[index].gain; final.muted=patch.layers[index].muted
-        var keptState: Data?
         if layer.external?.kind == .audioUnit {
             guard audio.loadedUnit(channel:index,sound:layer.external) != nil else {message="Wait for the selected instrument to finish loading before confirming its settings.";return}
-            do {
-                final.pluginState=try audio.pluginStateData(channel:index,sound:layer.external)
-                keptState=final.pluginState
-            } catch { message=error.localizedDescription; return }
+            do { if let state=try audio.pluginStateData(channel:index,sound:layer.external) { final.pluginState=state } }
+            catch { message=error.localizedDescription; return }
         }
-        // Keep the confirmed AU state on its installed unit. Ending the
-        // audition through the discard path would restore the old state and
-        // replace the voice, resetting notes the settings preview preserved.
-        endAudition(token, keepPluginState: keptState); commitLayer(index,final)
+        // Keep the confirmed state on the installed voice. The discard path
+        // restores the old state and replaces the unit, which panics held notes.
+        audition?.retainPluginState=true
+        audition?.pluginState=final.pluginState
+        endAudition(token)
+        commitLayer(index,final,preserveHeldNotes:true)
     }
     private var snapshotTimer: Timer?
     private var snapshotTransitionGeneration = UUID()
@@ -1365,7 +1365,7 @@ final class PerformanceStore: ObservableObject {
         var openEditor = false
     }
     private var pendingLayerCommits: [Int: PendingLayerCommit] = [:]
-    func commitLayer(_ index: Int, _ layer: Layer) {
+    func commitLayer(_ index: Int, _ layer: Layer, preserveHeldNotes: Bool = false) {
         guard patch.layers.indices.contains(index) else{return}
         var validation=Setlist();validation.patches=[Patch(name:"Sound Edit",layers:[layer],snapshots:[])]
         guard (try? validation.validate()) != nil else{message="The sound edit contains unsupported or invalid settings. The previous sound was retained.";return}
@@ -1376,7 +1376,7 @@ final class PerformanceStore: ObservableObject {
         let previous = patch.layers[index]
         if !started && !audio.running {
             audio.prepareOfflineEditing()
-            finishLayerCommit(index, layer, previous: previous)
+            finishLayerCommit(index, layer, previous: previous, preserveHeldNotes: preserveHeldNotes)
             return
         }
         if layer.external?.kind == .audioUnit {
@@ -1391,15 +1391,15 @@ final class PerformanceStore: ObservableObject {
                 self.pendingLayerCommits[index] = nil
                 guard success, self.patch.id == pending.patchID, self.patch.layers.indices.contains(index),
                       self.patch.layers[index] == previous else { return }
-                self.finishLayerCommit(index, layer, previous: previous)
+                self.finishLayerCommit(index, layer, previous: previous, preserveHeldNotes: preserveHeldNotes)
                 if current.openEditor { self.requestPluginInterface(index); self.pluginInterfaceReady = UUID() }
             }
             return
         }
         guard audio.configure(index, layer) else { return }
-        finishLayerCommit(index, layer, previous: previous)
+        finishLayerCommit(index, layer, previous: previous, preserveHeldNotes: preserveHeldNotes)
     }
-    private func finishLayerCommit(_ index: Int, _ layer: Layer, previous: Layer) {
+    private func finishLayerCommit(_ index: Int, _ layer: Layer, previous: Layer, preserveHeldNotes: Bool = false) {
         let sourceChanged = previous.instrument != layer.instrument || previous.external != layer.external || previous.midiDestinationID != layer.midiDestinationID
         if sourceChanged {
             for s in patch.snapshots.indices {
@@ -1407,7 +1407,7 @@ final class PerformanceStore: ObservableObject {
                 if !layer.loaded { setlist.patches[selected].snapshots[s].gains[index] = 0 }
             }
         }
-        if requiresNoteReset(from:previous,to:layer) { midiFX.panic(channel:index); audio.panic(channel:index) }
+        if !preserveHeldNotes && requiresNoteReset(from:previous,to:layer) { midiFX.panic(channel:index); audio.panic(channel:index) }
         cancelTransition(); setlist.patches[selected].layers[index] = layer
         configureMIDI(index, layer)
         audio.gain(index, layer.loaded && !layer.muted ? layer.gain : 0); updateToneFilters(); save()

@@ -595,7 +595,7 @@ final class AudioController {
     /// Adopt a confirmed audition's captured state for the installed unit so
     /// the commit does not reload (and retire) a voice that is still holding
     /// notes. This captured state is what the next load restores.
-    func adoptPluginState(channel: Int, sound: ExternalSound?, unit: AVAudioUnit, state: Data) {
+    func adoptPluginState(channel: Int, sound: ExternalSound?, unit: AVAudioUnit, state: Data?) {
         guard loadedUnit(channel: channel, sound: sound) === unit else { return }
         externalStates[channel] = state
     }
