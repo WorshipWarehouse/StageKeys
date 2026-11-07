@@ -72,6 +72,7 @@ typedef struct {
     int beatsPerBar;        // 1...16
     int accentEvery;        // 0 off, 1...16 beats
     int subdivision;        // 1...4 clicks per beat
+    int countInBars;        // 0 off, 1...2 bars of higher-pitched beats first
 } SKMetronomeSettings;
 SKMetronome *sk_metronome_create(double sampleRate);
 void sk_metronome_destroy(SKMetronome *m);
