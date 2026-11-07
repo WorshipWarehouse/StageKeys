@@ -154,6 +154,24 @@ import AVFoundation
         assert(preflight.bufferFrames == nil, "Offline rendering has no hardware buffer")
         assert(store.started && store.audio.running && rack.unit(channel: 0) === retained)
 
+        // Patch application republishes preflight failures after preparation
+        // returns. That publication must not reattach the rack's previous
+        // rollback report or replace the preparation error code.
+        store.audio.debugSoundPreparationFailure = NSError(domain: NSOSStatusErrorDomain, code: 710)
+        do {
+            try store.audio.preparePatchResources(store.patch.layers)
+            assertionFailure("Expected patch preparation to fail")
+        } catch {
+            store.audio.rejectPatchChange(error)
+        }
+        store.audio.debugSoundPreparationFailure = nil
+        let patchPreflight = store.audio.lastChangeFailure!
+        assert(patchPreflight.phase == .prepareSound && patchPreflight.errorCode == 710)
+        assert(patchPreflight.lastGraphFailure == nil, "Patch publication must not attach an earlier graph failure")
+        assert(store.audioStartup.failure?.code == 710, "Recovery must report the preparation error, not the stale graph error")
+        store.start()
+        assert(store.started && store.audio.running, "The retained patch must recover after its preflight failure")
+
         // The Tonic picker calls the rack directly: it must enter the same
         // stopped state and keep its previous selection instead of recursively
         // trying to restore a graph whose completion already failed.

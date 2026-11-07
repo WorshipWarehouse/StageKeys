@@ -553,7 +553,8 @@ final class AudioController {
         if let failure = error as? AudioChangeFailure {
             let d = failure.diagnostic
             changeFailure(NSError(domain: d.errorDomain, code: d.errorCode), phase: d.phase,
-                          slot: d.soundSlot.map { $0 - 1 }, forceUnavailable: true)
+                          slot: d.soundSlot.map { $0 - 1 }, forceUnavailable: true,
+                          includeGraphFailure: d.phase != .prepareSound)
         } else { changeFailure(error, phase: .finishGraph, forceUnavailable: true) }
     }
     private func invalidateInstrumentCaches() {
