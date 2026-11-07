@@ -251,14 +251,14 @@ struct SetlistBrowser: View {
     @Binding var importing: Bool
     @Binding var exporting: Bool
     @State private var search = ""
-    @State private var order = SetlistBrowserOrder.updated
+    @State private var order = SetlistBrowserOrder.recent
     @State private var templateID: UUID?
     @State private var templateName = ""
     @State private var creationError: String?
     @State private var shareData: Data?
     @State private var shareName = "Setlist"
     @State private var sharing = false
-    private var entries: [SetlistLibraryDescriptor] { order.entries(store.savedSetlists, search: search) }
+    private var entries: [SetlistLibraryDescriptor] { order.entries(store.savedSetlists, search: search, recents: store.recentSetlistIDs) }
     @State private var renameID: UUID?
     @State private var renameName = ""
     var body: some View {
@@ -269,6 +269,11 @@ struct SetlistBrowser: View {
                 Picker("Sort Setlists", selection: $order) {
                     ForEach(SetlistBrowserOrder.allCases) { Text($0.title).tag($0) }
                 }.labelsHidden().pickerStyle(.menu).frame(width:170).accessibilityLabel("Sort Setlists")
+                Button { store.clearRecentSetlists() } label: { Image(systemName:"clock.arrow.circlepath").frame(width:18) }
+                    .buttonStyle(StageButtonStyle())
+                    .disabled(store.recentSetlistIDs.isEmpty)
+                    .help("Forget the recently opened order; no setlist is deleted")
+                    .accessibilityLabel("Clear Recently Opened History")
                 Menu("Import / Export") {
                     Button("Import Setlist…") { dismiss(); DispatchQueue.main.asyncAfter(deadline:.now()+0.4) { importing=true } }
                     Button("Export Current Setlist…") { store.save(); dismiss(); DispatchQueue.main.asyncAfter(deadline:.now()+0.4) { exporting=true } }
@@ -291,6 +296,8 @@ struct SetlistBrowser: View {
                             Menu {
                                 Button("Rename…") { renameName=entry.name; renameID=entry.id }
                                 Button("Use as Template…") { creationError=nil; templateName=String(entry.name.prefix(195))+" Copy"; templateID=entry.id }
+                                Button("Remove from Recently Opened") { store.removeRecentSetlist(entry.id) }
+                                    .disabled(!store.recentSetlistIDs.contains(entry.id))
                                 Button("Duplicate") { store.duplicateLocalSetlist(entry.id) }
                                 Button("Share…") { shareSetlist(entry.id) }
                                 Button("Copy Share Link") { copyShareLink(entry.id) }

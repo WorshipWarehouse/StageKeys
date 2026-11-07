@@ -91,6 +91,33 @@ import Foundation
         let cleanReloaded = try cleanLibrary.load(id: cleanID)
         assert(cleanReloaded.patches.map(\.id) == source.patches.map(\.id))
 
+        // Importing the same package into the same clean library again is a
+        // duplicate import: it creates a second independent copy and resolves
+        // conflicting identities instead of overwriting or merging with the first.
+        let repeatPlan = try SetlistShare.preview(package, library: cleanLibrary)
+        assert(!repeatPlan.collisions.isEmpty)
+        assert(repeatPlan.proposedName == "Generated Share Copy")
+        let repeatID = try SetlistShare.saveToLibrary(repeatPlan, library: cleanLibrary)
+        assert(repeatID != cleanID)
+        let repeatCopy = try cleanLibrary.load(id: repeatID)
+        assert(repeatCopy.name == "Generated Share Copy")
+        assert(Set(repeatCopy.patches.map(\.id)).isDisjoint(with: Set(cleanReloaded.patches.map(\.id))))
+        let cleanEntries = try cleanLibrary.list().entries
+        assert(cleanEntries.count == 2)
+
+        // An interrupted write leaves a damaged file behind. Listing reports it
+        // and leaves the complete entry readable; nothing is silently discarded.
+        let interruptedRoot = root.appendingPathComponent("Interrupted Setlists")
+        let interrupted = try SetlistLibrary(root: interruptedRoot)
+        let intact = try interrupted.save(source)
+        let damagedID = UUID()
+        try Data("{\"version\":4".utf8).write(to: interruptedRoot.appendingPathComponent(damagedID.uuidString + ".json"))
+        let interruptedInventory = try interrupted.list()
+        assert(interruptedInventory.entries.map(\.id) == [intact.id])
+        assert(interruptedInventory.issues.map(\.fileName) == [damagedID.uuidString + ".json"])
+        let loadedIntact = try interrupted.load(id: intact.id)
+        assert(loadedIntact.patches.count == source.patches.count)
+
         // Existing identities and names are resolved without touching the saved
         // source. Missing dependencies disable activation but not Save to Library.
         let library = try SetlistLibrary(root: root.appendingPathComponent("Setlists"))
@@ -135,6 +162,45 @@ import Foundation
         assert(upgraded.setlist.version == 4)
         assert(upgraded.warnings.contains { $0.contains("upgraded to 4") })
 
+        // A patch export is a local one-patch document, not a share. It keeps the
+        // authored settings but takes fresh patch/layer/snapshot identities, so
+        // later edits to the source setlist cannot reach it, and exporting twice
+        // adds a second document instead of overwriting the first.
+        let patchLibrary = try SetlistLibrary(root: root.appendingPathComponent("Patch Exports"))
+        let exportedPatch = source.patches[0]
+        let exportID = try patchLibrary.exportPatch(exportedPatch).id
+        let firstExport = try patchLibrary.load(id: exportID)
+        assert(firstExport.name == "Generated Patch")
+        assert(firstExport.patches.count == 1)
+        assert(firstExport.patches[0].id != exportedPatch.id)
+        assert(Set(firstExport.patches[0].layers.map(\.id)).isDisjoint(with: Set(exportedPatch.layers.map(\.id))))
+        assert(Set(firstExport.patches[0].snapshots.map(\.id)).isDisjoint(with: Set(exportedPatch.snapshots.map(\.id))))
+        assert(firstExport.patches[0].name == exportedPatch.name)
+        assert(firstExport.patches[0].layers.map(\.name) == exportedPatch.layers.map(\.name))
+        assert(firstExport.patches[0].layers.map(\.gain) == exportedPatch.layers.map(\.gain))
+        assert(firstExport.patches[0].snapshots.count == exportedPatch.snapshots.count)
+        assert(firstExport.patches[0].snapshots.map(\.name) == exportedPatch.snapshots.map(\.name))
+        assert(firstExport.patches[0].tonicState?.root == exportedPatch.tonicState?.root)
+        assert(firstExport.patches[0].programChangeNumber == exportedPatch.programChangeNumber)
+        assert(firstExport.assignments.isEmpty, "Setlist-level CC assignments belong to the source document")
+        let secondExportID = try patchLibrary.exportPatch(exportedPatch).id
+        assert(secondExportID != exportID)
+        let exportCount = try patchLibrary.list().entries.count
+        assert(exportCount == 2)
+        var editedSource = source
+        editedSource.name = "Edited Source"
+        editedSource.patches[0].name = "Edited Patch"
+        editedSource.patches[0].layers[0].name = "Edited Layer"
+        _ = try patchLibrary.save(editedSource)
+        let exportAfterEdit = try patchLibrary.load(id: exportID)
+        assert(exportAfterEdit.name == "Generated Patch")
+        assert(exportAfterEdit.patches[0].name == "Generated Patch")
+        assert(exportAfterEdit.patches[0].layers[0].name == "Generated Piano")
+        let countBeforeRefusal = try patchLibrary.list().entries.count
+        expectFailure("blank patch export title") { _ = try patchLibrary.exportPatch(exportedPatch, name: "   ") }
+        let countAfterRefusal = try patchLibrary.list().entries.count
+        assert(countAfterRefusal == countBeforeRefusal, "A refused export must not add a document")
+
         // File writes are atomic and a refused export leaves the existing file
         // byte-for-byte unchanged. The document type extension is required.
         let file = root.appendingPathComponent("Generated Share.stagekeyssetlist")
@@ -150,7 +216,72 @@ import Foundation
         expectFailure("wrong file extension") {
             try SetlistShare.write(source, to: root.appendingPathComponent("Generated Share.json"))
         }
-        print("PASS setlist sharing: checksummed portable package, payload exclusions, tamper/injection refusal, offline link, dependency preview, identity collision resolution, independent copies, legacy upgrade and atomic writes")
+        // Two independent data roots stand in for two installations. The first
+        // exports a saved setlist, the second imports it with no library or
+        // ratings of its own, re-exports it, and the first imports that copy
+        // back. Ratings are per installation and no import may rewrite either
+        // the source document or the destination's ratings.
+        let installARoot = root.appendingPathComponent("Install A")
+        let installBRoot = root.appendingPathComponent("Install B")
+        let installA = try SetlistLibrary(root: installARoot)
+        let installB = try SetlistLibrary(root: installBRoot)
+        let installADescriptor = try installA.save(source)
+        let installARecord = installARoot.appendingPathComponent(installADescriptor.id.uuidString + ".json")
+        let installARatingsFile = installARoot.appendingPathComponent("sound-ratings.json")
+        let installARatings = ["generated-piano": 4, "generated-au": 5]
+        try SoundRatingArchive.save(installARatings, to: installARatingsFile)
+        let installAOriginalBytes = try Data(contentsOf: installARecord)
+
+        let firstPackage = try SetlistShare.make(try installA.load(id: installADescriptor.id))
+        let installBPlan = try SetlistShare.preview(firstPackage, library: installB)
+        assert(installBPlan.collisions.isEmpty && installBPlan.canActivate)
+        let installBID = try SetlistShare.saveToLibrary(installBPlan, library: installB)
+        let installBCopy = try installB.load(id: installBID)
+        assert(installBCopy.patches.map(\.id) == source.patches.map(\.id))
+        assert(installBCopy.patches[0].layers.map(\.id) == source.patches[0].layers.map(\.id))
+        assert(installBCopy.patches[0].snapshots.map(\.id) == source.patches[0].snapshots.map(\.id))
+        assert(installBCopy.patches[0].layers[0].effects == source.patches[0].layers[0].effects)
+        // Export redacts local paths, so compare the installed copy with the
+        // package content rather than the authored source notes.
+        assert(installBCopy.patches[0].layers[0].external?.nativeSampler?.notes ==
+               firstPackage.content.setlist.patches[0].layers[0].external?.nativeSampler?.notes)
+        assert(installBCopy.patches[0].tonicState?.sound?.fileName ==
+               source.patches[0].tonicState?.sound?.fileName)
+        let installBRatingsFile = installBRoot.appendingPathComponent("sound-ratings.json")
+        let installBRatingsBeforeImport = try SoundRatingArchive.read(installBRatingsFile)
+        assert(installBRatingsBeforeImport.isEmpty,
+               "Importing a setlist must not invent library ratings")
+        try SoundRatingArchive.save(["generated-piano": 2], to: installBRatingsFile)
+
+        let returnPackage = try SetlistShare.make(try installB.load(id: installBID))
+        let returnPlan = try SetlistShare.preview(returnPackage, library: installA)
+        assert(!returnPlan.collisions.isEmpty)
+        let returnID = try SetlistShare.saveToLibrary(returnPlan, library: installA)
+        assert(returnID != installADescriptor.id)
+        let returned = try installA.load(id: returnID)
+        assert(returned.patches.count == source.patches.count)
+        for (original, copy) in zip(source.patches, returned.patches) {
+            assert(copy.id != original.id)
+            assert(Set(copy.layers.map(\.id)).isDisjoint(with: original.layers.map(\.id)))
+            assert(Set(copy.snapshots.map(\.id)).isDisjoint(with: original.snapshots.map(\.id)))
+        }
+        let installAOriginalAfter = try installA.load(id: installADescriptor.id)
+        assert(installAOriginalAfter.name == source.name)
+        assert(installAOriginalAfter.patches.map(\.id) == source.patches.map(\.id))
+        let installABytesAfterReturn = try Data(contentsOf: installARecord)
+        assert(installABytesAfterReturn == installAOriginalBytes,
+               "A return-trip import must not rewrite the original installation's document")
+        let installARatingsAfterReturn = try SoundRatingArchive.read(installARatingsFile)
+        assert(installARatingsAfterReturn == installARatings,
+               "A return-trip import must not change the destination's ratings")
+        let installBRatingsAfterReturn = try SoundRatingArchive.read(installBRatingsFile)
+        assert(installBRatingsAfterReturn == ["generated-piano": 2],
+               "Each installation keeps its own ratings")
+        let reopenedB = try SetlistLibrary(root: installBRoot)
+        let reopenedBCopy = try reopenedB.load(id: installBID)
+        assert(reopenedBCopy.patches[0].layers[0].name == "Generated Piano")
+
+        print("PASS setlist sharing: checksummed portable package, payload exclusions, tamper/injection refusal, offline link, dependency preview, identity collision resolution, independent copies, clean-install repeat import, interrupted-write listing, independent patch export, clean-install two-root round trip with destination ratings intact, legacy upgrade and atomic writes")
     }
 
     private static func expectFailure(_ label: String, _ body: () throws -> Void) {

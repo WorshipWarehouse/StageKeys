@@ -683,6 +683,9 @@ final class PerformanceStore: ObservableObject {
     @Published var setlistLibraryIssues: [SetlistLibraryIssue] = []
     @Published var archivedSetlists: [SetlistTrashEntry] = []
     @Published var currentSetlistID: UUID?
+    /// Last-opened order for the setlist browser. Advisory state: the library
+    /// documents remain the source of truth, and unknown ids are ignored.
+    @Published private(set) var recentSetlistIDs: [UUID] = []
     private let saveURL: URL
     private let audioRetryPolicy = AudioStartupRetryPolicy()
     private var audioStartGeneration = UUID()
@@ -746,6 +749,7 @@ final class PerformanceStore: ObservableObject {
             tonicVelocitySelector=settings.tonicVelocitySelector ?? false;tonicTimbre=settings.tonicTimbre ?? 0;tonicLastRoot=settings.tonicLastRoot ?? 0;tonicSound=settings.tonicSound
             tonicGain = settings.tonicGain; tonicBrightness = settings.tonicBrightness; tonicShimmer = settings.tonicShimmer
         }
+        recentSetlistIDs = SetlistRecents.read(base.appendingPathComponent("setlist-recents.json")).ids
         if FileManager.default.fileExists(atPath: settingsURL.path) {
             do {
                 let data = try RecoverableSessionFile.read(settingsURL)
@@ -760,13 +764,14 @@ final class PerformanceStore: ObservableObject {
             self?.refreshBlockedAudioUnits(includeCatalog: false)
         }
         audio.onGraphUnavailable = { [weak self] diagnostic in self?.handleGraphUnavailable(diagnostic) }
+        audio.onLookaheadEligibilityLost = { [weak self] channel in self?.midiFX.clearLookaheadChannel(channel) }
         do { midiOutput = try ExternalMIDIOutput() } catch { message = error.localizedDescription }
         midiOutput?.onChange = { [weak self] in self?.refreshMIDIDestinations() }
         midiDestinations = midiOutput?.destinations ?? []
         // Exclude this app's virtual output before the input port starts, so a
         // renamed or looped port cannot feed StageKeys' output back into itself.
         if let own = midiOutput?.ownSourceID, own != 0 { midi.ignoreSources([own]) }
-        midiFX.onNoteWithSource = { [weak self] channel, key, pitch, velocity, sourceID in
+        midiFX.onNoteAt = { [weak self] channel, key, pitch, velocity, sourceID, at in
             guard let self, !self.patchLoading, self.started, self.patch.layers.indices.contains(channel) else { return }
             if let audition=self.audition,audition.isolatedLibrary,audition.index != channel{return}
             let l = self.playbackLayer(channel)
@@ -774,15 +779,15 @@ final class PerformanceStore: ObservableObject {
             if let destination = l.midiDestinationID, (0...127).contains(pitch) {
                 self.outputNotes[channel, default: [:]][key] = pitch
                 self.sendMIDI(destination, 0x90 | UInt8(l.midiOutputChannel), UInt8(pitch), UInt8(max(1,min(127,Int(velocity * 127)))))
-            } else { self.audio.noteOn(key: key, pitch: pitch, instrument: l.instrument, layer: channel, velocity: velocity,sourceID:sourceID) }
+            } else { self.audio.noteOn(key: key, pitch: pitch, instrument: l.instrument, layer: channel, velocity: velocity,sourceID:sourceID,at:at) }
         }
-        midiFX.onOff = { [weak self] channel, key, force in
+        midiFX.onOffAt = { [weak self] channel, key, force, at in
             guard let self, self.patch.layers.indices.contains(channel) else { return }
             let l = self.playbackLayer(channel)
             if let destination = l.midiDestinationID, let pitch = self.outputNotes[channel]?.removeValue(forKey: key) {
                 if force { self.sendMIDI(destination, 0xb0 | UInt8(l.midiOutputChannel), 64, 0) }
                 self.sendMIDI(destination, 0x80 | UInt8(l.midiOutputChannel), UInt8(pitch), 0)
-            } else { self.audio.noteOff(key: key, channel: channel, force: force) }
+            } else { self.audio.noteOff(key: key, channel: channel, force: force, at: at) }
         }
         midi.onSourceEvent = { [weak self] source, status, a, b in self?.handleMIDI(status, a, b, source: source) }
         midi.onInventory = { [weak self] sources, devices in
@@ -1110,6 +1115,7 @@ final class PerformanceStore: ObservableObject {
                 audio.rejectPatchChange(failure)
                 message = audio.lastChangeFailure.map { AudioChangeFailure(diagnostic: $0).localizedDescription }
             } else if pending.isEmpty {
+                refreshLookaheadChannels()
                 patchLoading = false; audio.setPatchLoading(false)
             }
         }
@@ -1145,7 +1151,7 @@ final class PerformanceStore: ObservableObject {
                     }) { [weak self] success in
                         guard let self, self.patchLoadGeneration == generation, self.patch.id == patchID else { return }
                         pending.remove(i)
-                        if !success { rejected = true }
+                        if !success { rejected = true } else { self.refreshLookaheadChannels() }
                         finish()
                     }
                     if !accepted { rejected = true }
@@ -1688,6 +1694,13 @@ final class PerformanceStore: ObservableObject {
         }
     }
     private var configuredPrograms: [Int:MIDIProgram] = [:]
+    /// Recompute lookahead eligibility from the live rack. Only call once the
+    /// instrument assignment has settled: a completed commit, a finished
+    /// activation install, or a drained activation. Reading it mid-configuration
+    /// answers for the outgoing instrument.
+    private func refreshLookaheadChannels() {
+        midiFX.setLookaheadChannels(Set(patch.layers.indices.filter { audio.canScheduleMIDI(channel: $0) }))
+    }
     private func configureMIDI(_ index: Int, _ layer: Layer) {
         var program = layer.midiProgram ?? MIDIProgram()
         if layer.midiProgram == nil && layer.octaveEffect { program.kind = .easyChord; program.chordIntervals = [0,12] }
@@ -1698,6 +1711,7 @@ final class PerformanceStore: ObservableObject {
             configuredPrograms[index]=program.validated
         }
         midiFX.configure(channel: index, program: program, tempo: performedTempo)
+        refreshLookaheadChannels()
         if let d = layer.midiDestinationID {
             sendMIDI(d, 0xb0 | UInt8(layer.midiOutputChannel), 7, UInt8(layer.muted ? 0 : Int(layer.gain*127)))
             sendMIDI(d, 0xb0 | UInt8(layer.midiOutputChannel), 10, UInt8(max(0,min(127,Int((layer.pan+1)*63.5)))))
@@ -1789,7 +1803,6 @@ final class PerformanceStore: ObservableObject {
     private func installLibrarySound(_ url:URL,sampleRoot:URL?,id:String?=nil)throws->ExternalSound {
         let (sound,notes,layer)=try prepareLibrarySound(url,sampleRoot:sampleRoot)
         let library=SoundLibrary(url:saveURL.deletingLastPathComponent().appendingPathComponent("sound-library.json"))
-        var entries=try library.read()
         var entry=LibrarySound(id:id ?? UUID().uuidString,name:sound.name,collection:"My Sounds",sound:sound,layer:layer,conversionNotes:notes)
         if ["exs","aupreset"].contains(url.pathExtension.lowercased()) {
             let access=url.startAccessingSecurityScopedResource();defer{if access{url.stopAccessingSecurityScopedResource()}}
@@ -1798,8 +1811,7 @@ final class PerformanceStore: ObservableObject {
         if let name=sound.fileName,let rack=audio.externalRack {
             entry.managedFileSHA256=try AssetDigest.sha256(rack.libraryURL.appendingPathComponent(name))
         }
-        entries.append(entry)
-        try library.write(entries);librarySounds=try library.read();refreshLibraryContent()
+        try library.append(entry);librarySounds=try library.read();refreshLibraryContent()
         return librarySounds.last(where:{$0.sound?.fileName==sound.fileName})?.sound ?? sound
     }
     /// One directory-backed check per saved sound, not per keystroke.
@@ -2197,6 +2209,9 @@ final class PerformanceStore: ObservableObject {
         }
     }
     #endif
+    /// Save one layer as an independent library sound. The export always allocates
+    /// a new identity, so later edits to this patch cannot change the saved copy and
+    /// exporting the same sound again adds another entry instead of overwriting one.
     func saveSoundToLibrary(_ source: Layer, index: Int) -> Bool {
         do {
             var layer = source
@@ -2204,9 +2219,10 @@ final class PerformanceStore: ObservableObject {
             var validation = Setlist(); validation.patches = [Patch(name: "Library Validation", layers: [layer], snapshots: [])]
             try validation.validate()
             let library = SoundLibrary(url: saveURL.deletingLastPathComponent().appendingPathComponent("sound-library.json"))
-            var entries = try library.read()
-            entries.append(LibrarySound(id: UUID().uuidString, name: layer.name, collection: "My Sounds", sound: layer.external, layer: layer))
-            try library.write(entries); librarySounds = entries; return true
+            let saved = try library.exportSound(layer)
+            librarySounds = try library.read()
+            refreshLibraryContent()
+            return librarySounds.contains { $0.id == saved.id }
         } catch { message = error.localizedDescription; return false }
     }
     func addLibrarySound(_ entry: LibrarySound, index: Int) {
@@ -2313,12 +2329,51 @@ final class PerformanceStore: ObservableObject {
         } catch { message = "Recovery could not complete: \(error.localizedDescription). Original files remain preserved." }
     }
     private func localSetlistLibrary() throws -> SetlistLibrary { try SetlistLibrary(root: saveURL.deletingLastPathComponent().appendingPathComponent("Setlists")) }
-    func refreshSetlists() {
+    private var setlistRecentsURL: URL { saveURL.deletingLastPathComponent().appendingPathComponent("setlist-recents.json") }
+    private func recordRecentSetlist(_ id: UUID) {
+        let updated = SetlistRecents(ids: recentSetlistIDs).recording(id)
+        recentSetlistIDs = updated.ids
+        try? updated.write(to: setlistRecentsURL)
+    }
+    /// Forget one setlist in the last-opened order. The document itself is untouched.
+    /// The published list changes only after the write succeeds, so a failed write
+    /// stays visible and the action remains retryable.
+    func removeRecentSetlist(_ id: UUID) {
+        let updated = SetlistRecents(ids: recentSetlistIDs).removing(id)
+        guard updated.ids != recentSetlistIDs else { return }
         do {
-            let library = try localSetlistLibrary(), inventory = try library.list()
+            try updated.write(to: setlistRecentsURL)
+            recentSetlistIDs = updated.ids
+        } catch {
+            message = "Could not update the recently opened history: \(error.localizedDescription)"
+        }
+    }
+    /// Forget the whole last-opened order. No setlist is renamed, moved or deleted.
+    func clearRecentSetlists() {
+        guard !recentSetlistIDs.isEmpty else { return }
+        do {
+            try SetlistRecents().write(to: setlistRecentsURL)
+            recentSetlistIDs = []
+        } catch {
+            message = "Could not clear the recently opened history: \(error.localizedDescription)"
+        }
+    }
+    #if DEBUG
+    var debugBeforeSetlistListing: ((SetlistLibrary) -> Void)?
+    #endif
+    @discardableResult
+    func refreshSetlists() -> Error? {
+        do {
+            let library = try localSetlistLibrary()
+            #if DEBUG
+            debugBeforeSetlistListing?(library)
+            #endif
+            let inventory = try library.list()
             savedSetlists = inventory.entries; setlistLibraryIssues = inventory.issues
             archivedSetlists = try library.listTrash().entries.filter { archived in !savedSetlists.contains(where: { $0.id == archived.originalID }) }
-        } catch { message = error.localizedDescription }
+            recentSetlistIDs = SetlistRecents(ids: recentSetlistIDs).retaining(Set(savedSetlists.map(\.id))).ids
+            return nil
+        } catch { message = error.localizedDescription; return error }
     }
     private func preserveCurrentSetlist() throws {
         guard !sessionRecoveryRequired, !settingsRecoveryRequired else { throw SetlistLibraryError.recoveryRequired }
@@ -2349,6 +2404,7 @@ final class PerformanceStore: ObservableObject {
             try preserveCurrentSetlist()
             panic(); cancelTransition(); setlist = loaded; currentSetlistID = id; selected = 0; activeSnapshot = nil
             applyPatch(); recallTonicPatch(); audio.clock(performedTempo,metronome); save()
+            recordRecentSetlist(id)
         } catch { message = error.localizedDescription }
     }
     func createLocalSetlist() {
@@ -2359,6 +2415,7 @@ final class PerformanceStore: ObservableObject {
             let id = try localSetlistLibrary().save(fresh).id
             panic(); cancelTransition(); setlist = fresh; currentSetlistID = id; selected = 0; activeSnapshot = nil
             applyPatch(); recallTonicPatch(); audio.clock(performedTempo,metronome); save()
+            recordRecentSetlist(id)
         } catch { message = error.localizedDescription }
     }
     func renameLocalSetlist(_ id: UUID, name: String) {
@@ -2385,6 +2442,31 @@ final class PerformanceStore: ObservableObject {
             refreshSetlists()
             return copy.id
         } catch { message = error.localizedDescription; return nil }
+    }
+    /// Save the active patch as its own library document. This is an independent
+    /// copy, not a link: it does not save, activate or restart audio, and it never
+    /// changes the current setlist. Exporting again creates another document instead
+    /// of overwriting the previous one; overwriting stays an explicit library action.
+    @discardableResult
+    func exportCurrentPatchToLibrary() -> UUID? {
+        do {
+            guard setlist.patches.indices.contains(selected) else { throw SetlistError.invalid }
+            var exported = setlist.patches[selected]
+            for (index, layer) in exported.layers.enumerated() where layer.external?.kind == .audioUnit {
+                if audition?.patchID == exported.id && audition?.index == index { continue }
+                if let state = try audio.pluginStateData(channel: index, sound: layer.external) {
+                    exported.layers[index].pluginState = state
+                }
+            }
+            let descriptor = try localSetlistLibrary().exportPatch(exported)
+            let refreshError = refreshSetlists()
+            let savedMessage = "Saved “\(descriptor.name)” as an independent patch in Setlists. The current setlist was not changed."
+            message = savedMessage + (refreshError.map { " Could not refresh Setlists: \($0.localizedDescription)" } ?? "")
+            return descriptor.id
+        } catch {
+            message = "Could not export this patch: \(error.localizedDescription)"
+            return nil
+        }
     }
     /// Export the current document or a saved copy as a portable package. This
     /// does not save, activate, or restart audio and never includes sample bytes.
@@ -2447,6 +2529,7 @@ final class PerformanceStore: ObservableObject {
                 let id = try SetlistShare.saveToLibrary(plan, library: library)
                 panic(); cancelTransition(); setlist = plan.setlist; currentSetlistID = id; selected = 0; activeSnapshot = nil
                 applyPatch(); recallTonicPatch(); audio.clock(performedTempo, metronome); save(); refreshSetlists()
+                recordRecentSetlist(id)
             }
             pendingSetlistShare = nil
         } catch { message = "Could not import this setlist share: \(error.localizedDescription)" }
@@ -2472,7 +2555,11 @@ final class PerformanceStore: ObservableObject {
     }
     func archiveLocalSetlist(_ id: UUID) {
         guard id != currentSetlistID else { message = "Open another setlist before moving this one to Trash."; return }
-        do { _ = try localSetlistLibrary().delete(id:id); refreshSetlists() } catch { message = error.localizedDescription }
+        do {
+            _ = try localSetlistLibrary().delete(id:id)
+            removeRecentSetlist(id)
+            refreshSetlists()
+        } catch { message = error.localizedDescription }
     }
     func restoreLocalSetlist(_ token: UUID) {
         do { _ = try localSetlistLibrary().restore(token:token); refreshSetlists() } catch { message = error.localizedDescription }

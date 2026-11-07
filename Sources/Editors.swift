@@ -47,7 +47,14 @@ struct SoundEditor: View {
     @State private var editingName = false
     @State private var processingPreview:MainStageProcessing.Draft?
     @State private var processingIssue:String?
+    @State private var librarySaveMessage:String?
     @State private var auditionToken: UUID?
+    @State private var gainMatchTrimDraft=InstrumentGainMatch.TrimDraft()
+    private var draftForCommit:Layer {
+        var committed=draft
+        committed.channelSettings.outputTrimDB=gainMatchTrimDraft.committedValue(current:draft.channelSettings.outputTrimDB)
+        return committed
+    }
     init(index: Int, initial: Layer) { self.index = index; _draft = State(initialValue: initial); if initial.midiDestinationID != nil { _tab = State(initialValue: "Settings") } }
     private var tabs: [String] { draft.midiDestinationID != nil ? ["Settings"] : ["FX A: Equalizer", "FX B: Compressor", "Settings"] }
     var body: some View {
@@ -71,7 +78,7 @@ struct SoundEditor: View {
                 } else {
                     VStack(spacing:12) {
                         ScrollView(.horizontal,showsIndicators:false) { SoundSettingsControls(layer:$draft).frame(minWidth:700) }
-                        if draft.loaded && draft.midiDestinationID == nil {InstrumentGainMatchControls(layer:$draft,index:index)}
+                        if draft.loaded && draft.midiDestinationID == nil {InstrumentGainMatchControls(layer:$draft,trimDraft:$gainMatchTrimDraft,index:index)}
                         if draft.external?.kind == .samplerPreset {StageKeysSamplerControls(sound:draft.external!)}
                         if let report=store.mainStageImportReport {
                             Menu("Preview MainStage Processing") {
@@ -159,11 +166,17 @@ struct SoundEditor: View {
             HStack {
                 if tab == "FX A: Equalizer" { Toggle("Effect ON",isOn:$draft.channelSettings.eqEnabled).toggleStyle(.switch) }
                 if tab == "FX B: Compressor" { Toggle("Effect ON",isOn:$draft.channelSettings.compressorEnabled).toggleStyle(.switch) }
+                if draft.loaded {
+                    Button("Save Sound to Library") {
+                        librarySaveMessage = store.saveSoundToLibrary(draftForCommit, index: index) ? "Saved to My Sounds." : (store.message ?? "Could not save this sound.")
+                    }.buttonStyle(StageButtonStyle())
+                }
+                if let librarySaveMessage { Text(librarySaveMessage).font(.caption).foregroundStyle(.secondary) }
                 Spacer()
                 Button("Discard Changes") { dismiss() }.buttonStyle(StageButtonStyle())
                 Button("Confirm") {
                     guard !draft.name.isEmpty, draft.name.count <= 200, draft.channelSettings.validate() else { store.message="Channel values are outside the supported range."; return }
-                    store.confirmAudition(auditionToken,index:index,layer:draft); dismiss()
+                    store.confirmAudition(auditionToken,index:index,layer:draftForCommit); dismiss()
                 }.buttonStyle(StageButtonStyle(selected:true))
             }.padding(16)
         }.sheet(isPresented:$plugin) { PluginInterface(index:index).environmentObject(store) }.onAppear { auditionToken=store.beginAudition(index) }.onDisappear { store.endAudition(auditionToken) }.onChange(of:draft) { layer in if let token=auditionToken { store.previewLayer(index,layer,token:token) } }.alert("Sound Name",isPresented:$editingName) { TextField("Name",text:$draft.name); Button("Done") { editingName=false } }
