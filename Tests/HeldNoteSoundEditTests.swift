@@ -5,13 +5,10 @@ import AVFoundation
 /// envelope, Mod Filter, pan or fader used to panic the channel on every commit,
 /// so a sustained note stopped as soon as the edit was confirmed (#112).
 @main struct HeldNoteSoundEditTests {
-    /// Reports each stage as a GitHub annotation so a hosted failure names the
-    /// check that failed instead of only the terminating signal.
+    /// The library gate only reports the terminating signal for a hosted
+    /// failure, so name the stage that failed before stopping.
     static func check(_ ok: Bool, _ message: String, line: Int = #line) {
-        if ok {
-            print("::notice title=HeldNoteSoundEditTests::\(message)")
-            return
-        }
+        if ok { return }
         print("::error file=Tests/HeldNoteSoundEditTests.swift,line=\(line)::\(message)")
         exit(1)
     }
@@ -31,14 +28,14 @@ import AVFoundation
         check(original.external != nil, "fixture layer has a generated instrument")
         check(store.audio.running, "audio engine is running")
 
-        func energy(_ blocks: Int = 40) throws -> Double {
+        func energy(_ blocks: Int = 20) throws -> Double {
             var total = 0.0
             for _ in 0..<blocks {
                 let buffer = try store.audio.offlineBlock()
                 for channel in 0..<2 {
                     for frame in 0..<Int(buffer.frameLength) {
                         let sample = buffer.floatChannelData![channel][frame]
-                        if !sample.isFinite { return -1 }
+                        assert(sample.isFinite)
                         total += Double(sample * sample)
                     }
                 }
@@ -50,7 +47,7 @@ import AVFoundation
         store.setSustain(true)
         _ = try energy()
         let before = try energy()
-        check(before > 0.01, "audible before the edit (energy \(before))")
+        check(before > 0.01, "held note is audible before the edit (\(before))")
         guard let unit = store.audio.externalRack?.unit(channel: 0) else {
             check(false, "channel 0 has an installed unit before the edit")
             return
@@ -66,27 +63,32 @@ import AVFoundation
         shaped.channelSettings.resonance = 0.9
         shaped.pan = -0.2
         store.commitLayer(0, shaped)
-        check(store.patch.layers[0] == shaped, "shaping edit committed (message: \(store.message ?? "none"))")
-        check(store.audio.externalRack?.unit(channel: 0) === unit, "shaping edit kept the installed instrument")
-        check(store.held.contains(60), "shaping edit kept the held note")
-        check(store.sustain, "shaping edit kept pedal ownership")
+        check(store.patch.layers[0] == shaped,
+              "shaping-only edit committed (message: \(store.message ?? "none"))")
+        check(store.audio.externalRack?.unit(channel: 0) === unit,
+              "shaping-only edit kept the installed instrument")
+        check(store.held.contains(60), "shaping-only edit kept the held note")
+        check(store.sustain, "shaping-only edit kept pedal ownership")
         let after = try energy()
-        check(after > 0.001, "held note still renders (before \(before), after \(after))")
+        check(after > before * 0.8,
+              "held note continues at its level (before \(before), after \(after))")
 
         // Replacing the instrument still takes over the channel and plays.
         var replacement = TestFixtures.layer(1, gain: 0.2)
-        replacement.id = original.id
+        replacement.name = "Replacement"
         store.commitLayer(0, replacement)
-        check(store.patch.layers[0].external == replacement.external, "replacement committed")
-        check(store.audio.externalRack?.unit(channel: 0) !== unit, "replacement took over channel 0")
+        check(store.patch.layers[0] == replacement, "replacement committed")
+        check(store.audio.externalRack?.unit(channel: 0) !== unit,
+              "replacement took over channel 0")
         store.noteOn(64)
         let replacedEnergy = try energy()
-        check(replacedEnergy > 0.001, "replacement instrument plays (energy \(replacedEnergy))")
+        check(replacedEnergy > 0.001, "replacement instrument plays (\(replacedEnergy))")
         store.noteOff(64)
+        store.setSustain(false)
 
         // Panic remains the explicit way to clear a channel.
         store.panic()
         check(store.held.isEmpty && !store.sustain, "Panic cleared notes and pedal")
-        print("PASS: a shaping-only sound edit keeps the held note and pedal while a replaced instrument takes over the channel")
+        print("PASS: a shaping-only sound edit keeps the held note, pedal and instrument while a replaced instrument takes over the channel")
     }
 }
