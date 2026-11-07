@@ -398,6 +398,6 @@ struct InstrumentGainMatchControls:View {
             restoreComparison();task?.cancel();task=nil;measurementToken=UUID();measurement=nil;measurementInput=nil
         }
         .onChange(of:store.modWheel){_ in restoreComparison();task?.cancel();task=nil;measurementToken=UUID();measurement=nil;measurementInput=nil;status="Modulation changed; measure again."}
-        .onDisappear{task?.cancel();task=nil;measurementToken=UUID()}
+        .onDisappear{restoreComparison();task?.cancel();task=nil;measurementToken=UUID()}
     }
 }

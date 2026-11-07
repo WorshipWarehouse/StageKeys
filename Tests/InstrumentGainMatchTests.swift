@@ -19,8 +19,16 @@ import AVFoundation
   assert(!trimDraft.isComparing && draftTrim == -3)
   draftTrim=trimDraft.apply(current:draftTrim,proposed:4)
   assert(trimDraft.canUndo && draftTrim == 4)
+  draftTrim=trimDraft.toggleComparison(current:draftTrim,proposed:6)
+  assert(trimDraft.isComparing && trimDraft.committedValue(current:draftTrim) == 4)
   draftTrim=trimDraft.undo()
-  assert(!trimDraft.canUndo && draftTrim == -3)
+  assert(!trimDraft.canUndo && !trimDraft.isComparing && trimDraft.comparisonTrim == nil && draftTrim == -3)
+  assert(trimDraft.committedValue(current:draftTrim) == -3,
+         "Undo during comparison must commit the restored historical trim")
+  draftTrim=trimDraft.toggleComparison(current:draftTrim,proposed:2)
+  draftTrim=trimDraft.cancelComparison()
+  assert(!trimDraft.isComparing && draftTrim == -3,
+         "Removing the comparison controls must restore the audition trim")
   draftTrim=trimDraft.reset(current:draftTrim)
   assert(trimDraft.canUndo && draftTrim == nil)
   draftTrim=trimDraft.undo()

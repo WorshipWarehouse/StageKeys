@@ -175,6 +175,11 @@ enum InstrumentGainMatch {
 
         mutating func undo() -> Float? {
             guard canUndo else { return nil }
+            // Undo is a committed-draft action.  If the user invokes it while a
+            // comparison is live, retire that preview before restoring history so
+            // Confirm/Save cannot substitute the superseded comparison trim.
+            isComparing = false
+            comparisonTrim = nil
             canUndo = false
             let previous = undoTrim
             undoTrim = nil
