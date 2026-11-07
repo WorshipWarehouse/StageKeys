@@ -581,10 +581,11 @@ final class PerformanceStore: ObservableObject {
         catch {if access{url.stopAccessingSecurityScopedResource()};libraryImportProgress=error.localizedDescription;return}
         importMainStageBatch(sources,parentAccess:access ? url:nil,locations:locations,installedAudioUnits:installedAudioUnits)
     }
-    private func importSingleMainStageAutomatically(_ url:URL,locations:[MainStageDiscovery.Location]?=nil,installedAudioUnits:[ExternalAUIdentity]?=nil) {
-        guard !libraryImportBusy else{return}
+    @discardableResult
+    private func importSingleMainStageAutomatically(_ url:URL,locations:[MainStageDiscovery.Location]?=nil,installedAudioUnits:[ExternalAUIdentity]?=nil)->Bool {
+        guard !libraryImportBusy else{return false}
         importMainStagePatch(url)
-        guard let report=mainStageImportReport,let archive=report.sourceArchiveID else{return}
+        guard let report=mainStageImportReport,let archive=report.sourceArchiveID else{return false}
         let retained=saveURL.deletingLastPathComponent().appendingPathComponent("MainStage Sources/"+archive+"/Source.patch")
         let names=Set(report.channels.flatMap(\.instruments)),searchLocations=locations ?? (MainStageDiscovery.locations(source:url,retained:retained)+rememberedMainStageLocations())
         libraryImportCancelRequested=false;libraryImportBusy=true
@@ -603,6 +604,7 @@ final class PerformanceStore: ObservableObject {
             libraryImportBusy=false
             importMainStageSamplers(retained,installedAudioUnits:installedAudioUnits,allowPartial:true)
         }
+        return true
     }
     private func importMainStageBatch(_ sources:[URL],parentAccess:URL?,locations:[MainStageDiscovery.Location]?=nil,installedAudioUnits:[ExternalAUIdentity]?=nil) {
         guard !sources.isEmpty else{return}
@@ -617,17 +619,23 @@ final class PerformanceStore: ObservableObject {
             for (index,source) in sources.enumerated() {
                 if libraryImportCancelRequested {break}
                 libraryImportProgress="Batch import \(index+1) of \(sources.count): "+source.deletingPathExtension().lastPathComponent
-                importSingleMainStageAutomatically(source,locations:locations,installedAudioUnits:installedAudioUnits)
+                mainStageImportReport=nil;mainStageOutcomes=[];mainStageChannelSelection=nil
+                let beforeCount=librarySounds.count
+                let accepted=importSingleMainStageAutomatically(source,locations:locations,installedAudioUnits:installedAudioUnits)
                 while libraryImportBusy {try? await Task.sleep(nanoseconds:10_000_000)}
-                added += mainStageOutcomes.filter{$0.state == .converted}.reduce(0){$0+$1.soundIDs.count}
-                attention += mainStageOutcomes.filter{[.needsSamples,.unsupported,.failed].contains($0.state)}.count
+                added += max(0,librarySounds.count-beforeCount)
+                if accepted {
+                    attention += mainStageOutcomes.filter{[.pending,.needsSamples,.unsupported,.failed].contains($0.state)}.count
+                } else {
+                    attention += 1
+                }
                 completed=index+1;mainStageBatchCompleted=completed
                 if libraryImportCancelRequested {break}
             }
             if libraryImportCancelRequested {
                 libraryImportProgress="Batch import cancelled after \(completed) of \(sources.count) patches. Prepared but uncommitted assets were removed."
             } else {
-                libraryImportProgress="Added \(added) sounds · \(attention) channels need attention across \(sources.count) patch(es). Review the conversion report for the last patch."
+                libraryImportProgress="Added \(added) sounds · \(attention) channel or source problems need attention across \(sources.count) patch(es). Review the conversion report for the last patch."
             }
         }
     }
@@ -2090,7 +2098,7 @@ final class PerformanceStore: ObservableObject {
                 return
             }
             libraryImportProgress="Preserved \(report.channels.count) channel strips and their original effects, macros and MIDI data. Playback conversion requires \(report.blockers.count) unsupported settings to be translated. No incomplete sound was added."
-        }catch{mainStageImportReport=nil;libraryImportProgress=error.localizedDescription}
+        }catch{mainStageImportReport=nil;mainStageOutcomes=[];mainStageChannelSelection=nil;libraryImportProgress=error.localizedDescription}
     }
     func assembleConvertedMainStagePatch(readyOnly:Bool=false) {
         guard !patchLock,let report=mainStageImportReport,setlist.patches.count<128 else{return}
