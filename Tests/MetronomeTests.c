@@ -337,6 +337,58 @@ static void test_external_clock_matrix(void) {
     }
 }
 
+// Incoming ticks must re-anchor the pending click even before a full quarter
+// has been measured, rather than letting the stored tempo trigger early.
+static void test_external_clock_alignment(void) {
+    const long total = 48000 * 3 / 2;
+    float left[48000 * 3 / 2], right[48000 * 3 / 2];
+    for (int subdivision = 1; subdivision <= 4; subdivision++) {
+        SKMetronome *m = sk_metronome_create(48000); assert(m);
+        SKMetronomeSettings s = defaults();
+        s.beatVelocity = 1; s.downbeatVelocity = 1; s.subdivision = subdivision;
+        sk_metronome_settings(m, s);
+        sk_metronome_tempo(m, 120);
+        sk_metronome_clock_enabled(m, 1);
+        sk_metronome_enable(m, 1);
+        sk_metronome_clock_event(m, 1, 0);
+
+        long rendered = 0;
+        sk_metronome_render(m, left, right, 1);
+        rendered = 1;
+        for (int tick = 1; tick <= 24; tick++) {
+            long boundary = lround((double)tick * 48000.0 / 36.0);
+            while (rendered < boundary) {
+                uint32_t frames = (uint32_t)fmin(127, boundary - rendered);
+                sk_metronome_render(m, left + rendered, right + rendered, frames);
+                rendered += frames;
+            }
+            sk_metronome_clock_event(m, 0, (double)tick / 36.0);
+        }
+        while (rendered < total) {
+            uint32_t frames = (uint32_t)fmin(127, total - rendered);
+            sk_metronome_render(m, left + rendered, right + rendered, frames);
+            rendered += frames;
+        }
+
+        Capture c = {0};
+        int quiet = 1 << 20;
+        for (long sample = 0; sample < total; sample++) {
+            float amplitude = fabsf(left[sample]);
+            if (amplitude > 0.02f) {
+                if (quiet > 64 && c.count < MAX_CLICKS) c.onset[c.count++] = sample;
+                quiet = 0;
+            } else {
+                quiet++;
+            }
+        }
+        double interval = 48000.0 * 60 / 90 / subdivision;
+        assert(c.count >= 3);
+        assert(fabs((double)c.onset[1] - interval) <= 127);
+        assert(fabs((double)c.onset[2] - interval * 2) <= 127);
+        sk_metronome_destroy(m);
+    }
+}
+
 // A burst of clock ticks must not consume the slots reserved for transport, so
 // a Stop that arrives while the render thread is delayed is still delivered.
 static void test_clock_transport_reserve(void) {
@@ -429,6 +481,7 @@ int main(void) {
     test_count_in_matrix();
     test_count_in();
     test_external_clock_matrix();
+    test_external_clock_alignment();
     test_clock_transport_reserve();
     test_external_clock();
     test_reset();

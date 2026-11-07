@@ -843,6 +843,11 @@ static void metro_apply(SKMetronome*m,const MetronomeCommand*c){
     double tempo=fmin(300,fmax(20,60.0/(m->clockTick*24.0)));
     m->tempo=tempo;m->interval=metro_interval(m);metro_rescale(m,old);
    }
+   unsigned pulsesPerSubdivision=24u/(unsigned)m->settings.subdivision;
+   unsigned pulsePhase=m->clockPulses%pulsesPerSubdivision;
+   unsigned pulsesToNext=(pulsesPerSubdivision-pulsePhase)%pulsesPerSubdivision;
+   double pulseInterval=m->clockTick>0?m->clockTick*m->rate:m->interval/(double)pulsesPerSubdivision;
+   m->remaining=pulseInterval*pulsesToNext;
   }
  }
 }

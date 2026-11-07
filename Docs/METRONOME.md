@@ -54,11 +54,13 @@ BPM while the clock owns the timing.
 - **External MIDI clock** follows 24-pulse-per-quarter MIDI Clock. It ignores
   Song Position Pointer: Start resets to the first beat, Continue resumes on
   the next beat, and Stop silences the click without discarding the saved
-  click setting. Tempo is smoothed from the 24-pulse interval and applied at a
-  quarter-note boundary, so a change scales the pending interval rather than
-  retriggering the current click. Ticks received while stopped are ignored for
-  tempo, a discontinuous interval resets the measurement window, and losing the
-  source that supplied the clock stops the click and restores the stored tempo.
+  click setting. Clock tempo is derived from each complete 24-pulse quarter.
+  The pending beat or subdivision click is re-anchored from the smoothed
+  interval between incoming pulses, so a different stored tempo cannot trigger
+  it early while the clock tempo is being measured. Normal audio callback/block
+  latency still applies. Ticks received while stopped are ignored for tempo, a
+  discontinuous interval resets the measurement window, and losing the source
+  that supplied the clock stops the click and restores the stored tempo.
   Only one configured source owns a run: Start or Continue selects it, and
   ticks or Stop from the other source are ignored until the owner stops or
   disconnects. The owner can restart the run with another Start.
