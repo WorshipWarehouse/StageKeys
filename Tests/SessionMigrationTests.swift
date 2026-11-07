@@ -128,12 +128,19 @@ import Darwin
         } catch {}
         assert(try! Data(contentsOf: file) == currentBytes)
         assert(try! Data(contentsOf: RecoverableSessionFile.previous(file)) == backupBeforeFailure)
+        var reachedBackupWrite = false
         do {
             try RecoverableSessionFile.write(nextBytes, to: file, atomicWrite: { _, target in
-                if target == RecoverableSessionFile.previous(file) { throw CocoaError(.fileWriteNoPermission) }
+                if target == RecoverableSessionFile.previous(file) {
+                    reachedBackupWrite = true
+                    throw CocoaError(.fileWriteNoPermission)
+                }
             }, validate: validateSetlist)
             assertionFailure("A failed backup rotation was accepted")
-        } catch {}
+        } catch {
+            assert((error as? CocoaError)?.code == .fileWriteNoPermission)
+        }
+        assert(reachedBackupWrite, "The backup-write failure was not injected")
         assert(try! Data(contentsOf: file) == currentBytes)
         assert(try! Data(contentsOf: RecoverableSessionFile.previous(file)) == backupBeforeFailure)
 
