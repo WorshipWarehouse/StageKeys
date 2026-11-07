@@ -119,6 +119,69 @@ final class AudioDiagnosticRecorder {
 
 /// Opt-in fixed calibration. This measures an isolated graph, never the live mix.
 enum InstrumentGainMatch {
+    static let probeVelocity = 83
+    static let peakStressVelocity = 127
+    static let rmsWindowStartFrame = 4_800
+    static let rmsWindowEndFrame = 24_000
+    static let listeningReviewThresholdDB = 1.0
+    static let readinessAttempts = 500
+    static let readinessPollNanoseconds: UInt64 = 20_000_000
+
+    struct TrimDraft {
+        private(set) var undoTrim: Float?
+        private(set) var canUndo = false
+        private(set) var comparisonTrim: Float?
+        private(set) var isComparing = false
+
+        mutating func toggleComparison(current: Float?, proposed: Float) -> Float? {
+            if isComparing {
+                isComparing = false
+                let original = comparisonTrim
+                comparisonTrim = nil
+                return original
+            }
+            comparisonTrim = current
+            isComparing = true
+            return proposed
+        }
+
+        mutating func apply(current: Float?, proposed: Float) -> Float {
+            undoTrim = isComparing ? comparisonTrim : current
+            canUndo = true
+            isComparing = false
+            comparisonTrim = nil
+            return proposed
+        }
+
+        mutating func reset(current: Float?) -> Float? {
+            undoTrim = isComparing ? comparisonTrim : current
+            canUndo = true
+            isComparing = false
+            comparisonTrim = nil
+            return nil
+        }
+
+        mutating func cancelComparison() -> Float? {
+            guard isComparing else { return nil }
+            isComparing = false
+            let original = comparisonTrim
+            comparisonTrim = nil
+            return original
+        }
+
+        func committedValue(current:Float?)->Float? {
+            isComparing ? comparisonTrim : current
+        }
+
+        mutating func undo() -> Float? {
+            guard canUndo else { return nil }
+            canUndo = false
+            let previous = undoTrim
+            undoTrim = nil
+            return previous
+        }
+    }
+
     struct Result:Equatable {
         let rmsDB:Double
         let peakDB:Double
@@ -126,6 +189,8 @@ enum InstrumentGainMatch {
         let peakLimited:Bool
         let targetDB:Double
         var probeNotes:[Int] = []
+        var measuredVelocity = probeVelocity
+        var peakStressVelocity = InstrumentGainMatch.peakStressVelocity
         var probeTempo:Double? = nil
         var repeatabilityDB:Double? = nil
         var confidenceWarning:String? = nil
@@ -140,14 +205,40 @@ enum InstrumentGainMatch {
     }
     static func retarget(_ result:Result,to targetDB:Double)throws->Result {
         var updated = try recommendation(rms:pow(10,result.rmsDB/20),peak:pow(10,result.peakDB/20),targetDB:targetDB)
-        updated.probeNotes=result.probeNotes;updated.probeTempo=result.probeTempo;updated.repeatabilityDB=result.repeatabilityDB;updated.confidenceWarning=result.confidenceWarning
+        updated.probeNotes=result.probeNotes;updated.measuredVelocity=result.measuredVelocity;updated.peakStressVelocity=result.peakStressVelocity
+        updated.probeTempo=result.probeTempo;updated.repeatabilityDB=result.repeatabilityDB;updated.confidenceWarning=result.confidenceWarning
         return updated
+    }
+    static func sameMeasurementInputs(_ original:Layer,_ updated:Layer)->Bool {
+        var comparable=original
+        comparable.channelSettings.outputTrimDB=updated.channelSettings.outputTrimDB
+        return comparable==updated
     }
     static func repeatability(_ levels:[Double]) throws -> Double {
         guard levels.count >= 2, levels.allSatisfy({$0.isFinite && $0 > 0.00001}) else {throw failure("A calibration pass was silent or invalid. Check playable zones and slow attacks before applying trim.")}
         return 20*log10(levels.max()!/levels.min()!)
     }
+    static func repeatabilityWarning(spreadDB:Double)throws->String? {
+        guard spreadDB.isFinite,spreadDB>=0 else{throw failure("Calibration repeatability was invalid; no confidence warning can be reported.")}
+        guard spreadDB>listeningReviewThresholdDB else{return nil}
+        return "Repeated probes differ by more than 1 dB. This evolving or nondeterministic sound needs a listening comparison; the proposed trim is only an estimate."
+    }
     private static func failure(_ message:String)->NSError {NSError(domain:"StageKeysGainMatch",code:1,userInfo:[NSLocalizedDescriptionKey:message])}
+
+    static func waitForInstrumentReady(maxAttempts:Int=readinessAttempts,pollNanoseconds:UInt64=readinessPollNanoseconds,
+                                       isReady:()->Bool,loadError:()->String?)async throws {
+        guard maxAttempts>0 else{throw failure("The instrument readiness check was not configured.")}
+        for _ in 0..<maxAttempts {
+            try Task.checkCancellation()
+            if let error=loadError(){throw failure(error)}
+            if isReady(){return}
+            try await Task.sleep(nanoseconds:pollNanoseconds)
+        }
+        try Task.checkCancellation()
+        if let error=loadError(){throw failure(error)}
+        guard isReady() else{throw failure("The instrument did not finish loading for calibration.")}
+    }
+
     @MainActor static func measure(_ original:Layer,modulation:Float,targetDB:Double = -24,tempo:Double = 72)async throws->Result {
         guard original.loaded,original.midiDestinationID==nil else{throw failure("External MIDI devices cannot be measured by the app's audio engine.")}
         guard tempo.isFinite,(20...300).contains(tempo),targetDB.isFinite,(-60 ... -6).contains(targetDB) else{throw failure("Choose a valid target level and patch tempo before measuring.")}
@@ -157,16 +248,10 @@ enum InstrumentGainMatch {
         try audio.prepareOffline();audio.bypassMasterLimiter(true);audio.master(1);audio.space(0)
         audio.clock(tempo,false);audio.modulation(0,value:modulation);audio.configure(0,layer);audio.gain(0,1,seconds:0)
         if layer.external != nil {
-            for _ in 0..<500 {
-                try Task.checkCancellation()
-                if let error=loadError{throw failure(error)}
-                if audio.externalRack?.unit(channel:0) != nil{break}
-                try await Task.sleep(nanoseconds:20_000_000)
-            }
-            guard audio.externalRack?.unit(channel:0) != nil else{throw failure("The instrument did not finish loading for calibration.")}
+            try await waitForInstrumentReady(isReady:{audio.externalRack?.unit(channel:0) != nil},loadError:{loadError})
         }
-        var energy=0.0,count=0,peak=0.0,blocks=0
-        func render(_ frames:Int,measure:Bool)async throws {
+        var energy=0.0,count=0,peak=0.0,stressEnergy=0.0,stressCount=0,blocks=0
+        func render(_ frames:Int,measure:Bool,stress:Bool=false)async throws {
             var position=0
             while position<frames {
                 try Task.checkCancellation()
@@ -176,7 +261,8 @@ enum InstrumentGainMatch {
                     for c in 0..<Int(buffer.format.channelCount) {
                         let sample=Double(data[c][i]);guard sample.isFinite else{throw failure("The instrument produced invalid audio during calibration.")}
                         peak=max(peak,abs(sample))
-                        if measure && position+i>=4800 && position+i<24000 {energy+=sample*sample;count+=1}
+                        if measure && position+i>=rmsWindowStartFrame && position+i<rmsWindowEndFrame {energy+=sample*sample;count+=1}
+                        if stress {stressEnergy+=sample*sample;stressCount+=1}
                     }
                 }
                 position+=Int(buffer.frameLength);blocks+=1
@@ -192,7 +278,7 @@ enum InstrumentGainMatch {
             for note in notes {
                 audio.panic();try await render(4096,measure:false)
                 let noteEnergy=energy,noteCount=count
-                audio.noteOn(key:note,pitch:note,instrument:layer.instrument,layer:0,velocity:83.0/127)
+                audio.noteOn(key:note,pitch:note,instrument:layer.instrument,layer:0,velocity:Float(probeVelocity)/127)
                 try await render(28800,measure:true)
                 guard count>noteCount,sqrt((energy-noteEnergy)/Double(count-noteCount))>0.00001 else {
                     throw failure("Calibration note MIDI \(note) was silent in the measured window. Choose a playable range or measure a slower sound separately.")
@@ -202,13 +288,16 @@ enum InstrumentGainMatch {
             passLevels.append(sqrt((energy-before)/Double(count-beforeCount)))
         }
         audio.sustain(true,layers:[layer])
-        for note in notes {audio.noteOn(key:note,pitch:note,instrument:layer.instrument,layer:0,velocity:1);audio.noteOff(key:note,channel:0)}
-        try await render(48000,measure:false);audio.sustain(false,layers:[layer]);try await render(24000,measure:false)
+        for note in notes {audio.noteOn(key:note,pitch:note,instrument:layer.instrument,layer:0,velocity:Float(peakStressVelocity)/127);audio.noteOff(key:note,channel:0)}
+        try await render(48000,measure:false,stress:true);audio.sustain(false,layers:[layer]);try await render(24000,measure:false)
         if let error=loadError{throw failure(error)}
         guard count>0 else{throw failure("No calibration audio was rendered.")}
+        guard stressCount>0,sqrt(stressEnergy/Double(stressCount))>0.00001 else{throw failure("The maximum-velocity sustained chord was silent. Check playable zones and sustain behavior before applying trim.")}
         var result=try recommendation(rms:sqrt(energy/Double(count)),peak:peak,targetDB:targetDB)
-        result.probeNotes=notes;result.probeTempo=tempo;result.repeatabilityDB=try repeatability(passLevels)
-        if result.repeatabilityDB!>1 {result.confidenceWarning="Repeated probes differ by more than 1 dB. This evolving or nondeterministic sound needs a listening comparison; the proposed trim is only an estimate."}
+        result.probeNotes=notes;result.measuredVelocity=probeVelocity;result.peakStressVelocity=peakStressVelocity
+        result.probeTempo=tempo
+        let spread=try repeatability(passLevels)
+        result.repeatabilityDB=spread;result.confidenceWarning=try repeatabilityWarning(spreadDB:spread)
         return result
     }
 }

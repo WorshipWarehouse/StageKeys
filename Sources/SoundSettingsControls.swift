@@ -315,24 +315,30 @@ struct StageKeysSamplerControls:View {
 struct InstrumentGainMatchControls:View {
     @EnvironmentObject private var store:PerformanceStore
     @Binding var layer:Layer
+    @Binding var trimDraft:InstrumentGainMatch.TrimDraft
     let index:Int
     @State private var measurement:InstrumentGainMatch.Result?
+    @State private var measurementInput:Layer?
     @State private var status:String?
     @State private var task:Task<Void,Never>?
     @State private var measurementToken=UUID()
-    @State private var undoTrim:Float?
-    @State private var canUndoTrim=false
+    private func restoreComparison() {
+        guard trimDraft.isComparing else{return}
+        layer.channelSettings.outputTrimDB=trimDraft.cancelComparison()
+    }
     private func measure() {
+        restoreComparison()
         let input=layer,token=UUID();measurementToken=token
         var source=input
         do {if source.external?.kind == .audioUnit {source=try store.audio.calibrationSource(source,channel:index)}}
         catch{status=error.localizedDescription;return}
-        measurement=nil;status="Measuring an isolated copy; live playback is unchanged."
+        measurement=nil;measurementInput=nil;status="Measuring an isolated copy; live playback is unchanged."
         task=Task { @MainActor in
             do {
                 let result=try await InstrumentGainMatch.measure(source,modulation:store.modWheel,targetDB:store.gainMatchTargetDB,tempo:store.performedTempo)
                 guard !Task.isCancelled,measurementToken==token,layer==input else{return}
                 measurement=try InstrumentGainMatch.retarget(result,to:store.gainMatchTargetDB)
+                measurementInput=input
                 status="Measurement complete. Review the suggested trim before applying."
             }catch is CancellationError {}catch{if measurementToken==token{status=error.localizedDescription}}
             if measurementToken==token{task=nil}
@@ -346,10 +352,20 @@ struct InstrumentGainMatchControls:View {
                 Spacer()
                 if task != nil {ProgressView();Button("Cancel"){task?.cancel();task=nil;measurementToken=UUID();status="Calibration cancelled."}}
                 else {Button("Measure Sound",action:measure)}
-                Button("Reset Trim"){undoTrim=layer.channelSettings.outputTrimDB;canUndoTrim=true;layer.channelSettings.outputTrimDB=nil}.disabled(layer.channelSettings.outputTrimDB==nil)
-                if let result=measurement {Button(String(format:"Apply %+.1f dB",result.trimDB)){undoTrim=layer.channelSettings.outputTrimDB;canUndoTrim=true;layer.channelSettings.outputTrimDB=result.trimDB;measurement=nil;status="Output trim applied to this draft. Confirm to save or Discard to restore."}}
+                Button("Reset Trim"){layer.channelSettings.outputTrimDB=trimDraft.reset(current:layer.channelSettings.outputTrimDB);status="Output trim reset to unity in this draft."}.disabled(layer.channelSettings.outputTrimDB==nil && !trimDraft.isComparing)
+                if let result=measurement {
+                    Button(trimDraft.isComparing ? "Return to Current Trim":"Compare Match") {
+                        layer.channelSettings.outputTrimDB=trimDraft.toggleComparison(current:layer.channelSettings.outputTrimDB,proposed:result.trimDB)
+                        status=trimDraft.isComparing ? "Comparing the suggested trim in the live audition. Return to the current trim or Apply it. Confirm keeps the current trim unless you Apply." : "Returned to the current trim."
+                    }
+                    Button(String(format:"Apply %+.1f dB",result.trimDB)){
+                        layer.channelSettings.outputTrimDB=trimDraft.apply(current:layer.channelSettings.outputTrimDB,proposed:result.trimDB)
+                        measurement=nil;measurementInput=nil
+                        status="Output trim applied to this draft. Confirm to save or Discard to restore."
+                    }
+                }
             }.buttonStyle(StageButtonStyle())
-            if canUndoTrim {Button("Undo Last Trim Change") {layer.channelSettings.outputTrimDB=undoTrim;canUndoTrim=false;status="Previous output trim restored to this draft."}.buttonStyle(StageButtonStyle())}
+            if trimDraft.canUndo {Button("Undo Last Trim Change") {layer.channelSettings.outputTrimDB=trimDraft.undo();status="Previous output trim restored to this draft."}.buttonStyle(StageButtonStyle())}
             HStack(spacing:8) {
                 Text("Target RMS").font(.caption)
                 TextField("Target RMS",value:Binding(get:{store.gainMatchTargetDB},set:{if $0.isFinite{store.gainMatchTargetDB=min(-6,max(-60,$0));store.gainMatchReferenceName=nil}}),format:.number.precision(.fractionLength(1))).textFieldStyle(.roundedBorder).frame(width:65)
@@ -363,21 +379,25 @@ struct InstrumentGainMatchControls:View {
                 Spacer()
             }
             if let name=store.gainMatchReferenceName {Text("Session reference: "+name).font(.caption).foregroundStyle(.secondary)}
-            Text("Unity-fader probe at velocities 83 and 127; measured peak ceiling −9 dBFS, trim −24…+12 dB. Applies a separate output trim and preserves source settings. Check sustained chords and slow or tempo-dependent sounds by ear; this is a fixed-probe estimate, not continuous leveling.").font(.caption).foregroundStyle(.secondary)
+            Text("Two passes at unity fader: RMS uses the 0.10–0.50 s stereo window for each in-range note at velocity 83. Sample peak spans the full render, including a sustained velocity-127 chord, against a −9 dBFS ceiling. Trim is limited to −24…+12 dB; no LUFS, true-peak or perceived-loudness measurement is made.").font(.caption).foregroundStyle(.secondary)
             if let result=measurement {Text(String(format:"Probe RMS %.1f dBFS · peak %.1f dBFS · proposed RMS %.1f dBFS%@",result.rmsDB,result.peakDB,result.outputRMSDB,result.peakLimited ? " · peak limited":result.trimLimited ? " · trim limited":"")).font(.caption).monospacedDigit()}
             if let tempo=measurement?.probeTempo {Text("Probe tempo: \(tempo,specifier:"%.1f") BPM").font(.caption).monospacedDigit()}
             if let result=measurement,let variation=result.repeatabilityDB {
-                Text("MIDI notes: \(result.probeNotes.map(String.init).joined(separator:", ")) · two-pass spread \(variation,specifier:"%.2f") dB · sample peak only, not true peak").font(.caption)
+                Text("MIDI notes: \(result.probeNotes.map(String.init).joined(separator:", ")) · RMS velocity \(result.measuredVelocity) · peak-stress velocity \(result.peakStressVelocity) · two-pass RMS spread \(variation,specifier:"%.2f") dB (repeatability only) · sample peak only").font(.caption)
                 if let warning=result.confidenceWarning {Text(warning).font(.caption).foregroundStyle(.orange)}
             }
             if let status {Text(status).font(.caption).textSelection(.enabled)}
         }.padding(12).background(StageTheme.panel,in:RoundedRectangle(cornerRadius:8))
         .onChange(of:store.gainMatchTargetDB){target in
+            restoreComparison()
             if let result=measurement {do{measurement=try InstrumentGainMatch.retarget(result,to:target)}catch{measurement=nil;status=error.localizedDescription}}
         }
-        .onChange(of:store.performedTempo){_ in task?.cancel();task=nil;measurementToken=UUID();measurement=nil;status="Tempo changed; measure again."}
-        .onChange(of:layer){_ in task?.cancel();task=nil;measurementToken=UUID();measurement=nil}
-        .onChange(of:store.modWheel){_ in task?.cancel();task=nil;measurementToken=UUID();measurement=nil;status="Modulation changed; measure again."}
+        .onChange(of:store.performedTempo){_ in restoreComparison();task?.cancel();task=nil;measurementToken=UUID();measurement=nil;measurementInput=nil;status="Tempo changed; measure again."}
+        .onChange(of:layer){updated in
+            if let input=measurementInput,InstrumentGainMatch.sameMeasurementInputs(input,updated){return}
+            restoreComparison();task?.cancel();task=nil;measurementToken=UUID();measurement=nil;measurementInput=nil
+        }
+        .onChange(of:store.modWheel){_ in restoreComparison();task?.cancel();task=nil;measurementToken=UUID();measurement=nil;measurementInput=nil;status="Modulation changed; measure again."}
         .onDisappear{task?.cancel();task=nil;measurementToken=UUID()}
     }
 }
