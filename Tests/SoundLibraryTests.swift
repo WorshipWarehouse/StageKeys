@@ -36,6 +36,41 @@ import Foundation
         try FileManager.default.createSymbolicLink(at: files.appendingPathComponent("escape.aupreset"), withDestinationURL: library.url)
         let discovered = try SoundLibrary.samplerPresets(in: files)
         assert(Set(discovered.map(\.lastPathComponent)) == ["instrument.aupreset", "instrument.exs"])
-        print("PASS: native and host sound library round-trip; corrupt library preserved")
+        // A sound export is an independent library entry, not a reference to the
+        // patch layer it came from. The copy takes fresh identities, keeps the
+        // authored sound settings, cannot be reached by later edits to the source,
+        // and a repeated export adds another entry instead of overwriting one.
+        let exportLibrary = SoundLibrary(url: root.appendingPathComponent("exports/library.json"))
+        var sourceLayer = Layer(name: "  Exported Piano  ", instrument: 1, gain: 0.5)
+        sourceLayer.low = 36; sourceLayer.high = 60; sourceLayer.pan = -0.25
+        sourceLayer.external = ExternalSound(kind: .samplerPreset, name: "Exported Piano", fileName: "exported.aupreset")
+        let firstExport = try exportLibrary.exportSound(sourceLayer)
+        assert(firstExport.name == "Exported Piano")
+        assert(firstExport.collection == "My Sounds")
+        assert(firstExport.layer?.id != sourceLayer.id)
+        assert(firstExport.layer?.name == "Exported Piano")
+        assert(firstExport.layer?.gain == sourceLayer.gain)
+        assert(firstExport.layer?.pan == sourceLayer.pan)
+        assert(firstExport.layer?.low == 36 && firstExport.layer?.high == 60)
+        assert(firstExport.layer?.effects == sourceLayer.effects)
+        assert(firstExport.layer?.external?.fileName == "exported.aupreset")
+        assert(firstExport.sound?.fileName == "exported.aupreset")
+        var editedSource = sourceLayer
+        editedSource.name = "Edited Source"
+        editedSource.gain = 0.125
+        editedSource.pan = 0.5
+        editedSource.low = 0
+        let afterEdit = try exportLibrary.read().first { $0.id == firstExport.id }
+        assert(afterEdit?.layer?.name == "Exported Piano" && afterEdit?.layer?.gain == sourceLayer.gain)
+        assert(afterEdit?.layer?.pan == sourceLayer.pan && afterEdit?.layer?.low == 36)
+        let secondExport = try exportLibrary.exportSound(sourceLayer)
+        assert(secondExport.id != firstExport.id)
+        let exportedCount = try exportLibrary.read().count
+        assert(exportedCount == 2, "A repeated export must add an entry, not overwrite one")
+        let countBeforeRefusal = try exportLibrary.read().count
+        do { _ = try exportLibrary.exportSound(sourceLayer, name: "   "); assertionFailure("Blank export name accepted") } catch {}
+        let countAfterRefusal = try exportLibrary.read().count
+        assert(countAfterRefusal == countBeforeRefusal, "A refused export must not add an entry")
+        print("PASS: native and host sound library round-trip; corrupt library preserved; independent sound export")
     }
 }

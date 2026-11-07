@@ -65,12 +65,23 @@ import AVFoundation
         let originalID = store.currentSetlistID!
         let originalName = store.setlist.name
         store.createLocalSetlist(); let newID = store.currentSetlistID!
+        assert(store.recentSetlistIDs.first == newID)
         assert(newID != originalID && store.setlist.patches.count == 1 && store.patch.layers.allSatisfy { !$0.loaded })
         store.renameLocalSetlist(newID,name:"Second Service")
         store.openLocalSetlist(originalID); assert(store.setlist.name == originalName && store.setlist.patches.count == 4)
+        assert(store.recentSetlistIDs.first == originalID && store.recentSetlistIDs.contains(newID))
         store.duplicateLocalSetlist(newID); assert(store.savedSetlists.count == 3)
         store.archiveLocalSetlist(newID); assert(store.archivedSetlists.count == 1)
+        assert(!store.recentSetlistIDs.contains(newID), "Trashed setlists leave the recently opened history")
         store.restoreLocalSetlist(store.archivedSetlists[0].token); assert(store.savedSetlists.contains { $0.id == newID })
+        let setlistCountBeforeHistoryEdit = store.savedSetlists.count
+        store.removeRecentSetlist(originalID)
+        assert(!store.recentSetlistIDs.contains(originalID))
+        store.clearRecentSetlists()
+        assert(store.recentSetlistIDs.isEmpty)
+        assert(store.savedSetlists.count == setlistCountBeforeHistoryEdit, "History edits must not change any setlist")
+        let recentsURL = URL(fileURLWithPath: ProcessInfo.processInfo.environment["STAGEKEYS_DATA_DIR"]!).appendingPathComponent("setlist-recents.json")
+        assert(SetlistRecents.read(recentsURL).ids.isEmpty, "Clearing history must persist")
         let before = store.patch
         let assignment = store.setlist.assignments[20]!
         store.reorderLayer(assignment,14)
@@ -111,6 +122,31 @@ import AVFoundation
         assert(store.displayedLayers[0].low==36 && store.displayedLayers[0].high==48)
         assert(store.patch.layers[0]==beforePreview,"Library selection committed a sound")
         store.previewLibraryRange(0,nil);assert(store.displayedLayers[0]==beforePreview)
-        print("PASS: performance store audio, note lifecycle, range/reorder, snapshot capture, remove, patch switch/lock, duplicate and persistence")
+        // Explicit history edits report a failed write instead of pretending the
+        // history was forgotten, and the control remains retryable.
+        store.createLocalSetlist(); assert(!store.recentSetlistIDs.isEmpty)
+        let recentToForget = store.recentSetlistIDs[0]
+        let historyURL = URL(fileURLWithPath: ProcessInfo.processInfo.environment["STAGEKEYS_DATA_DIR"]!).appendingPathComponent("setlist-recents.json")
+        try? FileManager.default.removeItem(at: historyURL)
+        try FileManager.default.createDirectory(at: historyURL, withIntermediateDirectories: true)
+        store.removeRecentSetlist(recentToForget)
+        assert(store.recentSetlistIDs.contains(recentToForget), "A failed removal must not look forgotten")
+        assert(store.message != nil, "A failed history write must be reported")
+        store.message = nil
+        try FileManager.default.removeItem(at: historyURL)
+        store.removeRecentSetlist(recentToForget)
+        assert(!store.recentSetlistIDs.contains(recentToForget), "Removal must remain retryable")
+        store.createLocalSetlist(); assert(!store.recentSetlistIDs.isEmpty)
+        try? FileManager.default.removeItem(at: historyURL)
+        try FileManager.default.createDirectory(at: historyURL, withIntermediateDirectories: true)
+        let historyBeforeFailedClear = store.recentSetlistIDs
+        store.clearRecentSetlists()
+        assert(store.recentSetlistIDs == historyBeforeFailedClear, "A failed clear must not look cleared")
+        assert(store.message != nil, "A failed clear must be reported")
+        store.message = nil
+        try FileManager.default.removeItem(at: historyURL)
+        store.clearRecentSetlists()
+        assert(store.recentSetlistIDs.isEmpty, "Clearing the history must remain retryable")
+        print("PASS: performance store audio, note lifecycle, range/reorder, snapshot capture, remove, patch switch/lock, duplicate, persistence and retryable history edits")
     }
 }
