@@ -243,19 +243,62 @@ final class SetlistLibrary {
     }
 }
 
-/// Read-only browser projection. Modification time is not last-opened history.
+/// Read-only browser projection. "Recently Opened" uses the recorded history
+/// supplied by the caller; modification time is only a fallback, never a claim
+/// about what was opened last.
 enum SetlistBrowserOrder: String, CaseIterable, Identifiable, Hashable {
-    case updated, name
+    case recent, updated, name
     var id: String { rawValue }
-    var title: String { self == .updated ? "Recently Updated" : "Name A–Z" }
-    func entries(_ source: [SetlistLibraryDescriptor], search: String) -> [SetlistLibraryDescriptor] {
+    var title: String {
+        switch self {
+        case .recent: return "Recently Opened"
+        case .updated: return "Recently Updated"
+        case .name: return "Name A–Z"
+        }
+    }
+    func entries(_ source: [SetlistLibraryDescriptor], search: String, recents: [UUID] = []) -> [SetlistLibraryDescriptor] {
         let query = search.trimmingCharacters(in: .whitespacesAndNewlines)
+        let ranks = Dictionary(recents.enumerated().map { ($1, $0) }, uniquingKeysWith: { first, _ in first })
         return source.filter { query.isEmpty || $0.name.localizedCaseInsensitiveContains(query) }.sorted { left, right in
-            if self == .name {
+            switch self {
+            case .name:
                 let comparison = left.name.localizedCaseInsensitiveCompare(right.name)
                 if comparison != .orderedSame { return comparison == .orderedAscending }
-            } else if left.modifiedDate != right.modifiedDate { return left.modifiedDate > right.modifiedDate }
+            case .recent:
+                let leftRank = ranks[left.id] ?? Int.max, rightRank = ranks[right.id] ?? Int.max
+                if leftRank != rightRank { return leftRank < rightRank }
+                if left.modifiedDate != right.modifiedDate { return left.modifiedDate > right.modifiedDate }
+            case .updated:
+                if left.modifiedDate != right.modifiedDate { return left.modifiedDate > right.modifiedDate }
+            }
             return left.id.uuidString < right.id.uuidString
         }
+    }
+}
+
+/// Bounded last-opened history for the setlist browser. It is stored in its own
+/// file so library documents keep their authored schema and a damaged history
+/// can be discarded without touching a saved setlist.
+struct SetlistRecents: Codable, Equatable {
+    static let maximum = 20
+    static let byteLimit = 64_000
+    var ids: [UUID]
+    init(ids: [UUID] = []) { self.ids = Array(ids.prefix(Self.maximum)) }
+    /// Missing, oversized or damaged history reads as empty. Recents are a
+    /// convenience projection; the setlist documents remain the source of truth.
+    static func read(_ url: URL) -> SetlistRecents {
+        guard let data = try? RecoverableSessionFile.read(url, limit: byteLimit),
+              let stored = try? JSONDecoder().decode(SetlistRecents.self, from: data) else { return SetlistRecents() }
+        return SetlistRecents(ids: stored.ids)
+    }
+    func recording(_ id: UUID) -> SetlistRecents { SetlistRecents(ids: [id] + ids.filter { $0 != id }) }
+    func removing(_ id: UUID) -> SetlistRecents { SetlistRecents(ids: ids.filter { $0 != id }) }
+    func retaining(_ available: Set<UUID>) -> SetlistRecents { SetlistRecents(ids: ids.filter(available.contains)) }
+    func write(to url: URL) throws {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let data = try encoder.encode(self)
+        guard data.count <= Self.byteLimit else { throw SetlistLibraryError.oversized }
+        try data.write(to: url, options: .atomic)
     }
 }

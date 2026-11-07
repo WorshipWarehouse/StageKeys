@@ -84,6 +84,26 @@ import Foundation
         assert(SetlistBrowserOrder.name.entries(entries, search: " ALPHA ").map(\.id) == [a,b])
         assert(SetlistBrowserOrder.updated.entries(entries, search: "missing").isEmpty)
         assert(SetlistBrowserOrder.updated.entries([], search: "").isEmpty)
+        assert(SetlistBrowserOrder.recent.entries(entries, search: "", recents: [b, c]).map(\.id) == [b,c,a])
+        assert(SetlistBrowserOrder.recent.entries(entries, search: "alpha", recents: [c, b]).map(\.id) == [b,a])
+        assert(SetlistBrowserOrder.recent.entries(entries, search: "").map(\.id) == [c,a,b])
+        assert(SetlistBrowserOrder.recent.entries(entries, search: "zulu", recents: [a]).map(\.id) == [c])
+        // The history is bounded, de-duplicated and tolerant of damaged bytes.
+        let recentsURL = root.appendingPathComponent("setlist-recents.json")
+        var recents = SetlistRecents().recording(a).recording(b).recording(a)
+        assert(recents.ids == [a,b])
+        try recents.write(to: recentsURL)
+        assert(SetlistRecents.read(recentsURL).ids == [a,b])
+        assert(SetlistRecents.read(root.appendingPathComponent("missing-recents.json")).ids.isEmpty)
+        recents = recents.removing(a)
+        assert(recents.ids == [b] && recents.retaining([a]).ids.isEmpty)
+        var bounded = SetlistRecents()
+        for value in 0..<25 { bounded = bounded.recording(UUID(uuidString: String(format: "00000000-0000-0000-0000-%012d", value))!) }
+        assert(bounded.ids.count == SetlistRecents.maximum && bounded.ids.first!.uuidString.hasSuffix("000000000024"))
+        try Data("damaged history".utf8).write(to: recentsURL)
+        assert(SetlistRecents.read(recentsURL).ids.isEmpty)
+        try recents.write(to: recentsURL)
+
         // Fail each inventory boundary after export has saved its document.
         // Replacing a directory with a file makes listing fail even as root.
         for failTrash in [false, true] {
@@ -111,6 +131,6 @@ import Foundation
         assert(store.createLocalSetlistFromTemplate(originalID, name: "Over Capacity") == nil)
         assert(store.currentSetlistID == originalID && store.held.contains(60) && store.sustain && store.audio.running)
         assert(try! Data(contentsOf: library.root.appendingPathComponent(id.uuidString + ".json")) == copyBytes)
-        print("PASS local templates: independent identities/metadata, active and inactive sources, retained audio/selection/sustain/lock, failures, capacity and deterministic browser sort/search")
+        print("PASS local templates: independent identities/metadata, active and inactive sources, retained audio/selection/sustain/lock, failures, capacity, deterministic browser sort/search and bounded recents history")
     }
 }
