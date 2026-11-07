@@ -2026,7 +2026,7 @@ final class PerformanceStore: ObservableObject {
                     }
                     let soundIDs=Array(Set(channelSoundIDs)).sorted()
                     if channelAdded>0 {
-                        mainStageOutcomes[channelIndex].state = .converted
+                        mainStageOutcomes[channelIndex].state = .prepared
                         mainStageOutcomes[channelIndex].detail = channel.instruments.count==1 ? "Converted with source settings; review compatibility notes." : "Converted \(channelAdded) of \(channel.instruments.count) sampler layers; \(channelProblem) need attention."
                     } else if channelDuplicate>0 && channelProblem==0 {
                         mainStageOutcomes[channelIndex].state = .duplicate
