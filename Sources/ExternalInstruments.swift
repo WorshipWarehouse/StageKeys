@@ -1340,6 +1340,8 @@ final class ExternalInstrumentRack {
     #if DEBUG
     func debugSignalOrder(channel:Int)->[String]? {
         guard let voice=voices[channel] else{return nil}
+        let graph=voice.audioGraph
+        let graphNodes=Set((graph?.nodes ?? []).map{ObjectIdentifier($0)})
         let labels:[ObjectIdentifier:String]=[
             ObjectIdentifier(voice.unit):"Instrument",
             ObjectIdentifier(voice.sourceGain):"Source gain",
@@ -1356,6 +1358,9 @@ final class ExternalInstrumentRack {
             let id=ObjectIdentifier(current)
             guard seen.insert(id).inserted else{return nil}
             if let label=labels[id] {result.append(label)}
+            else if graphNodes.contains(id) {
+                if let graph, current === graph.input {result.append("Imported rack")}
+            }
             else if !(current is AVAudioMixerNode) {return nil}
             if current === engine.mainMixerNode {return result}
             let points=engine.outputConnectionPoints(for:current,outputBus:0)
