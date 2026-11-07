@@ -604,7 +604,15 @@ final class ExternalInstrumentRack {
         let data2: UInt8
     }
     private(set) var debugMIDIEvents: [DebugMIDIEvent] = []
-    func debugClearMIDIEvents() { debugMIDIEvents.removeAll(keepingCapacity: true) }
+    /// Events dropped once the debug buffer reached its bound. A bounded buffer
+    /// keeps a long DEBUG session from growing without limit while the
+    /// continuity tests still inspect the recent window after a clear.
+    private(set) var debugMIDIDroppedEvents = 0
+    private static let debugMIDIEventLimit = 4_096
+    func debugClearMIDIEvents() {
+        debugMIDIEvents.removeAll(keepingCapacity: true)
+        debugMIDIDroppedEvents = 0
+    }
     func debugActiveNoteCount(_ channel: Int) -> Int { voices[channel]?.pitches.count ?? 0 }
     enum GraphFaultPoint { case candidateAttached, graphConnected, pluginStateApplied, restoreSamplers, restartEngine }
     var debugGraphFault: ((GraphFaultPoint) -> Error?)?
@@ -1265,7 +1273,9 @@ final class ExternalInstrumentRack {
     private func midi(_ channel: Int, _ status: UInt8, _ data1: UInt8, _ data2: UInt8, sampleTime: Int64? = nil) {
         guard let unit = voices[channel]?.unit else { return }
         #if DEBUG
-        debugMIDIEvents.append(DebugMIDIEvent(channel:channel,status:status,data1:data1,data2:data2))
+        if debugMIDIEvents.count < Self.debugMIDIEventLimit {
+            debugMIDIEvents.append(DebugMIDIEvent(channel:channel,status:status,data1:data1,data2:data2))
+        } else { debugMIDIDroppedEvents += 1 }
         #endif
         // A future sample time is only handed to the block API; native-style
         // sendMIDIEvent has no timestamp and remains the immediate fallback.
