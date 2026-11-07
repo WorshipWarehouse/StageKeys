@@ -400,11 +400,12 @@ enum SetlistShare {
         return sound
     }
     /// Replace a whole local path, including spaces and all remaining path
-    /// segments, through the end of the line. Over-redacting the tail is safer
-    /// than leaving a home-directory or volume fragment in a shared note.
+    /// segments, through the end of the line. Absolute and home-relative forms
+    /// are both matched; over-redacting the tail is safer than leaving a
+    /// home-directory or volume fragment in a shared note.
     private static func portableText(_ value: String) -> String {
         value.replacingOccurrences(
-            of: #"(?:file://)?/(?:Users|home|private|Library|Applications|System|Volumes|opt|var|tmp)/[^\n\r,;]+"#,
+            of: #"(?:file://)?(?:/(?:Users|home|private|Library|Applications|System|Volumes|opt|var|tmp)/|~/)[^\n\r,;]+"#,
             with: "[source location]", options: .regularExpression)
     }
     /// A retained shaping key can itself be a local path, because a file name

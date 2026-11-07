@@ -169,6 +169,9 @@ struct MainStageSourceRecord: Codable, Equatable {
     /// filter keys have no observed unit or encoding, so they are preserved and
     /// reported per key rather than guessed into destination controls.
     var retainedShaping: [String: String]? = nil
+    /// An empty but valid record, used when a layer has none yet but must
+    /// retain source data reported by the editor preview.
+    static let empty = MainStageSourceRecord(effects: [], sourceNames: [], effectNotes: [], macros: [], issues: [], selectedAudio: [], selectedMIDI: nil, midiEnabled: false, hasMIDITransform: false, omitted: [], retainedShaping: nil)
     var valid: Bool {
         effects.count == sourceNames.count && effects.count == effectNotes.count && effects.count <= 12 &&
         effects.allSatisfy { $0.validate() } && sourceNames.allSatisfy { $0.count <= 200 } &&

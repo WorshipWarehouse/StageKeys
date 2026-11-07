@@ -70,6 +70,14 @@ enum MainStageProcessing {
         func applying(to original:Layer)throws->Layer {
             var layer=try applyingChannelFields(to:original)
             layer.importedRack=try appending(to:layer.importedRack ?? layer.external?.nativeSampler?.rack)
+            // The preview reports each shaping value as retained in the source
+            // record, so the apply path must actually store it and must not
+            // discard a record the layer already carries.
+            if !retainedShaping.isEmpty {
+                var record=layer.mainStageSource ?? .empty
+                record.retainedShaping=(record.retainedShaping ?? [:]).merging(retainedShaping) { _, new in new }
+                layer.mainStageSource=record
+            }
             return layer
         }
         /// Apply selected source processing without appending an overflow rack.

@@ -52,11 +52,15 @@ import Foundation
         layer.channelSettings.filterMax=9000
         layer.channelSettings.resonance=2.5
         let before=layer.channelSettings
-        // The conversion path is the selection overload; the rack-only overload
-        // deliberately writes no source record.
+        // The conversion path is the selection overload; the editor preview's
+        // rack-only overload must still keep the retained shaping it reports.
         let applied=try draft.applying(to:layer,selection:MainStageProcessing.Selection()).layer
         check(applied.channelSettings==before,"conversion must not substitute source shaping values into the destination")
         check(applied.gain==1 && applied.pan == -0.25,"the source fader and pan must still apply")
+        // The editor preview applies through the rack-only overload.
+        let editorApplied=try draft.applying(to:layer)
+        check(editorApplied.mainStageSource?.retainedShaping==draft.retainedShaping,"the editor apply path must store the retained shaping values")
+        check(editorApplied.mainStageSource?.valid==true,"the editor source record must validate")
         guard let record=applied.mainStageSource else {
             print("::error file=Tests/MainStageShapingReportTests.swift,line=\(#line)::the converted layer must carry its source record");exit(1)
         }
@@ -116,6 +120,21 @@ import Foundation
         check(sharedKeys?["[source location]"]=="1","a redacted key must keep its own value")
         check(sharedKeys?["Channel_attack"]=="0.042","a portable key and value must be left unchanged")
         check(keyedSetlist.patches[0].layers[0].mainStageSource?.valid==true,"a record with a redacted key must still validate")
+        // Home-relative paths are local locations too, in values and keys.
+        var home=applied
+        home.mainStageSource?.retainedShaping=["Channel_envelopeValue":"~/Music/Clients/Take.exs"]
+        var homeSetlist=Setlist()
+        homeSetlist.patches=[Patch(name:"Shaping home",layers:[home],snapshots:[])]
+        SetlistShare.sanitize(&homeSetlist)
+        check(homeSetlist.patches[0].layers[0].mainStageSource?.retainedShaping?["Channel_envelopeValue"]=="[source location]","a shared record must not carry a home-relative value path")
+        var homeKey=applied
+        homeKey.mainStageSource?.retainedShaping=["~/Music/Clients/Take.exs":"7"]
+        var homeKeySetlist=Setlist()
+        homeKeySetlist.patches=[Patch(name:"Shaping home key",layers:[homeKey],snapshots:[])]
+        SetlistShare.sanitize(&homeKeySetlist)
+        let sharedHomeKeys=homeKeySetlist.patches[0].layers[0].mainStageSource?.retainedShaping
+        check(sharedHomeKeys?["~/Music/Clients/Take.exs"]==nil,"a shared record must not carry a home-relative key path")
+        check(sharedHomeKeys?["[source location]"]=="7","a redacted home-relative key must keep its own value")
         print("PASS: each retained source shaping value is named with its value, the destination keeps its own values, records validate, persist and sanitize, and hostile sizes are bounded")
     }
 }
