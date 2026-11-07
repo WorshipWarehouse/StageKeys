@@ -2,6 +2,7 @@
 #include <assert.h>
 #include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #define MAX_CLICKS 4096
@@ -12,6 +13,7 @@ static SKMetronomeSettings defaults(void) {
     memset(&s, 0, sizeof(s));
     s.level = 1; s.preset = 0; s.beatVelocity = 0.7f; s.downbeatEnabled = 1;
     s.downbeatVelocity = 1; s.beatsPerBar = 4; s.accentEvery = 0; s.subdivision = 1;
+    s.countInBars = 0;
     return s;
 }
 
@@ -44,6 +46,18 @@ static void capture(Capture *c, SKMetronome *m, const uint32_t *blocks, int bloc
             t++;
         }
     }
+}
+
+static int crossings(const float *x, int n) {
+    int c = 0;
+    for (int i = 1; i < n; i++) if ((x[i - 1] < 0) != (x[i] < 0)) c++;
+    return c;
+}
+
+static float window_peak(const float *x, int n) {
+    float p = 0;
+    for (int i = 0; i < n; i++) { float a = fabsf(x[i]); if (a > p) p = a; }
+    return p;
 }
 
 // 44.1/48/96 kHz, irregular block splits and a reset mid-stream.
@@ -222,6 +236,94 @@ static void test_master(void) {
     sk_metronome_destroy(m);
 }
 
+// A count-in plays whole beats of a higher-pitched click before the bar, then
+// hands off to the bar's own downbeat one beat later. It ignores the
+// subdivision, restarts on each fresh enable and is cancelled by reset.
+static void test_count_in(void) {
+    enum { CHUNK = 12000 };  // 120 BPM at 48 kHz: a beat is two chunks.
+    float *left = calloc(CHUNK, sizeof(float)), *right = calloc(CHUNK, sizeof(float));
+    assert(left && right);
+    SKMetronome *m = sk_metronome_create(48000); assert(m);
+    SKMetronomeSettings s = defaults();
+    s.beatVelocity = 1; s.downbeatVelocity = 1; s.subdivision = 2; s.beatsPerBar = 4; s.countInBars = 1;
+    sk_metronome_settings(m, s);
+    sk_metronome_tempo(m, 120);
+    sk_metronome_enable(m, 1);
+    int zc[12]; float peak[12];
+    for (int i = 0; i < 12; i++) {
+        sk_metronome_render(m, left, right, CHUNK);
+        zc[i] = crossings(left, 512); peak[i] = window_peak(left, 512);
+        for (int j = 0; j < 512; j++) assert(isfinite(left[j]) && left[j] == right[j]);
+    }
+    // Four beat-spaced count-in clicks; no subdivision click between them.
+    for (int i = 0; i < 4; i++) {
+        assert(peak[i * 2] > 0.05f && peak[i * 2 + 1] < 0.01f);
+        assert(zc[i * 2] > zc[8] * 3 / 2);
+    }
+    // The bar starts exactly one beat after the last count-in click, with its
+    // own downbeat accent and the eighth-note subdivision restored.
+    assert(peak[8] > 0.15f && zc[8] > 5 && zc[8] < zc[0] * 2 / 3);
+    assert(peak[9] > 0.05f && peak[9] < 0.15f);
+    assert(peak[10] > 0.15f);
+
+    // Off: the bar starts immediately at the normal pitch.
+    s.countInBars = 0;
+    sk_metronome_settings(m, s);
+    sk_metronome_reset(m);
+    sk_metronome_enable(m, 0);
+    sk_metronome_enable(m, 1);
+    sk_metronome_render(m, left, right, CHUNK);
+    assert(window_peak(left, 512) > 0.15f && crossings(left, 512) < zc[0] * 2 / 3);
+
+    // Two bars of count-in, then the bar.
+    s.countInBars = 2;
+    sk_metronome_settings(m, s);
+    sk_metronome_reset(m);
+    sk_metronome_enable(m, 0);
+    sk_metronome_enable(m, 1);
+    int high = 0, low = 0;
+    for (int i = 0; i < 20; i++) {
+        sk_metronome_render(m, left, right, CHUNK);
+        if (i % 2) continue;
+        int c = crossings(left, 512);
+        if (i < 16) { assert(c > zc[8] * 3 / 2); high++; }
+        else { assert(c < zc[8] * 3 / 2); low++; }
+    }
+    assert(high == 8 && low == 2);
+
+    // A tempo change during the count-in keeps beat phase: the next count-in
+    // click lands half a beat from the change, at the higher pitch.
+    s.countInBars = 1;
+    sk_metronome_settings(m, s);
+    sk_metronome_reset(m);
+    sk_metronome_enable(m, 0);
+    sk_metronome_enable(m, 1);
+    sk_metronome_render(m, left, right, CHUNK);
+    assert(crossings(left, 512) > zc[8] * 3 / 2);
+    sk_metronome_tempo(m, 60);
+    for (int i = 1; i < 4; i++) {
+        sk_metronome_render(m, left, right, CHUNK);
+        if (i < 3) assert(crossings(left, 512) == 0);
+        else assert(crossings(left, 512) > zc[8] * 3 / 2);
+    }
+
+    // Re-enabling restarts the count-in; reset cancels it without a click and
+    // the bar starts at its normal pitch afterwards.
+    sk_metronome_enable(m, 0);
+    sk_metronome_enable(m, 1);
+    sk_metronome_render(m, left, right, CHUNK);
+    assert(crossings(left, 512) > zc[8] * 3 / 2);
+    sk_metronome_tempo(m, 120);
+    sk_metronome_reset(m);
+    sk_metronome_render(m, left, right, CHUNK);
+    assert(window_peak(left, CHUNK) == 0);
+    sk_metronome_render(m, left, right, CHUNK);
+    assert(window_peak(left, 512) > 0.15f && crossings(left, 512) < zc[8] * 3 / 2);
+
+    sk_metronome_destroy(m);
+    free(left); free(right);
+}
+
 // Long runs must not drift or accumulate scheduling error.
 static void test_long_run(void) {
     SKMetronome *m = sk_metronome_create(48000); assert(m);
@@ -255,6 +357,68 @@ static void test_reset(void) {
     sk_metronome_destroy(m);
 }
 
+// Continuous onset recorder: unlike capture(), it keeps running across a
+// control change so a mid-interval edit can be measured on the same timeline.
+typedef struct { int count; long onset[MAX_CLICKS]; long t; int quiet; } Onsets;
+
+static void onsets_reset(Onsets *o) { o->count = 0; o->t = 0; o->quiet = 1 << 20; }
+
+static void onsets_render(Onsets *o, SKMetronome *m, long total) {
+    float left[512], right[512];
+    long end = o->t + total;
+    while (o->t < end) {
+        uint32_t n = end - o->t < 512 ? (uint32_t)(end - o->t) : 512;
+        sk_metronome_render(m, left, right, n);
+        for (uint32_t i = 0; i < n; i++) {
+            float a = fabsf(left[i]);
+            if (a > 0.02f) {
+                if (o->quiet > 64 && o->count < MAX_CLICKS) o->onset[o->count++] = o->t;
+                o->quiet = 0;
+            } else { o->quiet++; }
+            o->t++;
+        }
+    }
+}
+
+// Settings edits during the count-in must not shorten a count-in beat, and the
+// final beat before the bar must keep its length when the subdivision changes.
+static void test_count_in_changes(void) {
+    SKMetronome *m = sk_metronome_create(48000); assert(m);
+    SKMetronomeSettings s = defaults();
+    s.beatVelocity = 1; s.downbeatVelocity = 1; s.subdivision = 1; s.beatsPerBar = 4; s.countInBars = 1;
+    sk_metronome_settings(m, s);
+    sk_metronome_tempo(m, 120);
+    sk_metronome_enable(m, 1);
+    Onsets o; onsets_reset(&o);
+    // One beat is 24000 samples at 120 BPM and 48 kHz; the first audible sample
+    // of each click is one sample after its trigger.
+    onsets_render(&o, m, 24000 + 512);
+    assert(o.count == 2 && o.onset[1] - o.onset[0] == 24000);
+    // Quadrupling the subdivision mid-count-in leaves the count-in beats alone:
+    // clicks three and four stay a beat apart, and so does the bar's downbeat.
+    s.subdivision = 4;
+    sk_metronome_settings(m, s);
+    onsets_render(&o, m, 3 * 24000);
+    assert(o.count == 5);
+    assert(o.onset[2] == 48001);
+    for (int i = 1; i < 5; i++) assert(o.onset[i] - o.onset[i - 1] == 24000);
+    // A subdivision change in the gap after the last count-in click cannot pull
+    // the bar's downbeat early: it still lands one beat after that click.
+    s.subdivision = 1;
+    sk_metronome_settings(m, s);
+    sk_metronome_reset(m);
+    sk_metronome_enable(m, 0);
+    sk_metronome_enable(m, 1);
+    onsets_reset(&o);
+    onsets_render(&o, m, 3 * 24000 + 512);
+    assert(o.count == 4 && o.onset[3] == 72001);
+    s.subdivision = 4;
+    sk_metronome_settings(m, s);
+    onsets_render(&o, m, 24000 + 512);
+    assert(o.count == 5 && o.onset[4] - o.onset[3] == 24000);
+    sk_metronome_destroy(m);
+}
+
 int main(void) {
     test_timing();
     test_tempo_change();
@@ -265,5 +429,7 @@ int main(void) {
     test_master();
     test_long_run();
     test_reset();
-    puts("PASS: metronome timing at 44.1/48/96 kHz, block splits, tempo phase, accents, subdivision, presets, levels, master follow, long-run drift and reset");
+    test_count_in();
+    test_count_in_changes();
+    puts("PASS: metronome timing at 44.1/48/96 kHz, block splits, tempo phase, accents, subdivision, presets, levels, master follow, long-run drift, reset and count-in");
 }
