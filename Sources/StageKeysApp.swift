@@ -179,11 +179,11 @@ struct PerformanceView: View {
             if url.scheme?.lowercased()=="stagekeys" {store.previewSetlistShare(link:url);sheet = .setlists}
             else if url.pathExtension.lowercased()=="stagekeyssetlist" {store.previewSetlistShare(url);sheet = .setlists}
             else if url.pathExtension.lowercased()=="stagekeyspack" {store.importLibraryBackup(url);sheet = .importSounds}
-            else if ["patch","cst"].contains(url.pathExtension.lowercased()) {store.importMainStageAutomatically(url);sheet = .importSounds}
+            else if ["patch","cst","concert"].contains(url.pathExtension.lowercased()) {store.importMainStageBatch(url);sheet = .importSounds}
         }
         .onDrop(of:[UTType.fileURL],isTargeted:nil){providers in
             guard !store.libraryImportBusy,let provider=providers.first else{return false}
-            _ = provider.loadObject(ofClass:URL.self){url,_ in guard let url,["patch","cst"].contains(url.pathExtension.lowercased()) else{return};DispatchQueue.main.async{store.importMainStageAutomatically(url);sheet = .importSounds}}
+            _ = provider.loadObject(ofClass:URL.self){url,_ in guard let url,MainStageBatch.canImport(url) else{return};DispatchQueue.main.async{store.importMainStageBatch(url);sheet = .importSounds}}
             return true
         }
         .fileImporter(isPresented: $importing, allowedContentTypes: [.json, .stageKeysSetlistShare]) { result in

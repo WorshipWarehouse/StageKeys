@@ -16,6 +16,11 @@ struct LibrarySound: Codable, Identifiable, Equatable {
     var sourceTagsApplied:Bool?
     var originalInstrument:StageKeysSampler.Original?
     var managedFileSHA256:String?
+    /// Source position when one MainStage channel referenced more than one sampler
+    /// instrument and was converted into one layer per instrument. Older imports
+    /// carry neither value, so assembly falls back to the channel digest prefix.
+    var sourceChannelIndex:Int?
+    var sourceInstrumentIndex:Int?
 }
 
 /// User-owned sounds stay outside the application bundle and survive upgrades.

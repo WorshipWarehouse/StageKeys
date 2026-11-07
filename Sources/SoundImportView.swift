@@ -39,7 +39,7 @@ struct SoundImportView:View {
                 }
                 HStack(spacing:10) {
                     Image(systemName:"arrow.down.doc").foregroundStyle(StageTheme.selected)
-                    Text("Drop a MainStage .patch or .cst file anywhere in this window").font(StageTheme.font(11,weight:.semibold))
+                    Text("Drop a MainStage .patch, .cst, concert or folder anywhere in this window").font(StageTheme.font(11,weight:.semibold))
                     Spacer()
                     Text("Original source stays unchanged").font(.caption).foregroundStyle(.secondary)
                 }.padding(.horizontal,16).frame(height:44).background(StageTheme.raised.opacity(0.28),in:RoundedRectangle(cornerRadius:8)).overlay {RoundedRectangle(cornerRadius:8).stroke(style:StrokeStyle(lineWidth:1,dash:[5,4])).foregroundStyle(.white.opacity(0.12))}
@@ -118,7 +118,7 @@ struct SoundImportView:View {
                 switch choice {
                 case .file:
                     if url.pathExtension.lowercased()=="stagekeyspack" {store.importLibraryBackup(url);status=nil}
-                    else if ["patch","cst"].contains(url.pathExtension.lowercased()) {store.importMainStageAutomatically(url);status=nil}
+                    else if MainStageBatch.canImport(url) && ["patch","cst","concert"].contains(url.pathExtension.lowercased()) {store.importMainStageBatch(url);status=nil}
                     else if ["exs","aupreset"].contains(url.pathExtension.lowercased()) {
                         pending=url;status="Choose the folder containing this instrument’s samples. Imports preserve sample maps and translated rack effects, macros and MIDI settings. Conversion notes describe remaining approximations."
                         // Present the second picker after the first has dismissed.
@@ -132,7 +132,7 @@ struct SoundImportView:View {
                 case .mainStageSamples:
                     store.rememberMainStageSampleFolder(url);store.importMainStageSamplers(url);status=nil
                 case .mainStage:
-                    store.importMainStageAutomatically(url);status=nil
+                    store.importMainStageBatch(url);status=nil
                 case .library:
                     store.importSamplerLibrary(url);status=store.message;store.message=nil
                 }
@@ -140,7 +140,7 @@ struct SoundImportView:View {
             }
         }.onDrop(of:[UTType.fileURL],isTargeted:nil){providers in
             guard let provider=providers.first else{return false}
-            _ = provider.loadObject(ofClass:URL.self){url,_ in guard let url,["patch","cst"].contains(url.pathExtension.lowercased()) else{return};DispatchQueue.main.async{store.importMainStageAutomatically(url)}}
+            _ = provider.loadObject(ofClass:URL.self){url,_ in guard let url,MainStageBatch.canImport(url) else{return};DispatchQueue.main.async{store.importMainStageBatch(url)}}
             return true
         }.sheet(item:$effectRequest){request in MainStageEffectSelectionSheet(request:request).environmentObject(store)}
     }
