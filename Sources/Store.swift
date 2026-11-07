@@ -2003,9 +2003,17 @@ final class PerformanceStore: ObservableObject {
                             layer=applied.layer
                             let original=try StageKeysSampler.retainOriginal(file,library:saveURL.deletingLastPathComponent())
                             createdOriginal=original
-                            let audioUnitNotes=channel.thirdPartyAudioUnits.first.map{["the channel also saved \($0.name); this layer hosts the converted sampler only, so its plug-in state stays in the archive."]} ?? []
-                            let layerNotes=channel.instruments.count>1 ? ["one of \(channel.instruments.count) sampler layers in \(channel.name); missing layers are listed in the import result and are never substituted."] : []
-                            let entry=LibrarySound(id:id,name:layerName,collection:"MainStage Patches",sound:sound,layer:layer,sourceArchiveID:report.sourceArchiveID,conversionNotes:(notes ?? [])+processing.issues+applied.notes+applied.omitted+audioUnitNotes+layerNotes,originalInstrument:original,mainStageLayerIndex:instrumentIndex)
+                            var conversionNotes:[String]=notes ?? []
+                            conversionNotes.append(contentsOf:processing.issues)
+                            conversionNotes.append(contentsOf:applied.notes)
+                            conversionNotes.append(contentsOf:applied.omitted)
+                            if let unit=channel.thirdPartyAudioUnits.first {
+                                conversionNotes.append("the channel also saved \(unit.name); this layer hosts the converted sampler only, so its plug-in state stays in the archive.")
+                            }
+                            if channel.instruments.count>1 {
+                                conversionNotes.append("one of \(channel.instruments.count) sampler layers in \(channel.name); missing layers are listed in the import result and are never substituted.")
+                            }
+                            let entry=LibrarySound(id:id,name:layerName,collection:"MainStage Patches",sound:sound,layer:layer,sourceArchiveID:report.sourceArchiveID,conversionNotes:conversionNotes,originalInstrument:original,mainStageLayerIndex:instrumentIndex)
                             entries.append(entry)
                             channelSoundIDs.append(id);channelAdded+=1
                             preparedAssets.formUnion(assetsForImportedSound(createdSound,original:createdOriginal).subtracting(assetsBefore))
