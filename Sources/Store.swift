@@ -440,7 +440,8 @@ final class PerformanceStore: ObservableObject {
         guard let session = audition, token == session.token else { return }
         guard session.patchID == patch.id, patch.layers.indices.contains(session.index), patch.layers[session.index].id == session.layerID else { audition=nil; return }
         let current=patch.layers[session.index]
-        if !session.retainPluginState && requiresNoteReset(from:session.draft,to:current) {
+        let resetNeeded=requiresNoteReset(from:session.draft,to:current)
+        if resetNeeded && !session.retainPluginState {
             midiFX.panic(channel:session.index); audio.panic(channel:session.index)
         }
         audition=nil
@@ -449,6 +450,13 @@ final class PerformanceStore: ObservableObject {
                 audio.adoptPluginState(channel:session.index,sound:current.external,unit:unit,state:session.pluginState)
             }
             setlist.patches[selected].layers[session.index].pluginState=session.pluginState
+        } else if !resetNeeded {
+            // A settings-only audition never reloaded the voice. Keep the
+            // installed unit and cache the document's state for the following
+            // configure; restoring here would panic the notes it preserved.
+            if let unit=session.pluginUnit {
+                audio.adoptPluginState(channel:session.index,sound:current.external,unit:unit,state:current.pluginState)
+            }
         } else if let state=session.pluginState {
             let keptCurrentState: Bool
             if let unit=session.pluginUnit {
