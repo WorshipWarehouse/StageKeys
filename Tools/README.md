@@ -1,3 +1,19 @@
+# Matched effect captures
+
+`CaptureAppAudio.swift` records the system audio emitted by one running macOS
+application through ScreenCaptureKit. It does not install a loopback driver and
+does not alter the captured application's graph. The first run requires the
+normal macOS Screen Recording permission.
+
+```sh
+xcrun swiftc -parse-as-library Tools/CaptureAppAudio.swift -o /tmp/capture-app-audio \
+  -framework ScreenCaptureKit -framework AVFoundation -framework CoreMedia
+/tmp/capture-app-audio com.sundaysounds.sundaykeys 15 /tmp/sunday-chorus.wav
+```
+
+The command never overwrites a capture. Match the resulting Sunday Keys file
+against an equivalent StageKeys render with `compare-effect-captures.py`.
+
 # Native MainStage conversion
 
 Import a MainStage `.patch` in StageKeys, then choose its original EXS/sample folder. Each supported sampler channel becomes a separate library sound with its supported effects, macros, MIDI range/transpose, pan and sustain settings attached. The saved library layer is the complete reusable sound; adding it to another patch retains those settings. Review conversion notes: private synthesizers, non-unity fader tapers, unrecognized MIDI processors and auxiliary buses still need work.

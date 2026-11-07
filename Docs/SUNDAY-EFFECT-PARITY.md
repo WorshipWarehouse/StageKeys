@@ -22,6 +22,14 @@ Delay, Equalizer, Flanger, Gain, Halo Shimmer, Overdrive, Pitch Shifter,
 PrimaVerb, Rotor, SolaVerb, Tone, and Tremolo. The existing patch was restored
 without confirming any draft changes after inspection.
 
+The artifact also contains build paths for AudioKit, AudioKitEX,
+DunneAudioKit, and SoundpipeAudioKit and includes their MIT notices. Public
+AudioKit documentation assigns Chorus, Flanger, and Stereo Delay to
+DunneAudioKit, and Dynamic Range Compressor, Bit Crusher, Tremolo, pitch,
+filters, Tanh Distortion, and Zita-family reverb components to
+SoundpipeAudioKit. This narrows candidate implementations but does not prove a
+wrapper's active topology or package revision; matched output remains required.
+
 ## Observed replacement defaults and controls
 
 | Effect | Observed controls/defaults useful for parity |
@@ -65,6 +73,13 @@ Use `Tools/compare-effect-captures.py reference.wav candidate.wav` to record
 peak/RMS, gain delta, correlation, gain-aligned error, onset, -60 dB decay,
 spectral centroid, and stereo correlation. Preserve the original WAV files and
 their SHA-256 hashes with every accepted calibration.
+
+`Tools/CaptureAppAudio.swift` supplies the missing driver-free reference route:
+it uses ScreenCaptureKit to record only Sunday Keys' emitted system audio as
+48 kHz stereo float PCM. It never overwrites a capture and does not insert a
+processor into Sunday Keys. macOS Screen Recording permission is required.
+The smoke test on 7 November 2026 reached the expected TCC boundary and was
+denied, so no reference WAV has yet been accepted from this route.
 
 An effect is not marked matched from control names alone. Release acceptance
 requires bounded numeric tolerances, a blinded listening pass, finite output at
