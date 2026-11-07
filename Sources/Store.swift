@@ -456,7 +456,12 @@ final class PerformanceStore: ObservableObject {
             guard audio.loadedUnit(channel:index,sound:layer.external) != nil else {message="Wait for the selected instrument to finish loading before confirming its settings.";return}
             do { final.pluginState=try audio.pluginStateData(channel:index,sound:layer.external) } catch { message=error.localizedDescription; return }
         }
-        endAudition(token); commitLayer(index,final)
+        if replacesChannelSound(previous: patch.layers[index], next: final) {
+            endAudition(token)
+            commitLayer(index,final)
+        } else {
+            commitLayer(index,final,preservingAudition:session.token)
+        }
     }
     private var snapshotTimer: Timer?
     private var snapshotTransitionGeneration = UUID()
@@ -1323,18 +1328,19 @@ final class PerformanceStore: ObservableObject {
         var openEditor = false
     }
     private var pendingLayerCommits: [Int: PendingLayerCommit] = [:]
-    func commitLayer(_ index: Int, _ layer: Layer) {
+    func commitLayer(_ index: Int, _ layer: Layer, preservingAudition: UUID? = nil) {
         guard patch.layers.indices.contains(index) else{return}
+        if let preservingAudition, audition?.token != preservingAudition { return }
         var validation=Setlist();validation.patches=[Patch(name:"Sound Edit",layers:[layer],snapshots:[])]
         guard (try? validation.validate()) != nil else{message="The sound edit contains unsupported or invalid settings. The previous sound was retained.";return}
         do { try audio.prepareSoundChange(index, layer, checkInstallation: started || audio.running) }
         catch { message = error.localizedDescription; return }
-        cancelAudition()
+        if preservingAudition == nil { cancelAudition() }
         pendingLayerCommits[index] = nil
         let previous = patch.layers[index]
         if !started && !audio.running {
             audio.prepareOfflineEditing()
-            finishLayerCommit(index, layer, previous: previous)
+            finishLayerCommit(index, layer, previous: previous, preservingAudition: preservingAudition)
             return
         }
         if layer.external?.kind == .audioUnit {
@@ -1349,21 +1355,28 @@ final class PerformanceStore: ObservableObject {
                 self.pendingLayerCommits[index] = nil
                 guard success, self.patch.id == pending.patchID, self.patch.layers.indices.contains(index),
                       self.patch.layers[index] == previous else { return }
-                self.finishLayerCommit(index, layer, previous: previous)
+                self.finishLayerCommit(index, layer, previous: previous, preservingAudition: preservingAudition)
                 if current.openEditor { self.requestPluginInterface(index); self.pluginInterfaceReady = UUID() }
             }
             return
         }
         guard audio.configure(index, layer) else { return }
-        finishLayerCommit(index, layer, previous: previous)
+        finishLayerCommit(index, layer, previous: previous, preservingAudition: preservingAudition)
     }
-    private func finishLayerCommit(_ index: Int, _ layer: Layer, previous: Layer) {
-        // Only a replaced voice or MIDI destination invalidates what this channel is
-        // sounding. A shaping-only edit (envelope, Mod Filter, EQ, pan, gain, effects)
-        // reaches the installed instrument through `audio.configure`; panicking here
-        // released a note that nothing had replaced, so confirming an edit cut held
-        // notes (#112). Announcing Panic is still the explicit way to clear a channel.
-        let identityChanged = previous.instrument != layer.instrument || previous.external != layer.external || previous.midiDestinationID != layer.midiDestinationID || previous.importedRack != layer.importedRack
+    private func replacesChannelSound(previous: Layer, next: Layer) -> Bool {
+        previous.instrument != next.instrument ||
+            previous.external != next.external ||
+            previous.midiDestinationID != next.midiDestinationID ||
+            previous.midiOutputChannel != next.midiOutputChannel ||
+            previous.importedRack != next.importedRack ||
+            previous.pluginState != next.pluginState ||
+            previous.samplerAttackMinimum != next.samplerAttackMinimum
+    }
+    private func finishLayerCommit(_ index: Int, _ layer: Layer, previous: Layer, preservingAudition: UUID? = nil) {
+        // A shaping-only edit reaches the installed voice through `audio.configure`.
+        // Keep its audition alive through the commit; retiring a voice or changing its
+        // MIDI route still releases notes before the new layer takes ownership.
+        let identityChanged = replacesChannelSound(previous: previous, next: layer)
         if identityChanged {
             for s in patch.snapshots.indices {
                 if setlist.patches[selected].snapshots[s].sounds != nil { setlist.patches[selected].snapshots[s].sounds![index] = SnapshotSoundState(layer) }
@@ -1372,6 +1385,7 @@ final class PerformanceStore: ObservableObject {
         }
         if identityChanged { midiFX.panic(channel:index); audio.panic(channel:index) }
         cancelTransition(); setlist.patches[selected].layers[index] = layer
+        if let preservingAudition, audition?.token == preservingAudition { audition = nil }
         configureMIDI(index, layer)
         audio.gain(index, layer.loaded && !layer.muted ? layer.gain : 0); updateToneFilters(); save()
     }

@@ -1,6 +1,6 @@
 ## Unreleased
 
-- Keep a held note and pedal ownership when a confirmed sound edit only changes shaping — envelope, Mod Filter, EQ, pan, gain or the audio-effect slots. A replaced instrument or MIDI destination still releases the retired voice, so confirming an edit no longer cuts a sustained note (#112).
+- Keep a held note and pedal ownership when confirming a sound edit that only changes shaping — envelope, Mod Filter, EQ, pan, gain or the audio-effect slots. Replacing the configured voice or changing its MIDI route still releases the retired voice, so confirmation no longer cuts a sustained note unnecessarily (#112).
 
 - Clear a channel's MIDI FX lookahead mark when a hosted-AU install is rejected or the instrument is retired, and report a channel as not schedulable while its replacement is pending, so a failed plug-in cannot keep a stale eligibility.
 

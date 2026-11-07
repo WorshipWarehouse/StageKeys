@@ -62,7 +62,12 @@ import AVFoundation
         shaped.channelSettings.filterMax = 16000
         shaped.channelSettings.resonance = 0.9
         shaped.pan = -0.2
-        store.commitLayer(0, shaped)
+        guard let audition = store.beginAudition(0) else {
+            check(false, "sound editor audition starts")
+            return
+        }
+        store.previewLayer(0, shaped, token: audition)
+        store.confirmAudition(audition, index: 0, layer: shaped)
         check(store.patch.layers[0] == shaped,
               "shaping-only edit committed (message: \(store.message ?? "none"))")
         check(store.audio.externalRack?.unit(channel: 0) === unit,
@@ -78,8 +83,13 @@ import AVFoundation
         replacement.name = "Replacement"
         store.commitLayer(0, replacement)
         check(store.patch.layers[0] == replacement, "replacement committed")
-        check(store.audio.externalRack?.unit(channel: 0) !== unit,
+        guard let replacementUnit = store.audio.externalRack?.unit(channel: 0) else {
+            check(false, "replacement installed a unit on channel 0")
+            return
+        }
+        check(replacementUnit !== unit,
               "replacement took over channel 0")
+        for channel in 1..<16 { store.audio.gain(channel, 0, seconds: 0) }
         store.noteOn(64)
         let replacedEnergy = try energy()
         check(replacedEnergy > 0.001, "replacement instrument plays (\(replacedEnergy))")
