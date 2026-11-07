@@ -411,7 +411,7 @@ final class PerformanceStore: ObservableObject {
         do { try audio.prepareSoundChange(index, layer, revalidateResources: true) }
         catch { message = error.localizedDescription; return }
         let previous = session.draft
-        if previous.effectiveTranspose != layer.effectiveTranspose || previous.low != layer.low || previous.high != layer.high || previous.midiOutputChannel != layer.midiOutputChannel {
+        if requiresNoteReset(from: previous, to: layer) {
             midiFX.panic(channel:index); audio.panic(channel:index)
         }
         audition?.draft = layer
@@ -419,10 +419,27 @@ final class PerformanceStore: ObservableObject {
         audio.gain(index,layer.loaded && !layer.muted ? layer.gain : 0)
         updateToneFilters(); applySustain()
     }
+    private func requiresNoteReset(from previous: Layer, to proposed: Layer) -> Bool {
+        previous.instrument != proposed.instrument || previous.external != proposed.external ||
+        previous.pluginState != proposed.pluginState ||
+        previous.samplerAttackMinimum != proposed.samplerAttackMinimum ||
+        previous.importedRack?.audioTopology != proposed.importedRack?.audioTopology ||
+        previous.midiDestinationID != proposed.midiDestinationID ||
+        previous.effectiveTranspose != proposed.effectiveTranspose ||
+        previous.low != proposed.low || previous.high != proposed.high ||
+        previous.midiOutputChannel != proposed.midiOutputChannel ||
+        previous.blockSustain != proposed.blockSustain ||
+        previous.octaveEffect != proposed.octaveEffect ||
+        previous.midiEffectEnabled != proposed.midiEffectEnabled ||
+        previous.midiProgram != proposed.midiProgram
+    }
     func endAudition(_ token: UUID?) {
         guard let session = audition, token == session.token else { return }
         guard session.patchID == patch.id, patch.layers.indices.contains(session.index), patch.layers[session.index].id == session.layerID else { audition=nil; return }
-        midiFX.panic(channel:session.index); audio.panic(channel:session.index)
+        let current=patch.layers[session.index]
+        if requiresNoteReset(from:session.draft,to:current) {
+            midiFX.panic(channel:session.index); audio.panic(channel:session.index)
+        }
         audition=nil
         if let state=session.pluginState {
             do { try audio.restoreAuditionState(session.index,state); setlist.patches[selected].layers[session.index].pluginState=state }
@@ -1358,13 +1375,15 @@ final class PerformanceStore: ObservableObject {
         finishLayerCommit(index, layer, previous: previous)
     }
     private func finishLayerCommit(_ index: Int, _ layer: Layer, previous: Layer) {
-        if previous.instrument != layer.instrument || previous.external != layer.external || previous.midiDestinationID != layer.midiDestinationID {
+        let sourceChanged = previous.instrument != layer.instrument || previous.external != layer.external || previous.midiDestinationID != layer.midiDestinationID
+        if sourceChanged {
             for s in patch.snapshots.indices {
                 if setlist.patches[selected].snapshots[s].sounds != nil { setlist.patches[selected].snapshots[s].sounds![index] = SnapshotSoundState(layer) }
                 if !layer.loaded { setlist.patches[selected].snapshots[s].gains[index] = 0 }
             }
         }
-        midiFX.panic(channel:index); audio.panic(channel:index); cancelTransition(); setlist.patches[selected].layers[index] = layer
+        if requiresNoteReset(from:previous,to:layer) { midiFX.panic(channel:index); audio.panic(channel:index) }
+        cancelTransition(); setlist.patches[selected].layers[index] = layer
         configureMIDI(index, layer)
         audio.gain(index, layer.loaded && !layer.muted ? layer.gain : 0); updateToneFilters(); save()
     }

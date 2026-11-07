@@ -72,6 +72,15 @@ import Foundation
         originalLayer.importedRack=ImportedRack(effects:[])
         let applied=try channelDraft.applying(to:originalLayer)
         assert(applied.gain==1 && applied.pan == -0.25 && applied.blockSustain && applied.low==36 && applied.high==96 && applied.transpose==12)
+        let shapingSource:[String:Any]=["Channel_attack":0.65,"Channel_decay":0.4,
+                                         "Channel_filterCutoff":800,"Channel_resonance":0.7]
+        var shapingDraft=MainStageProcessing.Draft()
+        MainStageProcessing.channelSettings(shapingSource,to:&shapingDraft)
+        let shapingIssue=shapingDraft.issues.first{$0.contains("sound-shaping parameters")}!
+        for key in shapingSource.keys {assert(shapingIssue.contains(key),"Unsupported source shaping key must be reported: \(key)")}
+        let retainedShaping=try shapingDraft.applying(to:originalLayer)
+        assert(retainedShaping.channelSettings==originalLayer.channelSettings,
+               "Unverified source units must not be substituted into destination controls")
         let item=LibrarySound(id:"mainstage-channel-fixture",name:applied.name,collection:"MainStage Patches",layer:applied)
         let retainedItem=try JSONDecoder().decode(LibrarySound.self,from:JSONEncoder().encode(item))
         assert(retainedItem.layer?.importedRack==applied.importedRack && retainedItem.layer?.gain==1 && retainedItem.layer?.blockSustain==true,"Library persistence must retain authored processing and channel settings")
