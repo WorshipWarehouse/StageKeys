@@ -784,7 +784,10 @@ final class PerformanceStore: ObservableObject {
             case .ignore:
                 if !began { self.resumeState.clearInterruption() }
             case .suspendAudio:
-                let wasRunning = self.started
+                // A startup retry is resumable work even when `started` is
+                // false; otherwise an interruption during a retry would leave
+                // the engine stopped after the interruption ends.
+                let wasRunning = self.started || self.audioStartup.isStarting
                 // Keep a pending background resume across the interruption; an
                 // interruption can begin after the app has already suspended.
                 self.stopAudio(clearResumeIntents: false, preserveMetronome: true)
