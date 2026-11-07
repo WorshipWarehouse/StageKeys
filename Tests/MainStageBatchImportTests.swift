@@ -64,10 +64,10 @@ import Foundation
         assert(sounds.map(\.name)==["Layered · Fixture","Layered · Second"],sounds.map(\.name).joined(separator:", "))
         let gains=sounds.compactMap{$0.layer?.gain}
         assert(gains.count==2 && gains[0]>0 && abs(gains[0]-gains[1])<0.000_001,"The channel gain is split evenly across its layers")
-        assert(sounds.allSatisfy{$0.conversionNotes?.contains{$0.contains("split evenly")}==true})
+        assert(sounds.allSatisfy{sound in sound.conversionNotes?.contains{note in note.contains("split evenly")}==true})
         layered.assembleConvertedMainStagePatch(readyOnly:true)
         assert(layered.patch.layers.prefix(2).map(\.name)==["Layered · Fixture","Layered · Second"],layered.patch.layers.prefix(2).map(\.name).joined(separator:", "))
-        assert(layered.patch.conversionNotes?.contains{$0.contains("split evenly")}==true)
+        assert(layered.patch.conversionNotes?.contains{note in note.contains("split evenly")}==true)
         print("PASS: bounded concert/folder selection, per-source batch import and multi-instrument channel layers with split gain")
     }
 }

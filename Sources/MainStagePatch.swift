@@ -104,7 +104,7 @@ enum MainStagePatch {
         return "mainstage-channel-"+channel.sha256+"-v2-"+context+"-"+variant
     }
     static func assembledChannels(_ report:Report,entries:[LibrarySound],selected:Set<Int>?=nil)throws->Patch {
-        let channels=report.channels.enumerated().filter{(selected?.contains($0.offset) ?? true) && $0.element.isConvertible}.map(\.element)
+        let channels=report.channels.enumerated().filter{(selected?.contains($0.offset) ?? true) && $0.element.isConvertible}
         guard let archive=report.sourceArchiveID,!channels.isEmpty,channels.count<=15 else {
             throw Failure.invalid("Choose a source patch with 1–15 converted instrument channels. More complex patch routing requires manual setup.")
         }
@@ -122,7 +122,7 @@ enum MainStagePatch {
             // Several converted versions of one channel are interchangeable only when
             // each records its own sampler position from a decomposed channel.
             if matches.count>1 {
-                let positions=matches.compactMap(\.sourceInstrumentIndex)
+                let positions=matches.compactMap{$0.sourceInstrumentIndex}
                 guard positions.count==matches.count,Set(positions).count==positions.count,
                       positions.allSatisfy({(0..<max(1,channel.instruments.count)).contains($0)}) else {
                     throw Failure.invalid("\(channel.name): convert the channel first and resolve multiple converted versions before assembling this patch.")
