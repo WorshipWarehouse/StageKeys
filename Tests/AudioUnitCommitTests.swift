@@ -121,6 +121,35 @@ import AVFoundation
         assert(store.takePluginInterfaceRequest() == 0 && store.takePluginInterfaceRequest() == nil)
         assert((try! Data(contentsOf: path)) != saved)
         assert(!store.held.isEmpty, "Existing Store held-key policy is preserved; per-layer voices are panicked at commit")
+        store.noteOff(60); store.noteOff(64); store.noteOff(67); store.setSustain(false)
+        store.noteOn(60); store.noteOn(64); store.noteOn(67)
+        store.setSustain(true); store.noteOff(64)
+        let activeNotes=rack.debugActiveNoteCount(0),noteIntents=rack.debugNoteIntentCount(0)
+        let generation=rack.graphGeneration
+        rack.debugClearMIDIEvents()
+        func assertAUVoiceContinuity(_ phase:String) {
+            let disruptive=rack.debugMIDIEvents.contains {
+                let kind=$0.status & 0xf0
+                return kind == 0x80 || kind == 0x90 ||
+                    ($0.status & 0xf0 == 0xb0 && ($0.data1 == 120 || $0.data1 == 123 || ($0.data1 == 64 && $0.data2 < 64)))
+            }
+            assert(!disruptive, "\(phase) must not send note, panic, or sustain-off MIDI events")
+            assert(rack.debugActiveNoteCount(0)==activeNotes && rack.debugNoteIntentCount(0)==noteIntents,
+                   "\(phase) must preserve active Audio Unit notes")
+            assert(rack.unit(channel:0) === accepted && rack.graphGeneration==generation)
+        }
+        var settingsDraft=store.patch.layers[0]
+        settingsDraft.channelSettings.resonance=2
+        let discardToken=store.beginAudition(0)!
+        store.previewLayer(0,settingsDraft,token:discardToken)
+        assertAUVoiceContinuity("Audio Unit settings preview")
+        store.endAudition(discardToken)
+        assertAUVoiceContinuity("Audio Unit settings discard")
+        let confirmToken=store.beginAudition(0)!
+        store.previewLayer(0,settingsDraft,token:confirmToken)
+        store.confirmAudition(confirmToken,index:0,layer:settingsDraft)
+        assertAUVoiceContinuity("Audio Unit settings confirm")
+        store.noteOff(60); store.noteOff(67); store.setSustain(false)
         let bytesBeforeCapture = try Data(contentsOf: path)
         let captured = try store.audio.calibrationSource(calibrationDraft, channel: 0)
         assert(captured.pluginState != nil && captured.pluginState != authoredState)

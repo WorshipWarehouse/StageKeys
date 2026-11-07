@@ -585,6 +585,13 @@ final class AudioController {
         guard sound?.kind == .audioUnit, loadedUnit(channel: channel, sound: sound) != nil else { return nil }
         return try externalRack?.stateData(channel: channel)
     }
+    /// Synchronizes the cache without restoring state (which panics the AU) when the same unit is unchanged.
+    func preservePluginStateIfUnchanged(channel: Int, sound: ExternalSound?, unit: AVAudioUnit, state: Data) throws -> Bool {
+        guard loadedUnit(channel: channel, sound: sound) === unit,
+              try pluginStateData(channel: channel, sound: sound) == state else { return false }
+        externalStates[channel] = state
+        return true
+    }
     /// Capture only the draft's installed AU. A pending/rejected replacement
     /// must retain its authored state instead of borrowing the old unit's state.
     func calibrationSource(_ layer: Layer, channel: Int) throws -> Layer {

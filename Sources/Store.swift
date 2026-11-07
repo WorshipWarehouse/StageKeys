@@ -370,6 +370,7 @@ final class PerformanceStore: ObservableObject {
         let patchID: UUID
         let layerID: UUID
         let index: Int
+        let pluginUnit: AVAudioUnit?
         /// Updated when the instrument interface closes so its edits survive the
         /// audition teardown instead of reverting to the state captured on open.
         var pluginState: Data?
@@ -398,7 +399,8 @@ final class PerformanceStore: ObservableObject {
         cancelTransition()
         let layer = patch.layers[index], token = UUID()
         let state = try? audio.pluginStateData(channel:index,sound:layer.external)
-        audition = Audition(token:token,patchID:patch.id,layerID:layer.id,index:index,pluginState:state ?? nil,draft:layer)
+        let pluginUnit = layer.external?.kind == .audioUnit ? audio.loadedUnit(channel:index,sound:layer.external) : nil
+        audition = Audition(token:token,patchID:patch.id,layerID:layer.id,index:index,pluginUnit:pluginUnit,pluginState:state ?? nil,draft:layer)
         return token
     }
     func previewLayer(_ index: Int, _ proposed: Layer, token: UUID) {
@@ -442,8 +444,19 @@ final class PerformanceStore: ObservableObject {
         }
         audition=nil
         if let state=session.pluginState {
-            do { try audio.restoreAuditionState(session.index,state); setlist.patches[selected].layers[session.index].pluginState=state }
-            catch { message=audio.lastChangeFailure.map { AudioChangeFailure(diagnostic:$0).localizedDescription } ?? error.localizedDescription }
+            let keptCurrentState: Bool
+            if let unit=session.pluginUnit {
+                do {
+                    keptCurrentState=try audio.preservePluginStateIfUnchanged(
+                        channel:session.index,sound:current.external,unit:unit,state:state)
+                } catch { keptCurrentState=false }
+            } else { keptCurrentState=false }
+            if keptCurrentState {
+                setlist.patches[selected].layers[session.index].pluginState=state
+            } else {
+                do { try audio.restoreAuditionState(session.index,state); setlist.patches[selected].layers[session.index].pluginState=state }
+                catch { message=audio.lastChangeFailure.map { AudioChangeFailure(diagnostic:$0).localizedDescription } ?? error.localizedDescription }
+            }
         }
         let original=patch.layers[session.index]
         configureMIDI(session.index,original); audio.configure(session.index,original)

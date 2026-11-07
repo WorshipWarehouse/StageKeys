@@ -597,6 +597,14 @@ final class ExternalInstrumentRack {
     var debugInstantiate: ((AudioComponentDescription, @escaping (AVAudioUnit?, Error?) -> Void) -> Void)?
     private(set) var debugInstantiationCallbacks = 0
     private(set) weak var debugLastCandidate: AVAudioUnit?
+    struct DebugMIDIEvent {
+        let channel: Int
+        let status: UInt8
+        let data1: UInt8
+        let data2: UInt8
+    }
+    private(set) var debugMIDIEvents: [DebugMIDIEvent] = []
+    func debugClearMIDIEvents() { debugMIDIEvents.removeAll(keepingCapacity: true) }
     func debugActiveNoteCount(_ channel: Int) -> Int { voices[channel]?.pitches.count ?? 0 }
     enum GraphFaultPoint { case candidateAttached, graphConnected, pluginStateApplied, restoreSamplers, restartEngine }
     var debugGraphFault: ((GraphFaultPoint) -> Error?)?
@@ -1256,6 +1264,9 @@ final class ExternalInstrumentRack {
     }
     private func midi(_ channel: Int, _ status: UInt8, _ data1: UInt8, _ data2: UInt8, sampleTime: Int64? = nil) {
         guard let unit = voices[channel]?.unit else { return }
+        #if DEBUG
+        debugMIDIEvents.append(DebugMIDIEvent(channel:channel,status:status,data1:data1,data2:data2))
+        #endif
         // A future sample time is only handed to the block API; native-style
         // sendMIDIEvent has no timestamp and remains the immediate fallback.
         if let sampleTime, let block = unit.auAudioUnit.scheduleMIDIEventBlock {
