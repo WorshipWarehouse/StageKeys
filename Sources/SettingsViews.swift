@@ -155,6 +155,8 @@ struct SettingsEditor: View {
                                 ForEach(MetronomeSettings.subdivisionLabels.indices, id: \.self) { index in Text(MetronomeSettings.subdivisionLabels[index]).tag(index + 1) }
                             }
                             Stepper("Beats per bar: \(store.metronomeSettings.beatsPerBar)", value: $store.metronomeSettings.beatsPerBar, in: 1...16)
+                            Stepper("Count-in: \(store.metronomeSettings.countInLabel)", value: $store.metronomeSettings.countInBars, in: 0...2)
+                            Text("A count-in plays that many bars of whole beats at a higher pitch before the bar starts, so you hear the tempo and the entry. It restarts each time the click is switched on; notes, patch, tempo and snapshot are untouched, and Panic or Stop cancels it.").font(.caption).foregroundStyle(.secondary)
                             Text("4/4 is the current performance time signature. Beats per bar only controls which beat receives the downbeat accent.").font(.caption).foregroundStyle(.secondary)
                         }
                     case "MIDI":
@@ -209,6 +211,11 @@ struct SettingsEditor: View {
                         Toggle("Show Layer Ranges", isOn: $store.showRanges)
                         Toggle("Dynamic MIDI Output Ranges", isOn: $store.dynamicMIDIRanges)
                         Text("Dynamic ranges show the span of active output notes after MIDI effects and transposition. The span can include unplayed pitches. Sustain and audio tails are excluded.").font(.caption).foregroundStyle(.secondary)
+                        #if os(iOS)
+                        Toggle("Run Audio in Background", isOn: Binding(get: { store.backgroundAudioEnabled }, set: { store.setBackgroundAudioEnabled($0) }))
+                        Text(BackgroundAudioPolicy.guidance(backgroundAudioEnabled: store.backgroundAudioEnabled)).font(.caption).foregroundStyle(.secondary)
+                        Text("The setting is saved with your session. The system can still interrupt audio for calls, Siri and other apps; StageKeys then resumes only when the system says audio may resume, and a manual Stop always wins.").font(.caption).foregroundStyle(.secondary)
+                        #endif
                         Text("192 synth voices are shared by all 15 modules and the tonic pad. Each original synth module has its own voice limit in Sound Settings. Imported instruments manage their own polyphony.").font(.caption).foregroundStyle(.secondary)
                     default:
                         Section("Default Transition") { Slider(value: $store.transition, in: 0...15, step: 0.1); Text("\(store.transition, specifier: "%.1f") seconds") }
