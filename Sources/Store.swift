@@ -1644,6 +1644,7 @@ final class PerformanceStore: ObservableObject {
                 ? descriptor.minimum * pow(descriptor.maximum / descriptor.minimum, fraction)
                 : descriptor.minimum + fraction * (descriptor.maximum - descriptor.minimum)
             if descriptor.unit == "bits" || descriptor.unit == "semitones" { parameterValue = parameterValue.rounded() }
+            parameterValue = min(max(parameterValue, descriptor.minimum), descriptor.maximum)
             if kind == 3, var delay = effect.importedDelay {
                 let oldValue: Float?
                 switch parameter {
