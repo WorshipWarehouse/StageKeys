@@ -65,8 +65,15 @@ envelope or Mod Filter settings, so recalling a snapshot cannot rewrite how a
 sound is shaped. `Tests/ModelTests` asserts the encoded snapshot state contains
 no channel-settings keys.
 
+## Transactional sound edits
+
+Confirming a sound edit replaces the document layer and re-applies the channel's shaping. It releases the channel's voices only when the source itself changed: a different native instrument, a different external sound or preset, a different MIDI destination, or a different imported rack. Editing the envelope, Mod Filter, EQ, pan, gain or the three audio-effect slots of the same sound reaches the installed voice through `AudioController.configure`, so a held note and pedal ownership survive the commit. `Tests/HeldNoteSoundEditTests` sustains a generated note, commits a shaping-only edit, and then asserts that replacing the instrument still stops the retired voice.
+
+Hosted Audio Unit installs stay asynchronous: the document layer is committed only after the candidate is accepted, and a rejected candidate keeps the previous layer and voice. Panic is still the explicit way to clear a channel.
+
 ## Verification
 
+- `Tests/HeldNoteSoundEditTests` (hardware-free, offline render): a shaping-only edit keeps the held note, its pedal and the installed voice, while a replaced instrument stops the retired voice.
 - `Tests/NativeSoundOrderTests` (C, in the default library gate): a post-
   compressor EQ boost must reach the output, the Mod Filter closes and opens,
   maximum resonance stays finite, a long attack is quiet then loud, zero source

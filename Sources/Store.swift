@@ -1358,13 +1358,20 @@ final class PerformanceStore: ObservableObject {
         finishLayerCommit(index, layer, previous: previous)
     }
     private func finishLayerCommit(_ index: Int, _ layer: Layer, previous: Layer) {
-        if previous.instrument != layer.instrument || previous.external != layer.external || previous.midiDestinationID != layer.midiDestinationID {
+        // Only a replaced voice or MIDI destination invalidates what this channel is
+        // sounding. A shaping-only edit (envelope, Mod Filter, EQ, pan, gain, effects)
+        // reaches the installed instrument through `audio.configure`; panicking here
+        // released a note that nothing had replaced, so confirming an edit cut held
+        // notes (#112). Announcing Panic is still the explicit way to clear a channel.
+        let identityChanged = previous.instrument != layer.instrument || previous.external != layer.external || previous.midiDestinationID != layer.midiDestinationID || previous.importedRack != layer.importedRack
+        if identityChanged {
             for s in patch.snapshots.indices {
                 if setlist.patches[selected].snapshots[s].sounds != nil { setlist.patches[selected].snapshots[s].sounds![index] = SnapshotSoundState(layer) }
                 if !layer.loaded { setlist.patches[selected].snapshots[s].gains[index] = 0 }
             }
         }
-        midiFX.panic(channel:index); audio.panic(channel:index); cancelTransition(); setlist.patches[selected].layers[index] = layer
+        if identityChanged { midiFX.panic(channel:index); audio.panic(channel:index) }
+        cancelTransition(); setlist.patches[selected].layers[index] = layer
         configureMIDI(index, layer)
         audio.gain(index, layer.loaded && !layer.muted ? layer.gain : 0); updateToneFilters(); save()
     }
