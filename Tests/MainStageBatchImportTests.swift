@@ -48,8 +48,9 @@ import Foundation
         assert(store.librarySounds.count==before+2,store.libraryImportProgress ?? "Concert batch did not add two sounds")
         assert(store.libraryImportProgress?.contains("Added 2 sounds")==true,store.libraryImportProgress ?? "No batch summary")
         assert(store.libraryImportProgress?.contains("2 patch")==true,store.libraryImportProgress ?? "No batch source count")
-        assert(try AssetDigest.sha256(layered.appendingPathComponent("One.exs"))==oneHash)
-        assert(try AssetDigest.sha256(layered.appendingPathComponent("Two.exs"))==twoHash)
+        let oneAfter=try AssetDigest.sha256(layered.appendingPathComponent("One.exs"))
+        let twoAfter=try AssetDigest.sha256(layered.appendingPathComponent("Two.exs"))
+        assert(oneAfter==oneHash && twoAfter==twoHash)
         print("PASS: one MainStage channel with two sampler references becomes two ordered layers; a .concert imports as one bounded batch")
     }
 }
