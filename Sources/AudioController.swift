@@ -236,6 +236,7 @@ final class AudioController {
     private let metronomeEngine: OpaquePointer
     private var metronomeNode: AVAudioSourceNode!
     private var metronomeFollowsMaster = true
+    private var metronomeFollowsMIDIClock = false
     private var masterVolume: Float = 0.7
     private let reverb = AVAudioUnitReverb()
     private let outputLimiter=AVAudioUnitEffect(audioComponentDescription:AudioComponentDescription(componentType:kAudioUnitType_Effect,componentSubType:kAudioUnitSubType_PeakLimiter,componentManufacturer:kAudioUnitManufacturer_Apple,componentFlags:0,componentFlagsMask:0))
@@ -286,6 +287,10 @@ final class AudioController {
     /// Reports a failure after the engine itself started, so tests can exercise
     /// cleanup from a partially initialized start without a real device.
     var debugFailureAfterEngineStart: (() -> Error?)?
+    /// Counts Store-accepted count-in requests. The C engine owns scheduling;
+    /// this only lets a runtime test prove a stopped or clock-synced request
+    /// never reaches the engine.
+    private(set) var debugCountInRequests = 0
     #endif
     @discardableResult
     private func changeFailure(_ error: Error, phase: AudioChangeDiagnostic.Phase,
@@ -803,7 +808,7 @@ final class AudioController {
     func clock(_ tempo: Double, _ enabled: Bool) {
         let changed = self.tempo != Float(tempo); self.tempo = Float(tempo)
         sk_clock(synth,Float(tempo))
-        sk_metronome_tempo(metronomeEngine, Float(tempo))
+        if !metronomeFollowsMIDIClock { sk_metronome_tempo(metronomeEngine, Float(tempo)) }
         sk_metronome_enable(metronomeEngine, enabled ? 1 : 0)
         if changed { for (index,chain) in effects { configureEffects(index,chain,force:true) }; for (index,rack) in importedRacks {configureImported(index,rack)} }
     }
@@ -818,10 +823,25 @@ final class AudioController {
     /// clock; no audio-thread allocation or locking is involved.
     func metronome(_ enabled: Bool, settings: MetronomeSettings) {
         metronomeFollowsMaster = settings.followsMaster
+        metronomeFollowsMIDIClock = settings.followsMIDIClock
+        sk_metronome_clock_enabled(metronomeEngine, metronomeFollowsMIDIClock ? 1 : 0)
         sk_metronome_settings(metronomeEngine, SKMetronomeSettings(level: settings.level, preset: Int32(settings.preset), beatVelocity: settings.beatVelocity, downbeatEnabled: settings.downbeatEnabled ? 1 : 0, downbeatVelocity: settings.downbeatVelocity, beatsPerBar: Int32(settings.beatsPerBar), accentEvery: Int32(settings.accentEvery), subdivision: Int32(settings.subdivision)))
         sk_metronome_master(metronomeEngine, masterVolume, metronomeFollowsMaster ? 1 : 0)
+        if !metronomeFollowsMIDIClock { sk_metronome_tempo(metronomeEngine, tempo) }
         sk_metronome_enable(metronomeEngine, enabled ? 1 : 0)
     }
+    /// One-shot count-in. The engine stops after the bars when the click was off
+    /// and keeps the normal click running when it was already on.
+    func countIn(bars: Int) {
+        #if DEBUG
+        debugCountInRequests += 1
+        #endif
+        sk_metronome_count_in(metronomeEngine, Int32(max(0, min(8, bars))))
+    }
+    func midiClockTick(at time: Double) { sk_metronome_clock_event(metronomeEngine, 0, time) }
+    func midiClockStart(at time: Double) { sk_metronome_clock_event(metronomeEngine, 1, time) }
+    func midiClockContinue(at time: Double) { sk_metronome_clock_event(metronomeEngine, 2, time) }
+    func midiClockStop() { sk_metronome_clock_event(metronomeEngine, 3, 0) }
     func space(_ amount: Float) { reverb.wetDryMix = amount }
     // Runs an isolated production graph without sending sound to the device.
     func prepareOffline() throws {

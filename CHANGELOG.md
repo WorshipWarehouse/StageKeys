@@ -70,6 +70,8 @@
 - Show the Program Change opt-in in Patch Settings with an explicit `Program N` label, the raw MIDI 0–127 value and a caption explaining the 1–128 numbering some keyboards use, so the off-by-one is discoverable where the mapping is set.
 - Assign one unclaimed explicit number when the opt-in is enabled instead of reusing a value another patch already claims.
 - Add a standalone metronome engine with two synthesized click sounds, independent level, beat/downbeat velocities, accent patterns, subdivisions and master-follow; the click now bypasses the shared hall reverb.
+- Add a persisted metronome count-in with a toolbar/Settings action and external MIDI Clock sync (24 PPQN Start/Continue/Stop), including clock-derived tempo and a bounded one-shot count-in that stops when the click was off.
+- Gate Count In on running audio with an actionable message instead of scheduling into a stopped or failed engine, add macOS Shift-Command-M/I commands and accessibility state/units for the click controls, cancel a pending count-in when external clock mode changes, and document stopped/recovery behavior.
 - Persist every metronome control in `settings.json`, keep older files readable and refuse out-of-range saved values at launch.
 - Cover click timing at 44.1/48/96 kHz, irregular block splits, mid-beat tempo changes, long runs, presets and settings round trips.
 - Let the hosted Audio Unit editor expand an oversized plug-in view beyond the collapsed sheet cap and collapse it again, without offering the control when it would reveal nothing or when the window is already the limit.
