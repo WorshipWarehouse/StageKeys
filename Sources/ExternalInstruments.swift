@@ -1598,10 +1598,18 @@ final class ExternalInstrumentRack {
         return samplerProbes.count
     }
     /// Test-only: run the release queue exactly where a transaction start would,
-    /// so lifetime completion can be asserted without opening a graph edit.
+    /// so lifetime completion can be asserted without opening a graph edit. The
+    /// host's offline rendering keeps the engine running, so this opens the same
+    /// stopped window a transaction does and restores it afterwards.
     func debugReleaseDeferredSamplersInStoppedWindow() {
-        precondition(!engine.isRunning && pendingGraphEdit == nil)
+        precondition(pendingGraphEdit == nil)
+        let wasRunning = engine.isRunning
+        if wasRunning { engine.stop() }
         releaseDeferredSamplers()
+        if wasRunning {
+            do { engine.prepare(); try engine.start() }
+            catch { assertionFailure("A stopped window must restore the engine: \(error)") }
+        }
     }
     func debugExpireRetiredTails() {for tail in retiredTails {silenceRetiredTail(tail)}}
     #endif
