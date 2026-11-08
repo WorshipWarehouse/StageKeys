@@ -154,7 +154,9 @@ final class ExternalInstrumentRack {
         var nativePreset:URL? = nil
         var attackMinimum:Float=0
         var hostVelocityCurve:Int?
+        var sourceGain: AVAudioMixerNode
         var mixer: AVAudioMixerNode
+        var stereoPan: AVAudioMixerNode
         var filter: AVAudioUnitEQ
         var eq: AVAudioUnitEQ
         var compressor: AVAudioUnitEffect
@@ -212,11 +214,12 @@ final class ExternalInstrumentRack {
     }
     private func connectEffects(_ voice:Voice) {
         let format=voice.compressor.outputFormat(forBus:0)
-        var previous: AVAudioNode = voice.compressor
+        var previous: AVAudioNode = voice.eq
         if let graph=voice.audioGraph {engine.connect(previous,to:graph.input,format:format);previous=graph.output}
         else {for unit in voice.imported { engine.connect(previous,to:unit,format:format); previous=unit }}
         engine.connect(previous,to:voice.builtin,format:format)
-        engine.connect(voice.builtin,to:voice.mixer,format:format)
+        engine.connect(voice.builtin,to:voice.stereoPan,format:format)
+        engine.connect(voice.stereoPan,to:voice.mixer,format:format)
     }
     private static func branchState(_ original:[String:Any],indices:[Int]) throws->[String:Any] {
         guard var instrument=original["Instrument"] as? [String:Any],let layers=instrument["Layers"] as? [[String:Any]],!indices.isEmpty,indices.allSatisfy({layers.indices.contains($0)}) else{throw ExternalInstrumentError.unsupportedFormat}
@@ -263,7 +266,7 @@ final class ExternalInstrumentRack {
             else {state=voice.unit.auAudioUnit.fullStateForDocument ?? [:]}
             try editGraph {
                 var nodes:[AVAudioNode]=[],parallel:[ImportedBranchVoice]=[]
-                do {for plan in branches ?? [] {parallel.append(try makeBranch(plan,state:state,format:voice.filter.inputFormat(forBus:0),tempo:tempo,nodes:&nodes))}}
+                do {for plan in branches ?? [] {parallel.append(try makeBranch(plan,state:state,format:voice.sourceGain.inputFormat(forBus:0),tempo:tempo,nodes:&nodes))}}
                 catch {for node in nodes.reversed(){engine.disconnectNodeOutput(node);engine.detach(node)};throw error}
                 voice.parallel.forEach{$0.panic(preserveEffectTails:true)}
                 for (controller,value) in controllerValues[channel] ?? [:] {parallel.forEach{$0.control(UInt8(controller),UInt8(value))}}
@@ -273,17 +276,17 @@ final class ExternalInstrumentRack {
                     engine.connect(mix,to:tailMixer,format:nil)
                     // Bypass the filter/compressor shared with the new branch
                     // set; their old tails continue through the shared built-in FX.
-                    engine.connect(tailMixer,to:voice.mixer,format:nil)
+                    engine.connect(tailMixer,to:voice.stereoPan,format:nil)
                     enqueueRetiredTail(channel:channel,nodes:voice.parallelNodes+[tailMixer],mixer:tailMixer)
                 } else {
                     for node in voice.parallelNodes.reversed(){engine.disconnectNodeOutput(node);engine.detach(node)}
                 }
                 engine.disconnectNodeOutput(voice.unit)
-                if parallel.isEmpty {engine.connect(voice.unit,to:voice.filter,format:nil)}
+                if parallel.isEmpty {engine.connect(voice.unit,to:voice.sourceGain,format:nil)}
                 else {
                     let mix=AVAudioMixerNode();engine.attach(mix);nodes.append(mix)
-                    for (bus,branch) in parallel.enumerated() {engine.connect(branch.output,to:mix,fromBus:0,toBus:AVAudioNodeBus(bus),format:voice.filter.inputFormat(forBus:0))}
-                    engine.connect(mix,to:voice.filter,format:voice.filter.inputFormat(forBus:0))
+                    for (bus,branch) in parallel.enumerated() {engine.connect(branch.output,to:mix,fromBus:0,toBus:AVAudioNodeBus(bus),format:voice.sourceGain.inputFormat(forBus:0))}
+                    engine.connect(mix,to:voice.sourceGain,format:voice.sourceGain.inputFormat(forBus:0))
                 }
                 voice.parallel=parallel;voice.parallelNodes=nodes;voice.parallelTopology=topology;voices[channel]=voice
                 #if DEBUG
@@ -317,9 +320,9 @@ final class ExternalInstrumentRack {
             try editGraph {
                 let graph=ImportedAudioGraph(engine:engine,rack:plan,format:voice.compressor.outputFormat(forBus:0),tempo:tempo)
                 let hadGraph=voice.audioGraph != nil
-                engine.disconnectNodeOutput(voice.compressor)
-                if let old=voice.audioGraph {retireGraph(old,channel:channel,destination:voice.mixer)}
-                else if !voice.imported.isEmpty {retireImported(voice.imported,channel:channel,destination:voice.mixer)}
+                engine.disconnectNodeOutput(voice.eq)
+                if let old=voice.audioGraph {retireGraph(old,channel:channel,destination:voice.stereoPan)}
+                else if !voice.imported.isEmpty {retireImported(voice.imported,channel:channel,destination:voice.stereoPan)}
                 // The old graph/imported chain now has no input. Keep its output
                 // tail, and attach the new graph to the same downstream built-in FX.
                 if hadGraph {for node in voice.imported where node.engine === engine {engine.disconnectNodeOutput(node);engine.detach(node)}}
@@ -594,6 +597,22 @@ final class ExternalInstrumentRack {
     var debugInstantiate: ((AudioComponentDescription, @escaping (AVAudioUnit?, Error?) -> Void) -> Void)?
     private(set) var debugInstantiationCallbacks = 0
     private(set) weak var debugLastCandidate: AVAudioUnit?
+    struct DebugMIDIEvent {
+        let channel: Int
+        let status: UInt8
+        let data1: UInt8
+        let data2: UInt8
+    }
+    private(set) var debugMIDIEvents: [DebugMIDIEvent] = []
+    /// Events dropped once the debug buffer reached its bound. A bounded buffer
+    /// keeps a long DEBUG session from growing without limit while the
+    /// continuity tests still inspect the recent window after a clear.
+    private(set) var debugMIDIDroppedEvents = 0
+    private static let debugMIDIEventLimit = 4_096
+    func debugClearMIDIEvents() {
+        debugMIDIEvents.removeAll(keepingCapacity: true)
+        debugMIDIDroppedEvents = 0
+    }
     func debugActiveNoteCount(_ channel: Int) -> Int { voices[channel]?.pitches.count ?? 0 }
     enum GraphFaultPoint { case candidateAttached, graphConnected, pluginStateApplied, restoreSamplers, restartEngine }
     var debugGraphFault: ((GraphFaultPoint) -> Error?)?
@@ -878,7 +897,8 @@ final class ExternalInstrumentRack {
     private func graphNodes() -> [AVAudioNode] {
         var nodes: [AVAudioNode] = []
         for voice in voices.values {
-            nodes += [voice.unit, voice.filter, voice.eq, voice.compressor, voice.builtin, voice.mixer]
+            nodes += [voice.unit, voice.sourceGain, voice.compressor, voice.filter, voice.eq,
+                      voice.builtin, voice.stereoPan, voice.mixer]
             nodes += voice.imported
             nodes += voice.parallelNodes
             nodes += voice.audioGraph?.nodes ?? []
@@ -1184,7 +1204,9 @@ final class ExternalInstrumentRack {
                 if let sampler = unit as? AVAudioUnitSampler { rememberSampler(sampler) }
             } catch { engine.detach(unit); throw error }
             retire(channel)
+            let sourceGain = AVAudioMixerNode()
             let mixer = AVAudioMixerNode()
+            let stereoPan = AVAudioMixerNode()
             let filter = AVAudioUnitEQ(numberOfBands: 1)
             filter.bands[0].filterType = .resonantLowPass
             filter.bands[0].bypass = true
@@ -1194,13 +1216,15 @@ final class ExternalInstrumentRack {
                 band.bypass = i == 0 || i == 7
             }
             let compressor=BuiltinEffectUnit.make()
-            for node in [mixer as AVAudioNode, filter, eq, compressor] { engine.attach(node) }
+            for node in [sourceGain as AVAudioNode, mixer, stereoPan, filter, eq, compressor] { engine.attach(node) }
             let processingFormat=AVAudioFormat(standardFormatWithSampleRate:engine.isInManualRenderingMode ? engine.manualRenderingFormat.sampleRate:48000,channels:2)!
-            engine.connect(unit, to: filter, format: processingFormat)
+            engine.connect(unit, to: sourceGain, format: processingFormat)
+            engine.connect(sourceGain, to: compressor, format: processingFormat)
+            engine.connect(compressor, to: filter, format: processingFormat)
             engine.connect(filter, to: eq, format: processingFormat)
-            engine.connect(eq, to: compressor, format: processingFormat)
             let builtin=BuiltinEffectUnit.make();engine.attach(builtin)
-            let voice = Voice(unit: unit, mixer: mixer, filter: filter, eq: eq, compressor: compressor,builtin:builtin)
+            let voice = Voice(unit: unit, sourceGain:sourceGain, mixer: mixer, stereoPan:stereoPan,
+                              filter: filter, eq: eq, compressor: compressor,builtin:builtin)
             connectEffects(voice)
             engine.connect(mixer, to: engine.mainMixerNode, format: nil)
             voices[channel] = voice
@@ -1211,7 +1235,8 @@ final class ExternalInstrumentRack {
         guard voices[channel] != nil else { return }
         panic(channel,preserveEffectTails:true)
         guard let old=voices.removeValue(forKey:channel) else{return}
-        var nodes:[AVAudioNode]=[old.unit,old.filter,old.eq,old.compressor,old.mixer,old.builtin]
+        var nodes:[AVAudioNode]=[old.unit,old.sourceGain,old.compressor,old.filter,old.eq,
+                                 old.builtin,old.stereoPan,old.mixer]
         nodes += old.imported.map{$0 as AVAudioNode}
         nodes += old.parallelNodes
         nodes += old.audioGraph?.nodes ?? []
@@ -1247,6 +1272,11 @@ final class ExternalInstrumentRack {
     }
     private func midi(_ channel: Int, _ status: UInt8, _ data1: UInt8, _ data2: UInt8, sampleTime: Int64? = nil) {
         guard let unit = voices[channel]?.unit else { return }
+        #if DEBUG
+        if debugMIDIEvents.count < Self.debugMIDIEventLimit {
+            debugMIDIEvents.append(DebugMIDIEvent(channel:channel,status:status,data1:data1,data2:data2))
+        } else { debugMIDIDroppedEvents += 1 }
+        #endif
         // A future sample time is only handed to the block API; native-style
         // sendMIDIEvent has no timestamp and remains the immediate fallback.
         if let sampleTime, let block = unit.auAudioUnit.scheduleMIDIEventBlock {
@@ -1305,8 +1335,41 @@ final class ExternalInstrumentRack {
     func volume(channel: Int, gain: Float, pan: Float) {
         precondition(Thread.isMainThread)
         voices[channel]?.mixer.outputVolume = max(0, min(4, gain))
-        voices[channel]?.mixer.pan = max(-1, min(1, pan))
+        voices[channel]?.stereoPan.pan = max(-1, min(1, pan))
     }
+    #if DEBUG
+    func debugSignalOrder(channel:Int)->[String]? {
+        guard let voice=voices[channel] else{return nil}
+        let graph=voice.audioGraph
+        let graphNodes=Set((graph?.nodes ?? []).map{ObjectIdentifier($0)})
+        let labels:[ObjectIdentifier:String]=[
+            ObjectIdentifier(voice.unit):"Instrument",
+            ObjectIdentifier(voice.sourceGain):"Source gain",
+            ObjectIdentifier(voice.compressor):"Compressor",
+            ObjectIdentifier(voice.filter):"Mod Filter",
+            ObjectIdentifier(voice.eq):"EQ",
+            ObjectIdentifier(voice.builtin):"Audio slots",
+            ObjectIdentifier(voice.stereoPan):"Stereo pan",
+            ObjectIdentifier(voice.mixer):"Performance fader",
+            ObjectIdentifier(engine.mainMixerNode):"Main mixer"
+        ]
+        var current:AVAudioNode=voice.unit,seen=Set<ObjectIdentifier>(),result:[String]=[]
+        for _ in 0..<16 {
+            let id=ObjectIdentifier(current)
+            guard seen.insert(id).inserted else{return nil}
+            if let label=labels[id] {result.append(label)}
+            else if graphNodes.contains(id) {
+                if let graph, current === graph.input {result.append("Imported rack")}
+            }
+            else if !(current is AVAudioMixerNode) {return nil}
+            if current === engine.mainMixerNode {return result}
+            let points=engine.outputConnectionPoints(for:current,outputBus:0)
+            guard points.count==1,let next=points[0].node else{return nil}
+            current=next
+        }
+        return nil
+    }
+    #endif
     /// Audio processing for imported instruments. The host supplies the fader-
     /// interpolated cutoff; instrument envelopes remain the plug-in's own controls.
     func processing(channel: Int, gain: Float, cutoff: Float, resonance: Float,
@@ -1314,7 +1377,8 @@ final class ExternalInstrumentRack {
                     compressorEnabled: Bool, threshold: Float, attack: Float, release: Float, makeup: Float,ratio:Float=4,inputGain:Float=0,mix:Float=1) {
         precondition(Thread.isMainThread)
         guard let voice = voices[channel] else { return }
-        voice.filter.globalGain = gain > 0 ? max(-96, min(12, 20 * log10(gain))) : -96
+        voice.sourceGain.outputVolume = max(0, min(4, gain))
+        voice.filter.globalGain = 0
         voice.filter.bands[0].frequency = max(20, min(20000, cutoff))
         voice.filter.bands[0].bandwidth = max(0.05, min(5, 1 / max(0.1, resonance)))
         voice.filter.bands[0].bypass = cutoff >= 19999

@@ -26,6 +26,20 @@ Pan is the last stereo stage; the fader scales both sides afterwards. Before
 this change the compressor ran after the EQ, which made an EQ boost reduce the
 output instead of raising it.
 
+## Imported sampler and Audio Unit host stages
+
+The host graph for imported samplers and Audio Units uses the same controllable
+order: source gain → compressor → Mod Filter → EQ → imported source-processing
+rack (when present) → three visible audio-effect slots → stereo pan → performance
+fader. Source gain, pan and fader are separate mixer nodes, so their relative
+order is explicit. The imported source rack is retained between EQ and the
+visible slots; its own parallel/serial topology remains as translated.
+
+An Audio Unit's internal processing is opaque to StageKeys. This order describes
+only the host-managed stages around the instrument, not its internal signal path.
+`Tests/ImportedSignalOrderTests` traverses the actual engine connections for the
+imported voice to guard the host order.
+
 ## Amplitude envelope
 
 Attack, Decay, Sustain and Release are exposed in Sound Settings for sounds that
@@ -100,6 +114,14 @@ Hosted Audio Unit installs stay asynchronous: the document layer is committed on
   maximum resonance stays finite, a long attack is quiet then loud, zero source
   gain is silent with EQ/compressor enabled, and a hard-left pan preserves the
   stereo law.
+- `Tests/ImportedSignalOrderTests` follows the imported AVAudioEngine graph to
+  verify the host-managed source gain, compressor, Mod Filter, EQ, effects,
+  pan and fader order. `Tests/LiveSoundChangeTests` renders sustained
+  polyphony through editor preview, discard and confirm.
+- `Tests/EXSVoiceControlsTests` uses generated source data to verify supported
+  envelope/filter conversion and explicit unsupported-circuit reporting;
+  `Tests/MainStageProcessingTests` verifies unverified channel-shaping keys are
+  reported without substituting StageKeys defaults.
 - `Tests/ChannelSignalOrderTests` (hardware-free): exponential taper endpoints,
   geometric-mean midpoint, clamping of out-of-range and non-finite modulation,
   and envelope/filter validation bounds.

@@ -74,6 +74,47 @@ import AVFoundation
   assert((routes[0]["min value"] as! Double)>0,"Signed group cutoff offset must be retained")
   let zones=layer["Zones"] as! [[String:Any]];assert(zones[0]["gain"] as! Double == -8 && zones[0]["fine tune"] as! Double == -3)
   let retained=try Data(contentsOf:wave);assert(retained==originalBytes)
+  let sourceRoot=root.appendingPathComponent("mainstage-source",isDirectory:true)
+  let outputRoot=root.appendingPathComponent("converted",isDirectory:true)
+  try FileManager.default.createDirectory(at:outputRoot,withIntermediateDirectories:true)
+  let source=try TestFixtures.exs(in:sourceRoot)
+  let shaping:[(UInt8,Int16)]=[(0x52,64),(0x53,0),(0x54,32),(0x51,80),(0x55,64),(0x6b,2),
+                               (0x2c,1),(0xf3,2),(0x1e,600),(0x1d,300)]
+  func parameterChunk(_ values:[(UInt8,Int16)])->Data {
+   var body:[UInt8]=[UInt8(values.count),0,0,0]
+   body.append(contentsOf:values.map(\.0))
+   for (_,value) in values {var v=value.littleEndian;withUnsafeBytes(of:&v){body.append(contentsOf:$0)}}
+   var header=[UInt8](repeating:0,count:84),signature=UInt32(4<<24)|0x101,size=UInt32(body.count)
+   var signatureLE=signature.littleEndian,sizeLE=size.littleEndian
+   withUnsafeBytes(of:&signatureLE){header.replaceSubrange(0..<4,with:$0)}
+   withUnsafeBytes(of:&sizeLE){header.replaceSubrange(4..<8,with:$0)}
+   header.replaceSubrange(16..<20,with:Array("JBOS".utf8))
+   header.replaceSubrange(20..<30,with:Array("Parameters".utf8))
+   return Data(header+body)
+  }
+  var sourceBytes=try Data(contentsOf:source);sourceBytes.append(parameterChunk(shaping));try sourceBytes.write(to:source)
+  let converted=outputRoot.appendingPathComponent("Supported.aupreset")
+  let convertedProgram=try EXSNative.convert(source,sampleRoot:sourceRoot,to:converted)
+  let preset=try PropertyListSerialization.propertyList(from:Data(contentsOf:converted),options:[],format:nil) as! [String:Any]
+  let program=try JSONDecoder().decode(NativeSamplerProgram.self,from:preset["StageKeys.NativeSampler"] as! Data)
+  assert(program.amplitudeEnvelope?.attack==EXSNative.Envelope.seconds(64) && program.amplitudeEnvelope?.sustain==Double(80)/127)
+  assert(program.voiceControls?.filter?.cutoff==0.6 && program.voiceControls?.filter?.resonance==0.3)
+  assert(convertedProgram.notes.contains{$0.contains("amplitude attack, decay, sustain and release are translated")})
+  assert(convertedProgram.notes.contains{$0.contains("low-pass cutoff, resonance")})
+  var instrument=preset["Instrument"] as! [String:Any],layers=instrument["Layers"] as! [[String:Any]]
+  let convertedLayer=layers[0],filter=convertedLayer["Filters"] as! [String:Any]
+  assert(filter["enabled"] as? Bool==true && filter["resonance"] as? Double==3)
+  let stages=((convertedLayer["Envelopes"] as! [[String:Any]])[0]["Stages"] as! [[String:Any]])
+  assert(stages.first{$0["stage"] as? Int==1}?["time"] as? Double==EXSNative.Envelope.seconds(64))
+  assert(stages.first{$0["stage"] as? Int==3}?["time"] as? Double==EXSNative.Envelope.seconds(32))
+  let unsupportedRoot=root.appendingPathComponent("unsupported-source",isDirectory:true)
+  let unsupportedSource=try TestFixtures.exs(in:unsupportedRoot)
+  var unsupportedBytes=try Data(contentsOf:unsupportedSource),unsupported=shaping
+  unsupported[unsupported.firstIndex{$0.0==0xf3}!] = (0xf3,1)
+  unsupportedBytes.append(parameterChunk(unsupported));try unsupportedBytes.write(to:unsupportedSource)
+  let unsupportedNotes=try EXSNative.convert(unsupportedSource,sampleRoot:unsupportedRoot,to:outputRoot.appendingPathComponent("Unsupported.aupreset"))
+  assert(unsupportedNotes.notes.contains{$0.contains("filter circuit") && $0.contains("not translated")},
+         "An unsupported source filter circuit must be named instead of using the default filter silently")
   print("PASS: generic EXS parameter decoding, active gain/tuning and velocity-sensitive filter; soft/hard HF balance",softBalance,hardBalance)
  }
 }

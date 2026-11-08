@@ -12,7 +12,10 @@ import AVFoundation
         store.captureSnapshot(0)
         store.save()
         let original = store.patch.layers[0]
-        let oldUnit = store.audio.externalRack!.unit(channel: 0)!
+        guard let oldUnit=store.audio.externalRack!.unit(channel:0) else {
+            let failure=store.audio.lastChangeFailure?.lastGraphFailure
+            fatalError("Initial imported instrument failed to load: \(store.message ?? "no diagnostic"); graph operation=\(String(describing:failure?.operation?.code)), restore=\(String(describing:failure?.restoration?.code)), restart=\(String(describing:failure?.restart?.code))")
+        }
         let encoder = JSONEncoder(); encoder.outputFormatting = .sortedKeys
         let savedState = try encoder.encode(store.setlist)
         let savedSnapshot = store.activeSnapshot
@@ -109,6 +112,71 @@ import AVFoundation
         store.noteOn(64)
         assert(try! energy() > 0.001)
         store.noteOff(64)
+
+        // Settings edits preview and commit processing in place. A held chord,
+        // including a note released under sustain, must keep rendering through
+        // both discard and confirm rather than merely retaining Store key IDs.
+        for index in 1..<store.patch.layers.count where store.patch.layers[index].loaded { store.removeSound(index) }
+        let editable = store.patch.layers[0]
+        store.noteOn(60); store.noteOn(64); store.noteOn(67)
+        store.setSustain(true)
+        store.noteOff(64)
+        let rack=store.audio.externalRack!
+        rack.debugClearMIDIEvents()
+        let baselineEnergy = try energy(8)
+        assert(baselineEnergy > 0.001)
+        let minimumContinuousEnergy = baselineEnergy * 0.25
+        let activeNotes=rack.debugActiveNoteCount(0),noteIntents=rack.debugNoteIntentCount(0)
+        let editorUnit = rack.unit(channel: 0)!
+        let editorGeneration = rack.graphGeneration
+        let editEncoder = JSONEncoder(); editEncoder.outputFormatting = .sortedKeys
+        let savedBeforePreview = try editEncoder.encode(store.setlist)
+        let sessionBytesBeforePreview = try Data(contentsOf: session)
+        func assertVoiceContinuity(_ phase:String) {
+            let disruptive=rack.debugMIDIEvents.contains {
+                let kind=$0.status & 0xf0
+                return kind == 0x80 || kind == 0x90 ||
+                    ($0.status & 0xf0 == 0xb0 && ($0.data1 == 120 || $0.data1 == 123 || ($0.data1 == 64 && $0.data2 < 64)))
+            }
+            assert(!disruptive, "\(phase) must not send note, panic, or sustain-off MIDI events")
+            assert(rack.debugActiveNoteCount(0)==activeNotes && rack.debugNoteIntentCount(0)==noteIntents,
+                   "\(phase) must retain the original notes and sustain ownership")
+            assert(store.sustain)
+        }
+        var proposed = editable
+        proposed.channelSettings.attack = 0.8
+        proposed.channelSettings.filterMin = 100
+        proposed.channelSettings.filterMax = 8000
+        proposed.channelSettings.resonance = 2
+        let discardToken = store.beginAudition(0)!
+        store.previewLayer(0, proposed, token: discardToken)
+        assert((try! editEncoder.encode(store.setlist)) == savedBeforePreview)
+        assert((try! Data(contentsOf: session)) == sessionBytesBeforePreview)
+        let previewEnergy = try energy(4)
+        assert(previewEnergy > minimumContinuousEnergy, "Preview must keep the active sustained chord rendering")
+        assertVoiceContinuity("Preview")
+        store.endAudition(discardToken)
+        let discardedEnergy = try energy(4)
+        assert(discardedEnergy > minimumContinuousEnergy, "Discard must restore settings without cutting active voices")
+        assertVoiceContinuity("Discard")
+        assert(rack.unit(channel: 0) === editorUnit)
+        assert(rack.graphGeneration == editorGeneration)
+        assert(store.patch.layers[0] == editable)
+
+        let confirmToken = store.beginAudition(0)!
+        store.previewLayer(0, proposed, token: confirmToken)
+        let confirmedPreviewEnergy = try energy(4)
+        assert(confirmedPreviewEnergy > minimumContinuousEnergy, "Confirmed preview must keep the active sustained chord rendering")
+        assertVoiceContinuity("Confirmed preview")
+        store.confirmAudition(confirmToken, index: 0, layer: proposed)
+        assert(store.patch.layers[0].channelSettings.attack == proposed.channelSettings.attack)
+        assert(store.patch.layers[0].channelSettings.filterMin == proposed.channelSettings.filterMin)
+        assert(rack.unit(channel: 0) === editorUnit)
+        assert(rack.graphGeneration == editorGeneration)
+        let confirmedEnergy = try energy(4)
+        assert(confirmedEnergy > minimumContinuousEnergy, "Confirm must not cut active voices")
+        assertVoiceContinuity("Confirm")
+        store.noteOff(60); store.noteOff(67); store.setSustain(false)
 
         // Capture a graph-transaction error without changing its original type
         // or implying that a failed mutation has been rolled back.
