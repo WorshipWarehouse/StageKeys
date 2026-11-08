@@ -516,7 +516,7 @@ enum MainStageAudioUnit {
 /// their own sample root without changing the original files.
 enum MainStageDiscovery {
     struct Location {var instruments:URL;var samples:URL;var label:String}
-    struct Candidate {var file:URL;var samples:URL;var sha256:String}
+    struct Candidate {var file:URL;var samples:URL;var sha256:String;var sampleIssue:String?=nil}
     struct Search:Codable,Identifiable {var id:String;var location:String;var detail:String}
     struct Result {var candidates:[String:[Candidate]];var searches:[Search]}
     static func locations(source:URL,retained:URL)->[Location] {
@@ -549,7 +549,9 @@ enum MainStageDiscovery {
                 guard FileManager.default.fileExists(atPath:location.instruments.path,isDirectory:&directory),directory.boolValue else{throw MainStagePatch.Failure.invalid("Location unavailable")}
                 let files=try MainStagePatch.findSamplerInstruments(names,in:location.instruments).sorted{$0.path<$1.path}
                 for file in files {
-                    let candidate=Candidate(file:file,samples:location.samples,sha256:try AssetDigest.sha256(file))
+                    var candidate=Candidate(file:file,samples:location.samples,sha256:try AssetDigest.sha256(file))
+                    do {_ = try EXSNative.validateSampleReferences(file,sampleRoot:location.samples)}
+                    catch {candidate.sampleIssue=error.localizedDescription}
                     if !(result.candidates[file.lastPathComponent] ?? []).contains(where:{$0.file.standardizedFileURL==file.standardizedFileURL && $0.samples.standardizedFileURL==location.samples.standardizedFileURL}) {
                         result.candidates[file.lastPathComponent,default:[]].append(candidate)
                     }

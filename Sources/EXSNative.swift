@@ -289,20 +289,13 @@ enum EXSNative {
         }
         return result
     }
-    static func convert(_ source:URL,sampleRoot:URL,to output:URL)throws->NativeSamplerProgram {
-        precondition(Thread.isMainThread)
-        let attributes=try source.resourceValues(forKeys:[.isRegularFileKey,.fileSizeKey])
-        guard attributes.isRegularFile==true,(attributes.fileSize ?? Int.max)<=16_000_000 else{throw MainStagePatch.Failure.invalid("Invalid EXS document size.")}
-        let parts=try referenceIdentities(chunks(Data(contentsOf:source))),groups=parts.filter{$0.kind==2},sampleParts=parts.filter{$0.kind==3},zones=parts.filter{$0.kind==1}
-        guard !sampleParts.isEmpty,sampleParts.count<=4096,!zones.isEmpty,zones.count<=16384,groups.count<=64,Set(groups.map(\.index)).count==groups.count else{throw MainStagePatch.Failure.invalid("EXS map exceeds native limits or is empty.")}
-        func u32(_ bytes:[UInt8],_ position:Int)->Int {(0..<4).reduce(0){$0 | Int(bytes[position+$1]) << ($1*8)}}
-        func signed(_ byte:UInt8)->Int {Int(Int8(bitPattern:byte))}
+    private static func resolvedSamples(_ sampleParts:[Chunk],sampleRoot:URL)throws->(files:[Int:URL],frames:[Int:Int],references:[String:String]) {
         func string(_ bytes:[UInt8],_ position:Int,_ length:Int)throws->String {
             guard position+length<=bytes.count,let value=String(bytes:bytes[position..<position+length].prefix(while:{$0 != 0}),encoding:.utf8) else{throw MainStagePatch.Failure.invalid("Invalid EXS sample path.")};return value
         }
         let root=sampleRoot.resolvingSymlinksInPath().standardizedFileURL
         var files:[Int:URL]=[:],frames:[Int:Int]=[:],references:[String:String]=[:]
-        guard Set(sampleParts.map(\.index)).count==sampleParts.count,sampleParts.allSatisfy({(0..<4096).contains($0.index)}) else{throw MainStagePatch.Failure.invalid("Invalid or duplicate EXS sample IDs.")}
+        guard !sampleParts.isEmpty,sampleParts.count<=4096,Set(sampleParts.map(\.index)).count==sampleParts.count,sampleParts.allSatisfy({(0..<4096).contains($0.index)}) else{throw MainStagePatch.Failure.invalid("Invalid or duplicate EXS sample IDs.")}
         for sample in sampleParts {
             guard sample.body.count>=592 else{throw MainStagePatch.Failure.invalid("Unsupported EXS sample record.")}
             let directory=try string(sample.body,80,256)
@@ -316,6 +309,26 @@ enum EXSNative {
             guard audio.length>0,audio.length<=Int64(Int32.max) else{throw MainStagePatch.Failure.invalid("Unsupported EXS sample length.")}
             files[sample.index]=file;frames[sample.index]=Int(audio.length);references["Sample:\(0x10000000+sample.index)"]=file.path
         }
+        return (files,frames,references)
+    }
+    /// Bounded dependency validation for import preflight. This parses the map and
+    /// opens referenced audio headers, but never creates a sampler or renders audio.
+    static func validateSampleReferences(_ source:URL,sampleRoot:URL)throws->Int {
+        let attributes=try source.resourceValues(forKeys:[.isRegularFileKey,.fileSizeKey])
+        guard attributes.isRegularFile==true,(attributes.fileSize ?? Int.max)<=16_000_000 else{throw MainStagePatch.Failure.invalid("Invalid EXS document size.")}
+        let parts=try referenceIdentities(chunks(Data(contentsOf:source)))
+        return try resolvedSamples(parts.filter{$0.kind==3},sampleRoot:sampleRoot).files.count
+    }
+    static func convert(_ source:URL,sampleRoot:URL,to output:URL)throws->NativeSamplerProgram {
+        precondition(Thread.isMainThread)
+        let attributes=try source.resourceValues(forKeys:[.isRegularFileKey,.fileSizeKey])
+        guard attributes.isRegularFile==true,(attributes.fileSize ?? Int.max)<=16_000_000 else{throw MainStagePatch.Failure.invalid("Invalid EXS document size.")}
+        let parts=try referenceIdentities(chunks(Data(contentsOf:source))),groups=parts.filter{$0.kind==2},sampleParts=parts.filter{$0.kind==3},zones=parts.filter{$0.kind==1}
+        guard !sampleParts.isEmpty,sampleParts.count<=4096,!zones.isEmpty,zones.count<=16384,groups.count<=64,Set(groups.map(\.index)).count==groups.count else{throw MainStagePatch.Failure.invalid("EXS map exceeds native limits or is empty.")}
+        func u32(_ bytes:[UInt8],_ position:Int)->Int {(0..<4).reduce(0){$0 | Int(bytes[position+$1]) << ($1*8)}}
+        func signed(_ byte:UInt8)->Int {Int(Int8(bitPattern:byte))}
+        let resolved=try resolvedSamples(sampleParts,sampleRoot:sampleRoot)
+        let files=resolved.files,frames=resolved.frames,references=resolved.references
         guard let first=files.values.first else{throw MainStagePatch.Failure.invalid("Missing EXS audio.")}
         let sampler=AVAudioUnitSampler();try sampler.loadAudioFiles(at:[first])
         guard var state=sampler.auAudioUnit.fullStateForDocument,var instrument=state["Instrument"] as? [String:Any],let template=(instrument["Layers"] as? [[String:Any]])?.first else{throw MainStagePatch.Failure.invalid("Cannot initialize StageKeys Sampler.")}

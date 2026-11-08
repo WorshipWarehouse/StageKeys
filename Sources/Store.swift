@@ -606,6 +606,9 @@ final class PerformanceStore: ObservableObject {
                         } else if Set(candidates.map(\.sha256)).count != 1 {
                             mainStageOutcomes[index].state = .needsSamples
                             mainStageOutcomes[index].detail = "Different EXS instruments share this filename. Choose a narrower source folder."
+                        } else if candidates.allSatisfy({$0.sampleIssue != nil}) {
+                            mainStageOutcomes[index].state = .needsSamples
+                            mainStageOutcomes[index].detail = candidates.compactMap(\.sampleIssue).first ?? "The EXS instrument was found, but its original samples are unavailable."
                         } else {
                             mainStageOutcomes[index].state = .pending
                             mainStageOutcomes[index].detail = "EXS instrument located. Review effects, then convert to verify and retain every referenced sample."
