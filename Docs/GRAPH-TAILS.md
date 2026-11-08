@@ -17,6 +17,33 @@ StageKeys keeps a replaced audio graph connected through a dedicated tail mixer 
 - `Silence Previous` and explicit Panic silence retired tails immediately. Normal patch changes preserve them when `Silence Previous` is off.
 - Graph edits and retirement run on the main thread while the engine is already stopped. No node is attached, disconnected or rebuilt from a render callback.
 
+## Sampler teardown order and evidence (#192)
+
+A hosted sampler that leaves the graph now has one disposal order: mute,
+disconnect, detach, forget its pending rollback nodes, then drop the last host
+references. Truncating the oldest tail is still allowed while it may be
+audible, but it now reaches that same stopped disposal point instead of only
+dropping references; the pending rollback snapshot forgets the truncated nodes
+so nothing is detached here and released after the transaction restarts the
+engine. Sampler restoration lists address active voices only, so a retired
+sampler is neither reloaded nor carried through the engine restart.
+
+DEBUG builds keep a bounded 64-event lifecycle ledger (attach, retire, evicted,
+purged, observed release) recording channel, graph generation, engine running,
+whether the node was still attached and whether a retained tail referenced it.
+The events are exposed as an optional field in the existing local support
+report; release builds record nothing. Deallocation is observed by weak
+reference at the next event, because a sampler cannot advertise its own
+disposal. No plug-in state, path, sample payload or session content is kept.
+
+`Tests/SamplerLifecycleTests` drives more switches than the two-tail bound and
+asserts that every eviction and purge is recorded with the engine stopped, that
+no release is observed while the engine runs or the sampler is still attached,
+and that one active sampler is restored per switch rather than the retired
+ones. This is software-side ordering evidence: the owner crash was reproduced
+once on macOS and the CoreAudio assertion text is unavailable, so the original
+scenario remains unreproduced here.
+
 ## Verification
 
 `Tests/ExternalGraphTailTests.swift` uses generated tones and synthetic imported racks to exercise:
@@ -26,7 +53,8 @@ StageKeys keeps a replaced audio graph connected through a dedicated tail mixer 
 - a held sustain release;
 - stacked reverbs;
 - explicit Panic clearing the retained tail;
-- four rapid switches with a maximum of two retained tails and a bounded rack-node count after repeated same-size replacements.
+- four rapid switches with a maximum of two retained tails and a bounded rack-node count after repeated same-size replacements;
+- `Tests/SamplerLifecycleTests` covering the teardown order and the active-only restoration list, with the engine stopped at every destructive release.
 
 `Tests/ReverbTransitionTests.swift` additionally checks the native effect path: compatible patch changes keep the tail, while `Silence Previous` and explicit Panic clear it.
 

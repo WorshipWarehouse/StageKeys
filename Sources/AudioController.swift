@@ -243,6 +243,15 @@ final class AudioController {
     private var source: AVAudioSourceNode!
     lazy var deviceController = AudioDeviceController(engine: engine)
     lazy var externalRack: ExternalInstrumentRack? = try? ExternalInstrumentRack(engine: engine)
+    /// DEBUG-only hosted-sampler lifecycle evidence for the local support
+    /// record. Release builds report nothing, so no instrumentation ships.
+    var samplerLifecycleEvidence: [SamplerLifecycleRecord]? {
+        #if DEBUG
+        return externalRack?.debugSamplerLifecycle
+        #else
+        return nil
+        #endif
+    }
     private var externalSounds: [Int: ExternalSound] = [:]
     private var externalStates: [Int: Data] = [:]
     private var samplerAttacks:[Int:Float]=[:]

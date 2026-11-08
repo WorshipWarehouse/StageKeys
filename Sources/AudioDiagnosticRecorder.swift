@@ -1,5 +1,17 @@
 import AVFoundation
 
+/// DEBUG-only hosted-sampler lifecycle evidence (#192). Enumerated/numeric
+/// facts only: no plug-in state, sample payload, path, device or session data.
+struct SamplerLifecycleRecord: Codable, Equatable {
+    enum Phase: String, Codable { case attached, retired, evicted, purged, released }
+    let phase: Phase
+    let channel: Int
+    let generation: UInt64
+    let engineRunning: Bool
+    let attached: Bool
+    let retainedTail: Bool
+}
+
 /// Explicit allowlist: never accepts session documents, device names/IDs, file paths,
 /// MIDI messages, plug-in state or audio. Building a report does not transmit it.
 struct SupportDiagnostics: Codable {
@@ -17,10 +29,13 @@ struct SupportDiagnostics: Codable {
     let underrunCount: Int? // nil until measured; never report unmeasured zero.
     let latencyScope: String
     let lastAudioChangeFailure: AudioChangeDiagnostic?
+    /// Present only in DEBUG builds; nil is omitted from the local report.
+    let samplerLifecycle: [SamplerLifecycleRecord]?
 
     init(version: String, build: String, running: Bool, status: AudioDeviceStatus?, latency: AudioLatencyChain?,
          midiSources: Int, loadedSlots: Int, limiterBypassed: Bool, recording: Bool,
-         lastAudioChangeFailure: AudioChangeDiagnostic? = nil) {
+         lastAudioChangeFailure: AudioChangeDiagnostic? = nil,
+         samplerLifecycle: [SamplerLifecycleRecord]? = nil) {
         schemaVersion = 1
         appVersion = String(version.prefix(64)); appBuild = String(build.prefix(64))
         audioRunning = running
@@ -32,6 +47,7 @@ struct SupportDiagnostics: Codable {
         underrunCount = nil
         latencyScope = "Core Audio reported output chain; physical MIDI-to-speaker latency not measured"
         self.lastAudioChangeFailure = lastAudioChangeFailure
+        self.samplerLifecycle = samplerLifecycle?.isEmpty == true ? nil : samplerLifecycle
     }
     func json() throws -> String {
         let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys]

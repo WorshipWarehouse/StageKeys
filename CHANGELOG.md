@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Dispose a truncated or purged retired sampler at the stopped graph transaction point: restore only active voices, drop detached samplers before `engine.start()`, forget truncated tail nodes in the pending rollback, and record a bounded DEBUG-only sampler lifecycle ledger in the local support report.
+
 - Clear a channel's MIDI FX lookahead mark when a hosted-AU install is rejected or the instrument is retired, and report a channel as not schedulable while its replacement is pending, so a failed plug-in cannot keep a stale eligibility.
 
 - Recompute the per-channel MIDI FX lookahead set once patch activation installs finish and again when the activation drains, so a channel that gained or lost a sample-timed AU is never left marked from the outgoing instrument.

@@ -184,6 +184,61 @@ final class ExternalInstrumentRack {
     private var retiredTails:[RetiredTail]=[]
     private var tailPanicGenerations = Array(repeating: UInt64(0), count: 16)
     private let maxRetiredTails=2
+    #if DEBUG
+    /// Bounded evidence for hosted-sampler teardown ordering (#192). Weak
+    /// references let the next event report an actual host release; no plug-in
+    /// state, sample payload, path or session content is recorded.
+    private final class SamplerWatch {
+        weak var sampler: AVAudioUnitSampler?
+        var channel: Int
+        var generation: UInt64
+        var attached: Bool
+        init(_ sampler: AVAudioUnitSampler, channel: Int, generation: UInt64, attached: Bool) {
+            self.sampler = sampler; self.channel = channel; self.generation = generation; self.attached = attached
+        }
+    }
+    static let samplerLifecycleCapacity = 64
+    private var samplerWatches: [SamplerWatch] = []
+    private var samplerLifecycleRecords: [SamplerLifecycleRecord] = []
+    var debugSamplerLifecycle: [SamplerLifecycleRecord] { samplerLifecycleRecords }
+    private func appendSamplerLifecycle(_ record: SamplerLifecycleRecord) {
+        samplerLifecycleRecords.append(record)
+        if samplerLifecycleRecords.count > Self.samplerLifecycleCapacity {
+            samplerLifecycleRecords.removeFirst(samplerLifecycleRecords.count - Self.samplerLifecycleCapacity)
+        }
+    }
+    /// Record one lifecycle event and report any tracked sampler whose last
+    /// host reference has since gone away. A sampler cannot advertise its own
+    /// deallocation, so the release is observed at the next lifecycle event.
+    private func recordSamplerLifecycle(_ phase: SamplerLifecycleRecord.Phase, channel: Int,
+                                        sampler: AVAudioUnitSampler? = nil, attached: Bool? = nil) {
+        var live: [SamplerWatch] = []
+        for watch in samplerWatches {
+            if watch.sampler == nil {
+                appendSamplerLifecycle(SamplerLifecycleRecord(phase: .released, channel: watch.channel,
+                    generation: watch.generation, engineRunning: engine.isRunning,
+                    attached: watch.attached, retainedTail: false))
+            } else { live.append(watch) }
+        }
+        samplerWatches = live
+        let isAttached = attached ?? sampler.map { $0.engine === engine } ?? false
+        let retainedTail = sampler.map { object in
+            retiredTails.contains { tail in tail.nodes.contains { ($0 as? AVAudioUnitSampler) === object } }
+        } ?? false
+        appendSamplerLifecycle(SamplerLifecycleRecord(phase: phase, channel: channel,
+            generation: graphGeneration, engineRunning: engine.isRunning,
+            attached: isAttached, retainedTail: retainedTail))
+        guard let sampler, phase != .released else { return }
+        if let watch = samplerWatches.first(where: { $0.sampler === sampler }) {
+            watch.channel = channel; watch.generation = graphGeneration; watch.attached = isAttached
+        } else {
+            samplerWatches.append(SamplerWatch(sampler, channel: channel, generation: graphGeneration, attached: isAttached))
+        }
+        if samplerWatches.count > Self.samplerLifecycleCapacity {
+            samplerWatches.removeFirst(samplerWatches.count - Self.samplerLifecycleCapacity)
+        }
+    }
+    #endif
     static func supportsEffect(kind: Int) -> Bool { (0...17).contains(kind) }
     /// Legacy names accepted by the adapter; the descriptor API exposes all built-in controls.
     static func supportedEffectParameters(kind: Int) -> Set<String> {
@@ -838,11 +893,13 @@ final class ExternalInstrumentRack {
     private func samplerState() -> [(AVAudioUnitSampler,[String:Any])] {
         // Enumerate only owned samplers. AVAudioEngine.attachedNodes can create
         // the input singleton and trigger microphone access in a playback app.
+        // Restrict restoration to active voices: a retired tail's sampler can
+        // still be attached, but it receives no input and must not be reloaded
+        // or retained in the completion arrays past the engine restart (#192).
         samplerHandles=samplerHandles.filter{$0.value.sampler?.engine === engine}
         let ids=Set(samplerHandles.keys)
         samplerDocuments=samplerDocuments.filter{ids.contains($0.key)}
-        let samplers=samplerHandles.values.compactMap(\.sampler)
-        return samplers.compactMap { sampler in
+        return activeSamplers().compactMap { sampler in
             rememberSampler(sampler)
             guard let state=samplerDocuments[ObjectIdentifier(sampler)] else{return nil}
             return (sampler,state)
@@ -894,13 +951,13 @@ final class ExternalInstrumentRack {
         let format: AVAudioFormat
     }
     private struct Rollback {
-        let nodes: [AVAudioNode]
+        var nodes: [AVAudioNode]
         let routes: [Route]
         let voices: [Int: Voice]
         let controllers: [Int: [Int: Int]]
         let notes: [Int: [Int: NoteIntent]]
-        let tails: [RetiredTail]
-        let tailSilence: [Bool]
+        var tails: [RetiredTail]
+        var tailSilence: [Bool]
         let tailPanicGenerations: [UInt64]
         let mixers: [(AVAudioMixerNode, Float, Float)]
         let effects: [(BuiltinEffectUnit, [BuiltinEffectUnit.Setting])]
@@ -985,7 +1042,7 @@ final class ExternalInstrumentRack {
         }
     }
     private struct GraphEdit {
-        let rollback: Rollback
+        var rollback: Rollback
         var mixers: [(AVAudioMixerNode, Float, Float)]
         var samplers: [(AVAudioUnitSampler, [String: Any])]
         var wasRunning: Bool
@@ -1016,8 +1073,8 @@ final class ExternalInstrumentRack {
         defer { graphBatchDepth = 0; preparedRollback = nil }
         var operationError: Error?
         do { try operation() } catch { operationError = error }
-        let edit = pendingGraphEdit
-        let finish = finishGraphChanges()
+        var edit = pendingGraphEdit
+        let finish = finishGraphChanges(&edit)
         var rollbackSucceeded: Bool?
         var rollbackError: Error?
         if let edit, operationError != nil || finish.restoration != nil || finish.restart != nil {
@@ -1047,8 +1104,8 @@ final class ExternalInstrumentRack {
         if let operationError { throw operationError }
         if let error = finish.restoration ?? finish.restart { throw error }
     }
-    private func finishGraphChanges() -> GraphFinish {
-        guard var edit = pendingGraphEdit else {
+    private func finishGraphChanges(_ pending: inout GraphEdit?) -> GraphFinish {
+        guard var edit = pending else {
             return GraphFinish(edited: false, wasRunning: engine.isRunning)
         }
         pendingGraphEdit = nil
@@ -1067,6 +1124,10 @@ final class ExternalInstrumentRack {
         } catch { outcome.restoration = error }
         restoreMixers(edit.mixers)
         if outcome.restoration == nil { replayNotes() }
+        // Teardown order: only engine-retained samplers may outlive this
+        // transaction's restart. A detached sampler released afterwards is the
+        // order that trapped in AudioComponentInstanceDispose (#192).
+        edit.samplers.removeAll { $0.0.engine !== engine }
         // A partially restored graph must not resume as if every instrument was
         // ready. The controller/store expose an explicit manual recovery state.
         if edit.wasRunning && outcome.restoration == nil {
@@ -1080,6 +1141,7 @@ final class ExternalInstrumentRack {
                 engine.stop() // A throwing start must not leave a partial-running state.
             }
         }
+        pending = edit
         return outcome
     }
     private func editGraph(_ operation: () throws -> Void) throws {
@@ -1118,7 +1180,7 @@ final class ExternalInstrumentRack {
         // Hard count bound: deliberately truncate the oldest tail if needed,
         // even if it is still audible. This is not a measured CPU/memory budget.
         while retiredTails.count>maxRetiredTails {
-            detachRetiredTail(retiredTails.removeFirst())
+            disposeRetiredTail(retiredTails.removeFirst())
         }
         scheduleTailExpiry(tail)
     }
@@ -1132,18 +1194,51 @@ final class ExternalInstrumentRack {
         tail.muteWorkItem = work
         DispatchQueue.main.asyncAfter(deadline: .now() + max(0, tail.expiresAt - ProcessInfo.processInfo.systemUptime), execute: work)
     }
-    private func detachRetiredTail(_ tail:RetiredTail) {
+    /// Single teardown order for a tail that leaves the retention bound or is
+    /// purged: mute, disconnect, detach, forget rollback references, then drop
+    /// the last host references. Every call runs inside a graph transaction
+    /// whose engine is already stopped, so a truncated tail cannot be
+    /// deallocated while audio renders or after a later restart (#192).
+    private func disposeRetiredTail(_ tail:RetiredTail,phase:SamplerLifecycleRecord.Phase = .evicted) {
         tail.muteWorkItem?.cancel()
         tail.mixer.outputVolume=0
-        for node in tail.nodes.reversed() where node.engine === engine {
+        let nodes=tail.nodes
+        for node in nodes.reversed() where node.engine === engine {
             engine.disconnectNodeOutput(node)
             engine.detach(node)
         }
+        forgetRollbackReferences(to:nodes)
+        #if DEBUG
+        for sampler in nodes.compactMap({$0 as? AVAudioUnitSampler}) {
+            recordSamplerLifecycle(phase, channel: tail.channel, sampler: sampler, attached: false)
+        }
+        #endif
+    }
+    /// A truncated tail is intentionally gone, so the pending rollback snapshot
+    /// must forget its nodes. Otherwise they would stay alive until that
+    /// snapshot was released after `engine.start()`, the unsafe disposal point.
+    private func forgetRollbackReferences(to nodes:[AVAudioNode]) {
+        guard !nodes.isEmpty else { return }
+        let ids=Set(nodes.map(ObjectIdentifier.init))
+        func prune(_ snapshot: inout Rollback) {
+            snapshot.nodes.removeAll { ids.contains(ObjectIdentifier($0)) }
+            var keptTails:[RetiredTail]=[]
+            var keptSilence:[Bool]=[]
+            for (index,tail) in snapshot.tails.enumerated() {
+                if tail.nodes.contains(where: { ids.contains(ObjectIdentifier($0)) }) { continue }
+                keptTails.append(tail)
+                keptSilence.append(snapshot.tailSilence.indices.contains(index) ? snapshot.tailSilence[index] : tail.silent)
+            }
+            snapshot.tails=keptTails
+            snapshot.tailSilence=keptSilence
+        }
+        if var edit=pendingGraphEdit { prune(&edit.rollback); pendingGraphEdit=edit }
+        if var prepared=preparedRollback { prune(&prepared); preparedRollback=prepared }
     }
     private func purgeSilentRetiredTails() {
         let silent=retiredTails.filter(\.silent)
         retiredTails.removeAll{$0.silent}
-        for tail in silent {detachRetiredTail(tail)}
+        for tail in silent {disposeRetiredTail(tail,phase:.purged)}
     }
     /// Panic with preserved effects leaves the retired dry/effect graph ringing;
     /// explicit Panic must suppress it without waiting for the next graph edit.
@@ -1181,7 +1276,12 @@ final class ExternalInstrumentRack {
                 try injectGraphFault(.candidateAttached)
                 #endif
                 try configure?()
-                if let sampler = unit as? AVAudioUnitSampler { rememberSampler(sampler) }
+                if let sampler = unit as? AVAudioUnitSampler {
+                    rememberSampler(sampler)
+                    #if DEBUG
+                    recordSamplerLifecycle(.attached, channel: channel, sampler: sampler)
+                    #endif
+                }
             } catch { engine.detach(unit); throw error }
             retire(channel)
             let mixer = AVAudioMixerNode()
@@ -1216,6 +1316,11 @@ final class ExternalInstrumentRack {
         nodes += old.parallelNodes
         nodes += old.audioGraph?.nodes ?? []
         enqueueRetiredTail(channel:channel,nodes:nodes,mixer:old.mixer)
+        #if DEBUG
+        if let sampler=old.unit as? AVAudioUnitSampler {
+            recordSamplerLifecycle(.retired, channel: channel, sampler: sampler)
+        }
+        #endif
     }
     /// Discard only rack-owned nodes after a failed performance, while stopped.
     /// Retained sampler documents may no longer resolve after storage loss;
@@ -1224,6 +1329,13 @@ final class ExternalInstrumentRack {
         precondition(Thread.isMainThread && !engine.isRunning && graphBatchDepth == 0)
         for channel in 0..<16 { cancelPendingLoad(channel) }
         panic()
+        #if DEBUG
+        for tail in retiredTails {
+            for sampler in tail.nodes.compactMap({$0 as? AVAudioUnitSampler}) {
+                recordSamplerLifecycle(.purged, channel: tail.channel, sampler: sampler, attached: false)
+            }
+        }
+        #endif
         let nodes = graphNodes()
         retiredTails.forEach { $0.muteWorkItem?.cancel() }
         for node in nodes where node.engine === engine { engine.disconnectNodeOutput(node) }
