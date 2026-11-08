@@ -806,7 +806,7 @@ static void metro_apply(SKMetronome*m,const MetronomeCommand*c){
   }else if(wasRequested || !m->countInOnly){m->enabled=0;m->envelope=0;m->countInRemaining=0;m->countInOnly=0;m->countInStopPending=0;}
  }else if(c->kind==3){m->tempo=c->value;m->interval=metro_interval(m);metro_rescale(m,old);}
  else if(c->kind==4){m->master=c->value;m->followsMaster=c->flag;}
- else if(c->kind==5){m->beat=0;m->step=0;m->remaining=m->interval;m->envelope=0;m->phase=0;m->countInRemaining=0;m->countInOnly=0;m->countInStopPending=0;}
+ else if(c->kind==5){if(m->countInOnly)m->enabled=m->requestedEnabled;m->beat=0;m->step=0;m->remaining=m->interval;m->envelope=0;m->phase=0;m->countInRemaining=0;m->countInOnly=0;m->countInStopPending=0;}
  else if(c->kind==6){
   int wasEnabled=m->enabled;
   m->countInOnly=!m->requestedEnabled;

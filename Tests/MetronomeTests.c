@@ -453,6 +453,12 @@ int main(void) {
     sk_metronome_enable(temporary, 0);
     capture(&remaining, temporary, &block, 1, 96000);
     assert(remaining.count == 3);
+    sk_metronome_count_in(temporary, 1);
+    capture(&first, temporary, &block, 1, 12000);
+    assert(first.count == 1);
+    sk_metronome_reset(temporary);
+    capture(&remaining, temporary, &block, 1, 96000);
+    assert(remaining.count == 0);
     sk_metronome_destroy(temporary);
     test_timing();
     test_tempo_change();

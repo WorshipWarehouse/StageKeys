@@ -877,6 +877,7 @@ final class AudioController {
         #endif
         sk_metronome_count_in(metronomeEngine, Int32(max(0, min(8, bars))))
     }
+    func cancelCountIn() { sk_metronome_reset(metronomeEngine) }
     func midiClockTick(at time: Double) { sk_metronome_clock_event(metronomeEngine, 0, time) }
     func midiClockStart(at time: Double) { sk_metronome_clock_event(metronomeEngine, 1, time) }
     func midiClockContinue(at time: Double) { sk_metronome_clock_event(metronomeEngine, 2, time) }

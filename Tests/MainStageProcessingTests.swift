@@ -76,8 +76,9 @@ import Foundation
                                          "Channel_filterCutoff":800,"Channel_resonance":0.7]
         var shapingDraft=MainStageProcessing.Draft()
         MainStageProcessing.channelSettings(shapingSource,to:&shapingDraft)
-        let shapingIssue=shapingDraft.issues.first{$0.contains("sound-shaping parameters")}!
-        for key in shapingSource.keys {assert(shapingIssue.contains(key),"Unsupported source shaping key must be reported: \(key)")}
+        for key in shapingSource.keys {
+            assert(shapingDraft.issues.contains{$0.hasPrefix(key+" = ")},"Unsupported source shaping key must be reported: \(key)")
+        }
         let retainedShaping=try shapingDraft.applying(to:originalLayer)
         assert(retainedShaping.channelSettings==originalLayer.channelSettings,
                "Unverified source units must not be substituted into destination controls")
