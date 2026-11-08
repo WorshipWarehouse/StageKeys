@@ -197,6 +197,12 @@ final class ExternalInstrumentRack {
     /// trap happens in release, where a DEBUG-only log could never be captured.
     private static let samplerLifecycleLimit = 48
     private var samplerLifecycle: [SamplerLifecycleRecord] = []
+    #if DEBUG
+    /// Weak probes: a released sampler must actually deallocate, so a snapshot
+    /// or other owner that still holds it is reported instead of assumed away.
+    private struct SamplerProbe { weak var sampler: AVAudioUnitSampler? }
+    private var samplerProbes: [SamplerProbe] = []
+    #endif
     static func supportsEffect(kind: Int) -> Bool { (0...17).contains(kind) }
     /// Legacy names accepted by the adapter; the descriptor API exposes all built-in controls.
     static func supportedEffectParameters(kind: Int) -> Set<String> {
@@ -918,6 +924,23 @@ final class ExternalInstrumentRack {
         let mixers: [(AVAudioMixerNode, Float, Float)]
         let effects: [(BuiltinEffectUnit, [BuiltinEffectUnit.Setting])]
         let branches: [(ImportedBranchVoice, ImportedBranch, Float)]
+        /// True when this snapshot still holds the sampler. A queued sampler that
+        /// a live snapshot references cannot be released yet: dropping it would
+        /// only move its deallocation past the restart that follows.
+        func containsSampler(_ sampler: AVAudioUnitSampler) -> Bool {
+            func walk(_ branch: ImportedBranchVoice) -> Bool {
+                if branch.sampler === sampler { return true }
+                return branch.children.contains(where: walk)
+            }
+            if nodes.contains(where: { $0 === sampler }) { return true }
+            if routes.contains(where: { $0.node === sampler || $0.points.contains(where: { $0.node === sampler }) }) { return true }
+            for voice in voices.values {
+                if voice.unit === sampler { return true }
+                if voice.parallelNodes.contains(where: { $0 === sampler }) { return true }
+                if voice.parallel.contains(where: walk) { return true }
+            }
+            return tails.contains(where: { $0.nodes.contains(where: { $0 === sampler }) })
+        }
     }
     private func rollbackSnapshot() -> Rollback {
         let nodes = graphNodes()
@@ -967,7 +990,8 @@ final class ExternalInstrumentRack {
         try restoreSamplers(samplers)
         restoreMixers(snapshot.mixers)
         replayNotes()
-        if let teardown = releaseDeferredSamplers() { throw teardown }
+        // No release here: the caller still holds the snapshot this rollback came
+        // from, so a release now would outlive the restart below.
         if wasRunning {
             #if DEBUG
             try injectGraphFault(.restartEngine)
@@ -1090,12 +1114,12 @@ final class ExternalInstrumentRack {
         } catch { outcome.restoration = error }
         restoreMixers(edit.mixers)
         if outcome.restoration == nil { replayNotes() }
-        // Drain the stopped window before any restart. A sampler released after
-        // start() is the observed SIGTRAP path, so a teardown failure is reported
-        // through the restoration phase and the existing stop-and-retry recovery.
-        if outcome.restoration == nil, let teardown = releaseDeferredSamplers() {
-            outcome.restoration = teardown
-        }
+        // Deliberately no release here. `withGraphChanges` holds this
+        // transaction's rollback snapshot (and the caller holds its own copy)
+        // across the restart below, so releasing a queued sampler now would only
+        // move its deallocation past engine.start(), which is the reported
+        // SIGTRAP path. The queue drains at the next transaction start, once
+        // those snapshots are gone.
         // A partially restored graph must not resume as if every instrument was
         // ready. The controller/store expose an explicit manual recovery state.
         if edit.wasRunning && outcome.restoration == nil {
@@ -1117,10 +1141,15 @@ final class ExternalInstrumentRack {
             return
         }
         if pendingGraphEdit == nil {
+            let wasRunning = engine.isRunning
+            if wasRunning { engine.stop() }
+            // The previous transaction has returned and its rollback snapshot is
+            // gone, so this stopped window is the first point where releasing a
+            // queued sampler cannot leave a later owner behind.
+            if let teardown = releaseDeferredSamplers() { throw teardown }
             try prepareActiveSamplerResources()
             graphGeneration &+= 1
-            pendingGraphEdit = GraphEdit(rollback: preparedRollback ?? rollbackSnapshot(), mixers: mixerState(), samplers: samplerState(), wasRunning: engine.isRunning)
-            if engine.isRunning { engine.stop() }
+            pendingGraphEdit = GraphEdit(rollback: preparedRollback ?? rollbackSnapshot(), mixers: mixerState(), samplers: samplerState(), wasRunning: wasRunning)
             purgeSilentRetiredTails()
         }
         try operation()
@@ -1168,14 +1197,16 @@ final class ExternalInstrumentRack {
     private func detachRetiredTail(_ tail:RetiredTail) {
         tail.muteWorkItem?.cancel()
         tail.mixer.outputVolume=0
-        for node in tail.nodes.reversed() where node.engine === engine {
+        for node in tail.nodes.reversed() {
+            if let sampler = node as? AVAudioUnitSampler {
+                // Queue the sampler while it is still attached, so the single
+                // disposal path can quiesce it before disconnecting and detaching.
+                enqueueSamplerDisposal(sampler, channel: tail.channel)
+                continue
+            }
+            guard node.engine === engine else { continue }
             engine.disconnectNodeOutput(node)
             engine.detach(node)
-        }
-        // Detached tail nodes may now be deallocated. Samplers go through the
-        // shared stopped-window release point instead of dropping here.
-        for node in tail.nodes {
-            if let sampler = node as? AVAudioUnitSampler { enqueueSamplerDisposal(sampler, channel: tail.channel) }
         }
     }
     /// Record one bounded sampler-lifecycle observation for the local support
@@ -1213,6 +1244,9 @@ final class ExternalInstrumentRack {
         guard !deferredSamplers.contains(where: { $0.sampler === sampler }) else { return }
         deferredSamplers.append(DeferredSampler(sampler: sampler, channel: channel))
         recordSamplerLifecycle(.deferRelease, sampler, channel: channel, tail: isInRetiredTail(sampler))
+        #if DEBUG
+        samplerProbes.append(SamplerProbe(sampler: sampler))
+        #endif
     }
     /// Quiesce, disconnect and detach one sampler. Detaching a node that the
     /// render graph can still reach can trap inside Core Audio, so an unsafe
@@ -1234,7 +1268,7 @@ final class ExternalInstrumentRack {
     /// teardown failure so the caller can enter the documented recovery state.
     @discardableResult
     private func releaseDeferredSamplers() -> Error? {
-        guard !deferredSamplers.isEmpty else { return nil }
+        guard !deferredSamplers.isEmpty, pendingGraphEdit == nil else { return nil }
         guard !engine.isRunning else {
             // Deferring is safe; disposing a live render graph is not.
             for entry in deferredSamplers {
@@ -1242,26 +1276,40 @@ final class ExternalInstrumentRack {
             }
             return nil
         }
-        let pending = deferredSamplers
-        deferredSamplers.removeAll(keepingCapacity: true)
         var failure: Error?
-        for entry in pending {
+        var released: [(channel: Int?, tail: Bool)] = []
+        var remaining: [DeferredSampler] = []
+        while !deferredSamplers.isEmpty {
+            let entry = deferredSamplers.removeFirst()
             guard !samplerIsOwnedByGraph(entry.sampler) else {
                 // A rollback re-adopted the node; the graph owns it again.
                 recordSamplerLifecycle(.retained, entry.sampler, channel: entry.channel, tail: isInRetiredTail(entry.sampler))
                 continue
             }
+            guard preparedRollback?.containsSampler(entry.sampler) != true else {
+                // A rollback snapshot still holds this sampler. Releasing it here
+                // would only move the deallocation past a later restart.
+                recordSamplerLifecycle(.snapshotHeld, entry.sampler, channel: entry.channel, tail: false)
+                remaining.append(entry)
+                continue
+            }
             do {
                 try quiesceAndDetach(entry.sampler, channel: entry.channel)
-                recordSamplerLifecycle(.release, entry.sampler, channel: entry.channel, tail: isInRetiredTail(entry.sampler))
+                released.append((channel: entry.channel, tail: isInRetiredTail(entry.sampler)))
             } catch {
                 // Dropping the queue's reference here would deallocate a node
                 // that is still attached to a rendering graph, which is the
                 // disposal trap itself. Keep it queued for the next stopped
                 // window and report the failure instead.
-                deferredSamplers.append(entry)
+                remaining.append(entry)
                 if failure == nil { failure = error }
             }
+        }
+        deferredSamplers = remaining
+        // Recorded after the queue dropped its reference for the iteration, so
+        // the evidence describes a completed disposal rather than a local copy.
+        for item in released {
+            recordSamplerLifecycle(.release, nil, channel: item.channel, tail: item.tail)
         }
         return failure
     }
@@ -1366,15 +1414,27 @@ final class ExternalInstrumentRack {
         precondition(Thread.isMainThread && !engine.isRunning && graphBatchDepth == 0)
         for channel in 0..<16 { cancelPendingLoad(channel) }
         panic()
+        // Queue samplers while they are still attached so the single disposal
+        // path quiesces, disconnects and detaches them before release.
+        for (channel, voice) in voices {
+            if let sampler = voice.unit as? AVAudioUnitSampler { enqueueSamplerDisposal(sampler, channel: channel) }
+        }
+        for tail in retiredTails {
+            for node in tail.nodes {
+                if let sampler = node as? AVAudioUnitSampler { enqueueSamplerDisposal(sampler, channel: tail.channel) }
+            }
+        }
         let nodes = graphNodes()
         retiredTails.forEach { $0.muteWorkItem?.cancel() }
         for node in nodes where node.engine === engine { engine.disconnectNodeOutput(node) }
-        for node in nodes.reversed() where node.engine === engine { engine.detach(node) }
+        for node in nodes.reversed() {
+            if node is AVAudioUnitSampler { continue } // released through the queue below
+            guard node.engine === engine else { continue }
+            engine.detach(node)
+        }
         voices.removeAll(); retiredTails.removeAll(); noteIntents.removeAll()
         samplerHandles.removeAll(); samplerDocuments.removeAll()
         graphGeneration &+= 1
-        // Everything is detached and rendering is stopped, so queued samplers
-        // can be dropped here instead of waiting for a later live transaction.
         releaseDeferredSamplers()
     }
     /// Supersede an in-flight AU instantiation without removing a playing voice.
@@ -1528,6 +1588,18 @@ final class ExternalInstrumentRack {
     var debugRetiredTailStates:[(channel:Int,silent:Bool,gain:Float)] {retiredTails.map{($0.channel,$0.silent,$0.mixer.outputVolume)}}
     var debugSamplerLifecycle:[SamplerLifecycleRecord] {samplerLifecycle}
     var debugDeferredSamplerCount:Int {deferredSamplers.count}
+    /// Queued samplers the rack can still reach through a weak probe. A released
+    /// sampler that stays here has a surviving owner and did not deallocate.
+    var debugUndeallocatedSamplerCount:Int {
+        samplerProbes = samplerProbes.filter { $0.sampler != nil }
+        return samplerProbes.count
+    }
+    /// Test-only: run the release queue exactly where a transaction start would,
+    /// so lifetime completion can be asserted without opening a graph edit.
+    func debugReleaseDeferredSamplersInStoppedWindow() {
+        precondition(!engine.isRunning && pendingGraphEdit == nil)
+        releaseDeferredSamplers()
+    }
     func debugExpireRetiredTails() {for tail in retiredTails {silenceRetiredTail(tail)}}
     #endif
     /// Sampler-lifecycle evidence for the local support report: nil until

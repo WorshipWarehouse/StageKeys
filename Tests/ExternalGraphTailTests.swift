@@ -162,18 +162,25 @@ struct ExternalGraphTailTests {
             }
         }
         assert(rack.debugRetiredTailCount == 2, "The cap should retain only the two newest tails")
-        // Sampler disposal ordering: repeated replacements and the tail cap
-        // must dispose through the stopped-window path, never while a render
-        // reference is live. A release after engine start() is the SIGTRAP case.
+        // Sampler disposal ordering: a replaced or evicted sampler must survive
+        // its own transaction. The transaction's rollback snapshot is still alive
+        // across the restart, so releasing there would only move deallocation
+        // past engine.start(), which is the reported SIGTRAP case.
+        assert(rack.debugDeferredSamplerCount > 0,
+               "Replaced samplers must wait in the queue instead of being released inside the transaction")
+        assert(rack.debugUndeallocatedSamplerCount > 0, "A queued sampler must still be alive while the queue holds it")
+        rack.debugReleaseDeferredSamplersInStoppedWindow()
         let lifecycle = rack.debugSamplerLifecycle
         let releases = lifecycle.filter { $0.event == .release }
-        assert(!releases.isEmpty, "Repeated replacements must dispose retired samplers")
+        assert(!releases.isEmpty, "A stopped window with no transaction must release queued samplers")
         assert(releases.allSatisfy { !$0.engineRunning && !$0.attached && !$0.retainedTail },
                "A sampler must not be released while the engine renders or a tail still owns it")
         assert(releases.allSatisfy { $0.generation > 0 }, "Lifecycle evidence must record the graph generation")
         assert(!lifecycle.contains { $0.event == .unsafeDisposal || $0.event == .deferredWhileRunning },
-               "Sampler disposal must stay inside the stopped transaction window")
-        assert(rack.debugDeferredSamplerCount == 0, "A completed transaction must release every queued sampler")
+               "Sampler disposal must stay inside a stopped window")
+        assert(rack.debugDeferredSamplerCount == 0, "A stopped window must release every queued sampler")
+        assert(rack.debugUndeallocatedSamplerCount == 0,
+               "A released sampler must have no remaining owner, so the queue held the last reference")
         assert((rack.supportSamplerLifecycle?.count ?? 0) > 0,
                "The support report must carry the sampler lifecycle ordering evidence")
         // Start with clean slots, then create one real wet tail per channel.

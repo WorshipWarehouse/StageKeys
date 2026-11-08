@@ -7,7 +7,7 @@ import AVFoundation
 /// describes happens in release; the rack keeps at most 48 records.
 struct SamplerLifecycleRecord: Codable, Equatable {
     enum Event: String, Codable {
-        case attach, retire, evict, quiesce, detach, deferRelease, release, retained, deferredWhileRunning, unsafeDisposal
+        case attach, retire, evict, quiesce, detach, deferRelease, release, retained, snapshotHeld, deferredWhileRunning, unsafeDisposal
     }
     let event: Event
     let channel: Int?
