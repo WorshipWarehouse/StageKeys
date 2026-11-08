@@ -898,7 +898,7 @@ void sk_metronome_render(SKMetronome*m,float*left,float*right,uint32_t frames){
  for(uint32_t n=0;n<frames;n++){
   float y=0;
   if(m->enabled){
-   while(m->remaining<=0){metro_trigger(m);m->remaining+=m->interval;}
+   while(m->remaining<=0){if(!m->countInStopPending)metro_trigger(m);m->remaining+=m->interval;}
    m->remaining-=1;y=metro_sample(m)*gain;
    if(m->countInStopPending&&m->envelope<1e-5f){m->enabled=0;m->countInStopPending=0;m->countInOnly=0;y=0;}
   }else{m->envelope=0;m->phase=0;}

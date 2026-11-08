@@ -22,14 +22,15 @@ Recorded from the code as it stands; these are the call sites the design has to 
 | Patch selection | `PerformanceStore.choose` → `choosePrepared` (`Sources/Store.swift:1012`) | Admission, then panic and commit the patch index, then `applyPatch()` (`Sources/Store.swift:1030`). |
 | Admission | `PerformanceStore.preparePatchActivation` (`Sources/Store.swift:2217`) | Validates the candidate patch's resources before any user state changes. Validation only. |
 | Resource preflight | `AudioController.preparePatchResources` (`Sources/AudioController.swift:371`) → `prepareSoundChange` (`:351`) → `ExternalInstrumentRack.validateSound` (`Sources/ExternalInstruments.swift:623`) | Checks component identity, installation and file references. `validateSound` asserts the main thread. No graph edit. |
-| Installation | per-layer `AudioController.configure` inside `ExternalInstrumentRack.withGraphChanges` | Loads the sampler or hosts the AU and builds/edits the graph; a failure rolls the graph back to the previous voice. |
+| Installation | per-layer `AudioController.configure` inside `ExternalInstrumentRack.withGraphChanges` | Loads the sampler or hosts the AU and builds/edits the graph; a failure attempts to restore the previous voice; a restoration failure can stop the engine and requires recovery. |
 | Retained sampler state | `samplerHandles` / `samplerDocuments` (`Sources/ExternalInstruments.swift:828`) | Document state is kept for live samplers and re-applied by `restoreSamplers` after a rebuild. |
 | Teardown | `ExternalInstrumentRack.resetForRecovery` | Drops voices, sampler handles and documents. |
 | Existing async gate | `AudioController.setPatchLoading` (`Sources/AudioController.swift:475`) | Readiness window for hosted AUs; no preloading of adjacent patches exists. |
 
 There is no preload manager in `Sources` today. The cost worth removing is sampler/AU
-instantiation plus graph construction, not `validateSound` — preflight is already cheap and
-synchronous, so a "preload" that only repeats it would be invisible to the player.
+instantiation plus graph construction, not `validateSound` — preflight reads preset data and checks sample references synchronously on the main thread.
+Slow or offline storage can delay it. Include that cost in activation measurements,
+and measure any proposed validation cache independently before claiming a benefit.
 
 ## Proposed contract
 
@@ -69,8 +70,8 @@ patch) and is not overloaded to mean "warm entries in flight".
 This is the decision that determines whether the feature is worth its memory, so it is called
 out rather than assumed:
 
-- **(a) Validation only** — rejected. No measurable benefit; it would be a toggle that
-  claims work it does not do.
+- **(a) Validation only** — rejected. It does not prepare a playable voice. Any future validation cache needs separate
+  measurements and must account for changing or unavailable storage.
 - **(b) Retained sampler documents only** — bounded by serialized state, re-installed through
   the existing `restoreSamplers` path on activation. Cheap; removes the reload of authored
   EXS state but not first-note latency for large sample sets.

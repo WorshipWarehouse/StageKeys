@@ -157,3 +157,8 @@ inherit its remaining bars.
   click shares the stereo system output without the hall reverb.
 - Physical-device listening and latency remain part of the broader hardware
   gates and are not claimed here.
+
+External-clock tempo uses timestamps taken when the main thread handles MIDI
+events. It does not retain packet timestamps or continuously correct beat phase
+against incoming ticks. Main-thread jitter and accumulated phase drift remain
+unqualified; this is tempo following with Start/Continue alignment.

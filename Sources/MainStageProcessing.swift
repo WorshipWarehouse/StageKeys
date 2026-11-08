@@ -149,6 +149,9 @@ enum MainStageProcessing {
             let recordNames=sourceNames.count==effects.count ? sourceNames:effects.map{$0.title}
             let recordNotes=effectNotes.count==effects.count ? effectNotes:effects.map{_ in [String]()}
             layer.mainStageSource=MainStageSourceRecord(effects:effects,sourceNames:recordNames,effectNotes:recordNotes,macros:macros,issues:issues,selectedAudio:chosen,selectedMIDI:selection.midi?.validated,midiEnabled:selection.midiEnabled,hasMIDITransform:hasMIDITransform,omitted:omitted,retainedShaping:retainedShaping.isEmpty ? nil:retainedShaping)
+            guard layer.mainStageSource?.valid == true else {
+                throw MainStagePatch.Failure.invalid("The source channel exceeds the supported record limits. Its original document remains in the archive.")
+            }
             return Applied(layer:layer,notes:notes,omitted:omitted)
         }
         func appending(to original:ImportedRack?)throws->ImportedRack {
@@ -168,6 +171,12 @@ enum MainStageProcessing {
             guard rack.validate() else{throw MainStagePatch.Failure.invalid("Combined processing exceeds the native rack limits.")}
             return rack
         }
+    }
+    static func conversionNotes(_ notes:[String])->[String] {
+        let shortened=notes.contains{$0.count>2000}
+        guard notes.count>128 || shortened else{return notes}
+        let retained=notes.prefix(127).map{String($0.prefix(2000))}
+        return retained+["Conversion notes were shortened or omitted to fit library limits. Keep the original source archive for full source data."]
     }
     static func channelSettings(_ source:[String:Any],to draft:inout Draft) {
         draft.blockSustain=source["Channel_filterSustainPedal"] as? Bool

@@ -16,15 +16,18 @@ pass/fail line.
    enough eligible native-sampler neighbors to exercise the intended window.
    Record the number of eligible entries and their layer channels; do not use
    private samples as fixtures.
-2. Note the app's **phys_footprint** (Activity Monitor → Memory, or the memory
-   graph in Instruments) as the idle baseline.
-3. After the implementation exposes the controls, select a patch with four
-   eligible neighbors on each side and set Previous 4 / Next 4. A full
+2. Select the target patch, disable preloading, and wait for the app to become
+   idle with no warm entries. Record the app's **phys_footprint** in Activity
+   Monitor or Instruments as the baseline for that patch.
+3. Keep that same patch selected and set Previous 4 / Next 4 after the
+   implementation exposes the controls. A full
    `Ready 8 of 8` requires eight eligible entries with non-colliding layer
    channels; otherwise record the actual window and ready counts rather than
    treating a smaller count as a failure.
 4. Note phys_footprint again. Record the total resident delta and actual ready
-   count; calculate a per-entry estimate only when at least one entry warmed.
+   count. Require at least one successfully warmed entry to qualify the memory
+   budget. If none warmed, record the delta and zero count, mark the measurement
+   unrun, and leave the byte ceiling unset.
 5. Capture process CPU use and render deadline misses over matched intervals
    with preloading off, during warming, and with the window resident. Keep the
    active patch and audio configuration constant and compare the measurements
@@ -41,8 +44,9 @@ then.
 1. After implementation, set counts at 4/4 on a setlist that can cover eight
    eligible entries. Record whether the warm pass is audible and how long any
    gap lasts; do not assume the initial status is `Ready 0 of 8`.
-2. Hold a key during selection and confirm the status line stays `Ready …`
-   without a drop; release and confirm the pass starts.
+2. Hold a key during selection and check that the status belongs to the current
+   window. Its ready count may decrease when selection supersedes the old
+   window. Confirm releasing the key allows the new warm pass to start.
 3. Repeat with the sustain pedal down, then with a patch still loading.
 4. Step Prev/Next faster than the 1.2 s settle delay, ten times, and confirm no
    stale entry is adopted and nothing stutters after the last selection.
@@ -72,6 +76,11 @@ then.
   memory growth or audible artefact.
 
 ## Reporting
+
+Before qualifying activation latency, run the 20 cold and 20 warm activations
+defined in [the design measurement procedure](PRELOAD-WINDOW.md#budgets-to-measure-before-choosing-numbers).
+Report median and p95 from selection to the first rendered test note, using
+matched patches and audio settings, including resource preflight time.
 
 Put the recorded numbers and pass/fail per section in a comment on #109. If a
 section cannot be run on available hardware, say so explicitly; an unrun section

@@ -14,8 +14,8 @@ applied. The shared hall reverb, master fader and output limiter are downstream
 and are not included. The tap mixer does not change gain, so moving the
 per-sound fader changes the meter.
 
-The Tonic Pad is metered when it uses an external instrument sound on its own
-channel. Native synth layers and MIDI-output layers do not expose a per-sound
+The Tonic Pad channel has a tap when it uses an external instrument, but the
+Tonic Pad view does not display a meter. Native synth layers and MIDI-output layers do not expose a per-sound
 meter in this view. An empty slot has no active meter.
 
 ## What the reading means

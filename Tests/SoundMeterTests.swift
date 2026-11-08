@@ -89,6 +89,11 @@ import Darwin
         store.save()
         let restored = PerformanceStore()
         assert(restored.showSoundMeters)
+        restored.setlist=TestFixtures.setlist()
+        try restored.audio.prepareOffline()
+        restored.start()
+        assert(restored.soundMeter(0) != nil,"A restored enabled setting must install meters when audio starts")
+        restored.stopAudio()
         restored.showSoundMeters = false
         restored.save()
         let legacy = PerformanceStore()

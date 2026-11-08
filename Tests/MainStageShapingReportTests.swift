@@ -66,6 +66,15 @@ import Foundation
         }
         check(record.retainedShaping==draft.retainedShaping,"the source record must carry the retained values")
         check(record.valid,"a record with retained shaping must validate")
+        var excessive=draft
+        excessive.issues=Array(repeating:"Source issue",count:129)
+        do {
+            _ = try excessive.applying(to:layer,selection:MainStageProcessing.Selection())
+            check(false,"selection application must reject an invalid source record inside the channel")
+        } catch {}
+        let boundedNotes=MainStageProcessing.conversionNotes(Array(repeating:String(repeating:"x",count:2001),count:129))
+        check(boundedNotes.count==128 && boundedNotes.allSatisfy{$0.count<=2000},"combined notes must fit the catalog limits")
+        check(boundedNotes.last?.contains("shortened or omitted")==true,"bounded notes must disclose omitted detail")
         let reloaded=try JSONDecoder().decode(Layer.self,from:JSONEncoder().encode(applied))
         check(reloaded.mainStageSource?.retainedShaping==draft.retainedShaping,"retained shaping must survive library persistence")
         // Earlier records and sources without the field still decode and validate.
