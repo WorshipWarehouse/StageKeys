@@ -1150,7 +1150,12 @@ final class ExternalInstrumentRack {
             // The previous transaction has returned and its rollback snapshot is
             // gone, so this stopped window is the first point where releasing a
             // queued sampler cannot leave a later owner behind.
-            if let teardown = releaseDeferredSamplers() { throw teardown }
+            if let teardown = releaseDeferredSamplers() {
+                // Every throw out of a stopped window must restore the engine, or
+                // a rejected edit would silence a running instrument.
+                if wasRunning, !engine.isRunning { engine.prepare(); try? engine.start() }
+                throw teardown
+            }
             graphGeneration &+= 1
             pendingGraphEdit = GraphEdit(rollback: preparedRollback ?? rollbackSnapshot(), mixers: mixerState(), samplers: samplerState(), wasRunning: wasRunning)
             purgeSilentRetiredTails()
