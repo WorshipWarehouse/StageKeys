@@ -139,7 +139,8 @@ final class PerformanceStore: ObservableObject {
                 running: audio.running, status: audioStatus, latency: try? audio.latencyChain(),
                 midiSources: midiSources.filter(\.connected).count, loadedSlots: patch.layers.filter(\.loaded).count,
                 limiterBypassed: masterLimiterBypassed, recording: audioCheckRecording,
-                lastAudioChangeFailure: audio.lastChangeFailure)
+                lastAudioChangeFailure: audio.lastChangeFailure,
+                samplerLifecycle: audio.externalRack?.supportSamplerLifecycle)
             let text = try report.json()
             #if os(macOS)
             NSPasteboard.general.clearContents(); NSPasteboard.general.setString(text, forType: .string)

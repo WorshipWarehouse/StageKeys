@@ -63,6 +63,28 @@ import Foundation
         assert(!deviceJSON.contains("PRIVATE") && !deviceJSON.contains("couldn’t"))
         let decodedDevice = try JSONDecoder().decode(SupportDiagnostics.self, from: Data(deviceJSON.utf8)).lastAudioChangeFailure
         assert(decodedDevice == stoppedDevice && decodedDevice?.bufferFrames == 256)
-        print("PASS: diagnostics omit names/IDs/paths, distinguish unknown metrics and bound numeric data")
+
+        // Sampler lifecycle evidence is ordering-only and stays inside the
+        // existing local report; the field is optional so older reports decode.
+        assert(decoded.samplerLifecycle == nil && legacyReport.samplerLifecycle == nil)
+        let lifecycle = [
+            SamplerLifecycleRecord(event: .attach, channel: 2, generation: 4, engineRunning: false, attached: true, retainedTail: false),
+            SamplerLifecycleRecord(event: .release, channel: 2, generation: 5, engineRunning: false, attached: false, retainedTail: false)
+        ]
+        let lifecycleReport = SupportDiagnostics(version: "test", build: "test", running: false, status: nil,
+            latency: nil, midiSources: 0, loadedSlots: 1, limiterBypassed: false, recording: false,
+            samplerLifecycle: lifecycle)
+        let lifecycleJSON = try lifecycleReport.json()
+        assert(lifecycleJSON.contains("release") && lifecycleJSON.contains("generation"))
+        assert(!lifecycleJSON.contains("PRIVATE") && !lifecycleJSON.contains("/Users/"))
+        let decodedLifecycle = try JSONDecoder().decode(SupportDiagnostics.self, from: Data(lifecycleJSON.utf8))
+        assert(decodedLifecycle.samplerLifecycle == lifecycle)
+        let bounded = (0..<80).map { SamplerLifecycleRecord(event: .retire, channel: $0 % 16, generation: UInt64($0),
+            engineRunning: false, attached: true, retainedTail: false) }
+        let boundedReport = SupportDiagnostics(version: "test", build: "test", running: false, status: nil,
+            latency: nil, midiSources: 0, loadedSlots: 0, limiterBypassed: false, recording: false,
+            samplerLifecycle: bounded)
+        assert(boundedReport.samplerLifecycle?.count == 48)
+        print("PASS: diagnostics omit names/IDs/paths, distinguish unknown metrics, bound numeric data and retain sampler lifecycle ordering")
     }
 }

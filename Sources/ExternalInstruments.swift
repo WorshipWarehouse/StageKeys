@@ -35,10 +35,11 @@ extension ExternalAUIdentity {
 }
 
 enum ExternalInstrumentError: LocalizedError {
-    case unsupportedFormat, missingFile, invalidComponent, invalidChannel, superseded, unsupportedEffect, unavailableAudioUnit(String)
+    case unsupportedFormat, missingFile, invalidComponent, invalidChannel, superseded, unsupportedEffect, unavailableAudioUnit(String), unsafeSamplerTeardown
     var errorDescription: String? {
         switch self {
         case .unavailableAudioUnit(let reason): return reason
+        case .unsafeSamplerTeardown: return "A sound could not be released safely while audio was rendering. Audio stopped so your saved patch is intact. Choose Start Audio to retry."
         case .unsupportedFormat: return "Import SF2, DLS, Apple sampler AUPRESET/EXS, WAV, AIFF, AIF, or CAF files. VST and Kontakt libraries require a compatible Audio Unit."
         case .missingFile: return "The imported sound file is missing. Import it again on this device."
         case .invalidComponent: return "This Audio Unit is not a playable MIDI instrument or is unavailable on this device."
@@ -184,6 +185,18 @@ final class ExternalInstrumentRack {
     private var retiredTails:[RetiredTail]=[]
     private var tailPanicGenerations = Array(repeating: UInt64(0), count: 16)
     private let maxRetiredTails=2
+    /// A sampler that left the active graph but must not be deallocated while
+    /// the engine can still render it. Entries are released only inside a
+    /// stopped window, after quiesce, disconnect and detach.
+    private struct DeferredSampler {
+        let sampler: AVAudioUnitSampler
+        let channel: Int?
+    }
+    private var deferredSamplers: [DeferredSampler] = []
+    #if DEBUG
+    private static let samplerLifecycleLimit = 48
+    private var samplerLifecycle: [SamplerLifecycleRecord] = []
+    #endif
     static func supportsEffect(kind: Int) -> Bool { (0...17).contains(kind) }
     /// Legacy names accepted by the adapter; the descriptor API exposes all built-in controls.
     static func supportedEffectParameters(kind: Int) -> Set<String> {
@@ -954,6 +967,7 @@ final class ExternalInstrumentRack {
         try restoreSamplers(samplers)
         restoreMixers(snapshot.mixers)
         replayNotes()
+        if let teardown = releaseDeferredSamplers() { throw teardown }
         if wasRunning {
             #if DEBUG
             try injectGraphFault(.restartEngine)
@@ -1056,6 +1070,15 @@ final class ExternalInstrumentRack {
         // transaction. Their effects can still decay into the output without
         // delaying the newly playable instrument.
         let active=Set(activeSamplers().map{ObjectIdentifier($0)})
+        // A sampler that left the active channels is still strongly held by this
+        // transaction's captured list, which outlives the restart below. Hand it
+        // to the stopped-window release queue; a sampler that a retained tail
+        // still owns stays with that tail and is queued when the tail goes.
+        for (sampler, _) in edit.samplers where !active.contains(ObjectIdentifier(sampler)) {
+            let channel = owningChannel(of: sampler)
+            recordSamplerLifecycle(.retire, sampler, channel: channel, tail: isInRetiredTail(sampler))
+            if !isInRetiredTail(sampler) { enqueueSamplerDisposal(sampler, channel: channel) }
+        }
         edit.samplers=edit.samplers.filter{active.contains(ObjectIdentifier($0.0))}
         edit.samplers += samplerState().filter { candidate in !edit.samplers.contains(where: { $0.0 === candidate.0 }) }
         var outcome = GraphFinish(edited: true, wasRunning: edit.wasRunning)
@@ -1067,6 +1090,12 @@ final class ExternalInstrumentRack {
         } catch { outcome.restoration = error }
         restoreMixers(edit.mixers)
         if outcome.restoration == nil { replayNotes() }
+        // Drain the stopped window before any restart. A sampler released after
+        // start() is the observed SIGTRAP path, so a teardown failure is reported
+        // through the restoration phase and the existing stop-and-retry recovery.
+        if outcome.restoration == nil, let teardown = releaseDeferredSamplers() {
+            outcome.restoration = teardown
+        }
         // A partially restored graph must not resume as if every instrument was
         // ready. The controller/store expose an explicit manual recovery state.
         if edit.wasRunning && outcome.restoration == nil {
@@ -1118,7 +1147,11 @@ final class ExternalInstrumentRack {
         // Hard count bound: deliberately truncate the oldest tail if needed,
         // even if it is still audible. This is not a measured CPU/memory budget.
         while retiredTails.count>maxRetiredTails {
-            detachRetiredTail(retiredTails.removeFirst())
+            let evicted=retiredTails.removeFirst()
+            for node in evicted.nodes where node is AVAudioUnitSampler {
+                recordSamplerLifecycle(.evict, node as? AVAudioUnitSampler, channel: evicted.channel, tail: true)
+            }
+            detachRetiredTail(evicted)
         }
         scheduleTailExpiry(tail)
     }
@@ -1139,6 +1172,92 @@ final class ExternalInstrumentRack {
             engine.disconnectNodeOutput(node)
             engine.detach(node)
         }
+        // Detached tail nodes may now be deallocated. Samplers go through the
+        // shared stopped-window release point instead of dropping here.
+        for node in tail.nodes {
+            if let sampler = node as? AVAudioUnitSampler { enqueueSamplerDisposal(sampler, channel: tail.channel) }
+        }
+    }
+    /// Record one bounded sampler-lifecycle observation for the local support
+    /// report. Ordering-only evidence: no plug-in state, path or sample payload.
+    private func recordSamplerLifecycle(_ event: SamplerLifecycleRecord.Event, _ sampler: AVAudioUnitSampler?, channel: Int?, tail: Bool) {
+        #if DEBUG
+        samplerLifecycle.append(SamplerLifecycleRecord(event: event, channel: channel,
+            generation: graphGeneration, engineRunning: engine.isRunning,
+            attached: sampler.map { $0.engine === engine } ?? false, retainedTail: tail))
+        if samplerLifecycle.count > Self.samplerLifecycleLimit {
+            samplerLifecycle.removeFirst(samplerLifecycle.count - Self.samplerLifecycleLimit)
+        }
+        #endif
+    }
+    private func isInRetiredTail(_ sampler: AVAudioUnitSampler) -> Bool {
+        retiredTails.contains { tail in tail.nodes.contains { $0 === sampler } }
+    }
+    /// A sampler is owned again when the live graph or a retained tail still
+    /// references it; its owner disposes it through this same path later.
+    private func samplerIsOwnedByGraph(_ sampler: AVAudioUnitSampler) -> Bool {
+        if activeSamplers().contains(where: { $0 === sampler }) { return true }
+        return isInRetiredTail(sampler)
+    }
+    private func owningChannel(of sampler: AVAudioUnitSampler) -> Int? {
+        func walk(_ branch: ImportedBranchVoice) -> Bool {
+            if branch.sampler === sampler { return true }
+            for child in branch.children { if walk(child) { return true } }
+            return false
+        }
+        for (channel, voice) in voices {
+            if voice.unit === sampler { return channel }
+            if voice.parallel.contains(where: walk) { return channel }
+        }
+        return nil
+    }
+    private func enqueueSamplerDisposal(_ sampler: AVAudioUnitSampler, channel: Int?) {
+        guard !deferredSamplers.contains(where: { $0.sampler === sampler }) else { return }
+        deferredSamplers.append(DeferredSampler(sampler: sampler, channel: channel))
+        recordSamplerLifecycle(.deferRelease, sampler, channel: channel, tail: isInRetiredTail(sampler))
+    }
+    /// Quiesce, disconnect and detach one sampler. Detaching a node that the
+    /// render graph can still reach can trap inside Core Audio, so an unsafe
+    /// request never disposes; it is reported to the enclosing transaction.
+    private func quiesceAndDetach(_ sampler: AVAudioUnitSampler, channel: Int?) throws {
+        guard sampler.engine === engine else { return }
+        guard !engine.isRunning else {
+            recordSamplerLifecycle(.unsafeDisposal, sampler, channel: channel, tail: isInRetiredTail(sampler))
+            throw ExternalInstrumentError.unsafeSamplerTeardown
+        }
+        sampler.auAudioUnit.reset()
+        recordSamplerLifecycle(.quiesce, sampler, channel: channel, tail: isInRetiredTail(sampler))
+        engine.disconnectNodeOutput(sampler)
+        engine.detach(sampler)
+        recordSamplerLifecycle(.detach, sampler, channel: channel, tail: isInRetiredTail(sampler))
+    }
+    /// Release queued samplers only while rendering is stopped, so no dispose
+    /// races the render thread or its realtime teardown. Returns the first
+    /// teardown failure so the caller can enter the documented recovery state.
+    @discardableResult
+    private func releaseDeferredSamplers() -> Error? {
+        guard !deferredSamplers.isEmpty else { return nil }
+        guard !engine.isRunning else {
+            // Deferring is safe; disposing a live render graph is not.
+            for entry in deferredSamplers {
+                recordSamplerLifecycle(.deferredWhileRunning, entry.sampler, channel: entry.channel, tail: isInRetiredTail(entry.sampler))
+            }
+            return nil
+        }
+        let pending = deferredSamplers
+        deferredSamplers.removeAll(keepingCapacity: true)
+        var failure: Error?
+        for entry in pending {
+            guard !samplerIsOwnedByGraph(entry.sampler) else {
+                // A rollback re-adopted the node; the graph owns it again.
+                recordSamplerLifecycle(.retained, entry.sampler, channel: entry.channel, tail: isInRetiredTail(entry.sampler))
+                continue
+            }
+            do { try quiesceAndDetach(entry.sampler, channel: entry.channel) }
+            catch { if failure == nil { failure = error } }
+            recordSamplerLifecycle(.release, entry.sampler, channel: entry.channel, tail: isInRetiredTail(entry.sampler))
+        }
+        return failure
     }
     private func purgeSilentRetiredTails() {
         let silent=retiredTails.filter(\.silent)
@@ -1173,6 +1292,9 @@ final class ExternalInstrumentRack {
     private func install(_ unit: AVAudioUnit, channel: Int, ready: (() throws -> Void)? = nil, configure: (() throws -> Void)? = nil) throws {
         try editGraph {
             engine.attach(unit)
+            if let sampler = unit as? AVAudioUnitSampler {
+                recordSamplerLifecycle(.attach, sampler, channel: channel, tail: false)
+            }
             #if DEBUG
             debugLastCandidate = unit
             #endif
@@ -1216,6 +1338,20 @@ final class ExternalInstrumentRack {
         nodes += old.parallelNodes
         nodes += old.audioGraph?.nodes ?? []
         enqueueRetiredTail(channel:channel,nodes:nodes,mixer:old.mixer)
+        if let sampler=old.unit as? AVAudioUnitSampler {
+            recordSamplerLifecycle(.retire, sampler, channel: channel, tail: isInRetiredTail(sampler))
+        }
+        // Parallel branch samplers are sources rather than part of the retired
+        // effect chain. Their output mixers stay with the tail; the samplers go
+        // through the shared stopped-window disposal path.
+        func collect(_ branch: ImportedBranchVoice) {
+            if let sampler=branch.sampler {
+                recordSamplerLifecycle(.retire, sampler, channel: channel, tail: false)
+                enqueueSamplerDisposal(sampler, channel: channel)
+            }
+            branch.children.forEach(collect)
+        }
+        old.parallel.forEach(collect)
     }
     /// Discard only rack-owned nodes after a failed performance, while stopped.
     /// Retained sampler documents may no longer resolve after storage loss;
@@ -1231,6 +1367,9 @@ final class ExternalInstrumentRack {
         voices.removeAll(); retiredTails.removeAll(); noteIntents.removeAll()
         samplerHandles.removeAll(); samplerDocuments.removeAll()
         graphGeneration &+= 1
+        // Everything is detached and rendering is stopped, so queued samplers
+        // can be dropped here instead of waiting for a later live transaction.
+        releaseDeferredSamplers()
     }
     /// Supersede an in-flight AU instantiation without removing a playing voice.
     func cancelPendingLoad(_ channel: Int) {
@@ -1381,8 +1520,19 @@ final class ExternalInstrumentRack {
     var debugOwnedNodeCount: Int { graphNodes().count }
     var debugRetiredTailCount:Int {retiredTails.count}
     var debugRetiredTailStates:[(channel:Int,silent:Bool,gain:Float)] {retiredTails.map{($0.channel,$0.silent,$0.mixer.outputVolume)}}
+    var debugSamplerLifecycle:[SamplerLifecycleRecord] {samplerLifecycle}
+    var debugDeferredSamplerCount:Int {deferredSamplers.count}
     func debugExpireRetiredTails() {for tail in retiredTails {silenceRetiredTail(tail)}}
     #endif
+    /// Sampler-lifecycle evidence for the local support report. Recording is
+    /// DEBUG-only; the report field keeps one shape in release builds.
+    var supportSamplerLifecycle:[SamplerLifecycleRecord]? {
+        #if DEBUG
+        return samplerLifecycle
+        #else
+        return nil
+        #endif
+    }
     func restoreState(_ state: [String: Any], channel: Int) {
         precondition(Thread.isMainThread)
         voices[channel]?.unit.auAudioUnit.fullStateForDocument = state

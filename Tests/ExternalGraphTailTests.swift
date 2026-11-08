@@ -162,6 +162,18 @@ struct ExternalGraphTailTests {
             }
         }
         assert(rack.debugRetiredTailCount == 2, "The cap should retain only the two newest tails")
+        // Sampler disposal ordering: repeated replacements and the tail cap
+        // must dispose through the stopped-window path, never while a render
+        // reference is live. A release after engine start() is the SIGTRAP case.
+        let lifecycle = rack.debugSamplerLifecycle
+        let releases = lifecycle.filter { $0.event == .release }
+        assert(!releases.isEmpty, "Repeated replacements must dispose retired samplers")
+        assert(releases.allSatisfy { !$0.engineRunning && !$0.attached && !$0.retainedTail },
+               "A sampler must not be released while the engine renders or a tail still owns it")
+        assert(releases.allSatisfy { $0.generation > 0 }, "Lifecycle evidence must record the graph generation")
+        assert(!lifecycle.contains { $0.event == .unsafeDisposal || $0.event == .deferredWhileRunning },
+               "Sampler disposal must stay inside the stopped transaction window")
+        assert(rack.debugDeferredSamplerCount == 0, "A completed transaction must release every queued sampler")
         // Start with clean slots, then create one real wet tail per channel.
         rack.panic()
         try rack.withGraphChanges {

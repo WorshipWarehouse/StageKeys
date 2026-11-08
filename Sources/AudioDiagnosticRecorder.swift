@@ -1,5 +1,21 @@
 import AVFoundation
 
+/// Bounded sampler-lifecycle evidence for the local support report. Records
+/// ordering and state only: channel index, graph generation and running, attached
+/// and retained-tail flags. No plug-in state, file path, sample payload or user
+/// text is stored, and recording is compiled out of release builds.
+struct SamplerLifecycleRecord: Codable, Equatable {
+    enum Event: String, Codable {
+        case attach, retire, evict, quiesce, detach, deferRelease, release, retained, deferredWhileRunning, unsafeDisposal
+    }
+    let event: Event
+    let channel: Int?
+    let generation: UInt64
+    let engineRunning: Bool
+    let attached: Bool
+    let retainedTail: Bool
+}
+
 /// Explicit allowlist: never accepts session documents, device names/IDs, file paths,
 /// MIDI messages, plug-in state or audio. Building a report does not transmit it.
 struct SupportDiagnostics: Codable {
@@ -17,10 +33,12 @@ struct SupportDiagnostics: Codable {
     let underrunCount: Int? // nil until measured; never report unmeasured zero.
     let latencyScope: String
     let lastAudioChangeFailure: AudioChangeDiagnostic?
+    let samplerLifecycle: [SamplerLifecycleRecord]?
 
     init(version: String, build: String, running: Bool, status: AudioDeviceStatus?, latency: AudioLatencyChain?,
          midiSources: Int, loadedSlots: Int, limiterBypassed: Bool, recording: Bool,
-         lastAudioChangeFailure: AudioChangeDiagnostic? = nil) {
+         lastAudioChangeFailure: AudioChangeDiagnostic? = nil,
+         samplerLifecycle: [SamplerLifecycleRecord]? = nil) {
         schemaVersion = 1
         appVersion = String(version.prefix(64)); appBuild = String(build.prefix(64))
         audioRunning = running
@@ -32,6 +50,7 @@ struct SupportDiagnostics: Codable {
         underrunCount = nil
         latencyScope = "Core Audio reported output chain; physical MIDI-to-speaker latency not measured"
         self.lastAudioChangeFailure = lastAudioChangeFailure
+        self.samplerLifecycle = samplerLifecycle.map { Array($0.prefix(48)) }
     }
     func json() throws -> String {
         let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
