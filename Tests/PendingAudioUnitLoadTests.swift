@@ -135,6 +135,7 @@ import AVFoundation
         assert(store.audio.loadedUnit(channel: 4, sound: delayed.external) === readyDelayed)
         store.audio.gain(4, 0.6, seconds: 0)
         store.audio.noteOn(key: 701, pitch: 60, instrument: -1, layer: 4, velocity: 0.7)
+        store.setSustain(true)
         let activeDelayed = rack.debugActiveNoteCount(4)
         let intentDelayed = rack.debugNoteIntentCount(4)
         let delayedGeneration = rack.graphGeneration
@@ -149,7 +150,8 @@ import AVFoundation
             return kind == 0x80 || kind == 0x90 ||
                 (kind == 0xb0 && ($0.data1 == 120 || $0.data1 == 123 || ($0.data1 == 64 && $0.data2 < 64)))
         }
-        assert(!disruptive, "Confirm must not send note, panic, or sustain-off MIDI events")
+        let sent = rack.debugMIDIEvents.map { String(format: "%02X %02X %02X", $0.status, $0.data1, $0.data2) }.joined(separator: ",")
+        assert(!disruptive, "Confirm must not send note, panic, or sustain-off MIDI events (sent: \(sent))")
         assert(rack.debugInstantiationCallbacks == instantiationCallbacks,
                "Confirm must adopt the loaded AU instead of requesting a reload")
         assert(rack.debugPendingInstantiationCount == 0)
