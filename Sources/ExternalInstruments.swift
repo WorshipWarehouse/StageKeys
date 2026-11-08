@@ -1249,7 +1249,7 @@ final class ExternalInstrumentRack {
             engine.connect(compressor, to: filter, format: processingFormat)
             engine.connect(filter, to: eq, format: processingFormat)
             let builtin=BuiltinEffectUnit.make();engine.attach(builtin)
-            let voice = Voice(unit: unit, sourceGain:sourceGain, mixer: mixer, meterMixer: meterMixer, stereoPan:stereoPan,
+            let voice = Voice(unit: unit, sourceGain:sourceGain, mixer: mixer, stereoPan:stereoPan, meterMixer: meterMixer,
                               filter: filter, eq: eq, compressor: compressor,builtin:builtin)
             connectEffects(voice)
             engine.connect(mixer, to: meterMixer, format: nil)

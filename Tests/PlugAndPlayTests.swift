@@ -59,6 +59,23 @@ import CoreMIDI
     send(a,0xb0,64,0);wait { !store.sustain }
     send(a,0x90,67,100);wait { store.isNoteHeld(67) }
     store.panic();assert(store.held.isEmpty)
+    let beforeMacros=store.patch.layers[0]
+    var macroLayer=beforeMacros
+    let macroEffect=AudioEffect.factoryDefault(kind:1)
+    macroLayer.importedRack=ImportedRack(effects:[macroEffect,macroEffect],macros:[
+        ImportedMacro(index:0,name:"Wheel",value:0,bindings:[ImportedMacroBinding(effect:0,parameter:0,minimum:20,maximum:20000)],midiCC:1,midiChannel:0),
+        ImportedMacro(index:1,name:"Pedal",value:0,bindings:[ImportedMacroBinding(effect:1,parameter:0,minimum:20,maximum:20000)],midiCC:64,midiChannel:0)
+    ])
+    store.commitLayer(0,macroLayer)
+    send(a,0xb0,1,127)
+    wait { store.patch.layers[0].importedRack?.macros[0].value==127 }
+    send(a,0xb0,64,127)
+    wait { store.patch.layers[0].importedRack?.macros[1].value==127 }
+    send(b,0xb2,1,0);send(b,0xb2,64,0)
+    wait { store.midiLog.first?.contains("Ch 03 · B0 · 64 · 0") == true }
+    assert(store.patch.layers[0].importedRack?.macros.map(\.value)==[127,127],"Secondary fixed CCs must not alter imported Primary macros")
+    send(a,0xb0,64,0);wait { !store.sustain }
+    store.commitLayer(0,beforeMacros)
     var fx=AudioEffect();fx.kind=3;fx.parameters=AudioEffectCatalog.defaults(for:3);fx.parameters![0]=0.65
     store.setEffect(0,0,fx);store.modWheel=0.3;store.captureSnapshot(0)
     let scene=store.patch.snapshots[0]

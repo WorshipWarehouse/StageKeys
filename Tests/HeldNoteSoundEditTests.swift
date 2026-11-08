@@ -78,6 +78,19 @@ import AVFoundation
         check(after > before * 0.8,
               "held note continues at its level (before \(before), after \(after))")
 
+        // Confirm can be called before a preview reaches the graph. A routing
+        // change must still release the previously owned MIDI notes.
+        guard let directEdit=store.beginAudition(0) else {
+            check(false,"a direct sound edit starts")
+            return
+        }
+        var rerouted=shaped
+        rerouted.transpose=12
+        check(store.midiFX.activeOutputRange(channel:0) != nil,"the old route owns a held note")
+        store.confirmAudition(directEdit,index:0,layer:rerouted)
+        check(store.midiFX.activeOutputRange(channel:0)==nil,"Confirm without preview must release the old MIDI route")
+        store.panic()
+
         // Replacing the instrument still takes over the channel and plays.
         var replacement = TestFixtures.layer(1, gain: 0.2)
         replacement.name = "Replacement"
