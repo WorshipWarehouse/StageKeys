@@ -84,6 +84,15 @@ import Foundation
         var crowded=record
         crowded.retainedShaping=Dictionary(uniqueKeysWithValues:(0..<65).map{("key\($0)","1")})
         check(!crowded.valid,"more than 64 retained fields must be rejected")
+        var fullLayer=layer
+        var fullRecord=record
+        fullRecord.retainedShaping=Dictionary(uniqueKeysWithValues:(0..<64).map{("Channel_attack\($0)","1")})
+        fullLayer.mainStageSource=fullRecord
+        do {
+            _ = try draft.applying(to:fullLayer)
+            check(false,"an overflowing merge must fail before returning an invalid layer")
+        } catch {}
+        check(fullLayer.mainStageSource==fullRecord,"a rejected merge must preserve the existing source record")
         var wide:[String:Any]=[:]
         for index in 0..<40 {wide["Channel_envelope\(index)"]=NSNumber(value:index)}
         let wideDraft=shapingDraft(wide)
@@ -109,6 +118,14 @@ import Foundation
         SetlistShare.sanitize(&setlist)
         check(setlist.patches[0].layers[0].mainStageSource?.retainedShaping?["Channel_envelopePath"]=="[source location]","a shared record must not carry a local source path")
         check(setlist.patches[0].layers[0].mainStageSource?.valid==true,"a sanitized record must still validate")
+        for path in ["/usr/local/share/Private/Attack.exs", "/Users/owner/Private/Client, Confidential/Attack.exs", "/Users/owner/Private/Client; Confidential/Attack.exs"] {
+            var candidate=applied
+            candidate.mainStageSource?.retainedShaping=["Channel_attackPath":path]
+            var sharedCandidate=Setlist()
+            sharedCandidate.patches=[Patch(name:"Path",layers:[candidate],snapshots:[])]
+            SetlistShare.sanitize(&sharedCandidate)
+            check(sharedCandidate.patches[0].layers[0].mainStageSource?.retainedShaping?["Channel_attackPath"]=="[source location]","sharing must redact the full path, including punctuation and uncommon roots")
+        }
         // A retained key can itself be a local path, so sharing redacts keys too.
         var keyed=applied
         keyed.mainStageSource?.retainedShaping=["/Users/owner/Private/Attack.exs":"1","Channel_attack":"0.042"]

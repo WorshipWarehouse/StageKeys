@@ -405,7 +405,7 @@ enum SetlistShare {
     /// home-directory or volume fragment in a shared note.
     private static func portableText(_ value: String) -> String {
         value.replacingOccurrences(
-            of: #"(?:file://)?(?:/(?:Users|home|private|Library|Applications|System|Volumes|opt|var|tmp)/|~/)[^\n\r,;]+"#,
+            of: #"(?:file://)?(?:/|~/)[^\n\r]+"#,
             with: "[source location]", options: .regularExpression)
     }
     /// A retained shaping key can itself be a local path, because a file name

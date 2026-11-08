@@ -76,6 +76,9 @@ enum MainStageProcessing {
             if !retainedShaping.isEmpty {
                 var record=layer.mainStageSource ?? .empty
                 record.retainedShaping=(record.retainedShaping ?? [:]).merging(retainedShaping) { _, new in new }
+                guard record.valid else {
+                    throw MainStagePatch.Failure.invalid("The combined source record exceeds its retention limits. Keep the existing sound and import this source separately.")
+                }
                 layer.mainStageSource=record
             }
             return layer
