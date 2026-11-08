@@ -90,6 +90,8 @@ Tests/test-library.sh MIDISetupTests MIDIInputTests ProgramChangeOptInTests
 
 Executed on Linux with the Swift 6.0.3 toolchain: `swiftc -O Sources/MIDIControlTarget.swift Tests/MIDIControllerSlotsTests.swift` builds and the program prints its `PASS` line; `swiftc -frontend -parse` accepts the changed `Store.swift`, rules and test. The repository's Linux gates (`git diff --check` and the `Tests/test-*.py` distribution, catalog, accessibility, preset, pack and library-gate checks plus `.agents/validate-skills.py`) pass.
 
+The first macOS CI run of this change (`58ec4e8`) failed to compile the app target: the new local `let message` in `handleMIDI` shadowed `PerformanceStore.message`. It is now `let command`. A parse-only Linux check cannot detect that shadowing, so the app-target compile remains the authoritative check for this edit; the fix was pushed for a fresh run.
+
 Not built or executed here: no Apple SDK is available, so `StageKeysMac`/`StageKeysMobile`, the Core MIDI suite and the app-level `handleMIDI` path are unverified in this environment. Still pending for #15:
 
 - Two real controllers (for example a keyboard on Primary and a pad/controller on Secondary): confirm only the Primary plays notes, that learned CCs, sustain and Program Change still work from the Secondary, and that the surviving controller still works after an unplug/reconnect.

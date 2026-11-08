@@ -1506,8 +1506,8 @@ final class PerformanceStore: ObservableObject {
         // Secondary control surface cannot double-trigger or hold patch notes.
         let slots=MIDIControllerSlots(primarySourceID: primarySourceID, primaryChannel: midiChannel,
                                       secondarySourceID: secondarySourceID, secondaryChannel: secondaryChannel)
-        let message=status & 0xf0
-        let accepted = message == 0x80 || message == 0x90
+        let command=status & 0xf0
+        let accepted = command == 0x80 || command == 0x90
             ? slots.acceptsNotes(source: source, channel: channel)
             : slots.acceptsControls(source: source, channel: channel)
         guard accepted else { return }
