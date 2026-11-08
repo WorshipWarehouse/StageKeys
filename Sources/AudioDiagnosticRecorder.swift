@@ -3,7 +3,8 @@ import AVFoundation
 /// Bounded sampler-lifecycle evidence for the local support report. Records
 /// ordering and state only: channel index, graph generation and running, attached
 /// and retained-tail flags. No plug-in state, file path, sample payload or user
-/// text is stored, and recording is compiled out of release builds.
+/// text is stored. Recording is kept in every build, because the disposal trap it
+/// describes happens in release; the rack keeps at most 48 records.
 struct SamplerLifecycleRecord: Codable, Equatable {
     enum Event: String, Codable {
         case attach, retire, evict, quiesce, detach, deferRelease, release, retained, deferredWhileRunning, unsafeDisposal

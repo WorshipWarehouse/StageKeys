@@ -44,14 +44,20 @@ capture and the repeated rapid patch-switch run remain open in #192.
 
 ## Lifecycle evidence
 
-DEBUG builds record a bounded (48 entry) ordered log of `SamplerLifecycleRecord`
-values: `event`, optional channel, graph generation, `engineRunning`, `attached`
-and `retainedTail`. Events are `attach`, `retire`, `evict`, `quiesce`, `detach`,
-`deferRelease`, `release`, `retained`, `deferredWhileRunning` and
-`unsafeDisposal`. The log is included in the existing local support report as the
-optional `samplerLifecycle` field; recording is compiled out of release builds
-and the field is absent there. No plug-in state, file path, sample payload,
-MIDI data or user text is retained.
+Every build keeps an in-memory bounded (48 entry) ordered log of
+`SamplerLifecycleRecord` values: `event`, optional channel, graph generation,
+`engineRunning`, `attached` and `retainedTail`. Events are `attach`, `retire`,
+`evict`, `quiesce`, `detach`, `deferRelease`, `release`, `retained`,
+`deferredWhileRunning` and `unsafeDisposal`. The log is included in the existing
+local support report as the optional `samplerLifecycle` field, which is absent
+until something is recorded. Recording is not compiled out of release builds:
+the reported trap happens in release, so a field capture from a recurrence has
+to come from a shipped build. The log is bounded and holds no plug-in state,
+file path, sample payload, MIDI data or user text.
+
+A teardown that throws keeps its sampler queued for the next stopped window
+rather than dropping the queue's reference, so an unexpected failure can never
+turn a reported error back into the disposal trap.
 
 ## Verification
 

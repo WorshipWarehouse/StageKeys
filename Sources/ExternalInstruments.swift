@@ -193,10 +193,10 @@ final class ExternalInstrumentRack {
         let channel: Int?
     }
     private var deferredSamplers: [DeferredSampler] = []
-    #if DEBUG
+    /// Bounded, ordering-only evidence recorded in every build: the reported
+    /// trap happens in release, where a DEBUG-only log could never be captured.
     private static let samplerLifecycleLimit = 48
     private var samplerLifecycle: [SamplerLifecycleRecord] = []
-    #endif
     static func supportsEffect(kind: Int) -> Bool { (0...17).contains(kind) }
     /// Legacy names accepted by the adapter; the descriptor API exposes all built-in controls.
     static func supportedEffectParameters(kind: Int) -> Set<String> {
@@ -1181,14 +1181,12 @@ final class ExternalInstrumentRack {
     /// Record one bounded sampler-lifecycle observation for the local support
     /// report. Ordering-only evidence: no plug-in state, path or sample payload.
     private func recordSamplerLifecycle(_ event: SamplerLifecycleRecord.Event, _ sampler: AVAudioUnitSampler?, channel: Int?, tail: Bool) {
-        #if DEBUG
         samplerLifecycle.append(SamplerLifecycleRecord(event: event, channel: channel,
             generation: graphGeneration, engineRunning: engine.isRunning,
             attached: sampler.map { $0.engine === engine } ?? false, retainedTail: tail))
         if samplerLifecycle.count > Self.samplerLifecycleLimit {
             samplerLifecycle.removeFirst(samplerLifecycle.count - Self.samplerLifecycleLimit)
         }
-        #endif
     }
     private func isInRetiredTail(_ sampler: AVAudioUnitSampler) -> Bool {
         retiredTails.contains { tail in tail.nodes.contains { $0 === sampler } }
@@ -1253,9 +1251,17 @@ final class ExternalInstrumentRack {
                 recordSamplerLifecycle(.retained, entry.sampler, channel: entry.channel, tail: isInRetiredTail(entry.sampler))
                 continue
             }
-            do { try quiesceAndDetach(entry.sampler, channel: entry.channel) }
-            catch { if failure == nil { failure = error } }
-            recordSamplerLifecycle(.release, entry.sampler, channel: entry.channel, tail: isInRetiredTail(entry.sampler))
+            do {
+                try quiesceAndDetach(entry.sampler, channel: entry.channel)
+                recordSamplerLifecycle(.release, entry.sampler, channel: entry.channel, tail: isInRetiredTail(entry.sampler))
+            } catch {
+                // Dropping the queue's reference here would deallocate a node
+                // that is still attached to a rendering graph, which is the
+                // disposal trap itself. Keep it queued for the next stopped
+                // window and report the failure instead.
+                deferredSamplers.append(entry)
+                if failure == nil { failure = error }
+            }
         }
         return failure
     }
@@ -1341,13 +1347,13 @@ final class ExternalInstrumentRack {
         if let sampler=old.unit as? AVAudioUnitSampler {
             recordSamplerLifecycle(.retire, sampler, channel: channel, tail: isInRetiredTail(sampler))
         }
-        // Parallel branch samplers are sources rather than part of the retired
-        // effect chain. Their output mixers stay with the tail; the samplers go
-        // through the shared stopped-window disposal path.
+        // Parallel branch samplers are part of the retired tail's node list, so
+        // the tail keeps them alive and they reach the same stopped-window
+        // disposal when it is evicted, purged or reset. Detaching them here
+        // would cut the release they are still rendering.
         func collect(_ branch: ImportedBranchVoice) {
             if let sampler=branch.sampler {
-                recordSamplerLifecycle(.retire, sampler, channel: channel, tail: false)
-                enqueueSamplerDisposal(sampler, channel: channel)
+                recordSamplerLifecycle(.retire, sampler, channel: channel, tail: isInRetiredTail(sampler))
             }
             branch.children.forEach(collect)
         }
@@ -1524,14 +1530,11 @@ final class ExternalInstrumentRack {
     var debugDeferredSamplerCount:Int {deferredSamplers.count}
     func debugExpireRetiredTails() {for tail in retiredTails {silenceRetiredTail(tail)}}
     #endif
-    /// Sampler-lifecycle evidence for the local support report. Recording is
-    /// DEBUG-only; the report field keeps one shape in release builds.
+    /// Sampler-lifecycle evidence for the local support report: nil until
+    /// something was recorded, so a report from an untouched session keeps its
+    /// previous shape.
     var supportSamplerLifecycle:[SamplerLifecycleRecord]? {
-        #if DEBUG
-        return samplerLifecycle
-        #else
-        return nil
-        #endif
+        samplerLifecycle.isEmpty ? nil : samplerLifecycle
     }
     func restoreState(_ state: [String: Any], channel: Int) {
         precondition(Thread.isMainThread)

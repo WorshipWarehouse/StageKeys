@@ -174,6 +174,8 @@ struct ExternalGraphTailTests {
         assert(!lifecycle.contains { $0.event == .unsafeDisposal || $0.event == .deferredWhileRunning },
                "Sampler disposal must stay inside the stopped transaction window")
         assert(rack.debugDeferredSamplerCount == 0, "A completed transaction must release every queued sampler")
+        assert((rack.supportSamplerLifecycle?.count ?? 0) > 0,
+               "The support report must carry the sampler lifecycle ordering evidence")
         // Start with clean slots, then create one real wet tail per channel.
         rack.panic()
         try rack.withGraphChanges {
