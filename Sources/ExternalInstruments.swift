@@ -1141,13 +1141,16 @@ final class ExternalInstrumentRack {
             return
         }
         if pendingGraphEdit == nil {
+            // Validate before touching engine state: a rejected preparation must
+            // leave the running instrument exactly as it was, with no restart
+            // left owed by this transaction.
+            try prepareActiveSamplerResources()
             let wasRunning = engine.isRunning
             if wasRunning { engine.stop() }
             // The previous transaction has returned and its rollback snapshot is
             // gone, so this stopped window is the first point where releasing a
             // queued sampler cannot leave a later owner behind.
             if let teardown = releaseDeferredSamplers() { throw teardown }
-            try prepareActiveSamplerResources()
             graphGeneration &+= 1
             pendingGraphEdit = GraphEdit(rollback: preparedRollback ?? rollbackSnapshot(), mixers: mixerState(), samplers: samplerState(), wasRunning: wasRunning)
             purgeSilentRetiredTails()
