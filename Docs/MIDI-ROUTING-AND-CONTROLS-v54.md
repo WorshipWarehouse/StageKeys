@@ -92,5 +92,5 @@ Executed on Linux with the Swift 6.0.3 toolchain: `swiftc -O Sources/MIDIControl
 
 Not built or executed here: no Apple SDK is available, so `StageKeysMac`/`StageKeysMobile`, the Core MIDI suite and the app-level `handleMIDI` path are unverified in this environment. Still pending for #15:
 
-- Two real controllers (for example a keyboard on Primary and a pad/controller on Secondary): confirm only the Primary plays notes, that learned CCs, sustain and Program Change still work from the Secondary, and that the canary survives unplug/reconnect.
+- Two real controllers (for example a keyboard on Primary and a pad/controller on Secondary): confirm only the Primary plays notes, that learned CCs, sustain and Program Change still work from the Secondary, and that the surviving controller still works after an unplug/reconnect.
 - Confirm the MIDI monitor still shows Secondary messages and that a Secondary-only configuration cannot start notes by any route (screen keyboard is unaffected).
