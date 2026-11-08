@@ -603,9 +603,9 @@ final class PerformanceStore: ObservableObject {
                         if candidates.isEmpty {
                             mainStageOutcomes[index].state = .needsSamples
                             mainStageOutcomes[index].detail = "Original EXS instrument not found. Choose the folder containing its instrument and samples."
-                        } else if Set(candidates.map(\.sha256)).count != 1 {
+                        } else if Set(candidates.compactMap(\.identity)).count > 1 {
                             mainStageOutcomes[index].state = .needsSamples
-                            mainStageOutcomes[index].detail = "Different EXS instruments share this filename. Choose a narrower source folder."
+                            mainStageOutcomes[index].detail = "Different EXS maps or sample contents share this filename. Choose the intended source folder."
                         } else if candidates.allSatisfy({$0.sampleIssue != nil}) {
                             mainStageOutcomes[index].state = .needsSamples
                             mainStageOutcomes[index].detail = candidates.compactMap(\.sampleIssue).first ?? "The EXS instrument was found, but its original samples are unavailable."
@@ -1959,18 +1959,19 @@ final class PerformanceStore: ObservableObject {
                     guard channel.unsupportedInstrumentFamily == nil else {outcome(channelIndex,.unsupported,channel.nativeInstrumentStatus);failures.append(channel.name+": "+channel.nativeInstrumentStatus);continue}
                     guard channel.instruments.count==1,let name=channel.instruments.first else{outcome(channelIndex,.unsupported,"Multiple sampler instruments require channel topology translation; none were silently flattened.");failures.append(channel.name+": layered sampler selection requires translation");continue}
                     var candidates=discovered?[name] ?? []
-                    candidates += try files.filter{$0.lastPathComponent==name}.map{MainStageDiscovery.Candidate(file:$0,samples:folder,sha256:try AssetDigest.sha256($0))}
+                    candidates += try files.filter{$0.lastPathComponent==name}.map{try MainStageDiscovery.candidate(file:$0,samples:folder)}
                     var candidateKeys=Set<String>()
                     candidates=candidates.filter{candidateKeys.insert($0.file.standardizedFileURL.path+"\n"+$0.samples.standardizedFileURL.path).inserted}
-                    guard !candidates.isEmpty,Set(candidates.map(\.sha256)).count==1 else{let reason=candidates.isEmpty ? "Instrument not found in searched locations; choose its sample folder.":"Different instruments share this filename; choose a narrower folder.";outcome(channelIndex,.needsSamples,reason);failures.append(name+": "+reason);continue}
-                    let file=candidates[0].file
+                    let playable=candidates.filter{$0.sampleIssue==nil && $0.identity != nil}
+                    guard !playable.isEmpty,Set(playable.compactMap(\.identity)).count==1 else{let reason=playable.isEmpty ? (candidates.compactMap(\.sampleIssue).first ?? "Instrument not found in searched locations; choose its sample folder."):"Different EXS maps or sample contents share this filename; choose the intended source folder.";outcome(channelIndex,.needsSamples,reason);failures.append(name+": "+reason);continue}
+                    let file=playable[0].file
                     libraryImportProgress="Importing MainStage channel: "+channel.name
                     await Task.yield();try checkLibraryImportCancellation()
                     let assetsBefore=managedImportAssets()
                     var createdSound:ExternalSound?,createdOriginal:StageKeysSampler.Original?
                     do {
                         let processing=try mainStageProcessing(channelIndex)
-                        let id=try MainStagePatch.conversionID(report,channel:channel,variant:AssetDigest.sha256(file))
+                        let id=try MainStagePatch.conversionID(report,channel:channel,variant:playable[0].identity!)
                         if let existing=entries.firstIndex(where:{$0.id==id}) {
                             entries[existing].sourceArchiveID=report.sourceArchiveID
                             outcome(channelIndex,.duplicate,"Already installed; personal edits retained.",id)
@@ -1978,7 +1979,7 @@ final class PerformanceStore: ObservableObject {
                         }
                         var prepared:(ExternalSound,[String]?,Layer?)?
                         var preparationError:Error?
-                        for candidate in candidates {
+                        for candidate in playable {
                             let access=candidate.samples.startAccessingSecurityScopedResource();defer{if access{candidate.samples.stopAccessingSecurityScopedResource()}}
                             do {prepared=try prepareLibrarySound(candidate.file,sampleRoot:candidate.samples);break}
                             catch{preparationError=error}

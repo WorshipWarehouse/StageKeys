@@ -516,9 +516,17 @@ enum MainStageAudioUnit {
 /// their own sample root without changing the original files.
 enum MainStageDiscovery {
     struct Location {var instruments:URL;var samples:URL;var label:String}
-    struct Candidate {var file:URL;var samples:URL;var sha256:String;var sampleIssue:String?=nil}
+    struct Candidate {var file:URL;var samples:URL;var sha256:String;var sampleManifestSHA256:String?=nil;var sampleIssue:String?=nil
+        var identity:String? {sampleManifestSHA256.map{sha256+":"+$0}}
+    }
     struct Search:Codable,Identifiable {var id:String;var location:String;var detail:String}
     struct Result {var candidates:[String:[Candidate]];var searches:[Search]}
+    static func candidate(file:URL,samples:URL)throws->Candidate {
+        var result=Candidate(file:file,samples:samples,sha256:try AssetDigest.sha256(file))
+        do {result.sampleManifestSHA256=try EXSNative.validateSampleReferences(file,sampleRoot:samples).sha256}
+        catch {result.sampleIssue=error.localizedDescription}
+        return result
+    }
     static func locations(source:URL,retained:URL)->[Location] {
         var values=[Location(instruments:retained,samples:retained,label:"Retained source"),
                     Location(instruments:source.pathExtension.lowercased()=="cst" ? source.deletingLastPathComponent():source,samples:source.pathExtension.lowercased()=="cst" ? source.deletingLastPathComponent():source,label:"Selected source")]
@@ -549,9 +557,7 @@ enum MainStageDiscovery {
                 guard FileManager.default.fileExists(atPath:location.instruments.path,isDirectory:&directory),directory.boolValue else{throw MainStagePatch.Failure.invalid("Location unavailable")}
                 let files=try MainStagePatch.findSamplerInstruments(names,in:location.instruments).sorted{$0.path<$1.path}
                 for file in files {
-                    var candidate=Candidate(file:file,samples:location.samples,sha256:try AssetDigest.sha256(file))
-                    do {_ = try EXSNative.validateSampleReferences(file,sampleRoot:location.samples)}
-                    catch {candidate.sampleIssue=error.localizedDescription}
+                    let candidate=try candidate(file:file,samples:location.samples)
                     if !(result.candidates[file.lastPathComponent] ?? []).contains(where:{$0.file.standardizedFileURL==file.standardizedFileURL && $0.samples.standardizedFileURL==location.samples.standardizedFileURL}) {
                         result.candidates[file.lastPathComponent,default:[]].append(candidate)
                     }

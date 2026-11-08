@@ -57,6 +57,10 @@ struct SamplerControllerGate:Codable,Equatable {
 /// never rendered, sliced into new recordings, normalized or sample-rate converted.
 /// Zone/sample field layout informed by Matt Allan's MIT EXS parser (see Licenses).
 enum EXSNative {
+    struct SampleDependencyManifest:Equatable {
+        var count:Int
+        var sha256:String
+    }
     struct Envelope:Codable,Hashable {
         var attack:Double
         var lowVelocityAttack:Double
@@ -313,11 +317,18 @@ enum EXSNative {
     }
     /// Bounded dependency validation for import preflight. This parses the map and
     /// opens referenced audio headers, but never creates a sampler or renders audio.
-    static func validateSampleReferences(_ source:URL,sampleRoot:URL)throws->Int {
+    static func validateSampleReferences(_ source:URL,sampleRoot:URL)throws->SampleDependencyManifest {
         let attributes=try source.resourceValues(forKeys:[.isRegularFileKey,.fileSizeKey])
         guard attributes.isRegularFile==true,(attributes.fileSize ?? Int.max)<=16_000_000 else{throw MainStagePatch.Failure.invalid("Invalid EXS document size.")}
         let parts=try referenceIdentities(chunks(Data(contentsOf:source)))
-        return try resolvedSamples(parts.filter{$0.kind==3},sampleRoot:sampleRoot).files.count
+        let files=try resolvedSamples(parts.filter{$0.kind==3},sampleRoot:sampleRoot).files
+        var fileDigests:[URL:String]=[:],identity=""
+        for (index,file) in files.sorted(by:{$0.key<$1.key}) {
+            let digest=try fileDigests[file] ?? AssetDigest.sha256(file)
+            fileDigests[file]=digest
+            identity += "\(index):\(digest)\n"
+        }
+        return SampleDependencyManifest(count:files.count,sha256:MainStagePatch.digest(Data(identity.utf8)))
     }
     static func convert(_ source:URL,sampleRoot:URL,to output:URL)throws->NativeSamplerProgram {
         precondition(Thread.isMainThread)
