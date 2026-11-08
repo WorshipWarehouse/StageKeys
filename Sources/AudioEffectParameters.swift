@@ -12,6 +12,9 @@ struct AudioEffectParameterDescriptor: Identifiable, Equatable {
 /// Original algorithms with observed control names. No claim of sonic parity.
 enum AudioEffectCatalog {
     static let names = ["No Effect", "Tone", "Tremolo", "Delay", "Bitcrusher", "Chorus", "Compressor", "Equalizer", "Flanger", "Gain", "Halo Shimmer", "Overdrive", "Pitch Shifter", "PrimaVerb", "Rotor", "SolaVerb", "Silver Reverb", "Clip Distortion"]
+    /// Public effect selection order. Keep imported-only compatibility effects
+    /// out of this list while retaining their serialized kind identifiers.
+    static let pickerOrder = [4, 5, 6, 3, 7, 8, 9, 10, 11, 12, 13, 14, 15, 1, 2]
     static func descriptors(for kind: Int) -> [AudioEffectParameterDescriptor] {
         switch kind {
         case 1: return [

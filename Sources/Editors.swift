@@ -363,7 +363,7 @@ struct EffectEditor: View {
                         VStack(alignment:.leading,spacing:20) {
                             HStack(alignment:.top,spacing:12){Image(systemName:"info.circle").font(.title2);VStack(alignment:.leading,spacing:4){Text("Changes to Effects").font(.headline);Text("Confirming changes to this effect slot updates existing patch snapshots.").font(.callout)}}.padding(20).frame(maxWidth:.infinity,alignment:.leading).overlay{RoundedRectangle(cornerRadius:10).stroke(.white.opacity(0.08))}
                             LazyVGrid(columns:Array(repeating:GridItem(.flexible(),spacing:18),count:4),spacing:14) {
-                                ForEach([4,7,11,15,5,8,12,1,6,9,13,2,3,10,14],id:\.self){kind in
+                                ForEach(AudioEffectCatalog.pickerOrder,id:\.self){kind in
                                     Button { draft=AudioEffect.factoryDefault(kind:kind);replacing=false } label:{HStack{Text(AudioEffectCatalog.names[kind]).font(StageTheme.font(12,weight:.semibold));Spacer(minLength:4);Image(systemName:"arrow.right.circle").font(.system(size:20))}.padding(14).frame(maxWidth:.infinity,minHeight:58,alignment:.leading).background(StageTheme.panel,in:RoundedRectangle(cornerRadius:10))}.buttonStyle(.plain)
                                 }
                             }
@@ -377,14 +377,6 @@ struct EffectEditor: View {
                         }
                         if draft.kind==14 {
                             Picker("Rotor Speed",selection:Binding(get:{Int(draft.values[0])},set:{var values=draft.values;values[0]=Float($0);draft.parameters=values})) { Text("Brake").tag(0); Text("Slow").tag(1); Text("Fast").tag(2) }.pickerStyle(.segmented).padding(.horizontal,20)
-                        }
-                        if draft.kind==13 || draft.kind==15 {
-                            HStack {
-                                Text(draft.reverbCore == "dense-v1" ? "StageKeys Dense Engine" : "Legacy Engine").font(.caption).foregroundStyle(.secondary)
-                                Spacer()
-                                if draft.reverbCore != "dense-v1" {Button("Use Dense Engine"){draft.reverbCore="dense-v1"}.buttonStyle(StageButtonStyle())}
-                            }.padding(.horizontal,20)
-                            Text("Choose engine, size and quality before playing. Dry/Wet changes are smoothed in the Dense Engine. Near-maximum reflectivity creates long sustaining tails.").font(.caption).foregroundStyle(.secondary).padding(.horizontal,20)
                         }
                         if draft.kind == 3 {
                             DelayEffectControls(effect:$draft,stereoAvailable:store.patch.layers[index].external != nil)
