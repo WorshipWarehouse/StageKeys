@@ -1058,7 +1058,7 @@ final class ExternalInstrumentRack {
         for node in snapshot.nodes where node.engine == nil { engine.attach(node) }
         for route in snapshot.routes { engine.connect(route.node, to: route.points, fromBus: route.bus, format: route.format) }
         voices = snapshot.voices; controllerValues = snapshot.controllers; noteIntents = snapshot.notes
-        retiredTails = snapshot.tails.map(\.tail)
+        retiredTails = snapshot.tails.map { $0.tail }
         for (channel, voice) in snapshot.voices {
             soundMeters.attach(voice.meterMixer, channel: channel)
         }
