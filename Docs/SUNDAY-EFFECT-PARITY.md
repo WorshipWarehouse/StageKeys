@@ -76,10 +76,17 @@ their SHA-256 hashes with every accepted calibration.
 
 `Tools/CaptureAppAudio.swift` supplies the missing driver-free reference route:
 it uses ScreenCaptureKit to record only Sunday Keys' emitted system audio as
-48 kHz stereo float PCM. It never overwrites a capture and does not insert a
+48 kHz stereo float PCM in a lossless CAF, converted losslessly to WAV with
+Apple `afconvert`. It never overwrites a capture and does not insert a
 processor into Sunday Keys. macOS Screen Recording permission is required.
-The smoke test on 7 November 2026 reached the expected TCC boundary and was
-denied, so no reference WAV has yet been accepted from this route.
+Screen Recording permission was granted on 7 November 2026. A matched
+`SK Felt Piano | Room` dry/PrimaVerb pair was captured at 48 kHz with the
+fixed MIDI probe. The dry and processed CAF SHA-256 values were respectively
+`eecbcf62b0abbcdb22ba18ee38c8da2f680ac2edc143975d0bd31384e2724c9a` and
+`9343cc76760c733c304ddc0cdfbe5efbdd0c37018d4ba33a08a3281373f5b709`.
+Those private rendered captures remain outside the repository. Their measured
+processed tail reached -60 dB after 2.62 seconds versus 0.69 seconds dry; this
+is a reference observation, not yet a StageKeys parity verdict.
 
 An effect is not marked matched from control names alone. Release acceptance
 requires bounded numeric tolerances, a blinded listening pass, finite output at

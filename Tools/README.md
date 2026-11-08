@@ -8,11 +8,20 @@ normal macOS Screen Recording permission.
 ```sh
 xcrun swiftc -parse-as-library Tools/CaptureAppAudio.swift -o /tmp/capture-app-audio \
   -framework ScreenCaptureKit -framework AVFoundation -framework CoreMedia
-/tmp/capture-app-audio com.sundaysounds.sundaykeys 15 /tmp/sunday-chorus.wav
+/tmp/capture-app-audio com.sundaysounds.sundaykeys 15 /tmp/sunday-chorus.caf
+afconvert /tmp/sunday-chorus.caf /tmp/sunday-chorus.wav -f WAVE -d LEF32@48000 -c 2
 ```
 
-The command never overwrites a capture. Match the resulting Sunday Keys file
+CAF and WAVE_FORMAT_EXTENSIBLE WAV are both lossless 32-bit float PCM in this workflow. The command
+never overwrites a capture. Match the resulting Sunday Keys WAV
 against an equivalent StageKeys render with `compare-effect-captures.py`.
+Use `--align-onset` for separately started live captures; the report preserves
+their original start offset while comparing from the first detected dry onset.
+
+`SendMIDIProbe.swift` creates a temporary virtual MIDI keyboard and performs a
+fixed velocity/pitch sequence followed by a sustained chord. Compile it with
+`xcrun swiftc -parse-as-library Tools/SendMIDIProbe.swift -o /tmp/send-midi-probe
+-framework CoreMIDI`. Keep physical keyboards idle while a matched pair runs.
 
 # Native MainStage conversion
 

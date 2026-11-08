@@ -35,4 +35,14 @@ with tempfile.TemporaryDirectory() as directory:
     assert abs(report["onsetDeltaMilliseconds"] - 0.5) < 0.03
     assert report["correlation"] > 0.99
     assert report["gainAlignedErrorDBFS"] < -35
+    # Apple's afconvert emits float WAV as WAVE_FORMAT_EXTENSIBLE. Exercise the
+    # direct reader without relying on Python's integer-only wave decoder.
+    extended = directory / "float.wav"
+    payload = struct.pack("<4f", 0.0, 0.25, -0.5, 1.0)
+    subtype = bytes.fromhex("0300000000001000800000aa00389b71")
+    fmt = struct.pack("<HHIIHHH", 0xFFFE, 1, 48000, 192000, 4, 32, 22) + struct.pack("<HI", 32, 4) + subtype
+    riff_size = 4 + 8 + len(fmt) + 8 + len(payload)
+    extended.write_bytes(b"RIFF" + struct.pack("<I", riff_size) + b"WAVEfmt " + struct.pack("<I", len(fmt)) + fmt + b"data" + struct.pack("<I", len(payload)) + payload)
+    decoded = comparison.read_pcm(extended)
+    assert decoded.rate == 48000 and decoded.channels == [[0.0, 0.25, -0.5, 1.0]]
 print("PASS: matched capture metrics report gain, onset, correlation and aligned error")
