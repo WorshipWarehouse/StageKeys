@@ -19,15 +19,21 @@ enum RecoverableSessionFile {
         guard data.count <= limit else { throw SetlistLibraryError.oversized }
         return data
     }
-    static func write(_ data: Data, to url: URL, limit:Int = 64_000_000, validate: (Data) throws -> Void) throws {
+    static func write(
+        _ data: Data,
+        to url: URL,
+        limit: Int = 64_000_000,
+        atomicWrite: (Data, URL) throws -> Void = { data, url in try data.write(to: url, options: .atomic) },
+        validate: (Data) throws -> Void
+    ) throws {
         try validate(data)
         guard data.count <= limit else { throw SetlistLibraryError.oversized }
         if FileManager.default.fileExists(atPath: url.path) {
             let old = try read(url,limit:limit)
             try validate(old) // Never rotate corrupt or future-version data over the recovery copy.
-            if old != data { try old.write(to: previous(url), options: .atomic) }
+            if old != data { try atomicWrite(old, previous(url)) }
         }
-        try data.write(to: url, options: .atomic)
+        try atomicWrite(data, url)
     }
     static func restore(_ url: URL, limit:Int = 64_000_000, validate: (Data) throws -> Void) throws -> Data {
         let recovered = try read(previous(url),limit:limit)
