@@ -186,21 +186,29 @@ struct ExternalGraphTailTests {
         rack.noteOn(channel: 2, key: 67, pitch: 67, velocity: 0.7, sourceID: 77)
         do {
             try rack.withGraphChanges {
-                // Adding this third tail evicts channel 0 before Panic. Rollback
-                // must still remember the later channel-specific silence intent.
+                // Adding this third tail evicts channel 0. Truncation commits
+                // even when the transaction later rolls back: a released tail
+                // cannot be restored, and the rollback graph must never point at
+                // nodes that are already gone.
                 try rack.remove(2)
                 assert(!rack.debugRetiredTailStates.contains{$0.channel == 0})
                 rack.panic(0)
+                rack.panic(1)
                 throw NSError(domain: "StageKeysGeneratedTailFailure", code: 941)
             }
             assertionFailure("Expected generated graph edit failure")
         } catch { assert((error as NSError).code == 941) }
         assert(rack.lastGraphFailure?.rollbackSucceeded == true && rack.unit(channel: 2) === originalUnit)
-        assert(rack.debugOwnedNodeCount == originalNodes && rack.debugRetiredTailCount == 2)
-        let restoredMuted = rack.debugRetiredTailStates.filter{$0.channel == 0}
-        assert(restoredMuted.count == 1 && restoredMuted.allSatisfy{$0.silent && $0.gain == 0}, "Rollback must not revive a tail silenced after its snapshot")
-        assert(rack.debugRetiredTailStates.filter{$0.channel == 1}.allSatisfy{!$0.silent && $0.gain > 0}, "Channel Panic must preserve unrelated tail intent")
-        rack.panic(1) // Exclude the unrelated wet tail from the held-note audio check.
+        assert(!rack.debugRetiredTailStates.contains{$0.channel == 0}, "A truncated tail must not be resurrected by rollback")
+        assert(rack.debugRetiredTailCount == 1 && rack.debugOwnedNodeCount < originalNodes,
+               "Rollback must restore a complete graph without the truncated tail")
+        assert(rack.debugRetiredTailStates.allSatisfy{$0.silent && $0.gain == 0},
+               "Rollback must not revive a tail silenced after its snapshot")
+        assert(rack.debugSamplerTeardownRecords.filter{$0.phase == .retainedPastStop}.isEmpty,
+               "A truncated sampler must be gone before the engine restart")
+        assert(rack.debugSamplerTeardownRecords.contains{$0.phase == .releasedBeforeRestart},
+               "Truncation must record the verified release before the restart")
+        rack.panic(1) // Exclude the surviving wet tail from the held-note audio check.
         assert(rack.debugNoteIntentCount(2) == 1 && (try! render(20)) > 0.000001, "An unrelated held instrument must recover and render")
 
         // Forward completion also restores mixer settings captured before the
@@ -218,7 +226,46 @@ struct ExternalGraphTailTests {
         assert(!forwardMuted.isEmpty && forwardMuted.allSatisfy{$0.silent && $0.gain == 0}, "Graph completion must not restore a muted tail's gain")
         _ = try render(8)
         assert(try! render(40) < 0.000001)
-        print("PASS: new voice renders over retired tail, generated tail cap, Panic rollback/forward completion, and retained unrelated notes")
+        // A truncation inside a transaction whose forward restart fails must
+        // still leave a complete rollback graph, and the evicted sampler must
+        // already be gone before that restart is attempted.
+        rack.panic()
+        try rack.withGraphChanges { try rack.remove(0); try rack.remove(1); try rack.remove(2); try rack.remove(3) }
+        rack.panic()
+        try load(keys, channel: 3)
+        rack.volume(channel: 3, gain: 1, pan: 0)
+        rack.noteOn(channel: 3, key: 60, pitch: 60, velocity: 0.8)
+        try load(piano, channel: 0)
+        try load(organ, channel: 0)
+        try load(piano, channel: 1)
+        try load(organ, channel: 1)
+        try load(pad, channel: 2)
+        assert(rack.debugRetiredTailCount == 2)
+        let nodesBeforeRestartFailure = rack.debugOwnedNodeCount
+        var restartAttempts = 0
+        rack.debugGraphFault = { point in
+            guard point == .restartEngine else { return nil }
+            restartAttempts += 1
+            // Fail the forward restart only; the rollback restart must succeed.
+            return restartAttempts == 1 ? NSError(domain: "StageKeysGeneratedRestartFailure", code: 942) : nil
+        }
+        do {
+            try rack.withGraphChanges { try rack.remove(2) }
+            assertionFailure("Expected generated restart failure")
+        } catch { assert((error as NSError).code == 942) }
+        rack.debugGraphFault = nil
+        assert(restartAttempts == 2 && rack.lastGraphFailure?.rollbackSucceeded == true)
+        assert(!rack.debugRetiredTailStates.contains{$0.channel == 0}, "The truncated tail must stay gone after a failed restart")
+        assert(rack.debugRetiredTailCount == 1 && rack.debugOwnedNodeCount < nodesBeforeRestartFailure)
+        assert(rack.debugSamplerTeardownRecords.filter{$0.phase == .retainedPastStop}.isEmpty,
+               "No truncated sampler may survive the stopped point before a restart")
+        assert((try! render(40)) > 0.000001, "A rollback after truncation must leave a renderable graph")
+        let teardown = rack.debugSamplerTeardownRecords
+        assert(!teardown.isEmpty && teardown.contains{$0.phase == .truncated && !$0.engineRunning},
+               "A truncated sampler must be disposed while the engine is stopped")
+        assert(teardown.allSatisfy{ $0.phase != .releasedBeforeRestart || !$0.attached },
+               "A verified release must be recorded after the node left the engine")
+        print("PASS: new voice renders over retired tail, generated tail cap, Panic rollback/forward completion, retained unrelated notes, and verified sampler release before restart")
     }
 
     private static func importTone(_ url: URL, frequency: Double, rack: ExternalInstrumentRack) throws -> ExternalSound {

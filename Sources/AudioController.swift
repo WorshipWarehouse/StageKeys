@@ -254,6 +254,15 @@ final class AudioController {
         }
         return externalRackStorage
     }
+    /// DEBUG-only hosted-sampler teardown evidence for the local support record.
+    /// Reading it never creates the rack.
+    var samplerTeardownEvidence: [SamplerTeardownRecord]? {
+        #if DEBUG
+        return externalRackLoaded ? externalRackStorage?.samplerTeardownEvidence : nil
+        #else
+        return nil
+        #endif
+    }
     private var externalSounds: [Int: ExternalSound] = [:]
     private var externalStates: [Int: Data] = [:]
     private var samplerAttacks:[Int:Float]=[:]
