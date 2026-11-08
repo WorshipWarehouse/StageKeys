@@ -12,6 +12,17 @@ import Foundation
         let document:[String:Any]=["channels":[["Filename":"First.cst","Channel_name":"First","volume":1_509_949_440],["Filename":"Second.cst","Channel_name":"Second","volume":535_750_245],["Filename":"Missing.cst","Channel_name":"Missing"]]]
         let bytes=try PropertyListSerialization.data(fromPropertyList:document,format:.binary,options:0)
         try bytes.write(to:patch.appendingPathComponent("data.plist"))
+        let reviewRoot=root.appendingPathComponent("review-data");setenv("STAGEKEYS_DATA_DIR",reviewRoot.path,1)
+        let review=PerformanceStore()
+        review.importMainStageAutomatically(patch,locations:[.init(instruments:patch,samples:patch,label:"Synthetic source")],convertAfterDiscovery:false)
+        for _ in 0..<1500 where review.libraryImportBusy {try await Task.sleep(nanoseconds:10_000_000)}
+        assert(review.librarySounds.isEmpty,"Preflight must not commit a sound before effect selection")
+        assert(review.mainStageOutcomes.map(\.state)==[.pending,.pending,.needsSamples])
+        assert(review.libraryImportProgress?.contains("No sounds were added")==true)
+        review.convertIncludedMainStageSounds()
+        for _ in 0..<1500 where review.libraryImportBusy {try await Task.sleep(nanoseconds:10_000_000)}
+        assert(review.mainStageOutcomes.map(\.state)==[.converted,.converted,.needsSamples])
+        setenv("STAGEKEYS_DATA_DIR",root.path,1)
         let store=PerformanceStore()
         func wait()async throws{for _ in 0..<1500 where store.libraryImportBusy{try await Task.sleep(nanoseconds:10_000_000)};assert(!store.libraryImportBusy)}
         store.importMainStageAutomatically(patch,locations:[.init(instruments:patch,samples:patch,label:"Synthetic source")])

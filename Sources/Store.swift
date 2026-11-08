@@ -570,7 +570,10 @@ final class PerformanceStore: ObservableObject {
             return MainStageDiscovery.Location(instruments:url,samples:url,label:"Remembered · "+folder.label)
         }
     }
-    func importMainStageAutomatically(_ url:URL,locations:[MainStageDiscovery.Location]?=nil,installedAudioUnits:[ExternalAUIdentity]?=nil) {
+    /// Retain and inspect a MainStage source, then discover its dependencies.
+    /// UI callers stop after discovery so channel/effect choices can be reviewed;
+    /// the default keeps the programmatic one-shot import used by automation and tests.
+    func importMainStageAutomatically(_ url:URL,locations:[MainStageDiscovery.Location]?=nil,installedAudioUnits:[ExternalAUIdentity]?=nil,convertAfterDiscovery:Bool=true) {
         guard !libraryImportBusy else{return}
         importMainStagePatch(url)
         guard let report=mainStageImportReport,let archive=report.sourceArchiveID else{return}
@@ -590,6 +593,36 @@ final class PerformanceStore: ObservableObject {
             }
             mainStageDiscoveryCandidates=discovery.candidates
             libraryImportBusy=false
+            if !convertAfterDiscovery {
+                for (index,channel) in report.channels.enumerated() where selectedMainStageChannels.contains(index) {
+                    if channel.unsupportedInstrumentFamily != nil {
+                        mainStageOutcomes[index].state = .unsupported
+                        mainStageOutcomes[index].detail = channel.nativeInstrumentStatus
+                    } else if channel.instruments.count == 1,let name=channel.instruments.first {
+                        let candidates=discovery.candidates[name] ?? []
+                        if candidates.isEmpty {
+                            mainStageOutcomes[index].state = .needsSamples
+                            mainStageOutcomes[index].detail = "Original EXS instrument not found. Choose the folder containing its instrument and samples."
+                        } else if Set(candidates.map(\.sha256)).count != 1 {
+                            mainStageOutcomes[index].state = .needsSamples
+                            mainStageOutcomes[index].detail = "Different EXS instruments share this filename. Choose a narrower source folder."
+                        } else {
+                            mainStageOutcomes[index].state = .pending
+                            mainStageOutcomes[index].detail = "EXS instrument located. Review effects, then convert to verify and retain every referenced sample."
+                        }
+                    } else if channel.instruments.count > 1 {
+                        mainStageOutcomes[index].state = .unsupported
+                        mainStageOutcomes[index].detail = "Multiple sampler instruments require channel topology translation; none will be silently flattened."
+                    } else if !channel.thirdPartyAudioUnits.isEmpty {
+                        mainStageOutcomes[index].state = .pending
+                        mainStageOutcomes[index].detail = "Saved Audio Unit state is ready for installed-component verification during conversion."
+                    }
+                }
+                let located=mainStageOutcomes.filter{$0.state == .pending}.count
+                let missing=mainStageOutcomes.filter{$0.state == .needsSamples}.count
+                libraryImportProgress="Preflight complete · \(located) channel(s) ready to verify · \(missing) need original instruments or samples. Review channels and effects before converting. No sounds were added."
+                return
+            }
             importMainStageSamplers(retained,installedAudioUnits:installedAudioUnits,allowPartial:true)
         }
     }
@@ -611,7 +644,7 @@ final class PerformanceStore: ObservableObject {
     }
     func convertIncludedMainStageSounds() {
         guard let id=mainStageImportReport?.sourceArchiveID,UUID(uuidString:id) != nil else{return}
-        importMainStageSamplers(saveURL.deletingLastPathComponent().appendingPathComponent("MainStage Sources/"+id+"/Source.patch",isDirectory:true))
+        importMainStageSamplers(saveURL.deletingLastPathComponent().appendingPathComponent("MainStage Sources/"+id+"/Source.patch",isDirectory:true),allowPartial:true)
     }
     @Published var libraryImportBusy=false
     private var libraryImportCancelRequested=false
@@ -1912,14 +1945,20 @@ final class PerformanceStore: ObservableObject {
             var preparedAssets=Set<URL>(),committed=false
             defer{if !committed {for asset in preparedAssets {try? FileManager.default.removeItem(at:asset)}}}
             do {
-                let files=names.isEmpty || discovered != nil ? []:try MainStagePatch.findSamplerInstruments(names,in:folder)
+                // A folder explicitly chosen after preflight must be searched even
+                // when discovery already cached candidates. Merge both sources;
+                // never let stale preflight results hide a newly authorized EXS.
+                let files=names.isEmpty ? []:try MainStagePatch.findSamplerInstruments(names,in:folder)
                 let library=SoundLibrary(url:saveURL.deletingLastPathComponent().appendingPathComponent("sound-library.json"))
                 let original=try library.read()
                 var entries=original,imported=0,skipped=0,failures:[String]=[]
                 for (channelIndex,channel) in report.channels.enumerated() where selection.contains(channelIndex) && !channel.instruments.isEmpty {
                     guard channel.unsupportedInstrumentFamily == nil else {outcome(channelIndex,.unsupported,channel.nativeInstrumentStatus);failures.append(channel.name+": "+channel.nativeInstrumentStatus);continue}
                     guard channel.instruments.count==1,let name=channel.instruments.first else{outcome(channelIndex,.unsupported,"Multiple sampler instruments require channel topology translation; none were silently flattened.");failures.append(channel.name+": layered sampler selection requires translation");continue}
-                    let candidates=try discovered?[name] ?? files.filter{$0.lastPathComponent==name}.map{MainStageDiscovery.Candidate(file:$0,samples:folder,sha256:try AssetDigest.sha256($0))}
+                    var candidates=discovered?[name] ?? []
+                    candidates += try files.filter{$0.lastPathComponent==name}.map{MainStageDiscovery.Candidate(file:$0,samples:folder,sha256:try AssetDigest.sha256($0))}
+                    var candidateKeys=Set<String>()
+                    candidates=candidates.filter{candidateKeys.insert($0.file.standardizedFileURL.path+"\n"+$0.samples.standardizedFileURL.path).inserted}
                     guard !candidates.isEmpty,Set(candidates.map(\.sha256)).count==1 else{let reason=candidates.isEmpty ? "Instrument not found in searched locations; choose its sample folder.":"Different instruments share this filename; choose a narrower folder.";outcome(channelIndex,.needsSamples,reason);failures.append(name+": "+reason);continue}
                     let file=candidates[0].file
                     libraryImportProgress="Importing MainStage channel: "+channel.name
