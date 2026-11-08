@@ -5,6 +5,7 @@ import AVFoundation
     static func main() throws {
         let store = PerformanceStore()
         store.setlist = TestFixtures.setlist()
+        store.showSoundMeters = true
         try store.audio.prepareOffline()
         store.start()
         defer { store.stopAudio() }
@@ -62,6 +63,7 @@ import AVFoundation
         rack.noteOff(channel: 0, key: 64)
         let originalAmplitudes = try noteAmplitudes()
         assert(rack.debugNoteIntentCount(0) == 2 && originalAmplitudes.allSatisfy { $0 > 0.005 })
+        assert((store.audio.soundMeter(0)?.frames ?? 0) > 0, "An enabled meter must receive the active voice")
         for attempt in 0..<6 {
             var starts = 0
             rack.debugGraphFault = { point in
@@ -86,6 +88,7 @@ import AVFoundation
             let restoredAmplitudes = try noteAmplitudes()
             assert(restoredAmplitudes[0] > originalAmplitudes[0] * 0.2, "The held note must render after rollback")
             assert(restoredAmplitudes[1] > originalAmplitudes[1] * 0.2, "The pedal-released note must render after rollback")
+            assert((store.audio.soundMeter(0)?.frames ?? 0) > 0, "Rollback must reattach the meter bank to the restored voice, attempt \(attempt)")
             let diagnostic = store.audio.lastChangeFailure!
             let graph = diagnostic.lastGraphFailure!
             assert(diagnostic.phase == .loadInstrument && diagnostic.soundSlot == 1 && diagnostic.engineRunning)
