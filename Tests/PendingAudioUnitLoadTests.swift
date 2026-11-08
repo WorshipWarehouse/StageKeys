@@ -116,6 +116,51 @@ import AVFoundation
         store.audio.noteOn(key: 700, pitch: 60, instrument: -1, layer: 3, velocity: 0.7)
         assert((try! energy()) > 0.01)
         store.audio.noteOff(key: 700, channel: 3)
-        print("PASS AU admission: bounded cancelled requests, retained native audio, recovery ownership, timeout leases, late callback and rendered retry")
+
+        // An audition begun before its AU finishes loading must adopt the unit
+        // installed by confirmation. Otherwise the commit requests a reload and
+        // cuts notes started after loading completed.
+        var delayed = proposed
+        delayed.id = store.patch.layers[4].id
+        store.setlist.patches[store.selected].layers[4] = delayed
+        try ExternalInstrumentRack.allowBlockedLoads()
+        assert(store.audio.configure(4, delayed) && replies.count == 1)
+        assert(store.audio.loadedUnit(channel: 4, sound: delayed.external) == nil)
+        let delayedToken = store.beginAudition(4)!
+        let readyDelayed = AVAudioUnitSampler()
+        try SamplerRendering.configure(readyDelayed, offline: true, resident: true)
+        try readyDelayed.loadAudioFiles(at: [root.appendingPathComponent("Generated Fixture 0.wav")])
+        replies.removeFirst()(readyDelayed, nil)
+        wait { rack.debugPendingInstantiationCount == 0 }
+        assert(store.audio.loadedUnit(channel: 4, sound: delayed.external) === readyDelayed)
+        store.audio.gain(4, 0.6, seconds: 0)
+        store.audio.noteOn(key: 701, pitch: 60, instrument: -1, layer: 4, velocity: 0.7)
+        let activeDelayed = rack.debugActiveNoteCount(4)
+        let intentDelayed = rack.debugNoteIntentCount(4)
+        let delayedGeneration = rack.graphGeneration
+        let instantiationCallbacks = rack.debugInstantiationCallbacks
+        rack.debugClearMIDIEvents()
+        var confirmedDelayed = delayed
+        confirmedDelayed.channelSettings.resonance = 2
+        store.previewLayer(4, confirmedDelayed, token: delayedToken)
+        store.confirmAudition(delayedToken, index: 4, layer: confirmedDelayed)
+        let disruptive = rack.debugMIDIEvents.contains {
+            let kind = $0.status & 0xf0
+            return kind == 0x80 || kind == 0x90 ||
+                (kind == 0xb0 && ($0.data1 == 120 || $0.data1 == 123 || ($0.data1 == 64 && $0.data2 < 64)))
+        }
+        assert(!disruptive, "Confirm must not send note, panic, or sustain-off MIDI events")
+        assert(rack.debugInstantiationCallbacks == instantiationCallbacks,
+               "Confirm must adopt the loaded AU instead of requesting a reload")
+        assert(rack.debugPendingInstantiationCount == 0)
+        assert(rack.unit(channel: 4) === readyDelayed)
+        assert(store.audio.loadedUnit(channel: 4, sound: delayed.external) === readyDelayed)
+        assert(rack.graphGeneration == delayedGeneration)
+        assert(rack.debugActiveNoteCount(4) == activeDelayed && rack.debugNoteIntentCount(4) == intentDelayed,
+               "Confirm must retain notes started after the AU finished loading")
+        assert(store.patch.layers[4].channelSettings.resonance == 2)
+        assert((try! energy()) > 0.01)
+        store.audio.noteOff(key: 701, channel: 4)
+        print("PASS AU admission: bounded cancelled requests, retained native audio, recovery ownership, timeout leases, late callback, rendered retry and pending-load audition adoption")
     }
 }

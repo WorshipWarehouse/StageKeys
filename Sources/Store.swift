@@ -436,7 +436,7 @@ final class PerformanceStore: ObservableObject {
         previous.midiEffectEnabled != proposed.midiEffectEnabled ||
         previous.midiProgram != proposed.midiProgram
     }
-    func endAudition(_ token: UUID?) {
+    func endAudition(_ token: UUID?, confirmedUnit: AVAudioUnit? = nil) {
         guard let session = audition, token == session.token else { return }
         guard session.patchID == patch.id, patch.layers.indices.contains(session.index), patch.layers[session.index].id == session.layerID else { audition=nil; return }
         let current=patch.layers[session.index]
@@ -446,10 +446,10 @@ final class PerformanceStore: ObservableObject {
         }
         audition=nil
         if session.retainPluginState {
-            if let unit=session.pluginUnit {
-                audio.adoptPluginState(channel:session.index,sound:current.external,unit:unit,state:session.pluginState)
+            let unit = confirmedUnit ?? session.pluginUnit
+            if let unit, audio.adoptPluginState(channel:session.index,sound:current.external,unit:unit,state:session.pluginState) {
+                setlist.patches[selected].layers[session.index].pluginState=session.pluginState
             }
-            setlist.patches[selected].layers[session.index].pluginState=session.pluginState
         } else if !resetNeeded {
             // A settings-only audition never reloaded the voice. Keep the
             // installed unit and cache the document's state for the following
@@ -496,8 +496,9 @@ final class PerformanceStore: ObservableObject {
     func confirmAudition(_ token: UUID?, index: Int, layer: Layer) {
         guard let session=audition, session.token == token, session.patchID == patch.id, session.index == index, patch.layers.indices.contains(index), patch.layers[index].id == session.layerID else { return }
         var final=layer; final.gain=patch.layers[index].gain; final.muted=patch.layers[index].muted
+        let confirmedUnit = layer.external?.kind == .audioUnit ? audio.loadedUnit(channel:index,sound:layer.external) : nil
         if layer.external?.kind == .audioUnit {
-            guard audio.loadedUnit(channel:index,sound:layer.external) != nil else {message="Wait for the selected instrument to finish loading before confirming its settings.";return}
+            guard confirmedUnit != nil else {message="Wait for the selected instrument to finish loading before confirming its settings.";return}
             do { if let state=try audio.pluginStateData(channel:index,sound:layer.external) { final.pluginState=state } }
             catch { message=error.localizedDescription; return }
         }
@@ -505,7 +506,7 @@ final class PerformanceStore: ObservableObject {
         // restores the old state and replaces the unit, which panics held notes.
         audition?.retainPluginState=true
         audition?.pluginState=final.pluginState
-        endAudition(token)
+        endAudition(token, confirmedUnit: confirmedUnit)
         commitLayer(index,final,preserveHeldNotes:true)
     }
     private var snapshotTimer: Timer?
