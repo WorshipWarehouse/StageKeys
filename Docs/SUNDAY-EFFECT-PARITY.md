@@ -74,6 +74,13 @@ peak/RMS, gain delta, correlation, gain-aligned error, onset, -60 dB decay,
 spectral centroid, and stereo correlation. Preserve the original WAV files and
 their SHA-256 hashes with every accepted calibration.
 
+Wet-residual comparison additionally requires the processed and bypass captures
+to cancel their direct paths by at least 60 dB during the pre-wet calibration
+window. `compare-effect-residuals.py` now rejects weaker cancellation instead of
+misreporting sampler variation as reverb energy. A fixed MIDI performance does
+not make a multisampled instrument deterministic; use a deterministic impulse,
+tone, or noise source with identical direct-path settings for effect tuning.
+
 `Tools/CaptureAppAudio.swift` supplies the missing driver-free reference route:
 it uses ScreenCaptureKit to record only Sunday Keys' emitted system audio as
 48 kHz stereo float PCM in a lossless CAF, converted losslessly to WAV with
@@ -87,6 +94,12 @@ fixed MIDI probe. The dry and processed CAF SHA-256 values were respectively
 Those private rendered captures remain outside the repository. Their measured
 processed tail reached -60 dB after 2.62 seconds versus 0.69 seconds dry; this
 is a reference observation, not yet a StageKeys parity verdict.
+
+A later dry-subtraction pass against that musical pair produced only 41.3 dB
+of direct-path cancellation and therefore failed the 60 dB gate. Its apparent
+wet-level, centroid, stereo-correlation, and decay differences are not accepted
+calibration targets. The capture remains useful as a listening reference, but
+engine tuning waits for a deterministic probe pair.
 
 An effect is not marked matched from control names alone. Release acceptance
 requires bounded numeric tolerances, a blinded listening pass, finite output at

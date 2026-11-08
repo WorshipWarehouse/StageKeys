@@ -7,6 +7,7 @@ trimmed to their first dry onset before subtraction; no resampling is performed.
 import argparse
 import importlib.util
 import json
+import math
 from pathlib import Path
 import sys
 
@@ -41,8 +42,8 @@ def residual(module, processed, dry):
         gain = sum(a * b for a, b in zip(processed_slice, dry_slice)) / dry_energy if dry_energy else 1.0
         error = sum((a - gain * b) ** 2 for a, b in zip(processed_slice, dry_slice)) / max(1, count)
         if best is None or error < best[0]:
-            best = error, lag, gain
-    _, lag, dry_gain = best
+            best = error, lag, gain, count
+    calibration_error, lag, dry_gain, calibration_count = best
     processed_start = processed_onset + max(lag, 0)
     dry_start = dry_onset + max(-lag, 0)
     length = min(len(processed.channels[0]) - processed_start, len(dry.channels[0]) - dry_start)
@@ -52,12 +53,19 @@ def residual(module, processed, dry):
             processed_channel[processed_start + index] - dry_gain * dry_channel[dry_start + index]
             for index in range(length)
         ])
+    processed_start = processed_onset + max(lag, 0)
+    processed_slice = processed_mono[processed_start:processed_start + calibration_count]
+    processed_rms = math.sqrt(sum(value * value for value in processed_slice) / max(1, len(processed_slice)))
+    error_rms = math.sqrt(calibration_error)
+    cancellation_db = 20 * math.log10(processed_rms / max(error_rms, 1e-15)) if processed_rms else 0.0
     return module.Audio(processed.rate, channels), {
         "processedOnsetFrame": processed_onset,
         "dryOnsetFrame": dry_onset,
         "dryAlignmentLagFrames": lag,
         "dryGain": dry_gain,
-        "calibrationFrames": calibration_frames,
+        "calibrationFrames": calibration_count,
+        "calibrationErrorRMS": error_rms,
+        "dryCancellationDB": cancellation_db,
         "subtractedFrames": length,
     }
 
@@ -69,6 +77,8 @@ def main():
     parser.add_argument("candidate", type=Path)
     parser.add_argument("candidate_dry", type=Path)
     parser.add_argument("--output", type=Path)
+    parser.add_argument("--minimum-dry-cancellation-db", type=float, default=60.0,
+                        help="reject a processed/dry pair whose fitted direct signal cancels by less than this many dB")
     args = parser.parse_args()
     module = load_comparator()
     reference = module.read_pcm(args.reference)
@@ -81,6 +91,13 @@ def main():
         raise ValueError("all captures must have matching sample rates and channel counts")
     reference_wet, reference_alignment = residual(module, reference, reference_dry)
     candidate_wet, candidate_alignment = residual(module, candidate, candidate_dry)
+    for label, alignment in [("reference", reference_alignment), ("candidate", candidate_alignment)]:
+        if alignment["dryCancellationDB"] < args.minimum_dry_cancellation_db:
+            raise ValueError(
+                f"{label} processed/dry pair cancels by only "
+                f"{alignment['dryCancellationDB']:.1f} dB before the wet onset; "
+                "use a deterministic source and matched direct-path settings"
+            )
     report = module.describe(reference_wet, candidate_wet, align_onsets=False)
     report["referenceDrySubtraction"] = reference_alignment
     report["candidateDrySubtraction"] = candidate_alignment
