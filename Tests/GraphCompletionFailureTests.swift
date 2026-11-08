@@ -141,6 +141,37 @@ import AVFoundation
         rack.debugGraphFault = nil
         try verifyFreshNotes()
 
+        // Preflight takes place before the rack starts a new graph operation.
+        // Its diagnostic must describe the new failure, even if the rack still
+        // holds the preceding operation's rollback report.
+        assert(rack.lastGraphFailure?.operation?.code == 705)
+        store.audio.debugSoundPreparationFailure = NSError(domain: NSOSStatusErrorDomain, code: 709)
+        store.commitLayer(0, TestFixtures.layer(1, gain: 0.3))
+        store.audio.debugSoundPreparationFailure = nil
+        let preflight = store.audio.lastChangeFailure!
+        assert(preflight.phase == .prepareSound && preflight.errorCode == 709)
+        assert(preflight.lastGraphFailure == nil, "A preparation failure must not report an earlier graph edit")
+        assert(preflight.bufferFrames == nil, "Offline rendering has no hardware buffer")
+        assert(store.started && store.audio.running && rack.unit(channel: 0) === retained)
+
+        // Patch application republishes preflight failures after preparation
+        // returns. That publication must not reattach the rack's previous
+        // rollback report or replace the preparation error code.
+        store.audio.debugSoundPreparationFailure = NSError(domain: NSOSStatusErrorDomain, code: 710)
+        do {
+            try store.audio.preparePatchResources(store.patch.layers)
+            assertionFailure("Expected patch preparation to fail")
+        } catch {
+            store.audio.rejectPatchChange(error)
+        }
+        store.audio.debugSoundPreparationFailure = nil
+        let patchPreflight = store.audio.lastChangeFailure!
+        assert(patchPreflight.phase == .prepareSound && patchPreflight.errorCode == 710)
+        assert(patchPreflight.lastGraphFailure == nil, "Patch publication must not attach an earlier graph failure")
+        assert(store.audioStartup.failure?.code == 710, "Recovery must report the preparation error, not the stale graph error")
+        store.start()
+        assert(store.started && store.audio.running, "The retained patch must recover after its preflight failure")
+
         // The Tonic picker calls the rack directly: it must enter the same
         // stopped state and keep its previous selection instead of recursively
         // trying to restore a graph whose completion already failed.

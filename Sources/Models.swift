@@ -109,8 +109,11 @@ struct AudioEffect: Codable, Equatable {
     }
     var renderValues:[Float] { kind == 13 ? values+[reverbCore == "dense-v1" ? 2:usesCreamCoat ? 1:0]:kind == 15 ? values+[reverbCore == "dense-v1" ? 1:0]:values }
     var title: String { AudioEffectCatalog.names.indices.contains(kind) ? AudioEffectCatalog.names[kind] : "No Effect" }
+    /// Resolves a learnable parameter range, including imported-delay-only controls.
     func macroDescriptor(_ index:Int)->AudioEffectParameterDescriptor? {
         if kind==3,importedDelay?.dryGain != nil,[4,5].contains(index) {return .init(index:index,name:index==4 ? "Dry":"Wet",minimum:0,maximum:1,defaultValue:1,unit:"%")}
+        if kind==3,let delay=importedDelay,index==26 {return .init(index:index,name:"Low Cut",minimum:20,maximum:delay.highCut,defaultValue:20,unit:"Hz")}
+        if kind==3,let delay=importedDelay,index==27 {return .init(index:index,name:"High Cut",minimum:delay.lowCut,maximum:20000,defaultValue:20000,unit:"Hz")}
         return AudioEffectCatalog.descriptors(for:kind).first{$0.index==index}
     }
     var values: [Float] {
@@ -165,6 +168,13 @@ struct MainStageSourceRecord: Codable, Equatable {
     var midiEnabled: Bool
     var hasMIDITransform: Bool
     var omitted: [String]
+    /// Source sound-shaping values retained as data. Channel-scope envelope and
+    /// filter keys have no observed unit or encoding, so they are preserved and
+    /// reported per key rather than guessed into destination controls.
+    var retainedShaping: [String: String]? = nil
+    /// An empty but valid record, used when a layer has none yet but must
+    /// retain source data reported by the editor preview.
+    static let empty = MainStageSourceRecord(effects: [], sourceNames: [], effectNotes: [], macros: [], issues: [], selectedAudio: [], selectedMIDI: nil, midiEnabled: false, hasMIDITransform: false, omitted: [], retainedShaping: nil)
     var valid: Bool {
         effects.count == sourceNames.count && effects.count == effectNotes.count && effects.count <= 12 &&
         effects.allSatisfy { $0.validate() } && sourceNames.allSatisfy { $0.count <= 200 } &&
@@ -174,6 +184,7 @@ struct MainStageSourceRecord: Codable, Equatable {
         (selectedMIDI.map { $0 == $0.validated } ?? true) && macros.count <= 128 &&
         macros.allSatisfy { (0..<128).contains($0.index) && $0.name.count <= 200 && $0.value.isFinite && (0...127).contains($0.value) } &&
         omitted.count <= 128 && omitted.allSatisfy { $0.count <= 2000 } &&
+        (retainedShaping.map { $0.count <= 64 && $0.allSatisfy { !$0.key.isEmpty && $0.key.count <= 96 && $0.value.count <= 160 } } ?? true) &&
         issues.count <= 128 && issues.allSatisfy { $0.count <= 2000 }
     }
 }

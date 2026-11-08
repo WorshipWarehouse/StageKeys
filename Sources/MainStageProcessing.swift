@@ -23,6 +23,8 @@ enum MainStageProcessing {
         var sourceNames:[String]=[]
         var macros:[ImportedMacro]=[]
         var issues:[String]=[]
+        /// Source shaping values preserved as data and reported per key.
+        var retainedShaping:[String:String]=[:]
         var effectNotes:[[String]]=[]
         var hasMIDITransform=false
         var low:Int?
@@ -68,6 +70,17 @@ enum MainStageProcessing {
         func applying(to original:Layer)throws->Layer {
             var layer=try applyingChannelFields(to:original)
             layer.importedRack=try appending(to:layer.importedRack ?? layer.external?.nativeSampler?.rack)
+            // The preview reports each shaping value as retained in the source
+            // record, so the apply path must actually store it and must not
+            // discard a record the layer already carries.
+            if !retainedShaping.isEmpty {
+                var record=layer.mainStageSource ?? .empty
+                record.retainedShaping=(record.retainedShaping ?? [:]).merging(retainedShaping) { _, new in new }
+                guard record.valid else {
+                    throw MainStagePatch.Failure.invalid("The combined source record exceeds its retention limits. Keep the existing sound and import this source separately.")
+                }
+                layer.mainStageSource=record
+            }
             return layer
         }
         /// Apply selected source processing without appending an overflow rack.
@@ -135,7 +148,10 @@ enum MainStageProcessing {
             if !macros.isEmpty {notes.append("\(macros.count) source Smart Control assignment(s) and their macro/MIDI values are retained in the source record; they are not active on the three performance slots.")}
             let recordNames=sourceNames.count==effects.count ? sourceNames:effects.map{$0.title}
             let recordNotes=effectNotes.count==effects.count ? effectNotes:effects.map{_ in [String]()}
-            layer.mainStageSource=MainStageSourceRecord(effects:effects,sourceNames:recordNames,effectNotes:recordNotes,macros:macros,issues:issues,selectedAudio:chosen,selectedMIDI:selection.midi?.validated,midiEnabled:selection.midiEnabled,hasMIDITransform:hasMIDITransform,omitted:omitted)
+            layer.mainStageSource=MainStageSourceRecord(effects:effects,sourceNames:recordNames,effectNotes:recordNotes,macros:macros,issues:issues,selectedAudio:chosen,selectedMIDI:selection.midi?.validated,midiEnabled:selection.midiEnabled,hasMIDITransform:hasMIDITransform,omitted:omitted,retainedShaping:retainedShaping.isEmpty ? nil:retainedShaping)
+            guard layer.mainStageSource?.valid == true else {
+                throw MainStagePatch.Failure.invalid("The source channel exceeds the supported record limits. Its original document remains in the archive.")
+            }
             return Applied(layer:layer,notes:notes,omitted:omitted)
         }
         func appending(to original:ImportedRack?)throws->ImportedRack {
@@ -156,6 +172,12 @@ enum MainStageProcessing {
             return rack
         }
     }
+    static func conversionNotes(_ notes:[String])->[String] {
+        let shortened=notes.contains{$0.count>2000}
+        guard notes.count>128 || shortened else{return notes}
+        let retained=notes.prefix(127).map{String($0.prefix(2000))}
+        return retained+["Conversion notes were shortened or omitted to fit library limits. Keep the original source archive for full source data."]
+    }
     static func channelSettings(_ source:[String:Any],to draft:inout Draft) {
         draft.blockSustain=source["Channel_filterSustainPedal"] as? Bool
         draft.muted=source["Channel_isMuted"] as? Bool
@@ -171,16 +193,52 @@ enum MainStageProcessing {
         }
         if let expression=source["Channel_expressionValue"] as? Int,expression != 127 {draft.issues.append("Source expression \(expression) is retained; channel expression response requires translation.")}
         if let sends=source["Channel_sends"] as? [[String:Any]],sends.contains(where:{!$0.isEmpty}) {draft.issues.append("Source bus sends are retained in the patch archive; auxiliary routing is not flattened into insert effects.")}
-        // Source envelope and filter controls are not translated. Name the keys
-        // that were retained so a destination default is never mistaken for the
-        // source setting.
-        let shapingKeys = source.keys.filter { key in
+        // Channel-scope envelope and filter fields have no observed unit or
+        // encoding, so translating them would be a guess. Preserve each value as
+        // data, name it individually, and never let a destination default pass
+        // for the source setting.
+        let shapingFields = source.keys.compactMap { key -> (String,String)? in
             let lower = key.lowercased()
-            return ["attack","decay","sustain","release","cutoff","resonance","filter","adsr","envelope"].contains { lower.contains($0) }
-        }.sorted()
-        if !shapingKeys.isEmpty {
-            draft.issues.append("Source sound-shaping parameters are retained in the patch archive but not translated: \(shapingKeys.joined(separator: ", ")). The destination keeps its own amplitude envelope and Mod Filter; set them explicitly in Sound Settings if the source values matter.")
+            guard key != "Channel_filterSustainPedal",
+                  shapingKeys.contains(where: { lower.contains($0) }) else{return nil}
+            return (key,shapingText(source[key]))
+        }.sorted{$0.0<$1.0}
+        // A key that cannot be stored without breaking the record's bounds is
+        // skipped, never truncated: distinct keys can share a prefix, and an
+        // invalid record would stop a library import from committing.
+        for (key,value) in shapingFields.filter({$0.0.count<=96}).prefix(32) {
+            draft.retainedShaping[key]=value
+            draft.issues.append("\(key) = \(value): retained in the source record and not translated; no StageKeys value was derived from it.")
         }
+        let oversized=shapingFields.filter{$0.0.count>96}
+        if !oversized.isEmpty {
+            draft.issues.append("\(oversized.count) source sound-shaping \(oversized.count==1 ? "key is":"keys are") longer than 96 characters and \(oversized.count==1 ? "was":"were") not retained or translated; the longest is \(oversized.map{$0.0.count}.max() ?? 0) characters. Those values remain in the patch archive.")
+        }
+        if shapingFields.count>32 {
+            draft.issues.append("The source channel has \(shapingFields.count) sound-shaping fields; only the first 32 are considered for retention, and none is translated.")
+        }
+        if !shapingFields.isEmpty {
+            draft.issues.append("No destination shaping value was substituted from the source. A converted sampler or hosted Audio Unit owns its amplitude envelope, so Sound Settings hides the native envelope for that sound; the Mod Filter is a separate StageKeys stage and is available there.")
+        }
+    }
+    /// Names that make an archived channel field look like sound shaping. Kept as
+    /// one table so every match is reported and none is silently substituted.
+    static let shapingKeys=["attack","decay","sustain","release","cutoff","resonance","filter","adsr","envelope"]
+    /// Bounded printable form of an archived value. Numbers keep their archived
+    /// spelling; containers are described by size, never expanded or guessed.
+    static func shapingText(_ value:Any?)->String {
+        guard let value else{return "absent"}
+        if let number=value as? NSNumber {
+            if CFGetTypeID(number)==CFBooleanGetTypeID(){return number.boolValue ? "true":"false"}
+            let double=number.doubleValue
+            guard double.isFinite else{return "non-finite"}
+            return double.rounded()==double && abs(double)<1e15 ? String(Int(double)):String(double)
+        }
+        if let text=value as? String {return "\"\(String(text.prefix(120)))\""}
+        if let data=value as? Data {return "\(data.count) bytes"}
+        if let list=value as? [Any] {return "\(list.count) values"}
+        if let fields=value as? [String:Any] {return "\(fields.count) fields"}
+        return "unreadable \(type(of: value))"
     }
     /// Observed MainStage 4.3.1 channel `volume`: Q24 square-root amplitude,
     /// unity at 90 and maximum at 127. This is not the mixer slider's AX value.

@@ -1,5 +1,8 @@
 ## Unreleased
 
+- Report each retained MainStage channel shaping value individually with its archived-value representation, store it in the layer's source record so it survives persistence, backup and setlist sharing, and stop telling users to set an envelope that Sound Settings hides for a converted sampler or hosted plug-in (#112). Containers are recorded as counts and strings are truncated to 120 characters, so this is a bounded representation, not the complete source value; keep the original MainStage document when you need the full setting. Shaping keys longer than the record limit are reported and skipped instead of stored, and sharing redacts absolute and home-relative paths in keys and values, so one oversized or path-like field cannot block an import or leak a local location.
+- Add optional per-sound sample-peak/RMS meters after each sound's fader and pan, with no taps while disabled and persisted legacy-safe settings; document the signal point and its true-peak/loudness limits.
+
 - Clear a channel's MIDI FX lookahead mark when a hosted-AU install is rejected or the instrument is retired, and report a channel as not schedulable while its replacement is pending, so a failed plug-in cannot keep a stale eligibility.
 
 - Recompute the per-channel MIDI FX lookahead set once patch activation installs finish and again when the activation drains, so a channel that gained or lost a sample-timed AU is never left marked from the outgoing instrument.
@@ -66,6 +69,8 @@
 - Show the Program Change opt-in in Patch Settings with an explicit `Program N` label, the raw MIDI 0–127 value and a caption explaining the 1–128 numbering some keyboards use, so the off-by-one is discoverable where the mapping is set.
 - Assign one unclaimed explicit number when the opt-in is enabled instead of reusing a value another patch already claims.
 - Add a standalone metronome engine with two synthesized click sounds, independent level, beat/downbeat velocities, accent patterns, subdivisions and master-follow; the click now bypasses the shared hall reverb.
+- Add a persisted metronome count-in with a toolbar/Settings action and external MIDI Clock sync (24 PPQN Start/Continue/Stop), including clock-derived tempo and a bounded one-shot count-in that stops when the click was off.
+- Gate Count In on running audio with an actionable message instead of scheduling into a stopped or failed engine, add macOS Shift-Command-M/I commands and accessibility state/units for the click controls, cancel a pending count-in when external clock mode changes, and document stopped/recovery behavior.
 - Persist every metronome control in `settings.json`, keep older files readable and refuse out-of-range saved values at launch.
 - Cover click timing at 44.1/48/96 kHz, irregular block splits, mid-beat tempo changes, long runs, presets and settings round trips.
 - Let the hosted Audio Unit editor expand an oversized plug-in view beyond the collapsed sheet cap and collapse it again, without offering the control when it would reveal nothing or when the window is already the limit.
