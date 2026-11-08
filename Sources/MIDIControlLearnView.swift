@@ -4,6 +4,29 @@ struct MIDIControlLearnView: View {
     @EnvironmentObject private var store: PerformanceStore
     @Environment(\.dismiss) private var dismiss
     private let general: [MIDIControlTarget] = [.master, .modulation, .sustain, .previousPatch, .nextPatch, .panic]
+    /// Builds learnable bypass and parameter targets for effects in loaded sounds.
+    private var effectTargets: [MIDIControlTarget] {
+        var targets: [MIDIControlTarget] = []
+        for layer in store.patch.layers.indices where store.patch.layers[layer].loaded {
+            for slot in store.patch.layers[layer].effects.indices {
+                let effect = store.patch.layers[layer].effects[slot]
+                guard effect.kind > 0 else { continue }
+                targets.append(.effectEnabled(layer, slot, effect.kind))
+                targets += AudioEffectCatalog.descriptors(for: effect.kind).map {
+                    MIDIControlTarget.effectParameter(layer, slot, effect.kind, $0.index)
+                }
+                if effect.importedDelay?.dryGain != nil {
+                    targets += [MIDIControlTarget.effectParameter(layer, slot, effect.kind, 4),
+                                MIDIControlTarget.effectParameter(layer, slot, effect.kind, 5)]
+                }
+                if effect.importedDelay != nil {
+                    targets += [MIDIControlTarget.effectParameter(layer, slot, effect.kind, 26),
+                                MIDIControlTarget.effectParameter(layer, slot, effect.kind, 27)]
+                }
+            }
+        }
+        return targets
+    }
     var body: some View {
         VStack(spacing: 0) {
             HStack {
@@ -25,9 +48,11 @@ struct MIDIControlLearnView: View {
                         }
                     }.padding(14).frame(maxWidth: .infinity, alignment: .leading).background(StageTheme.raised.opacity(0.3), in: RoundedRectangle(cornerRadius: 8))
                     section("GENERAL CONTROLS", targets: general)
+                    section("TONIC PAD", targets: [.tonicLevel, .tonicBrightness, .tonicShimmer])
                     section("SOUND LEVELS", targets: (0..<min(15, store.patch.layers.count)).map { .soundLevel($0) })
                     let snapshots = Array(store.patch.snapshots.indices.prefix(16)).map { MIDIControlTarget.snapshot($0) }
                     if !snapshots.isEmpty { section("PATCH SNAPSHOTS", targets: snapshots) }
+                    if !effectTargets.isEmpty { section("SOUND EFFECTS", targets: effectTargets) }
                 }.padding(20)
             }
         }.background(StageTheme.panel).frame(minWidth: 340, idealWidth: 760, minHeight: 500, idealHeight: 650)
