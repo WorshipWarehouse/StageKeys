@@ -1941,7 +1941,16 @@ final class PerformanceStore: ObservableObject {
                             do {prepared=try prepareLibrarySound(candidate.file,sampleRoot:candidate.samples);break}
                             catch{preparationError=error}
                         }
-                        guard let (sound,notes,template)=prepared else{throw preparationError ?? ExternalInstrumentError.missingFile}
+                        guard let (sound,notes,template)=prepared else {
+                            let error=preparationError ?? ExternalInstrumentError.missingFile
+                            let detail=error.localizedDescription
+                            if detail.localizedCaseInsensitiveContains("sample") && (detail.localizedCaseInsensitiveContains("missing") || detail.localizedCaseInsensitiveContains("choose")) {
+                                outcome(channelIndex,.needsSamples,detail)
+                                failures.append(channel.name+": "+detail)
+                                continue
+                            }
+                            throw error
+                        }
                         createdSound=sound
                         var layer=template ?? Layer(name:channel.name,instrument:-1,gain:1)
                         layer.name=channel.name;layer.external=sound

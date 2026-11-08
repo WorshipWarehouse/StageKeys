@@ -523,11 +523,21 @@ enum MainStageDiscovery {
         var values=[Location(instruments:retained,samples:retained,label:"Retained source"),
                     Location(instruments:source.pathExtension.lowercased()=="cst" ? source.deletingLastPathComponent():source,samples:source.pathExtension.lowercased()=="cst" ? source.deletingLastPathComponent():source,label:"Selected source")]
         #if os(macOS)
-        for root in [URL(fileURLWithPath:"/Library/Application Support/Logic"),FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Music/Audio Music Apps")] {
-            values.append(Location(instruments:root.appendingPathComponent("Sampler Instruments"),samples:root,label:root.lastPathComponent+" / Sampler Instruments"))
-        }
+        let home=FileManager.default.homeDirectoryForCurrentUser
+        // MainStage commonly keeps concert-local Sampler Instruments under
+        // ~/Music/MainStage, while newer Logic installations use a user library
+        // bundle rather than the older Audio Music Apps directory. Search the
+        // roots recursively because an EXS may refer to samples beside its
+        // concert or elsewhere below the same installed-content root.
+        values += [
+            Location(instruments:home.appendingPathComponent("Music/MainStage"),samples:home.appendingPathComponent("Music/MainStage"),label:"User MainStage content"),
+            Location(instruments:home.appendingPathComponent("Music/Logic Pro Library.bundle"),samples:home.appendingPathComponent("Music/Logic Pro Library.bundle"),label:"User Logic library"),
+            Location(instruments:home.appendingPathComponent("Music/Audio Music Apps"),samples:home.appendingPathComponent("Music/Audio Music Apps"),label:"User Audio Music Apps"),
+            Location(instruments:URL(fileURLWithPath:"/Library/Application Support/Logic"),samples:URL(fileURLWithPath:"/Library/Application Support/Logic"),label:"System Logic content")
+        ]
         #endif
-        return values
+        var seen=Set<String>()
+        return values.filter {seen.insert($0.instruments.standardizedFileURL.path+"\n"+$0.samples.standardizedFileURL.path).inserted}
     }
     static func find(_ names:Set<String>,locations:[Location])->Result {
         var result=Result(candidates:[:],searches:[])
