@@ -438,6 +438,22 @@ static void test_reset(void) {
 }
 
 int main(void) {
+    // Store tempo updates republish the existing disabled click setting. That
+    // idempotent command must not cancel a temporary count-in.
+    SKMetronome *temporary = sk_metronome_create(48000);
+    sk_metronome_settings(temporary, defaults());
+    sk_metronome_tempo(temporary, 120);
+    sk_metronome_enable(temporary, 0);
+    sk_metronome_count_in(temporary, 1);
+    Capture first, remaining;
+    uint32_t block = 256;
+    capture(&first, temporary, &block, 1, 12000);
+    assert(first.count == 1);
+    sk_metronome_tempo(temporary, 120);
+    sk_metronome_enable(temporary, 0);
+    capture(&remaining, temporary, &block, 1, 96000);
+    assert(remaining.count == 3);
+    sk_metronome_destroy(temporary);
     test_timing();
     test_tempo_change();
     test_accents();

@@ -797,12 +797,13 @@ static void metro_apply(SKMetronome*m,const MetronomeCommand*c){
   if(m->step>=(unsigned)m->settings.subdivision)m->step=0;
   if(m->beat>=(unsigned)m->settings.beatsPerBar)m->beat=0;
  }else if(c->kind==2){
+  int wasRequested=m->requestedEnabled;
   m->requestedEnabled=c->flag;
   if(c->flag){
    // Promoting a temporary count-in must preserve the running phase.
    m->countInRemaining=0;m->countInOnly=0;m->countInStopPending=0;
    if(!m->externalClock&&!m->enabled){m->enabled=1;m->beat=0;m->step=0;m->remaining=0;m->envelope=0;m->phase=0;}
-  }else{m->enabled=0;m->envelope=0;m->countInRemaining=0;m->countInOnly=0;m->countInStopPending=0;}
+  }else if(wasRequested || !m->countInOnly){m->enabled=0;m->envelope=0;m->countInRemaining=0;m->countInOnly=0;m->countInStopPending=0;}
  }else if(c->kind==3){m->tempo=c->value;m->interval=metro_interval(m);metro_rescale(m,old);}
  else if(c->kind==4){m->master=c->value;m->followsMaster=c->flag;}
  else if(c->kind==5){m->beat=0;m->step=0;m->remaining=m->interval;m->envelope=0;m->phase=0;m->countInRemaining=0;m->countInOnly=0;m->countInStopPending=0;}
