@@ -208,7 +208,7 @@ struct MainStageEffectSelectionSheet:View {
             ScrollView {
                 VStack(alignment:.leading,spacing:14) {
                     Text("Source effects, in source order").font(StageTheme.font(15,weight:.semibold))
-                    Text("EQ and compressor map to the instrument controls. Choose up to three other effects for the visible audio slots. Unselected processing remains in the archived source; no effect rack is appended automatically.").font(.caption).foregroundStyle(.secondary)
+                    Text("EQ and compressor map to the instrument controls. Choose up to three other effects for the visible audio slots. Verified linear Smart Control CC mappings follow selected effects; unselected processing remains archived and inactive.").font(.caption).foregroundStyle(.secondary)
                     ForEach(Array(request.draft.effects.enumerated()),id:\.offset) {index,effect in effectRow(index,effect)}
                     if request.draft.effects.isEmpty {Text("No translated audio effects were found in this channel.").font(.caption).foregroundStyle(.secondary)}
                     Divider()

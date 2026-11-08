@@ -132,7 +132,7 @@ enum MainStageProcessing {
                 notes.append("MIDI effect: \(midi.kind.rawValue.capitalized) "+(selection.midiEnabled ? "enabled":"bypassed")+"; selected manually.")
             }
             if hasMIDITransform {notes.append(selection.midi == nil ? "The source MIDI transform is retained in the source record but is not translated, so no MIDI effect was assigned.":"The source MIDI transform is retained in the source record; the selected native MIDI effect is a manual replacement, not a translation of the source transform.")}
-            if !macros.isEmpty {notes.append("\(macros.count) source Smart Control assignment(s) and their macro/MIDI values are retained in the source record; they are not active on the three performance slots.")}
+            if !macros.isEmpty {notes.append("\(macros.count) verified linear Smart Control assignment(s) are retained. MIDI CC mappings targeting selected Audio slots are active; mappings to unselected or unsupported processing remain source data only.")}
             let recordNames=sourceNames.count==effects.count ? sourceNames:effects.map{$0.title}
             let recordNotes=effectNotes.count==effects.count ? effectNotes:effects.map{_ in [String]()}
             layer.mainStageSource=MainStageSourceRecord(effects:effects,sourceNames:recordNames,effectNotes:recordNotes,macros:macros,issues:issues,selectedAudio:chosen,selectedMIDI:selection.midi?.validated,midiEnabled:selection.midiEnabled,hasMIDITransform:hasMIDITransform,omitted:omitted)

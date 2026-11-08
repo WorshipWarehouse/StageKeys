@@ -176,6 +176,16 @@ struct MainStageSourceRecord: Codable, Equatable {
         omitted.count <= 128 && omitted.allSatisfy { $0.count <= 2000 } &&
         issues.count <= 128 && issues.allSatisfy { $0.count <= 2000 }
     }
+    /// Apply only mappings that passed bounded translation. The complete source
+    /// effect list is the macro target; callers copy selected effects into the
+    /// visible slots after this update. Unsupported source mappings never enter
+    /// `macros`, so they remain archived but inactive.
+    mutating func applyMIDI(controller:Int,value:Float,channel:Int)->Bool {
+        var rack=ImportedRack(effects:effects,macros:macros)
+        guard rack.validate(),rack.applyMIDI(controller:controller,value:value,channel:channel) else{return false}
+        effects=rack.effects;macros=rack.macros
+        return true
+    }
 }
 struct ImportedBranch: Codable, Equatable {
     var name: String

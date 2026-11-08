@@ -1524,12 +1524,21 @@ final class PerformanceStore: ObservableObject {
     func applyImportedController(_ controller:Int,value:UInt8,channel:Int) {
         guard (0...127).contains(controller),(0...15).contains(channel),![120,123].contains(controller) else{return}
         for index in patch.layers.indices where patch.layers[index].loaded {
-            let layer=patch.layers[index]
+            var layer=patch.layers[index],changed=false
             if controller==64 && layer.blockSustain {continue}
             audio.externalRack?.control(channel:index,controller:UInt8(controller),value:value)
             if var rack=layer.importedRack,rack.applyMIDI(controller:controller,value:Float(value),channel:channel) {
-                setlist.patches[selected].layers[index].importedRack=rack
-                audio.configure(index,setlist.patches[selected].layers[index])
+                layer.importedRack=rack;changed=true
+            }
+            if var source=layer.mainStageSource,source.applyMIDI(controller:controller,value:Float(value),channel:channel) {
+                for (slot,sourceIndex) in source.selectedAudio.enumerated() where layer.effects.indices.contains(slot) && source.effects.indices.contains(sourceIndex) {
+                    layer.effects[slot]=source.effects[sourceIndex]
+                }
+                layer.mainStageSource=source;changed=true
+            }
+            if changed {
+                setlist.patches[selected].layers[index]=layer
+                audio.configure(index,layer)
             }
         }
     }
