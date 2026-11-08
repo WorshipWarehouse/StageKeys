@@ -62,3 +62,35 @@ Pending manual checks:
 Universal Mac and iOS Simulator Release builds pass with the inherited AU fixes. Manual MIDI refresh now calls the output enumerator rather than reading the existing cache. A production-store regression creates a real CoreMIDI destination without yielding to queued setup notifications and proves explicit refresh adds/removes it.
 
 MIDISetupTests, ManualMIDIDestinationRefreshTests, ExternalMIDITests and MIDIInputTests pass. CoreMIDI is allowed to coalesce messages, so the output test traverses every packet and checks decoded three-byte messages rather than assuming one message per packet. The test waits for all three output messages. Input coverage includes post-launch attachment, two source/channel identities, stable refresh, sustain/note-off, unplug and surviving input. The real Alesis was left idle; these synthetic endpoints do not constitute USB power-cycle or external IAC/hardware receiver certification. Broader physical-device acceptance remains open under issue #15.
+
+## Primary-only notes and the Secondary control surface — 8 November 2026
+
+Issue #15's controller contract says only the selected Primary controller generates patch notes, while the Primary and Secondary controllers may both drive learned UI controls. Before this change both slots fed one acceptance guard in `PerformanceStore.handleMIDI`, so a keyboard configured as the Secondary controller played the patch as well and could hold notes the Primary never started.
+
+- `MIDIControllerSlots` (`Sources/MIDIControlTarget.swift`) encodes the split as a pure value type. `acceptsNotes` consults the Primary slot only; `acceptsControls` accepts either slot and reuses the existing `accepts` predicate, including `-1` = any source/channel and `-2` = unused.
+- `handleMIDI` classifies status `0x80`/`0x90` as notes and every other message (CC, Program Change, pitch bend, aftertouch) as a control. The MIDI monitor line is still written before acceptance, so a filtered Secondary device stays diagnosable.
+- A source matching both slots is treated as the Primary, so selecting the same device for both slots does not silence it. A Secondary-only setup remains a control surface and the patch has no note source.
+- Pedals (CC64), the modulation wheel (CC1), panic (CC120/123), learned CC assignments and Program Change keep working from either controller. Only note ownership moved.
+- Slot changes already call `panic()`, which clears every `hardwareNotes` key, so demoting a controller cannot strand a held note.
+- Shipped defaults are unchanged: `primarySourceID = -1` (any) and `secondarySourceID = -2` (unused), so a single controller still plays notes and existing settings keep their behavior.
+
+### Tests
+
+- `Tests/MIDIControllerSlotsTests.swift` (new, `Foundation` only, default gate): primary-only note acceptance with per-slot channel filters, Secondary control acceptance, unused (`-2`) and wildcard (`-1`) slots, duplicate slot selection, a Secondary-only setup and a wildcard primary with a channel-filtered secondary.
+- `Tests/MIDISetupTests.swift`, `Tests/MIDIInputTests.swift`, `Tests/ProgramChangeOptInTests.swift` and `Tests/KeyboardPerformanceSettingsTests.swift` are adjacent checks and were not modified.
+
+Run on a Mac:
+
+```sh
+Tests/test-library.sh MIDIControllerSlotsTests
+Tests/test-library.sh MIDISetupTests MIDIInputTests ProgramChangeOptInTests
+```
+
+### Verification status
+
+Executed on Linux with the Swift 6.0.3 toolchain: `swiftc -O Sources/MIDIControlTarget.swift Tests/MIDIControllerSlotsTests.swift` builds and the program prints its `PASS` line; `swiftc -frontend -parse` accepts the changed `Store.swift`, rules and test. The repository's Linux gates (`git diff --check` and the `Tests/test-*.py` distribution, catalog, accessibility, preset, pack and library-gate checks plus `.agents/validate-skills.py`) pass.
+
+Not built or executed here: no Apple SDK is available, so `StageKeysMac`/`StageKeysMobile`, the Core MIDI suite and the app-level `handleMIDI` path are unverified in this environment. Still pending for #15:
+
+- Two real controllers (for example a keyboard on Primary and a pad/controller on Secondary): confirm only the Primary plays notes, that learned CCs, sustain and Program Change still work from the Secondary, and that the canary survives unplug/reconnect.
+- Confirm the MIDI monitor still shows Secondary messages and that a Secondary-only configuration cannot start notes by any route (screen keyboard is unaffected).

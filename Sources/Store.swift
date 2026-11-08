@@ -1502,8 +1502,15 @@ final class PerformanceStore: ObservableObject {
         midiLog.insert((midiSources.first(where: { $0.id == source })?.name ?? "MIDI") + String(format: " · Ch %02d · %02X · %d · %d", Int(status & 15) + 1, status & 0xf0, a, b), at: 0)
         midiLog = Array(midiLog.prefix(15))
         let channel=Int(status & 15)
-        guard MIDIControllerRules.accepts(sourceID: primarySourceID, channel: midiChannel, source: source, inputChannel: channel) ||
-              MIDIControllerRules.accepts(sourceID: secondarySourceID, channel: secondaryChannel, source: source, inputChannel: channel) else { return }
+        // Notes belong to the Primary controller, so a keyboard configured as the
+        // Secondary control surface cannot double-trigger or hold patch notes.
+        let slots=MIDIControllerSlots(primarySourceID: primarySourceID, primaryChannel: midiChannel,
+                                      secondarySourceID: secondarySourceID, secondaryChannel: secondaryChannel)
+        let message=status & 0xf0
+        let accepted = message == 0x80 || message == 0x90
+            ? slots.acceptsNotes(source: source, channel: channel)
+            : slots.acceptsControls(source: source, channel: channel)
+        guard accepted else { return }
         switch status & 0xf0 {
         case 0x90: if b == 0 { hardwareOff(source: source, channel: Int(status & 15), note: Int(a)) } else { hardwareOn(source: source, channel: Int(status & 15), note: Int(a), velocity: MIDIControllerRules.velocity(b, minimum: velocityMinimum, maximum: velocityMaximum)) }
         case 0x80: hardwareOff(source: source, channel: Int(status & 15), note: Int(a))

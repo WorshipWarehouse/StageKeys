@@ -114,3 +114,28 @@ enum MIDIControllerRules {
     }
 }
 
+/// The two configured controller slots. `-1` accepts any source or channel and
+/// `-2` marks the slot unused, matching the persisted settings values.
+struct MIDIControllerSlots: Equatable {
+    var primarySourceID: Int32 = -1
+    var primaryChannel = -1
+    var secondarySourceID: Int32 = -2
+    var secondaryChannel = -1
+
+    /// Only the selected Primary controller plays patch notes. A source that
+    /// matches both slots is the Primary, so selecting the same device twice does
+    /// not silence it.
+    func acceptsNotes(source: Int32, channel: Int) -> Bool {
+        MIDIControllerRules.accepts(sourceID: primarySourceID, channel: primaryChannel,
+                                    source: source, inputChannel: channel)
+    }
+    /// The Secondary controller is a control surface: learned CCs, the fixed
+    /// pedal/wheel/panic routes and Program Change accept either slot, but it
+    /// never triggers patch notes.
+    func acceptsControls(source: Int32, channel: Int) -> Bool {
+        acceptsNotes(source: source, channel: channel) ||
+            MIDIControllerRules.accepts(sourceID: secondarySourceID, channel: secondaryChannel,
+                                        source: source, inputChannel: channel)
+    }
+}
+
