@@ -411,6 +411,10 @@ struct EffectEditor: View {
                             }
                         } else {
                             VStack(spacing:8) {
+                                if draft.kind == 12 {
+                                    HStack {Text(draft.effectCore == "stage-pitch-v1" ? "Stage Pitch · Cubic":"Legacy Pitch Shifter").font(.caption).foregroundStyle(.secondary);Spacer();if draft.effectCore != "stage-pitch-v1" {Button("Use Stage Pitch"){draft.effectCore="stage-pitch-v1"}.buttonStyle(StageButtonStyle())}}.padding(.horizontal,20)
+                                    Text("Stage Pitch adds cubic head interpolation, 20 ms pitch and amount smoothing, and exact dry at Pitch 0 or Amount 0.").font(.caption).foregroundStyle(.secondary).padding(.horizontal,20)
+                                }
                                 if draft.kind == 17 {
                                     HStack {Text(draft.effectCore == "stage-clip-v1" ? "Stage Clip · Antialiased":"Legacy Clip Distortion").font(.caption).foregroundStyle(.secondary);Spacer();if draft.effectCore != "stage-clip-v1" {Button("Use Stage Clip"){draft.effectCore="stage-clip-v1"}.buttonStyle(StageButtonStyle())}}.padding(.horizontal,20)
                                     Text("Stage Clip smooths drive, tone, symmetry, clip/sum filters, shelf, mix and gains while retaining the antiderivative soft-clip curve.").font(.caption).foregroundStyle(.secondary).padding(.horizontal,20)
