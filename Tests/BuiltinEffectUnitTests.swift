@@ -16,7 +16,7 @@ import AVFoundation
         engine.attach(source);engine.attach(effect);engine.connect(source,to:effect,format:format);engine.connect(effect,to:engine.mainMixerNode,format:format)
         let unit=effect.auAudioUnit as! BuiltinEffectUnit
         var values=AudioEffectCatalog.defaults(for:kind)
-        let changes:[Int:(Int,Float)]=[1:(0,600),2:(0,0.8),3:(1,0.25),4:(0,4),5:(0,0.68),6:(5,1),7:(7,12),8:(0,0.2),9:(0,-12),10:(8,0.6),11:(0,0.96),12:(1,1),13:(0,0.5),14:(0,2),15:(0,20)]
+        let changes:[Int:(Int,Float)]=[1:(0,600),2:(0,0.8),3:(1,0.25),4:(0,4),5:(0,0.65),6:(5,1),7:(7,12),8:(0,0.2),9:(0,-12),10:(8,0.6),11:(0,0.96),12:(1,1),13:(0,0.5),14:(0,2),15:(0,20)]
         if let (index,value)=changes[kind]{values[index]=value}
         unit.configure(slot:0,kind:kind,enabled:enabled,values:values,tempo:120)
         try engine.enableManualRenderingMode(.offline,format:format,maximumFrameCount:512);engine.prepare();try engine.start()

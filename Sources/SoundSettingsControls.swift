@@ -172,6 +172,10 @@ struct ImportedRackControls: View {
                 ForEach(Array(rack.effects.enumerated()),id:\.offset) { index,effect in
                     DisclosureGroup("\(index+1). \(effect.title)") {
                         Toggle("Enabled",isOn:Binding(get:{layer.importedRack?.effects[index].enabled ?? false},set:{layer.importedRack?.effects[index].enabled=$0}))
+                        if effect.kind == 17 {
+                            HStack {Text(effect.effectCore == "stage-clip-v1" ? "Stage Clip · Antialiased":"Legacy Clip Distortion").font(.caption).foregroundStyle(.secondary);Spacer();if effect.effectCore != "stage-clip-v1" {Button("Use Stage Clip"){guard var imported=layer.importedRack else{return};imported.effects[index].effectCore="stage-clip-v1";guard imported.validate() else{return};layer.importedRack=imported}.buttonStyle(StageButtonStyle())}}.padding(.horizontal,20)
+                            Text("Stage Clip smooths drive, tone, symmetry, clip/sum filters, shelf, mix and gains while retaining the antiderivative soft-clip curve.").font(.caption).foregroundStyle(.secondary).padding(.horizontal,20)
+                        }
                         if effect.kind == 7 {
                             ChannelEqualizerControls(bands:eqBands(index),enabled:Binding(get:{layer.importedRack?.effects[index].enabled ?? false},set:{layer.importedRack?.effects[index].enabled=$0}))
                         } else if [4,5,10,11,15,16].contains(effect.kind) {

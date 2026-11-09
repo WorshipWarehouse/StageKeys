@@ -118,7 +118,7 @@ struct SoundImportView:View {
                 switch choice {
                 case .file:
                     if url.pathExtension.lowercased()=="stagekeyspack" {store.importLibraryBackup(url);status=nil}
-                    else if ["patch","cst"].contains(url.pathExtension.lowercased()) {store.importMainStageAutomatically(url);status=nil}
+                    else if ["patch","cst"].contains(url.pathExtension.lowercased()) {store.importMainStageAutomatically(url,convertAfterDiscovery:false);status=nil}
                     else if ["exs","aupreset"].contains(url.pathExtension.lowercased()) {
                         pending=url;status="Choose the folder containing this instrument’s samples. Imports preserve sample maps and translated rack effects, macros and MIDI settings. Conversion notes describe remaining approximations."
                         // Present the second picker after the first has dismissed.
@@ -132,7 +132,7 @@ struct SoundImportView:View {
                 case .mainStageSamples:
                     store.rememberMainStageSampleFolder(url);store.importMainStageSamplers(url);status=nil
                 case .mainStage:
-                    store.importMainStageAutomatically(url);status=nil
+                    store.importMainStageAutomatically(url,convertAfterDiscovery:false);status=nil
                 case .library:
                     store.importSamplerLibrary(url);status=store.message;store.message=nil
                 }
@@ -140,7 +140,7 @@ struct SoundImportView:View {
             }
         }.onDrop(of:[UTType.fileURL],isTargeted:nil){providers in
             guard let provider=providers.first else{return false}
-            _ = provider.loadObject(ofClass:URL.self){url,_ in guard let url,["patch","cst"].contains(url.pathExtension.lowercased()) else{return};DispatchQueue.main.async{store.importMainStageAutomatically(url)}}
+            _ = provider.loadObject(ofClass:URL.self){url,_ in guard let url,["patch","cst"].contains(url.pathExtension.lowercased()) else{return};DispatchQueue.main.async{store.importMainStageAutomatically(url,convertAfterDiscovery:false)}}
             return true
         }.sheet(item:$effectRequest){request in MainStageEffectSelectionSheet(request:request).environmentObject(store)}
     }
@@ -208,7 +208,7 @@ struct MainStageEffectSelectionSheet:View {
             ScrollView {
                 VStack(alignment:.leading,spacing:14) {
                     Text("Source effects, in source order").font(StageTheme.font(15,weight:.semibold))
-                    Text("EQ and compressor map to the instrument controls. Choose up to three other effects for the visible audio slots. Unselected processing remains in the archived source; no effect rack is appended automatically.").font(.caption).foregroundStyle(.secondary)
+                    Text("EQ and compressor map to the instrument controls. Choose up to three other effects for the visible audio slots. Verified linear Smart Control CC mappings follow selected effects; unselected processing remains archived and inactive.").font(.caption).foregroundStyle(.secondary)
                     ForEach(Array(request.draft.effects.enumerated()),id:\.offset) {index,effect in effectRow(index,effect)}
                     if request.draft.effects.isEmpty {Text("No translated audio effects were found in this channel.").font(.caption).foregroundStyle(.secondary)}
                     Divider()

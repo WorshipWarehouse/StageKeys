@@ -242,7 +242,7 @@ struct GroupedEffectControls:View {
         case 10:return [("Shimmer",[0,1,2,3]),("Character",[4,9,5,6])]
         case 15:return [("Settings",[0,1,2]),("Character",[10,3,4]),("Modulation",[5,6,7])]
         case 16:return [("Room",[0,1,2,3]),("Character",[6,7,8,4,5])]
-        case 5:return [("Chorus",[0,1,2,3])]
+        case 5:return [("Settings",[0,1,2,3])]
         case 11:return [("Overdrive",[0,1,2,4])]
         default:return [("Settings",[0,1])]
         }
@@ -369,7 +369,7 @@ struct EffectEditor: View {
                         VStack(alignment:.leading,spacing:20) {
                             HStack(alignment:.top,spacing:12){Image(systemName:"info.circle").font(.title2);VStack(alignment:.leading,spacing:4){Text("Changes to Effects").font(.headline);Text("Confirming changes to this effect slot updates existing patch snapshots.").font(.callout)}}.padding(20).frame(maxWidth:.infinity,alignment:.leading).overlay{RoundedRectangle(cornerRadius:10).stroke(.white.opacity(0.08))}
                             LazyVGrid(columns:Array(repeating:GridItem(.flexible(),spacing:18),count:4),spacing:14) {
-                                ForEach([4,7,11,15,5,8,12,1,6,9,13,2,3,10,14],id:\.self){kind in
+                                ForEach(AudioEffectCatalog.pickerOrder,id:\.self){kind in
                                     Button { draft=AudioEffect.factoryDefault(kind:kind);replacing=false } label:{HStack{Text(AudioEffectCatalog.names[kind]).font(StageTheme.font(12,weight:.semibold));Spacer(minLength:4);Image(systemName:"arrow.right.circle").font(.system(size:20))}.padding(14).frame(maxWidth:.infinity,minHeight:58,alignment:.leading).background(StageTheme.panel,in:RoundedRectangle(cornerRadius:10))}.buttonStyle(.plain)
                                 }
                             }
@@ -384,27 +384,64 @@ struct EffectEditor: View {
                         if draft.kind==14 {
                             Picker("Rotor Speed",selection:Binding(get:{Int(draft.values[0])},set:{var values=draft.values;values[0]=Float($0);draft.parameters=values})) { Text("Brake").tag(0); Text("Slow").tag(1); Text("Fast").tag(2) }.pickerStyle(.segmented).padding(.horizontal,20)
                         }
-                        if draft.kind==13 || draft.kind==15 {
-                            HStack {
-                                Text(draft.reverbCore == "dense-v1" ? "StageKeys Dense Engine" : "Legacy Engine").font(.caption).foregroundStyle(.secondary)
-                                Spacer()
-                                if draft.reverbCore != "dense-v1" {Button("Use Dense Engine"){draft.reverbCore="dense-v1"}.buttonStyle(StageButtonStyle())}
-                            }.padding(.horizontal,20)
-                            Text("Choose engine, size and quality before playing. Dry/Wet changes are smoothed in the Dense Engine. Near-maximum reflectivity creates long sustaining tails.").font(.caption).foregroundStyle(.secondary).padding(.horizontal,20)
+                        if draft.kind == 8 {
+                            VStack(spacing:6) {
+                                HStack {Text(draft.effectCore == "stage-flanger-v1" ? "Stage Flanger · Through-zero":"Legacy Flanger").font(.caption).foregroundStyle(.secondary);Spacer();if draft.effectCore != "stage-flanger-v1" {Button("Use Stage Flanger"){draft.effectCore="stage-flanger-v1"}.buttonStyle(StageButtonStyle())}}.padding(.horizontal,20)
+                                Text("Stage Flanger uses a 1.5 ms reference path so the comb crosses zero; Mix 0 is exact dry. Feedback remains bounded at either polarity.").font(.caption).foregroundStyle(.secondary).padding(.horizontal,20)
+                            }
                         }
                         if draft.kind == 3 {
-                            DelayEffectControls(effect:$draft,stereoAvailable:store.patch.layers[index].external != nil)
+                            VStack(spacing:8) {
+                                HStack {Text(draft.effectCore == "stage-delay-v1" ? "Stage Delay · Cubic":"Legacy Delay · Linear").font(.caption).foregroundStyle(.secondary);Spacer();if draft.effectCore != "stage-delay-v1" {Button("Use Stage Delay"){draft.effectCore="stage-delay-v1"}.buttonStyle(StageButtonStyle())}}.padding(.horizontal,20)
+                                DelayEffectControls(effect:$draft,stereoAvailable:store.patch.layers[index].external != nil)
+                            }
                         } else if draft.kind == 7 {
                             ChannelEqualizerControls(bands:equalizerBands,enabled:$draft.enabled).padding(.top,12)
                         } else if draft.kind == 13 {
-                            ScrollView(.horizontal,showsIndicators:false){PrimaVerbControls(sourceCore:draft.usesCreamCoat,denseCore:draft.reverbCore == "dense-v1",values:Binding(get:{draft.values},set:{draft.parameters=$0})).frame(minWidth:600).padding(.horizontal,16).padding(.vertical,8)}
-                        } else if [4,5,10,11,15,16].contains(draft.kind) {
-                            GroupedEffectControls(kind:draft.kind,values:Binding(get:{draft.values},set:{draft.parameters=$0}))
-                        } else { LazyVGrid(columns:Array(repeating:GridItem(.flexible(),spacing:10),count:3),spacing:15) {
-                            ForEach(controls.filter { !(draft.kind==3 && $0.index==1) && !(draft.kind==2 && draft.syncBeats != nil && $0.index==1) && !(draft.kind==14 && $0.index==0) }) { descriptor in
-                                EffectKnob(descriptor:descriptor,value:parameter(descriptor))
+                            VStack(spacing:8) {
+                                if draft.stageReverbMode != nil {
+                                    Picker("Algorithm",selection:Binding(get:{draft.stageReverbMode ?? .hall},set:{draft.stageReverbMode=$0})) {
+                                        ForEach(StageReverbMode.allCases){mode in Text(mode.title).tag(mode)}
+                                    }.pickerStyle(.segmented).padding(.horizontal,20).accessibilityLabel("Stage Reverb algorithm")
+                                } else {
+                                    HStack {Text("Legacy reverb algorithm").font(.caption).foregroundStyle(.secondary);Spacer();Button("Use Stage Reverb"){draft.reverbCore=StageReverbMode.hall.coreID}.buttonStyle(StageButtonStyle())}.padding(.horizontal,20)
+                                }
+                                ScrollView(.horizontal,showsIndicators:false){PrimaVerbControls(sourceCore:draft.usesCreamCoat,denseCore:draft.reverbCore == "dense-v1" || draft.stageReverbMode != nil,values:Binding(get:{draft.values},set:{draft.parameters=$0})).frame(minWidth:600).padding(.horizontal,16).padding(.vertical,8)}
                             }
-                        }.padding(20) }
+                        } else if draft.kind == 5 {
+                            VStack(spacing:8) {
+                                HStack {Text(draft.effectCore == "stage-chorus-v1" ? "Stage Chorus · Stereo":"Legacy Chorus").font(.caption).foregroundStyle(.secondary);Spacer();if draft.effectCore != "stage-chorus-v1" {Button("Use Stage Chorus"){draft.effectCore="stage-chorus-v1"}.buttonStyle(StageButtonStyle())}}.padding(.horizontal,20)
+                                GroupedEffectControls(kind:draft.kind,values:Binding(get:{draft.values},set:{draft.parameters=$0}))
+                            }
+                        } else if [4,10,11,15,16].contains(draft.kind) {
+                            VStack(spacing:8) {
+                                if draft.kind == 10 {
+                                    HStack {Text(draft.effectCore == "stage-shimmer-v1" ? "Stage Shimmer · Decoupled":"Legacy Halo Shimmer").font(.caption).foregroundStyle(.secondary);Spacer();if draft.effectCore != "stage-shimmer-v1" {Button("Use Stage Shimmer"){draft.effectCore="stage-shimmer-v1"}.buttonStyle(StageButtonStyle())}}.padding(.horizontal,20)
+                                    Text("Stage Shimmer pitches the direct signal before diffusion, so pitch quality is independent of room size, feedback, damping and diffusion.").font(.caption).foregroundStyle(.secondary).padding(.horizontal,20)
+                                }
+                                if draft.kind == 11 {
+                                    HStack {Text(draft.effectCore == "stage-overdrive-v1" ? "Stage Overdrive · Antialiased":"Legacy Overdrive").font(.caption).foregroundStyle(.secondary);Spacer();if draft.effectCore != "stage-overdrive-v1" {Button("Use Stage Overdrive"){draft.effectCore="stage-overdrive-v1"}.buttonStyle(StageButtonStyle())}}.padding(.horizontal,20)
+                                    Text("Stage Overdrive adds antiderivative antialiasing and smooths drive, filters, mix and output gain. Mix 0 at 0 dB boost is exact dry.").font(.caption).foregroundStyle(.secondary).padding(.horizontal,20)
+                                }
+                                GroupedEffectControls(kind:draft.kind,values:Binding(get:{draft.values},set:{draft.parameters=$0}))
+                            }
+                        } else {
+                            VStack(spacing:8) {
+                                if draft.kind == 12 {
+                                    HStack {Text(draft.effectCore == "stage-pitch-v1" ? "Stage Pitch · Cubic":"Legacy Pitch Shifter").font(.caption).foregroundStyle(.secondary);Spacer();if draft.effectCore != "stage-pitch-v1" {Button("Use Stage Pitch"){draft.effectCore="stage-pitch-v1"}.buttonStyle(StageButtonStyle())}}.padding(.horizontal,20)
+                                    Text("Stage Pitch adds cubic head interpolation, 20 ms pitch and amount smoothing, and exact dry at Pitch 0 or Amount 0.").font(.caption).foregroundStyle(.secondary).padding(.horizontal,20)
+                                }
+                                if draft.kind == 17 {
+                                    HStack {Text(draft.effectCore == "stage-clip-v1" ? "Stage Clip · Antialiased":"Legacy Clip Distortion").font(.caption).foregroundStyle(.secondary);Spacer();if draft.effectCore != "stage-clip-v1" {Button("Use Stage Clip"){draft.effectCore="stage-clip-v1"}.buttonStyle(StageButtonStyle())}}.padding(.horizontal,20)
+                                    Text("Stage Clip smooths drive, tone, symmetry, clip/sum filters, shelf, mix and gains while retaining the antiderivative soft-clip curve.").font(.caption).foregroundStyle(.secondary).padding(.horizontal,20)
+                                }
+                                LazyVGrid(columns:Array(repeating:GridItem(.flexible(),spacing:10),count:3),spacing:15) {
+                                    ForEach(controls.filter { !(draft.kind==3 && $0.index==1) && !(draft.kind==2 && draft.syncBeats != nil && $0.index==1) && !(draft.kind==14 && $0.index==0) }) { descriptor in
+                                        EffectKnob(descriptor:descriptor,value:parameter(descriptor))
+                                    }
+                                }.padding(20)
+                            }
+                        }
                     }
                 }
                 HStack { Spacer(); Button("Discard Changes") { dismiss() }.buttonStyle(StageButtonStyle()); Button("Confirm") { var layer=store.patch.layers[index];layer.effects[slot]=draft;store.confirmAudition(auditionToken,index:index,layer:layer);dismiss() }.buttonStyle(StageButtonStyle(selected:true)) }.padding(16)

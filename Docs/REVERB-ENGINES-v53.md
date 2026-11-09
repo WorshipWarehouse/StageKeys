@@ -1,4 +1,35 @@
-# Acoustic and ambient reverbs — 0.53
+# StageKeys acoustic and ambient reverbs
+
+## Reverb 2 profiles — 0.55
+
+New Stage Reverb instances use a versioned `stage-hall-v2` profile and expose
+Room, Hall and Ambient algorithms. The three profiles reuse the existing
+real-time-safe eight-line FDN and preallocated histories, but select distinct
+delay geometry, decay scaling, early-reflection balance and internal movement.
+Their persisted identifiers are `stage-room-v2`, `stage-hall-v2` and
+`stage-ambient-v2`; the C render boundary receives bounded selectors 3–5.
+
+This is an independent StageKeys sound-design direction, not an attempt to
+reproduce a proprietary effect. No new third-party DSP dependency is included
+in this milestone. Airwindows and other permissively licensed candidates remain
+evaluation inputs for later listening prototypes, and must demonstrate a
+measurable benefit before entering the shipping engine.
+
+Existing `dense-v1`, CreamCoat, unversioned and imported effects retain their
+stored algorithm and parameters. Opening an old patch does not migrate it.
+The editor identifies it as a legacy algorithm and offers an explicit **Use
+Stage Reverb** action; Confirm persists that choice and Discard restores the
+previous effect. New Stage Reverb instances default to Hall.
+
+`Reverb2ModesTests` renders an original impulse through all three profiles under
+AddressSanitizer and UndefinedBehaviorSanitizer. It requires finite bounded
+output, distinct responses, and increasing late energy from Room to Hall to
+Ambient. The complete reverb suite continues to cover 44.1, 48 and 96 kHz,
+stacking, automation, stereo behavior, predelay, Panic, legacy algorithms and
+shimmer. These objective checks do not replace level-matched listening or
+physical iPad performance qualification.
+
+## Dense reverb foundation — 0.53
 
 ## Audit and implementation decision
 
@@ -18,7 +49,7 @@ Dry, Wet, Tone and Low Cut slew over approximately 20 ms in the new core. Filter
 
 ## Compatibility and tails
 
-Newly selected acoustic and ambient effects store `reverbCore: dense-v1`. Existing unversioned/legacy ambient, legacy acoustic and CreamCoat effects retain their original algorithms and parameters. **Use Dense Engine** explicitly upgrades a draft; Confirm saves it and Discard restores the prior effect. JSON patch and effect-preset round trips retain the engine choice. Both built-in instruments and hosted/native sampler processing receive the same selector and physical parameter values.
+Existing 0.53 acoustic and ambient effects store `reverbCore: dense-v1`. Existing unversioned/legacy ambient, legacy acoustic and CreamCoat effects retain their original algorithms and parameters. In 0.55, newly selected acoustic effects instead use the explicit Stage Reverb profiles described above. JSON patch and effect-preset round trips retain the engine choice. Both built-in instruments and hosted/native sampler processing receive the same selector and physical parameter values.
 
 Patch selection now releases notes/sustain without clearing effects when Silence Previous is off. Reverb tails survive only where the instrument and effect graph remain retained and compatible, at the new patch’s output level. Different instruments, changed effect types, bypass/removal, graph rebuilds and Silence Previous can still cut tails. There is no detached old-graph tail pool in this release. Explicit Panic resets channel histories, the shared hall and limiter history; buffered output takes its normal host-buffer time to drain. The production-graph regression allows host numerical residue below −110 dBFS RMS after draining eight blocks (measured approximately −121 dBFS), rather than asserting mathematical silence from Apple’s units.
 

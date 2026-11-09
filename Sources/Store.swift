@@ -685,7 +685,10 @@ final class PerformanceStore: ObservableObject {
             return MainStageDiscovery.Location(instruments:url,samples:url,label:"Remembered · "+folder.label)
         }
     }
-    func importMainStageAutomatically(_ url:URL,locations:[MainStageDiscovery.Location]?=nil,installedAudioUnits:[ExternalAUIdentity]?=nil) {
+    /// Retain and inspect a MainStage source, then discover its dependencies.
+    /// UI callers stop after discovery so channel/effect choices can be reviewed;
+    /// the default keeps the programmatic one-shot import used by automation and tests.
+    func importMainStageAutomatically(_ url:URL,locations:[MainStageDiscovery.Location]?=nil,installedAudioUnits:[ExternalAUIdentity]?=nil,convertAfterDiscovery:Bool=true) {
         guard !libraryImportBusy else{return}
         importMainStagePatch(url)
         guard let report=mainStageImportReport,let archive=report.sourceArchiveID else{return}
@@ -705,6 +708,39 @@ final class PerformanceStore: ObservableObject {
             }
             mainStageDiscoveryCandidates=discovery.candidates
             libraryImportBusy=false
+            if !convertAfterDiscovery {
+                for (index,channel) in report.channels.enumerated() where selectedMainStageChannels.contains(index) {
+                    if channel.unsupportedInstrumentFamily != nil {
+                        mainStageOutcomes[index].state = .unsupported
+                        mainStageOutcomes[index].detail = channel.nativeInstrumentStatus
+                    } else if channel.instruments.count == 1,let name=channel.instruments.first {
+                        let candidates=discovery.candidates[name] ?? []
+                        if candidates.isEmpty {
+                            mainStageOutcomes[index].state = .needsSamples
+                            mainStageOutcomes[index].detail = "Original EXS instrument not found. Choose the folder containing its instrument and samples."
+                        } else if Set(candidates.compactMap(\.identity)).count > 1 {
+                            mainStageOutcomes[index].state = .needsSamples
+                            mainStageOutcomes[index].detail = "Different EXS maps or sample contents share this filename. Choose the intended source folder."
+                        } else if candidates.allSatisfy({$0.sampleIssue != nil}) {
+                            mainStageOutcomes[index].state = .needsSamples
+                            mainStageOutcomes[index].detail = candidates.compactMap(\.sampleIssue).first ?? "The EXS instrument was found, but its original samples are unavailable."
+                        } else {
+                            mainStageOutcomes[index].state = .pending
+                            mainStageOutcomes[index].detail = "EXS instrument located. Review effects, then convert to verify and retain every referenced sample."
+                        }
+                    } else if channel.instruments.count > 1 {
+                        mainStageOutcomes[index].state = .unsupported
+                        mainStageOutcomes[index].detail = "Multiple sampler instruments require channel topology translation; none will be silently flattened."
+                    } else if !channel.thirdPartyAudioUnits.isEmpty {
+                        mainStageOutcomes[index].state = .pending
+                        mainStageOutcomes[index].detail = "Saved Audio Unit state is ready for installed-component verification during conversion."
+                    }
+                }
+                let located=mainStageOutcomes.filter{$0.state == .pending}.count
+                let missing=mainStageOutcomes.filter{$0.state == .needsSamples}.count
+                libraryImportProgress="Preflight complete · \(located) channel(s) ready to verify · \(missing) need original instruments or samples. Review channels and effects before converting. No sounds were added."
+                return
+            }
             importMainStageSamplers(retained,installedAudioUnits:installedAudioUnits,allowPartial:true)
         }
     }
@@ -726,7 +762,7 @@ final class PerformanceStore: ObservableObject {
     }
     func convertIncludedMainStageSounds() {
         guard let id=mainStageImportReport?.sourceArchiveID,UUID(uuidString:id) != nil else{return}
-        importMainStageSamplers(saveURL.deletingLastPathComponent().appendingPathComponent("MainStage Sources/"+id+"/Source.patch",isDirectory:true))
+        importMainStageSamplers(saveURL.deletingLastPathComponent().appendingPathComponent("MainStage Sources/"+id+"/Source.patch",isDirectory:true),allowPartial:true)
     }
     @Published var libraryImportBusy=false
     private var libraryImportCancelRequested=false
@@ -1647,12 +1683,33 @@ final class PerformanceStore: ObservableObject {
     func applyImportedController(_ controller:Int,value:UInt8,channel:Int) {
         guard (0...127).contains(controller),(0...15).contains(channel),![120,123].contains(controller) else{return}
         for index in patch.layers.indices where patch.layers[index].loaded {
-            let layer=patch.layers[index]
+            var layer=patch.layers[index],changed=false
             if controller==64 && layer.blockSustain {continue}
             audio.externalRack?.control(channel:index,controller:UInt8(controller),value:value)
             if var rack=layer.importedRack,rack.applyMIDI(controller:controller,value:Float(value),channel:channel) {
-                setlist.patches[selected].layers[index].importedRack=rack
-                audio.configure(index,setlist.patches[selected].layers[index])
+                layer.importedRack=rack;changed=true
+            }
+            if var source=layer.mainStageSource,source.applyMIDI(controller:controller,value:Float(value),channel:channel) {
+                let previous=layer.mainStageSource!.effects
+                for (slot,sourceIndex) in source.selectedAudio.enumerated() where layer.effects.indices.contains(slot) && source.effects.indices.contains(sourceIndex) {
+                    guard previous.indices.contains(sourceIndex),layer.effects[slot].kind==previous[sourceIndex].kind,
+                          source.effects[sourceIndex].kind==previous[sourceIndex].kind else{continue}
+                    var visible=layer.effects[slot],values=visible.values
+                    let before=previous[sourceIndex].values,after=source.effects[sourceIndex].values
+                    for parameter in after.indices where before.indices.contains(parameter) && values.indices.contains(parameter) && before[parameter] != after[parameter] {values[parameter]=after[parameter]}
+                    visible.parameters=values
+                    if let oldDelay=previous[sourceIndex].importedDelay,let newDelay=source.effects[sourceIndex].importedDelay,var delay=visible.importedDelay {
+                        if oldDelay.dryGain != newDelay.dryGain {delay.dryGain=newDelay.dryGain}
+                        if oldDelay.wetGain != newDelay.wetGain {delay.wetGain=newDelay.wetGain}
+                        visible.importedDelay=delay
+                    }
+                    layer.effects[slot]=visible
+                }
+                layer.mainStageSource=source;changed=true
+            }
+            if changed {
+                setlist.patches[selected].layers[index]=layer
+                audio.configure(index,layer)
             }
         }
     }
@@ -2180,23 +2237,30 @@ final class PerformanceStore: ObservableObject {
             var preparedAssets=Set<URL>(),committed=false
             defer{if !committed {for asset in preparedAssets {try? FileManager.default.removeItem(at:asset)}}}
             do {
-                let files=names.isEmpty || discovered != nil ? []:try MainStagePatch.findSamplerInstruments(names,in:folder)
+                // A folder explicitly chosen after preflight must be searched even
+                // when discovery already cached candidates. Merge both sources;
+                // never let stale preflight results hide a newly authorized EXS.
+                let files=names.isEmpty ? []:try MainStagePatch.findSamplerInstruments(names,in:folder)
                 let library=SoundLibrary(url:saveURL.deletingLastPathComponent().appendingPathComponent("sound-library.json"))
                 let original=try library.read()
                 var entries=original,imported=0,skipped=0,failures:[String]=[]
                 for (channelIndex,channel) in report.channels.enumerated() where selection.contains(channelIndex) && !channel.instruments.isEmpty {
                     guard channel.unsupportedInstrumentFamily == nil else {outcome(channelIndex,.unsupported,channel.nativeInstrumentStatus);failures.append(channel.name+": "+channel.nativeInstrumentStatus);continue}
                     guard channel.instruments.count==1,let name=channel.instruments.first else{outcome(channelIndex,.unsupported,"Multiple sampler instruments require channel topology translation; none were silently flattened.");failures.append(channel.name+": layered sampler selection requires translation");continue}
-                    let candidates=try discovered?[name] ?? files.filter{$0.lastPathComponent==name}.map{MainStageDiscovery.Candidate(file:$0,samples:folder,sha256:try AssetDigest.sha256($0))}
-                    guard !candidates.isEmpty,Set(candidates.map(\.sha256)).count==1 else{let reason=candidates.isEmpty ? "Instrument not found in searched locations; choose its sample folder.":"Different instruments share this filename; choose a narrower folder.";outcome(channelIndex,.needsSamples,reason);failures.append(name+": "+reason);continue}
-                    let file=candidates[0].file
+                    var candidates=discovered?[name] ?? []
+                    candidates += files.filter{$0.lastPathComponent==name}.compactMap{try? MainStageDiscovery.candidate(file:$0,samples:folder)}
+                    var candidateKeys=Set<String>()
+                    candidates=candidates.filter{candidateKeys.insert($0.file.standardizedFileURL.path+"\n"+$0.samples.standardizedFileURL.path).inserted}
+                    let playable=candidates.filter{$0.sampleIssue==nil && $0.identity != nil}
+                    guard !playable.isEmpty,Set(playable.compactMap(\.identity)).count==1 else{let reason=playable.isEmpty ? (candidates.compactMap(\.sampleIssue).first ?? "Instrument not found in searched locations; choose its sample folder."):"Different EXS maps or sample contents share this filename; choose the intended source folder.";outcome(channelIndex,.needsSamples,reason);failures.append(name+": "+reason);continue}
+                    let file=playable[0].file
                     libraryImportProgress="Importing MainStage channel: "+channel.name
                     await Task.yield();try checkLibraryImportCancellation()
                     let assetsBefore=managedImportAssets()
                     var createdSound:ExternalSound?,createdOriginal:StageKeysSampler.Original?
                     do {
                         let processing=try mainStageProcessing(channelIndex)
-                        let id=try MainStagePatch.conversionID(report,channel:channel,variant:AssetDigest.sha256(file))
+                        let id=try MainStagePatch.conversionID(report,channel:channel,variant:playable[0].identity!)
                         if let existing=entries.firstIndex(where:{$0.id==id}) {
                             entries[existing].sourceArchiveID=report.sourceArchiveID
                             outcome(channelIndex,.duplicate,"Already installed; personal edits retained.",id)
@@ -2204,12 +2268,21 @@ final class PerformanceStore: ObservableObject {
                         }
                         var prepared:(ExternalSound,[String]?,Layer?)?
                         var preparationError:Error?
-                        for candidate in candidates {
+                        for candidate in playable {
                             let access=candidate.samples.startAccessingSecurityScopedResource();defer{if access{candidate.samples.stopAccessingSecurityScopedResource()}}
                             do {prepared=try prepareLibrarySound(candidate.file,sampleRoot:candidate.samples);break}
                             catch{preparationError=error}
                         }
-                        guard let (sound,notes,template)=prepared else{throw preparationError ?? ExternalInstrumentError.missingFile}
+                        guard let (sound,notes,template)=prepared else {
+                            let error=preparationError ?? ExternalInstrumentError.missingFile
+                            let detail=error.localizedDescription
+                            if detail.localizedCaseInsensitiveContains("sample") && (detail.localizedCaseInsensitiveContains("missing") || detail.localizedCaseInsensitiveContains("choose")) {
+                                outcome(channelIndex,.needsSamples,detail)
+                                failures.append(channel.name+": "+detail)
+                                continue
+                            }
+                            throw error
+                        }
                         createdSound=sound
                         var layer=template ?? Layer(name:channel.name,instrument:-1,gain:1)
                         layer.name=channel.name;layer.external=sound
