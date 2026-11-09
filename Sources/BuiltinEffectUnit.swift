@@ -50,6 +50,7 @@ final class BuiltinEffectUnit: AUAudioUnit {
         // Keep it across format changes and render-resource reallocation.
         if kind==3 {clean.append(values.count>4 && values[4].isFinite && values[4]>=0.5 ? 1:0)}
         if kind==5 {clean.append(values.count>5 && values[5].isFinite && values[5]>=0.5 ? 1:0)}
+        if kind==11 {clean.append(values.count>5 && values[5].isFinite && values[5]>=0.5 ? 1:0)}
         if kind==13 {clean.append(values.count>10 && values[10].isFinite ? max(0,min(5,values[10].rounded())):0)}
         if kind==15 {clean.append(values.count>11 && values[11].isFinite && values[11]>0 ? 1:0)}
         settings[slot]=Setting(kind:kind,enabled:enabled,values:clean,tempo:max(20,min(300,tempo)),delay:delay)

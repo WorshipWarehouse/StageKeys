@@ -28,6 +28,9 @@ import Foundation
   let chorus=AudioEffect.factoryDefault(kind:5);assert(chorus.effectCore=="stage-chorus-v1" && chorus.renderValues.last==1 && chorus.validate())
   let cp=EffectPreset(name:"Stage Stereo",effect:chorus);try EffectPresetArchive.save([cp],to:qualityURL);assert(EffectPresetArchive.load(qualityURL)==[cp])
   var legacyChorus=chorus;legacyChorus.effectCore=nil;assert(legacyChorus.validate() && legacyChorus.renderValues.last==0)
+  let overdrive=AudioEffect.factoryDefault(kind:11);assert(overdrive.effectCore=="stage-overdrive-v1" && overdrive.renderValues.last==1 && overdrive.validate())
+  let op=EffectPreset(name:"Stage Drive",effect:overdrive);try EffectPresetArchive.save([op],to:qualityURL);assert(EffectPresetArchive.load(qualityURL)==[op])
+  var legacyOverdrive=overdrive;legacyOverdrive.effectCore=nil;assert(legacyOverdrive.validate() && legacyOverdrive.renderValues.last==0)
   var wrong=delay;wrong.kind=10;assert(!wrong.validate())
   print("PASS: effect preset settings/core round-trip, invalid saves preserve archive, corrupt archive rejected")
  }

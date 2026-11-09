@@ -402,7 +402,13 @@ struct EffectEditor: View {
                                 GroupedEffectControls(kind:draft.kind,values:Binding(get:{draft.values},set:{draft.parameters=$0}))
                             }
                         } else if [4,10,11,15,16].contains(draft.kind) {
-                            GroupedEffectControls(kind:draft.kind,values:Binding(get:{draft.values},set:{draft.parameters=$0}))
+                            VStack(spacing:8) {
+                                if draft.kind == 11 {
+                                    HStack {Text(draft.effectCore == "stage-overdrive-v1" ? "Stage Overdrive · Antialiased":"Legacy Overdrive").font(.caption).foregroundStyle(.secondary);Spacer();if draft.effectCore != "stage-overdrive-v1" {Button("Use Stage Overdrive"){draft.effectCore="stage-overdrive-v1"}.buttonStyle(StageButtonStyle())}}.padding(.horizontal,20)
+                                    Text("Stage Overdrive adds antiderivative antialiasing and smooths drive, filters, mix and output gain. Mix 0 at 0 dB boost is exact dry.").font(.caption).foregroundStyle(.secondary).padding(.horizontal,20)
+                                }
+                                GroupedEffectControls(kind:draft.kind,values:Binding(get:{draft.values},set:{draft.parameters=$0}))
+                            }
                         } else { LazyVGrid(columns:Array(repeating:GridItem(.flexible(),spacing:10),count:3),spacing:15) {
                             ForEach(controls.filter { !(draft.kind==3 && $0.index==1) && !(draft.kind==2 && draft.syncBeats != nil && $0.index==1) && !(draft.kind==14 && $0.index==0) }) { descriptor in
                                 EffectKnob(descriptor:descriptor,value:parameter(descriptor))
