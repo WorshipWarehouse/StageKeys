@@ -17,6 +17,39 @@ StageKeys keeps a replaced audio graph connected through a dedicated tail mixer 
 - `Silence Previous` and explicit Panic silence retired tails immediately. Normal patch changes preserve them when `Silence Previous` is off.
 - Graph edits and retirement run on the main thread while the engine is already stopped. No node is attached, disconnected or rebuilt from a render callback.
 
+## Sampler teardown ownership and verification (#192)
+
+A hosted sampler that leaves the active graph is released through one
+ownership registry and one disposal order. The registry keeps samplers weakly
+plus their retained document state, so it can never keep a detached sampler
+alive. Truncating the oldest tail (the documented hard two-tail bound) runs the
+same order while the engine is stopped: mute, disconnect, detach, forget every
+rack-side owner, then drop the references.
+
+Truncation commits into the graph rollback instead of being undone. A released
+tail cannot be restored, so the snapshot is pruned as a unit: its nodes, its
+connection routes (including routes that pointed into a released node), its
+captured voices, its tail records with their captured silence, its mixer and
+effect entries and its branch records. A rollback after truncation therefore
+restores a complete connected graph without that tail, never one that
+references released nodes.
+
+The transaction snapshot is moved out of its storage before completion and
+filtered in place, so no second copy of the sampler list survives the restart.
+Immediately before `engine.start()`, DEBUG builds check every sampler that the
+transaction truncated or purged and record `releasedBeforeRestart` or
+`retainedPastStop`. The bounded 64-entry ledger (`attached`, `retired`,
+`truncated`, `purged`, `releasedBeforeRestart`, `retainedPastStop`) is exposed
+as an optional field in the existing local support report; release builds record
+nothing. No plug-in state, path, sample payload or session content is kept.
+
+`Tests/ExternalGraphTailTests` drives both outcomes: truncation followed by a
+rollback, and a forward restart failure whose rollback restart succeeds. It
+asserts the evicted tail stays gone, the restored graph still renders, and no
+truncated sampler is still alive at the stopped point. This is generated-tone
+evidence on the offline graph; the owner's live macOS crash remains
+unreproduced.
+
 ## Verification
 
 `Tests/ExternalGraphTailTests.swift` uses generated tones and synthetic imported racks to exercise:
@@ -26,7 +59,8 @@ StageKeys keeps a replaced audio graph connected through a dedicated tail mixer 
 - a held sustain release;
 - stacked reverbs;
 - explicit Panic clearing the retained tail;
-- four rapid switches with a maximum of two retained tails and a bounded rack-node count after repeated same-size replacements.
+- four rapid switches with a maximum of two retained tails and a bounded rack-node count after repeated same-size replacements;
+- truncation followed by a rollback, and a forward restart failure whose rollback restart succeeds, with the sampler release ledger showing no truncated sampler alive at the stopped point before either restart.
 
 `Tests/ReverbTransitionTests.swift` additionally checks the native effect path: compatible patch changes keep the tail, while `Silence Previous` and explicit Panic clear it.
 

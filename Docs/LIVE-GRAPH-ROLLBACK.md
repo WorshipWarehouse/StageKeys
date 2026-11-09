@@ -6,6 +6,14 @@ Implementation follow-up, 2 November 2026, for #123/#110. This extends the histo
 
 Before a structural edit, the rack retains its own node identities, per-output-bus connection points/formats, active voices, controller values, note intent, mixer settings, built-in effect parameters and bounded retired-tail records. It does not enumerate `AVAudioEngine.attachedNodes`, which can instantiate the input singleton. If the operation, sampler restoration or engine restart fails, it reconnects the retained graph and attempts restoration/restart. The original error still propagates; scalar support evidence separately records forward completion errors, rollback success and rollback error. A failed rollback leaves the engine stopped and uses the existing explicit manual-retry flow.
 
+Tail truncation is committed into the rollback snapshot (see
+[GRAPH-TAILS.md](GRAPH-TAILS.md)). A tail released while the engine was stopped
+cannot be restored, so the snapshot is pruned as one unit - nodes, routes that
+referenced them, captured voices, tail records and branch records - and a
+rollback after truncation restores the remaining graph without dangling routes.
+That is a deliberate limit of the documented hard two-tail bound, not a general
+rollback of released audio.
+
 Note intent records pitch, velocity, source and key release under sustain. Sampler reloads replay owned notes, including note-on/note-off under the retained pedal. Pedal release, source release, Panic and replacement retirements clear the corresponding intent. Successful replacement does not inherit the retired sound's notes. Retriggering can be audible: no phase, sample-position, envelope, scheduler-time or uninterrupted release-tail continuity is claimed. DSP histories are not serialized by the parameter snapshot.
 
 A whole-patch operation also changes host selection, MIDI and configuration caches. When such a batch rejects speculative configuration, it stops and requires saved-patch retry even if rack rollback succeeded. A rack-only failed batch whose prior graph is restored can remain running. This distinction prevents a restored old unit from being advertised under speculative host caches.
