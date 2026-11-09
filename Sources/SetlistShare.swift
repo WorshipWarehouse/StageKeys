@@ -228,6 +228,7 @@ enum SetlistShare {
                     record.effectNotes = record.effectNotes.map { $0.map(portableText) }
                     record.issues = record.issues.map(portableText)
                     record.omitted = record.omitted.map(portableText)
+                    record.retainedShaping = record.retainedShaping.map(portableShaping)
                     setlist.patches[p].layers[l].mainStageSource = record
                 }
             }
@@ -399,12 +400,30 @@ enum SetlistShare {
         return sound
     }
     /// Replace a whole local path, including spaces and all remaining path
-    /// segments, through the end of the line. Over-redacting the tail is safer
-    /// than leaving a home-directory or volume fragment in a shared note.
+    /// segments, through the end of the line. Absolute and home-relative forms
+    /// are both matched; over-redacting the tail is safer than leaving a
+    /// home-directory or volume fragment in a shared note.
     private static func portableText(_ value: String) -> String {
         value.replacingOccurrences(
-            of: #"(?:file://)?/(?:Users|home|private|Library|Applications|System|Volumes|opt|var|tmp)/[^\n\r,;]+"#,
+            of: #"(?:file://)?(?:/|~/)[^\n\r]+"#,
             with: "[source location]", options: .regularExpression)
+    }
+    /// A retained shaping key can itself be a local path, because a file name
+    /// such as `/Users/owner/Private/Attack.exs` matches the shaping names. Redact
+    /// the key as well as its value, and keep redacted keys distinct.
+    private static func portableShaping(_ values: [String: String]) -> [String: String] {
+        var result: [String: String] = [:]
+        for (key, value) in values.sorted(by: { $0.key < $1.key }) {
+            let name = portableText(key)
+            var candidate = name.isEmpty ? "[source field]" : String(name.prefix(96)), attempt = 0
+            while result[candidate] != nil {
+                attempt += 1
+                let marker = " (\(attempt + 1))"
+                candidate = String(name.prefix(max(1, 96 - marker.count))) + marker
+            }
+            result[candidate] = portableText(value)
+        }
+        return result
     }
     private static func uniqueName(_ name: String, existing: [String]) -> String {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)

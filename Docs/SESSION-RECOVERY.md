@@ -1,7 +1,15 @@
-# Session recovery
+# Session migration and recovery
 
 Refs #20. Setlist and settings saves retain a validated `.previous` copy before an atomic replacement. Identical writes do not rotate the backup. Invalid, oversized, symlink or unsupported-version session files cannot replace a last-known-good copy.
 
 Previously a failed startup load displayed an error but continued with defaults; the resign-active autosave could overwrite the unreadable session. Startup failure now blocks automatic session/settings writes. Settings displays **Recover Previous Session**. Recovery validates the previous copy first, retains the damaged bytes under a unique `.damaged-*` filename and restores the known-good session. Restored settings require a restart to apply the original routing safely. Failed recovery does not replace the current files. If no previous copy exists, retain the files and restore a portable backup; no silent reset is offered.
 
-The two session files are each atomic, not a multi-file transaction. Portable library recovery, power-loss guarantees across volumes and every historical migration fixture remain separate release verification. `SessionRecoveryTests` exercises actual Store startup/autosave protection and exact byte retention with synthetic sessions; private user files are never modified by the test.
+## Schema and autosave contract
+
+Setlist schema versions 1 through 4 are accepted. Loading an older supported setlist validates it, pads each patch to the current 15-layer rack, extends snapshot values to match, and exposes the document as version 4 in memory. A successful save writes version 4. The first save after loading a legacy session keeps its exact original bytes in `setlist-v<version>-backup.json` and in the validated `.previous` copy; later writes rotate only the immediately prior valid primary. If a legacy version is restored from `.previous`, StageKeys upgrades it again on load. Version 0, future versions, malformed JSON and invalid model values are rejected rather than defaulted or rewritten.
+
+The Store's explicit `save()` path is also used by app resign-active autosave. A failed session or settings load blocks that path and preserves the unreadable primary; Settings recovery remains an explicit action. `.previous` is a one-step prior-file restore, not an in-editor undo stack. Restoring it validates before retaining the current primary and publishing the original backup bytes.
+
+Each file replacement uses Foundation's atomic write option. Validation and encoding happen before publication; a failure rotating the prior copy leaves the primary untouched, and an injected failure before primary replacement retains the valid primary. Setlist, settings and the local library copy are separate writes, not a multi-file transaction. Atomic replacement does not establish a power-loss durability guarantee, even on a single volume.
+
+`SessionMigrationTests` exercises a generated v1 document through migration, autosave, restart and exact-byte previous-session restore; it also checks a future schema, recovery-file retention, and injected failures at backup rotation and primary publication. `SessionRecoveryTests` covers damaged startup/autosave protection, explicit recovery, oversized primary preservation, unsafe links and invalid backups. These deterministic library tests do not qualify physical-device portable restoration. Clean-device library/setlist restore, hardware checks, storage/permission limits and power-loss behavior remain separate release gates; private user files are never used.

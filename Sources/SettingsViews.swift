@@ -125,6 +125,18 @@ struct SettingsEditor: View {
                             Toggle("Metronome", isOn: $store.metronome)
                             Stepper("\(Int(store.performedTempo)) BPM", value: Binding(get: { store.performedTempo }, set: { store.updateTempo($0) }), in: 20...300)
                             Toggle("Show in toolbar", isOn: $store.metronomeSettings.visible)
+                            Toggle("Follow external MIDI clock", isOn: $store.metronomeSettings.followsMIDIClock)
+                                .accessibilityHint("Uses 24-pulse MIDI Clock from the primary or secondary controller.")
+                            Text("Listens for MIDI Clock at 24 pulses per quarter note from the primary or secondary controller. Start and Continue begin the click; Stop silences it. Song Position Pointer is not used, so Continue resumes on the next beat rather than guessing a bar.").font(.caption).foregroundStyle(.secondary)
+                            Stepper("Count-in bars: \(store.metronomeSettings.countInBars)", value: $store.metronomeSettings.countInBars, in: 0...8)
+                                .accessibilityValue("\(store.metronomeSettings.countInBars) bars")
+                            Button("Count In") { store.countIn() }
+                                .disabled(store.metronomeSettings.countInBars == 0 || store.metronomeSettings.followsMIDIClock)
+                                .accessibilityHint("Plays the configured number of count-in bars from a downbeat.")
+                            Text(store.metronomeSettings.followsMIDIClock ? "Count In uses the internal clock. Turn off external clock sync to use it." : "Count In plays the configured number of bars. If the click was off it stops by itself; if the click was already on it continues in phase. Audio must be running; after a manual Stop, start audio before counting in.").font(.caption).foregroundStyle(.secondary)
+                            #if os(macOS)
+                            Text("Shift-Command-M toggles the click. Shift-Command-I starts Count In.").font(.caption).foregroundStyle(.secondary)
+                            #endif
                             Picker("Click sound", selection: $store.metronomeSettings.preset) {
                                 ForEach(MetronomeSettings.presets.indices, id: \.self) { Text(MetronomeSettings.presets[$0]).tag($0) }
                             }
@@ -133,7 +145,7 @@ struct SettingsEditor: View {
                         }
                         Section("Level") {
                             HStack {
-                                Slider(value: $store.metronomeSettings.level, in: 0...1).accessibilityLabel("Metronome level")
+                                Slider(value: $store.metronomeSettings.level, in: 0...1).accessibilityLabel("Metronome level").accessibilityValue(store.metronomeSettings.levelDBFS.map { String(format: "%.1f dBFS", $0) } ?? "Off")
                                 Text(store.metronomeSettings.levelDBFS.map { String(format: "%.1f dBFS", $0) } ?? "Off").monospacedDigit().frame(width: 84)
                             }
                             Text("The engine bounds the click at its own peak before the output headroom. This is not a measured acoustic level.").font(.caption).foregroundStyle(.secondary)
@@ -142,12 +154,12 @@ struct SettingsEditor: View {
                             Toggle("Downbeat accent", isOn: $store.metronomeSettings.downbeatEnabled)
                             if store.metronomeSettings.downbeatEnabled {
                                 HStack {
-                                    Slider(value: $store.metronomeSettings.downbeatVelocity, in: 0...1).accessibilityLabel("Downbeat velocity")
+                                    Slider(value: $store.metronomeSettings.downbeatVelocity, in: 0...1).accessibilityLabel("Downbeat velocity").accessibilityValue(store.metronomeSettings.downbeatVelocityLabel)
                                     Text("Downbeat \(store.metronomeSettings.downbeatVelocityLabel)").monospacedDigit().frame(width: 108)
                                 }
                             }
                             HStack {
-                                Slider(value: $store.metronomeSettings.beatVelocity, in: 0...1).accessibilityLabel("Beat velocity")
+                                Slider(value: $store.metronomeSettings.beatVelocity, in: 0...1).accessibilityLabel("Beat velocity").accessibilityValue(store.metronomeSettings.beatVelocityLabel)
                                 Text("Beat \(store.metronomeSettings.beatVelocityLabel)").monospacedDigit().frame(width: 108)
                             }
                             Stepper("Accent every \(store.metronomeSettings.accentEvery == 0 ? "off" : "\(store.metronomeSettings.accentEvery) beats")", value: $store.metronomeSettings.accentEvery, in: 0...16)
@@ -209,6 +221,8 @@ struct SettingsEditor: View {
                         Toggle("Show Layer Ranges", isOn: $store.showRanges)
                         Toggle("Dynamic MIDI Output Ranges", isOn: $store.dynamicMIDIRanges)
                         Text("Dynamic ranges show the span of active output notes after MIDI effects and transposition. The span can include unplayed pitches. Sustain and audio tails are excluded.").font(.caption).foregroundStyle(.secondary)
+                        Toggle("Per-Sound Meters", isOn: $store.showSoundMeters)
+                        Text("Optional sample-peak meters at each loaded external instrument channel after its fader/pan and before the shared reverb and master limiter. They are not true-peak or loudness meters.").font(.caption).foregroundStyle(.secondary)
                         Text("192 synth voices are shared by all 15 modules and the tonic pad. Each original synth module has its own voice limit in Sound Settings. Imported instruments manage their own polyphony.").font(.caption).foregroundStyle(.secondary)
                     default:
                         Section("Default Transition") { Slider(value: $store.transition, in: 0...15, step: 0.1); Text("\(store.transition, specifier: "%.1f") seconds") }

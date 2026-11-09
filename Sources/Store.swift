@@ -201,6 +201,8 @@ final class PerformanceStore: ObservableObject {
     @Published var editRanges = false
     @Published var showRanges = true
     @Published var dynamicMIDIRanges = false
+    @Published var showSoundMeters = false { didSet { audio.setSoundMetering(showSoundMeters) } }
+    func soundMeter(_ index: Int) -> OutputMeter.Reading? { audio.soundMeter(index) }
     @Published var keyboardPlayable = true {
         didSet { if !keyboardPlayable { releaseScreenNotes() } }
     }
@@ -208,10 +210,34 @@ final class PerformanceStore: ObservableObject {
     @Published var keyboardBase = 48
     @Published var metronome = false { didSet { applyMetronome() } }
     @Published var metronomeSettings = MetronomeSettings() { didSet { applyMetronome() } }
-    private func applyMetronome() { audio.metronome(metronome, settings: metronomeSettings) }
+    private func applyMetronome() {
+        if !metronomeSettings.followsMIDIClock {
+            let wasTracking = midiClockRunning || clockTempo != nil
+            resetMIDIClockTracking()
+            if wasTracking { audio.clock(performedTempo, metronome); midiFX.updateTempo(performedTempo) }
+        }
+        audio.metronome(metronome, settings: metronomeSettings)
+    }
+    /// Play the persisted count-in. When the click is off it stops by itself;
+    /// when it is already on the normal click continues in phase.
+    func countIn() {
+        guard metronomeSettings.countInBars > 0 else { return }
+        guard !metronomeSettings.followsMIDIClock else {
+            message = "Count In uses the internal clock. Turn off external MIDI clock sync to use it."
+            return
+        }
+        if !started { startIfStopped() }
+        guard started && audio.running else {
+            // A failed start already published its own actionable failure. Do
+            // not replace that with the generic count-in message.
+            if !audioFailed { message = "Count In needs audio to be running. Start audio or choose an available output, then try again." }
+            return
+        }
+        audio.countIn(bars: metronomeSettings.countInBars)
+    }
     @Published var midiChannel = -1 { didSet { if oldValue != midiChannel { panic() } } }
-    @Published var primarySourceID: Int32 = -1 { didSet { if oldValue != primarySourceID { panic() } } }
-    @Published var secondarySourceID: Int32 = -2 { didSet { if oldValue != secondarySourceID { panic() } } }
+    @Published var primarySourceID: Int32 = -1 { didSet { if oldValue != primarySourceID { releaseUnselectedMIDIClock(); panic() } } }
+    @Published var secondarySourceID: Int32 = -2 { didSet { if oldValue != secondarySourceID { releaseUnselectedMIDIClock(); panic() } } }
     @Published var secondaryChannel = -1 { didSet { if oldValue != secondaryChannel { panic() } } }
     @Published var velocityMinimum = 0
     @Published var velocityMaximum = 127
@@ -361,18 +387,54 @@ final class PerformanceStore: ObservableObject {
     private var outputNotes: [Int: [Int: Int]] = [:]
     /// Tempo shared by every patch whose tempo is not locked to the patch.
     @Published var liveTempo: Double = 72
+    /// Last tempo measured from external MIDI Clock. Nil when clock sync is
+    /// off or stopped, so the patch/live tempo policy resumes immediately.
+    @Published private(set) var clockTempo: Double?
+    private var midiClockTempo = MIDIClockTempo()
+    private var midiClockRunning = false
+    private var midiClockSource: Int32?
+    /// Drop every piece of external-clock state so the stored patch/live tempo
+    /// is authoritative again. The caller reapplies `performedTempo` when audio
+    /// needs to leave clock sync immediately.
+    private func resetMIDIClockTracking() {
+        midiClockRunning = false
+        midiClockSource = nil
+        midiClockTempo.reset()
+        clockTempo = nil
+    }
+
+    private func stopFollowingMIDIClock() {
+        guard midiClockRunning else { return }
+        audio.midiClockStop()
+        resetMIDIClockTracking()
+        audio.clock(performedTempo, metronome)
+        midiFX.updateTempo(performedTempo)
+    }
+
+    private func releaseUnselectedMIDIClock() {
+        if let source = midiClockSource, !acceptsMIDIClock(source: source) {
+            stopFollowingMIDIClock()
+        }
+    }
+
     /// The tempo actually being performed: a locked patch plays its own tempo,
-    /// an unlocked patch keeps the live tempo across patch switches.
-    var performedTempo: Double { PatchTransposition.resolvedTempo(locked: patch.tempoLocked, patchTempo: patch.tempo, liveTempo: liveTempo) }
+    /// an unlocked patch keeps the live tempo across patch switches, and an
+    /// active external clock supersedes both while it is running.
+    var performedTempo: Double {
+        if metronomeSettings.followsMIDIClock, let clockTempo { return clockTempo }
+        return PatchTransposition.resolvedTempo(locked: patch.tempoLocked, patchTempo: patch.tempo, liveTempo: liveTempo)
+    }
     private var lastTaps: [Date] = []
     private struct Audition {
         let token: UUID
         let patchID: UUID
         let layerID: UUID
         let index: Int
+        let pluginUnit: AVAudioUnit?
         /// Updated when the instrument interface closes so its edits survive the
         /// audition teardown instead of reverting to the state captured on open.
         var pluginState: Data?
+        var retainPluginState = false
         var draft: Layer
         var isolatedLibrary = false
     }
@@ -398,7 +460,8 @@ final class PerformanceStore: ObservableObject {
         cancelTransition()
         let layer = patch.layers[index], token = UUID()
         let state = try? audio.pluginStateData(channel:index,sound:layer.external)
-        audition = Audition(token:token,patchID:patch.id,layerID:layer.id,index:index,pluginState:state ?? nil,draft:layer)
+        let pluginUnit = layer.external?.kind == .audioUnit ? audio.loadedUnit(channel:index,sound:layer.external) : nil
+        audition = Audition(token:token,patchID:patch.id,layerID:layer.id,index:index,pluginUnit:pluginUnit,pluginState:state ?? nil,draft:layer)
         return token
     }
     func previewLayer(_ index: Int, _ proposed: Layer, token: UUID) {
@@ -411,7 +474,7 @@ final class PerformanceStore: ObservableObject {
         do { try audio.prepareSoundChange(index, layer, revalidateResources: true) }
         catch { message = error.localizedDescription; return }
         let previous = session.draft
-        if previous.effectiveTranspose != layer.effectiveTranspose || previous.low != layer.low || previous.high != layer.high || previous.midiOutputChannel != layer.midiOutputChannel {
+        if requiresNoteReset(from: previous, to: layer) {
             midiFX.panic(channel:index); audio.panic(channel:index)
         }
         audition?.draft = layer
@@ -419,14 +482,55 @@ final class PerformanceStore: ObservableObject {
         audio.gain(index,layer.loaded && !layer.muted ? layer.gain : 0)
         updateToneFilters(); applySustain()
     }
-    func endAudition(_ token: UUID?) {
+    private func requiresNoteReset(from previous: Layer, to proposed: Layer) -> Bool {
+        previous.instrument != proposed.instrument || previous.external != proposed.external ||
+        previous.pluginState != proposed.pluginState ||
+        previous.samplerAttackMinimum != proposed.samplerAttackMinimum ||
+        previous.importedRack?.audioTopology != proposed.importedRack?.audioTopology ||
+        previous.midiDestinationID != proposed.midiDestinationID ||
+        previous.effectiveTranspose != proposed.effectiveTranspose ||
+        previous.low != proposed.low || previous.high != proposed.high ||
+        previous.midiOutputChannel != proposed.midiOutputChannel ||
+        previous.blockSustain != proposed.blockSustain ||
+        previous.octaveEffect != proposed.octaveEffect ||
+        previous.midiEffectEnabled != proposed.midiEffectEnabled ||
+        previous.midiProgram != proposed.midiProgram
+    }
+    func endAudition(_ token: UUID?, confirmedUnit: AVAudioUnit? = nil) {
         guard let session = audition, token == session.token else { return }
         guard session.patchID == patch.id, patch.layers.indices.contains(session.index), patch.layers[session.index].id == session.layerID else { audition=nil; return }
-        midiFX.panic(channel:session.index); audio.panic(channel:session.index)
+        let current=patch.layers[session.index]
+        let resetNeeded=requiresNoteReset(from:session.draft,to:current)
+        if resetNeeded && !session.retainPluginState {
+            midiFX.panic(channel:session.index); audio.panic(channel:session.index)
+        }
         audition=nil
-        if let state=session.pluginState {
-            do { try audio.restoreAuditionState(session.index,state); setlist.patches[selected].layers[session.index].pluginState=state }
-            catch { message=audio.lastChangeFailure.map { AudioChangeFailure(diagnostic:$0).localizedDescription } ?? error.localizedDescription }
+        if session.retainPluginState {
+            let unit = confirmedUnit ?? session.pluginUnit
+            if let unit, audio.adoptPluginState(channel:session.index,sound:current.external,unit:unit,state:session.pluginState) {
+                setlist.patches[selected].layers[session.index].pluginState=session.pluginState
+            }
+        } else if !resetNeeded {
+            // A settings-only audition never reloaded the voice. Keep the
+            // installed unit and cache the document's state for the following
+            // configure; restoring here would panic the notes it preserved.
+            if let unit=session.pluginUnit {
+                audio.adoptPluginState(channel:session.index,sound:current.external,unit:unit,state:current.pluginState)
+            }
+        } else if let state=session.pluginState {
+            let keptCurrentState: Bool
+            if let unit=session.pluginUnit {
+                do {
+                    keptCurrentState=try audio.preservePluginStateIfUnchanged(
+                        channel:session.index,sound:current.external,unit:unit,state:state)
+                } catch { keptCurrentState=false }
+            } else { keptCurrentState=false }
+            if keptCurrentState {
+                setlist.patches[selected].layers[session.index].pluginState=state
+            } else {
+                do { try audio.restoreAuditionState(session.index,state); setlist.patches[selected].layers[session.index].pluginState=state }
+                catch { message=audio.lastChangeFailure.map { AudioChangeFailure(diagnostic:$0).localizedDescription } ?? error.localizedDescription }
+            }
         }
         let original=patch.layers[session.index]
         configureMIDI(session.index,original); audio.configure(session.index,original)
@@ -452,14 +556,25 @@ final class PerformanceStore: ObservableObject {
     func confirmAudition(_ token: UUID?, index: Int, layer: Layer) {
         guard let session=audition, session.token == token, session.patchID == patch.id, session.index == index, patch.layers.indices.contains(index), patch.layers[index].id == session.layerID else { return }
         var final=layer; final.gain=patch.layers[index].gain; final.muted=patch.layers[index].muted
+        let confirmedUnit = layer.external?.kind == .audioUnit ? audio.loadedUnit(channel:index,sound:layer.external) : nil
         if layer.external?.kind == .audioUnit {
-            guard audio.loadedUnit(channel:index,sound:layer.external) != nil else {message="Wait for the selected instrument to finish loading before confirming its settings.";return}
-            do { final.pluginState=try audio.pluginStateData(channel:index,sound:layer.external) } catch { message=error.localizedDescription; return }
+            guard confirmedUnit != nil else {message="Wait for the selected instrument to finish loading before confirming its settings.";return}
+            do { if let state=try audio.pluginStateData(channel:index,sound:layer.external) { final.pluginState=state } }
+            catch { message=error.localizedDescription; return }
         }
-        endAudition(token); commitLayer(index,final)
+        if requiresNoteReset(from: session.draft, to: layer) {
+            midiFX.panic(channel:index); audio.panic(channel:index)
+        }
+        // Keep the confirmed state on the installed voice. The discard path
+        // restores the old state and replaces the unit, which panics held notes.
+        audition?.retainPluginState=true
+        audition?.pluginState=final.pluginState
+        endAudition(token, confirmedUnit: confirmedUnit)
+        commitLayer(index,final,preserveHeldNotes:true)
     }
     private var snapshotTimer: Timer?
     private var snapshotTransitionGeneration = UUID()
+    private var midiEffectSaveWork: DispatchWorkItem?
     private var notifications: [NSObjectProtocol] = []
     let audio = AudioController()
     let midi = MIDIInput()
@@ -724,6 +839,7 @@ final class PerformanceStore: ObservableObject {
             keyboardPlayable = settings.keyboardPlayable ?? true
             showPlayedNotes = settings.showPlayedNotes ?? true
             dynamicMIDIRanges = settings.dynamicMIDIRanges ?? false
+            showSoundMeters = settings.showSoundMeters ?? false
             tonicVelocitySelector=settings.tonicVelocitySelector ?? false;tonicTimbre=settings.tonicTimbre ?? 0;tonicLastRoot=settings.tonicLastRoot ?? 0;tonicSound=settings.tonicSound
             tonicGain = settings.tonicGain; tonicBrightness = settings.tonicBrightness; tonicShimmer = settings.tonicShimmer
         }
@@ -800,6 +916,7 @@ final class PerformanceStore: ObservableObject {
     }
     func start() {
         guard !audioStartup.isStarting, audioStartup != .running else { return }
+        audio.setSoundMetering(showSoundMeters)
         automaticAudioStartAllowed = true // Explicit Start/Retry resumes the session.
         audioAttempt = 0
         let generation = UUID()
@@ -852,6 +969,7 @@ final class PerformanceStore: ObservableObject {
     /// Keep musical pad/click intent across an unexpected failure, but revoke
     /// all sounding note/pedal/learn ownership until audio actually recovers.
     private func suspendPerformanceForUnexpectedAudioRecovery() {
+        stopFollowingMIDIClock()
         resumeTonicAfterAudioRecovery = tonic != nil && tonicSound != nil
         let clickEnabled = metronome
         panic(preserveTonic: true); audio.panic(); pressedCCs.removeAll()
@@ -875,6 +993,7 @@ final class PerformanceStore: ObservableObject {
         }
     }
     func stopAudio() {
+        stopFollowingMIDIClock()
         automaticAudioStartAllowed = false
         cancelTransition(pinImmediately: true)
         patchLoadGeneration = UUID(); patchLoading = false
@@ -1012,6 +1131,7 @@ final class PerformanceStore: ObservableObject {
     }
     private func releaseKey(_ key: Int) { held.remove(key); for i in patch.layers.indices { midiFX.noteOff(channel: i, key: key) } }
     private func disconnectMIDI(_ source: Int32) {
+        if source == midiClockSource { stopFollowingMIDIClock() }
         midiFX.releaseSource(source);audio.releaseSource(source)
         for input in Array(hardwareNotes.keys) where input.source == source {
             if let key = hardwareNotes.removeValue(forKey: input) {
@@ -1044,6 +1164,7 @@ final class PerformanceStore: ObservableObject {
         else { resumeTonicAfterAudioRecovery = true }
     }
     func panic(preserveTonic:Bool=false,preserveEffectTails:Bool=false) { hardwareNotes.removeAll(); pedalSources.removeAll(); mappedPedals.removeAll(); screenSustain = false; midiFX.panic();
+        audio.cancelCountIn()
         for l in patch.layers { if let d = l.midiDestinationID { for cc: UInt8 in [64,123,120] { sendMIDI(d, 0xb0 | UInt8(l.midiOutputChannel), cc, 0) } } }
         outputNotes.removeAll(); held.removeAll(); sustain = false; metronome = false; if preserveTonic {audio.sustain(false,layers:patch.layers);for channel in 0..<15 {audio.panic(channel:channel,preserveEffectTails:preserveEffectTails)}} else {tonic = nil;audio.panic()} }
     func choose(_ index: Int) {
@@ -1359,7 +1480,7 @@ final class PerformanceStore: ObservableObject {
         var openEditor = false
     }
     private var pendingLayerCommits: [Int: PendingLayerCommit] = [:]
-    func commitLayer(_ index: Int, _ layer: Layer) {
+    func commitLayer(_ index: Int, _ layer: Layer, preserveHeldNotes: Bool = false) {
         guard patch.layers.indices.contains(index) else{return}
         var validation=Setlist();validation.patches=[Patch(name:"Sound Edit",layers:[layer],snapshots:[])]
         guard (try? validation.validate()) != nil else{message="The sound edit contains unsupported or invalid settings. The previous sound was retained.";return}
@@ -1370,7 +1491,7 @@ final class PerformanceStore: ObservableObject {
         let previous = patch.layers[index]
         if !started && !audio.running {
             audio.prepareOfflineEditing()
-            finishLayerCommit(index, layer, previous: previous)
+            finishLayerCommit(index, layer, previous: previous, preserveHeldNotes: preserveHeldNotes)
             return
         }
         if layer.external?.kind == .audioUnit {
@@ -1385,22 +1506,24 @@ final class PerformanceStore: ObservableObject {
                 self.pendingLayerCommits[index] = nil
                 guard success, self.patch.id == pending.patchID, self.patch.layers.indices.contains(index),
                       self.patch.layers[index] == previous else { return }
-                self.finishLayerCommit(index, layer, previous: previous)
+                self.finishLayerCommit(index, layer, previous: previous, preserveHeldNotes: preserveHeldNotes)
                 if current.openEditor { self.requestPluginInterface(index); self.pluginInterfaceReady = UUID() }
             }
             return
         }
         guard audio.configure(index, layer) else { return }
-        finishLayerCommit(index, layer, previous: previous)
+        finishLayerCommit(index, layer, previous: previous, preserveHeldNotes: preserveHeldNotes)
     }
-    private func finishLayerCommit(_ index: Int, _ layer: Layer, previous: Layer) {
-        if previous.instrument != layer.instrument || previous.external != layer.external || previous.midiDestinationID != layer.midiDestinationID {
+    private func finishLayerCommit(_ index: Int, _ layer: Layer, previous: Layer, preserveHeldNotes: Bool = false) {
+        let sourceChanged = previous.instrument != layer.instrument || previous.external != layer.external || previous.midiDestinationID != layer.midiDestinationID
+        if sourceChanged {
             for s in patch.snapshots.indices {
                 if setlist.patches[selected].snapshots[s].sounds != nil { setlist.patches[selected].snapshots[s].sounds![index] = SnapshotSoundState(layer) }
                 if !layer.loaded { setlist.patches[selected].snapshots[s].gains[index] = 0 }
             }
         }
-        midiFX.panic(channel:index); audio.panic(channel:index); cancelTransition(); setlist.patches[selected].layers[index] = layer
+        if !preserveHeldNotes && requiresNoteReset(from:previous,to:layer) { midiFX.panic(channel:index); audio.panic(channel:index) }
+        cancelTransition(); setlist.patches[selected].layers[index] = layer
         configureMIDI(index, layer)
         audio.gain(index, layer.loaded && !layer.muted ? layer.gain : 0); updateToneFilters(); save()
     }
@@ -1409,22 +1532,50 @@ final class PerformanceStore: ObservableObject {
         var l = Layer.empty(); l.id = patch.layers[index].id; commitLayer(index, l)
     }
     func toggleMIDIEffect(_ index: Int) { guard patch.layers.indices.contains(index) else{return};var l = patch.layers[index]; l.midiEffectEnabled.toggle(); commitLayer(index,l) }
-    func setEffect(_ index: Int, _ slot: Int, _ effect: AudioEffect) {
-        guard patch.layers.indices.contains(index),patch.layers[index].effects.indices.contains(slot),effect.validate() else{return}
+    /// Reconfigures one effect and optionally persists the change.
+    @discardableResult
+    func setEffect(_ index: Int, _ slot: Int, _ effect: AudioEffect, saveChanges: Bool = true) -> Bool {
+        guard patch.layers.indices.contains(index),patch.layers[index].effects.indices.contains(slot),
+              effect.validate(),patch.layers[index].effects[slot] != effect else{return false}
         var proposed = patch.layers[index]
         proposed.effects[slot] = effect
         if !started && !audio.running { audio.prepareOfflineEditing() }
-        else { guard audio.configureSnapshot(index, effects: proposed.effects, pan: proposed.pan, importedRack: proposed.importedRack ?? proposed.external?.nativeSampler?.rack) else { return } }
+        else { guard audio.configureSnapshot(index, effects: proposed.effects, pan: proposed.pan, importedRack: proposed.importedRack ?? proposed.external?.nativeSampler?.rack) else { return false } }
         cancelTransition()
         let changedKind = patch.layers[index].effects[slot].kind != effect.kind
         if changedKind {
+            let staleAssignments = setlist.controlAssignments?.compactMap { cc, target -> Int? in
+                switch target {
+                case .effectEnabled(let layer, let effectSlot, _),
+                     .effectParameter(let layer, let effectSlot, _, _):
+                    return layer == index && effectSlot == slot ? cc : nil
+                default: return nil
+                }
+            } ?? []
+            if !staleAssignments.isEmpty {
+                for cc in staleAssignments { setlist.controlAssignments?.removeValue(forKey: cc) }
+                if setlist.controlAssignments?.isEmpty == true { setlist.controlAssignments = nil }
+                message = "The effect changed; learned assignments for its previous controls were cleared."
+            }
             for i in patch.snapshots.indices {
                 if setlist.patches[selected].snapshots[i].sounds == nil { setlist.patches[selected].snapshots[i].sounds = patch.layers.map(SnapshotSoundState.init) }
                 setlist.patches[selected].snapshots[i].sounds![index].effects[slot] = effect
             }
         }
         setlist.patches[selected].layers[index].effects[slot] = effect
-        updateToneFilters(); save()
+        updateToneFilters()
+        if saveChanges { save() }
+        return true
+    }
+    private func scheduleMIDIEffectSave() {
+        midiEffectSaveWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.midiEffectSaveWork = nil
+            self.save()
+        }
+        midiEffectSaveWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: work)
     }
     func clearSnapshot(_ index: Int) {
         guard patch.snapshots.indices.contains(index) else { return }
@@ -1464,20 +1615,28 @@ final class PerformanceStore: ObservableObject {
     }
     func updateTempo(_ value: Double) {
         let tempo = PatchTransposition.clampTempo(value)
+        // Store the bounded internal tempo even while the external clock is
+        // running. Stop restores this value instead of the pre-edit tempo; the
+        // edit must not replace the external BPM while sync is active.
         liveTempo = tempo
         setlist.patches[selected].tempo = tempo
+        if metronomeSettings.followsMIDIClock, let clockTempo {
+            audio.clock(clockTempo, metronome); midiFX.updateTempo(clockTempo)
+            return
+        }
         audio.clock(tempo, metronome); midiFX.updateTempo(tempo)
     }
     /// Locking keeps the patch's own tempo and recalls it with the patch;
     /// unlocking keeps the tempo currently being played for the whole session.
     func setTempoLocked(_ locked: Bool) {
-        // Resolve before the flag changes so locking a patch keeps the tempo that
-        // was actually being played instead of the value it stored earlier.
-        let current = performedTempo
+        // Resolve the stored tempo before the flag changes. Do not use
+        // `performedTempo` here: during clock sync it reports the external BPM,
+        // which must never be written into patch or live session storage.
+        let stored = PatchTransposition.resolvedTempo(locked: patch.tempoLocked, patchTempo: patch.tempo, liveTempo: liveTempo)
         setlist.patches[selected].tempoLocked = locked
-        setlist.patches[selected].tempo = current
-        liveTempo = current
-        audio.clock(current, metronome); midiFX.updateTempo(current)
+        setlist.patches[selected].tempo = stored
+        liveTempo = stored
+        audio.clock(performedTempo, metronome); midiFX.updateTempo(performedTempo)
         save()
     }
     func setTranspose(_ value: Int) {
@@ -1542,20 +1701,84 @@ final class PerformanceStore: ObservableObject {
             }
         }
     }
+    private func acceptsMIDIClock(source: Int32) -> Bool {
+        let primary = primarySourceID != -2 && (primarySourceID == -1 || primarySourceID == source)
+        let secondary = secondarySourceID != -2 && (secondarySourceID == -1 || secondarySourceID == source)
+        return primary || secondary
+    }
+    /// Route 24-PPQN clock and transport from the configured controller. Tempo
+    /// is measured only after Start/Continue and only until Stop or disconnect,
+    /// so ticks from a stopped source cannot replace the stored tempo.
+    private func handleMIDIClock(_ status: UInt8, source: Int32, at now: Double) {
+        guard metronomeSettings.followsMIDIClock, acceptsMIDIClock(source: source) else { return }
+        switch status {
+        case 0xF8:
+            // A tick may only advance the run selected by its Start/Continue.
+            // The other configured source may be sending clock concurrently;
+            // ignoring it avoids double-advancing the click or stealing tempo.
+            guard midiClockRunning, midiClockSource == source else { return }
+            audio.midiClockTick(at: now)
+            // Clock measurement jitters by a few thousandths of a BPM. Ignore
+            // that noise: `AudioController.clock` rebuilds effect/rack timing.
+            if let tempo = midiClockTempo.tick(at: now), clockTempo == nil || abs(tempo - clockTempo!) > 0.1 {
+                clockTempo = tempo
+                audio.clock(tempo, metronome); midiFX.updateTempo(tempo)
+            }
+        case 0xFA, 0xFB:
+            // Keep one owner for the whole run. A second source must wait for
+            // this source's Stop (or disconnect) before it can start a run.
+            guard !midiClockRunning || midiClockSource == nil || midiClockSource == source else { return }
+            midiClockRunning = true
+            midiClockSource = source
+            midiClockTempo.reset(); clockTempo = nil
+            if status == 0xFA { audio.midiClockStart(at: now) }
+            else { audio.midiClockContinue(at: now) }
+        case 0xFC:
+            // Only the source that owns the run may stop it.
+            guard midiClockSource == source else { return }
+            stopFollowingMIDIClock()
+        default: break
+        }
+    }
+    #if DEBUG
+    func debugReceiveMIDIClock(_ status: UInt8, source: Int32, at time: Double) {
+        handleMIDIClock(status, source: source, at: time)
+    }
+    #endif
+
+    /// Routes an incoming event only to its accepted controller slot and target type.
     private func handleMIDI(_ status: UInt8, _ a: UInt8, _ b: UInt8, source: Int32) {
+        if status >= 0xF8 { handleMIDIClock(status, source: source, at: ProcessInfo.processInfo.systemUptime); return }
+        if status >= 0xF0 { return }
         midiActivity.toggle()
         midiLog.insert((midiSources.first(where: { $0.id == source })?.name ?? "MIDI") + String(format: " · Ch %02d · %02X · %d · %d", Int(status & 15) + 1, status & 0xf0, a, b), at: 0)
         midiLog = Array(midiLog.prefix(15))
         let channel=Int(status & 15)
-        guard MIDIControllerRules.accepts(sourceID: primarySourceID, channel: midiChannel, source: source, inputChannel: channel) ||
-              MIDIControllerRules.accepts(sourceID: secondarySourceID, channel: secondaryChannel, source: source, inputChannel: channel) else { return }
+        let isPrimary = MIDIControllerRules.accepts(sourceID: primarySourceID, channel: midiChannel, source: source, inputChannel: channel)
+        let isSecondary = MIDIControllerRules.accepts(sourceID: secondarySourceID, channel: secondaryChannel, source: source, inputChannel: channel)
+        guard isPrimary || isSecondary else { return }
         switch status & 0xf0 {
-        case 0x90: if b == 0 { hardwareOff(source: source, channel: Int(status & 15), note: Int(a)) } else { hardwareOn(source: source, channel: Int(status & 15), note: Int(a), velocity: MIDIControllerRules.velocity(b, minimum: velocityMinimum, maximum: velocityMaximum)) }
-        case 0x80: hardwareOff(source: source, channel: Int(status & 15), note: Int(a))
+        case 0x90:
+            guard isPrimary else { return }
+            if b == 0 { hardwareOff(source: source, channel: channel, note: Int(a)) }
+            else { hardwareOn(source: source, channel: channel, note: Int(a), velocity: MIDIControllerRules.velocity(b, minimum: velocityMinimum, maximum: velocityMaximum)) }
+        case 0x80:
+            guard isPrimary else { return }
+            hardwareOff(source: source, channel: channel, note: Int(a))
         case 0xb0:
-            if learningTarget == nil && learning == nil {applyImportedController(Int(a),value:b,channel:channel)}
-            if a == 1 { modWheel = Float(b)/127 }
-            else if a == 64 { let pedal = PedalSource(source: source, channel: Int(status & 15)); if b >= 64 { pedalSources.insert(pedal) } else { pedalSources.remove(pedal) }; applySustain() }
+            if isPrimary && learningTarget == nil && learning == nil {
+                applyImportedController(Int(a), value: b, channel: channel)
+            }
+            if a == 1 {
+                guard isPrimary else { return }
+                modWheel = Float(b)/127
+            }
+            else if a == 64 {
+                guard isPrimary else { return }
+                let pedal = PedalSource(source: source, channel: channel)
+                if b >= 64 { pedalSources.insert(pedal) } else { pedalSources.remove(pedal) }
+                applySustain()
+            }
             else if a == 120 || a == 123 { panic() }
             else {
                 let cc=Int(a), key=CCKey(source:source,channel:channel,cc:Int(a)), down=b>=64
@@ -1576,6 +1799,7 @@ final class PerformanceStore: ObservableObject {
                 else if let index=setlist.assignments[cc] { setGain(index,Float(b)/127) }
             }
         case 0xc0:
+            guard isPrimary else { return }
             if let index=setlist.patches.indices.first(where:{setlist.patches[$0].programChangeEnabled == true && setlist.patches[$0].programChangeNumber == Int(a)}) { choose(index) }
             // Missing legacy flags are unconfigured, never an implicit index mapping.
         default: break
@@ -1609,6 +1833,7 @@ final class PerformanceStore: ObservableObject {
         if learningTarget == target { learningTarget=nil }
         if saveChanges { save() }
     }
+    /// Applies a learned CC value to its validated performance control.
     private func applyMIDIControl(_ target:MIDIControlTarget,value:UInt8,key:CCKey,rising:Bool) {
         guard target.valid, !target.isRisingEdge || rising else { return }
         switch target {
@@ -1616,10 +1841,53 @@ final class PerformanceStore: ObservableObject {
         case .master: master=Float(value)/127
         case .modulation: modWheel=Float(value)/127
         case .sustain: if value>=64 { mappedPedals.insert(key) } else { mappedPedals.remove(key) }; applySustain()
+        case .tonicLevel: tonicGain = Float(value)/127
+        case .tonicBrightness: tonicBrightness = Float(value)/127
+        case .tonicShimmer: tonicShimmer = Float(value)/127
         case .nextPatch: if selected+1<setlist.patches.count { choose(selected+1) }
         case .previousPatch: if selected>0 { choose(selected-1) }
         case .panic: panic()
         case .snapshot(let index): if patch.snapshots.indices.contains(index) { recall(patch.snapshots[index]) }
+        case .effectEnabled(let index, let slot, let kind):
+            guard patch.layers.indices.contains(index), patch.layers[index].effects.indices.contains(slot),
+                  patch.layers[index].effects[slot].kind == kind else { return }
+            var effect = patch.layers[index].effects[slot]
+            let enabled = value >= 64
+            guard effect.enabled != enabled else { return }
+            effect.enabled = enabled
+            if setEffect(index, slot, effect, saveChanges: false) { scheduleMIDIEffectSave() }
+        case .effectParameter(let index, let slot, let kind, let parameter):
+            guard patch.layers.indices.contains(index), patch.layers[index].effects.indices.contains(slot) else { return }
+            var effect = patch.layers[index].effects[slot]
+            guard effect.kind == kind, let descriptor = effect.macroDescriptor(parameter) else { return }
+            let fraction = Float(value) / 127
+            let logarithmic = descriptor.unit == "Hz" && descriptor.minimum > 0 && descriptor.maximum / descriptor.minimum > 100
+            var parameterValue = logarithmic
+                ? descriptor.minimum * pow(descriptor.maximum / descriptor.minimum, fraction)
+                : descriptor.minimum + fraction * (descriptor.maximum - descriptor.minimum)
+            if descriptor.unit == "bits" || descriptor.unit == "semitones" { parameterValue = parameterValue.rounded() }
+            parameterValue = min(max(parameterValue, descriptor.minimum), descriptor.maximum)
+            if kind == 3, var delay = effect.importedDelay {
+                let oldValue: Float?
+                switch parameter {
+                case 4: oldValue = delay.dryGain; delay.dryGain = parameterValue
+                case 5: oldValue = delay.wetGain; delay.wetGain = parameterValue
+                case 26: oldValue = delay.lowCut; delay.lowCut = parameterValue
+                case 27: oldValue = delay.highCut; delay.highCut = parameterValue
+                default: oldValue = nil
+                }
+                if [4, 5, 26, 27].contains(parameter) {
+                    guard oldValue != parameterValue else { return }
+                    effect.importedDelay = delay
+                    if setEffect(index, slot, effect, saveChanges: false) { scheduleMIDIEffectSave() }
+                    return
+                }
+            }
+            var values = effect.values
+            guard values.indices.contains(parameter), values[parameter] != parameterValue else { return }
+            values[parameter] = parameterValue
+            effect.parameters = values
+            if setEffect(index, slot, effect, saveChanges: false) { scheduleMIDIEffectSave() }
         }
     }
     private var configuredPrograms: [Int:MIDIProgram] = [:]
@@ -2013,7 +2281,7 @@ final class PerformanceStore: ObservableObject {
                         // One layer hosts one instrument: a channel that also saved an Audio
                         // Unit keeps that state in the archive instead of losing it silently.
                         let audioUnitNotes=channel.thirdPartyAudioUnits.first.map{["the channel also saved \($0.name); this layer hosts the converted sampler only, so its plug-in state stays in the archive."]} ?? []
-                        let entry=LibrarySound(id:id,name:channel.name,collection:"MainStage Patches",sound:sound,layer:layer,sourceArchiveID:report.sourceArchiveID,conversionNotes:(notes ?? [])+processing.issues+applied.notes+applied.omitted+audioUnitNotes,originalInstrument:original)
+                        let entry=LibrarySound(id:id,name:channel.name,collection:"MainStage Patches",sound:sound,layer:layer,sourceArchiveID:report.sourceArchiveID,conversionNotes:MainStageProcessing.conversionNotes((notes ?? [])+processing.issues+applied.notes+applied.omitted+audioUnitNotes),originalInstrument:original)
                         entries.append(entry)
                         outcome(channelIndex,.prepared,"Converted with source settings; review compatibility notes.",id)
                         preparedAssets.formUnion(assetsForImportedSound(createdSound,original:createdOriginal).subtracting(assetsBefore))
@@ -2042,7 +2310,7 @@ final class PerformanceStore: ObservableObject {
                                 skipped+=1;continue
                             }
                             let applied=try processing.applying(to:hosted.layer,selection:mainStageSelection(channelIndex))
-                            entries.append(LibrarySound(id:id,name:channel.name,collection:"MainStage Patches",sound:applied.layer.external,layer:applied.layer,sourceArchiveID:archiveID,conversionNotes:hosted.notes+processing.issues+applied.notes+applied.omitted))
+                            entries.append(LibrarySound(id:id,name:channel.name,collection:"MainStage Patches",sound:applied.layer.external,layer:applied.layer,sourceArchiveID:archiveID,conversionNotes:MainStageProcessing.conversionNotes(hosted.notes+processing.issues+applied.notes+applied.omitted)))
                             outcome(channelIndex,.prepared,"Hosted instrument requires its installed Audio Unit.",id)
                             imported+=1
                         }catch{outcome(channelIndex,.failed,error.localizedDescription);failures.append(channel.name+": "+error.localizedDescription)}
@@ -2212,6 +2480,8 @@ final class PerformanceStore: ObservableObject {
             message = "Automatic saves are blocked because saved session data could not be loaded. Recover the previous session in Settings; the original files remain untouched."
             return
         }
+        midiEffectSaveWork?.cancel()
+        midiEffectSaveWork = nil
         capturePluginStates()
         do { try setlist.validate(); try FileManager.default.createDirectory(at: saveURL.deletingLastPathComponent(), withIntermediateDirectories: true); if let legacyData {
                 let backup = saveURL.deletingLastPathComponent().appendingPathComponent("setlist-v\(legacyVersion)-backup.json")
@@ -2224,7 +2494,7 @@ final class PerformanceStore: ObservableObject {
             try RecoverableSessionFile.write(data, to: saveURL) { _ = try JSONDecoder().decode(Setlist.self, from: $0).upgraded() }
             currentSetlistID = try localSetlistLibrary().save(setlist,id:currentSetlistID).id
             refreshSetlists()
-            let settings = SessionSettings(selectedPatchID:patch.id,activeSnapshotID:activeSnapshot,notesMode:notesMode,modWheel:modWheel,master: master, reverb: reverb, transition: transition, midiChannel: midiChannel, primarySourceID: primarySourceID, secondarySourceID: secondarySourceID, secondaryChannel: secondaryChannel, velocityMinimum: velocityMinimum, velocityMaximum: velocityMaximum, sourceNames: midiSourceNames, disableSilent: disableSilent, showRanges: showRanges, tonicGain: tonicGain, tonicBrightness: tonicBrightness, tonicShimmer: tonicShimmer, audioOutputUID: preferredAudioOutputUID, activeSetlistID: currentSetlistID,tonicSound:tonicSound,tonicVelocitySelector:tonicVelocitySelector,tonicTimbre:tonicTimbre,tonicLastRoot:tonicLastRoot,metronomeEnabled:metronome,audioBufferFrames:preferredBufferFrames.map{Int($0)},metronomeSettings:metronomeSettings,liveTempo:liveTempo,keyboardPlayable:keyboardPlayable,showPlayedNotes:showPlayedNotes,dynamicMIDIRanges:dynamicMIDIRanges)
+            let settings = SessionSettings(selectedPatchID:patch.id,activeSnapshotID:activeSnapshot,notesMode:notesMode,modWheel:modWheel,master: master, reverb: reverb, transition: transition, midiChannel: midiChannel, primarySourceID: primarySourceID, secondarySourceID: secondarySourceID, secondaryChannel: secondaryChannel, velocityMinimum: velocityMinimum, velocityMaximum: velocityMaximum, sourceNames: midiSourceNames, disableSilent: disableSilent, showRanges: showRanges, tonicGain: tonicGain, tonicBrightness: tonicBrightness, tonicShimmer: tonicShimmer, audioOutputUID: preferredAudioOutputUID, activeSetlistID: currentSetlistID,tonicSound:tonicSound,tonicVelocitySelector:tonicVelocitySelector,tonicTimbre:tonicTimbre,tonicLastRoot:tonicLastRoot,metronomeEnabled:metronome,audioBufferFrames:preferredBufferFrames.map{Int($0)},metronomeSettings:metronomeSettings,liveTempo:liveTempo,keyboardPlayable:keyboardPlayable,showPlayedNotes:showPlayedNotes,dynamicMIDIRanges:dynamicMIDIRanges,showSoundMeters:showSoundMeters)
             guard settings.validate() else { throw SetlistError.invalid }
             try RecoverableSessionFile.write(encoder.encode(settings), to: saveURL.deletingLastPathComponent().appendingPathComponent("settings.json")) {
                 guard try JSONDecoder().decode(SessionSettings.self, from: $0).validate() else { throw SetlistError.invalid }
