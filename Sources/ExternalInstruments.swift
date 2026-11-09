@@ -1258,9 +1258,17 @@ final class ExternalInstrumentRack {
         let tail=RetiredTail(channel:channel,nodes:unique,mixer:mixer)
         retiredTails.append(tail)
         // Hard count bound: deliberately truncate the oldest tail if needed,
-        // even if it is still audible. This is not a measured CPU/memory budget.
+        // even if it is still audible. A voice retired by this transaction is
+        // still the rollback instrument, however, so it must remain available
+        // until the transaction has committed. A later graph edit may evict it
+        // once it is represented as a tail rather than a live rollback voice.
         while retiredTails.count>maxRetiredTails {
-            disposeRetiredTail(retiredTails.removeFirst(), phase: .truncated)
+            let protected = Set(pendingGraphEdit?.rollback.voices.values
+                .flatMap(ownedNodes).map(ObjectIdentifier.init) ?? [])
+            guard let index = retiredTails.firstIndex(where: { candidate in
+                candidate.nodes.allSatisfy { !protected.contains(ObjectIdentifier($0)) }
+            }) else { break }
+            disposeRetiredTail(retiredTails.remove(at: index), phase: .truncated)
         }
         scheduleTailExpiry(tail)
     }
@@ -1278,6 +1286,10 @@ final class ExternalInstrumentRack {
     /// complete graph: a route that referenced a released node is dropped with
     /// it, never reconnected to a node that no longer exists.
     private func forget(_ ids: Set<ObjectIdentifier>, in snapshot: inout Rollback) {
+        let releasedUnits = Set(snapshot.nodes
+            .filter { ids.contains(ObjectIdentifier($0)) }
+            .compactMap { ($0 as? AVAudioUnit)?.auAudioUnit }
+            .map(ObjectIdentifier.init))
         snapshot.nodes.removeAll { ids.contains(ObjectIdentifier($0)) }
         snapshot.routes.removeAll { route in
             ids.contains(ObjectIdentifier(route.node)) || route.points.contains { point in
@@ -1291,7 +1303,7 @@ final class ExternalInstrumentRack {
             ownedNodes(entry.value).allSatisfy { !ids.contains(ObjectIdentifier($0)) }
         }
         snapshot.mixers.removeAll { ids.contains(ObjectIdentifier($0.0)) }
-        snapshot.effects.removeAll { ids.contains(ObjectIdentifier($0.0)) }
+        snapshot.effects.removeAll { releasedUnits.contains(ObjectIdentifier($0.0)) }
         snapshot.branches.removeAll { entry in
             branchNodes(entry.0).contains { ids.contains(ObjectIdentifier($0)) }
         }

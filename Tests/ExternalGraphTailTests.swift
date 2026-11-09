@@ -272,6 +272,31 @@ struct ExternalGraphTailTests {
                "A truncated sampler must be disposed while the engine is stopped")
         assert(teardown.allSatisfy{ $0.phase != .releasedBeforeRestart || !$0.attached },
                "A verified release must be recorded after the node left the engine")
+
+        // More replacements than the tail cap in one failing transaction must
+        // not evict the pre-transaction instruments needed by rollback.
+        rack.panic()
+        try rack.withGraphChanges { try rack.remove(0); try rack.remove(1); try rack.remove(2); try rack.remove(3) }
+        try load(piano, channel: 0)
+        try load(organ, channel: 1)
+        try load(pad, channel: 2)
+        let rollbackUnits = (0...2).compactMap { rack.unit(channel: $0) }
+        assert(rollbackUnits.count == 3)
+        do {
+            try rack.withGraphChanges {
+                try rack.remove(0); try rack.remove(1); try rack.remove(2)
+                throw NSError(domain: "StageKeysGeneratedMultiVoiceFailure", code: 943)
+            }
+            assertionFailure("Expected generated multi-voice failure")
+        } catch { assert((error as NSError).code == 943) }
+        assert(rack.lastGraphFailure?.rollbackSucceeded == true)
+        for channel in 0...2 {
+            assert(rack.unit(channel: channel) === rollbackUnits[channel],
+                   "Rollback must restore every pre-transaction voice beyond the tail cap")
+            rack.noteOn(channel: channel, key: 60, pitch: 60, velocity: 0.8)
+        }
+        assert((try! render(20)) > 0.000001, "Restored multi-voice rollback instruments must render")
+        rack.panic()
         print("PASS: new voice renders over retired tail, generated tail cap, Panic rollback/forward completion, retained unrelated notes, and verified sampler release before restart")
     }
 
