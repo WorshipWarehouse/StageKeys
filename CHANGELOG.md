@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Add an opt-in `stage-clip-v1` Clip Distortion core that retains the independent ADAA soft-clip curve while smoothing drive, tone, symmetry, clip/sum filters, shelf and gains, with legacy imported-effect retention.
+
 - Add an opt-in `stage-overdrive-v1` core with antiderivative-antialiased tanh saturation, 20 ms smoothing for drive, low cut, tone, mix and output gain, an exact dry path at Mix 0 with 0 dB boost, and legacy patch retention. The added filter is a one-pole low cut plus a one-pole tone stage; no oversampling is added.
 
 - Clear a channel's MIDI FX lookahead mark when a hosted-AU install is rejected or the instrument is retired, and report a channel as not schedulable while its replacement is pending, so a failed plug-in cannot keep a stale eligibility.

@@ -31,6 +31,9 @@ import Foundation
   let overdrive=AudioEffect.factoryDefault(kind:11);assert(overdrive.effectCore=="stage-overdrive-v1" && overdrive.renderValues.last==1 && overdrive.validate())
   let op=EffectPreset(name:"Stage Drive",effect:overdrive);try EffectPresetArchive.save([op],to:qualityURL);assert(EffectPresetArchive.load(qualityURL)==[op])
   var legacyOverdrive=overdrive;legacyOverdrive.effectCore=nil;assert(legacyOverdrive.validate() && legacyOverdrive.renderValues.last==0)
+  let clip=AudioEffect.factoryDefault(kind:17);assert(clip.effectCore=="stage-clip-v1" && clip.renderValues.last==1 && clip.validate())
+  let cpclip=EffectPreset(name:"Stage Clip",effect:clip);try EffectPresetArchive.save([cpclip],to:qualityURL);assert(EffectPresetArchive.load(qualityURL)==[cpclip])
+  var legacyClip=clip;legacyClip.effectCore=nil;assert(legacyClip.validate() && legacyClip.renderValues.last==0)
   var wrong=delay;wrong.kind=10;assert(!wrong.validate())
   print("PASS: effect preset settings/core round-trip, invalid saves preserve archive, corrupt archive rejected")
  }

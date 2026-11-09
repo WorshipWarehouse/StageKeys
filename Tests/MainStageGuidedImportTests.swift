@@ -17,11 +17,13 @@ import Foundation
         review.importMainStageAutomatically(patch,locations:[.init(instruments:patch,samples:patch,label:"Synthetic source")],convertAfterDiscovery:false)
         for _ in 0..<1500 where review.libraryImportBusy {try await Task.sleep(nanoseconds:10_000_000)}
         assert(review.librarySounds.isEmpty,"Preflight must not commit a sound before effect selection")
-        assert(review.mainStageOutcomes.map(\.state)==[.pending,.pending,.needsSamples])
+        let preflightStates=review.mainStageOutcomes.map(\.state)
+        assert(preflightStates==[.pending,.pending,.needsSamples],"Preflight states: \(preflightStates.map(\.rawValue)); progress: \(review.libraryImportProgress ?? "nil")")
         assert(review.libraryImportProgress?.contains("No sounds were added")==true)
         review.convertIncludedMainStageSounds()
         for _ in 0..<1500 where review.libraryImportBusy {try await Task.sleep(nanoseconds:10_000_000)}
-        assert(review.mainStageOutcomes.map(\.state)==[.converted,.converted,.needsSamples])
+        let convertedStates=review.mainStageOutcomes.map(\.state)
+        assert(convertedStates==[.converted,.converted,.needsSamples],"Conversion states: \(convertedStates.map(\.rawValue)); progress: \(review.libraryImportProgress ?? "nil")")
         setenv("STAGEKEYS_DATA_DIR",root.path,1)
         let store=PerformanceStore()
         func wait()async throws{for _ in 0..<1500 where store.libraryImportBusy{try await Task.sleep(nanoseconds:10_000_000)};assert(!store.libraryImportBusy)}
@@ -29,6 +31,7 @@ import Foundation
         try await wait()
         assert(store.mainStageOutcomes.map(\.state)==[.converted,.converted,.needsSamples],store.libraryImportProgress ?? "No outcomes")
         assert(store.librarySounds.filter{$0.id.hasPrefix("mainstage-channel-")}.count==2)
+        assert(store.librarySounds.filter{$0.id.hasPrefix("mainstage-channel-")}.allSatisfy{$0.id.count<=256},"Converted channel IDs must fit the library schema")
         assert(store.mainStageSearches.first?.detail.contains("1 matching")==true)
         store.assembleConvertedMainStagePatch(readyOnly:true)
         assert(store.patch.layers[0].name=="First" && store.patch.layers[1].name=="Second")

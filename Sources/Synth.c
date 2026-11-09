@@ -56,7 +56,7 @@ typedef struct {
  double oscSin[8],oscCos[8],stepSin[8],stepCos[8];
  int ready;
 } DenseReverb;
-typedef struct { DenseReverb reverb; float p[32],z[12],coef[8],shiftPhase,stereo; int custom; Biquad eq[8];float shimmerControl[4],delayLevels[2];double clipControl[3];int shimmerReady,clipReady;float delayPrevious,delayTarget,delayMix;int delayReady; } EffectState;
+typedef struct { DenseReverb reverb; float p[32],z[12],coef[8],shiftPhase,stereo; int custom; Biquad eq[8],clipShelfTarget;float clipStageControl[8];float shimmerControl[4],delayLevels[2];double clipControl[3];int shimmerReady,clipReady;float delayPrevious,delayTarget,delayMix;int delayReady; } EffectState;
 struct SKSynth {
  double rate;
  int delayLength,predelayLength;
@@ -172,7 +172,7 @@ static const float effectDefault[18][32]={
 {1,44,402,2.5,0,0,0.5,18,130,0.9,0.82,0.35},
 {20,0.5,0.5,100,14000,0.33,0.2,1,0.8,0.4,1},
 {20,.2,70,1,410,6000,.65,.51,60,.7,.3},
-{15,170,-16,.45,4400,5300,0,980,0,5},
+{15,170,-16,.45,4400,5300,0,980,0,5,0},
 };
 static const float effectMin[18][32]={
 {},
@@ -192,7 +192,7 @@ static const float effectMin[18][32]={
 {0,1,120,0.1,0,-24,0,1,0,0,0,0},
 {0,0,0,20,200,0,0,0.01,0,0},
 {0,0,1,0,20,20,0,0,0,0,0},
-{0,20,-100,0,20,20,-30,20,-60,-60},
+{0,20,-100,0,20,20,-30,20,-60,-60,0},
 };
 static const float effectMax[18][32]={
 {},
@@ -212,9 +212,9 @@ static const float effectMax[18][32]={
 {2,120,600,10,1,12,1,100,200,1,1,1},
 {200,1,0.95,2000,20000,1,1,10,1,1,1,1},
 {200,1,1000,1,20000,20000,20,1,360,1,1},
-{100,20000,100,1,20000,20000,30,20000,60,60},
+{100,20000,100,1,20000,20000,30,20000,60,60,1},
 };
-static const int effectCount[18]={0,3,4,5,3,6,7,24,4,1,10,6,2,11,12,12,11,10};
+static const int effectCount[18]={0,3,4,5,3,6,7,24,4,1,10,6,2,11,12,12,11,11};
 
 // Delay taps interpolate bounded preallocated memory. All state is render-owned.
 static float tap_capacity(const float *buffer,int pos,float offset,int capacity){
@@ -241,6 +241,11 @@ static float tanh_adaa(float current,float previous){
  float difference=current-previous;
  if(fabsf(difference)<1e-5f)return tanhf(.5f*(current+previous));
  return (float)((tanh_integral(current)-tanh_integral(previous))/difference);
+}
+static float tanh_adaa_bias(float current,float previous,float bias){
+ float difference=current-previous;
+ if(fabsf(difference)<1e-5f)return tanhf(.5f*(current+previous)+bias)-tanhf(bias);
+ return (float)((tanh_integral(current+bias)-tanh_integral(previous+bias))/difference)-tanhf(bias);
 }
 static void effectReset(EffectState *e){
  memset(e,0,sizeof(*e));for(int i=0;i<8;i++)e->eq[i].b0=1;
@@ -269,7 +274,9 @@ static void effectCoefficients(EffectState*e,int kind,double rate){
   e->coef[6]=1-exp(-1/(rate*.02));
   e->coef[0]=pow(10,p[0]/20);e->coef[5]=pow(10,p[8]/20);e->coef[4]=pow(10,p[9]/20);
   for(int i=1;i<=3;i++){float f=p[i==1?1:i==2?4:5],g=tanf(TAU*.5f*fminf(f,rate*.45f)/rate);e->coef[i]=g/(1+g);}
-  equalizer(&e->eq[0],rate,6,p[7],p[6],.707f);
+  Biquad shelf={0};equalizer(&shelf,rate,6,p[7],p[6],.707f);e->clipShelfTarget=shelf;
+  // The Stage core interpolates these coefficients; legacy receives them now.
+  if(p[10]<=.5f){e->eq[0].b0=shelf.b0;e->eq[0].b1=shelf.b1;e->eq[0].b2=shelf.b2;e->eq[0].a1=shelf.a1;e->eq[0].a2=shelf.a2;}
  }
  if(kind==12)e->coef[0]=pow(2,p[0]/12);
  if(kind==13||kind==15){e->coef[6]=1-exp(-TAU*5/rate);e->coef[7]=1-exp(-1/(rate*.02));}
@@ -566,28 +573,75 @@ static float effectProcess(SKSynth*s,int l,int k,float x){
   y=x*p[9]+wet*p[10];s->fxPhase[l][k]=fmod(phase+TAU*p[6]/rate,TAU);break;
  }
  case 17:{
-  // Keep smoothing state precise: float increments can round to zero before
-  // reaching the target, leaving a persistent gain error after automation.
-  if(!e->clipReady){e->clipControl[0]=e->coef[5];e->clipControl[1]=e->coef[4];e->clipControl[2]=p[3];e->clipReady=1;}
-  e->clipControl[0]+=e->coef[6]*(e->coef[5]-e->clipControl[0]);
-  e->clipControl[1]+=e->coef[6]*(e->coef[4]-e->clipControl[1]);
-  e->clipControl[2]+=e->coef[6]*(p[3]-e->clipControl[2]);
-  float input=x*e->clipControl[0],amplified=input*e->coef[0];
-  float v=(amplified-e->z[0])*e->coef[1],low=v+e->z[0];e->z[0]=low+v;
-  float bias=p[2]*.01f,signal=amplified-low;
-  // Antiderivative antialiasing of the independent soft clipper. The divided
-  // difference integrates the transfer curve between samples without resampling.
-  float previous=e->z[3],difference=signal-previous,clipped;
-  if(fabsf(difference)<.0001f)clipped=tanhf((signal+previous)*.5f+bias)-tanhf(bias);
-  else {float a=signal+bias,b=previous+bias;
-   double fa=fabs((double)a)+log1p(exp(-2*fabs((double)a))),fb=fabs((double)b)+log1p(exp(-2*fabs((double)b)));
-   clipped=(fa-fb)/difference-tanhf(bias);
+  if(p[10]>.5f){
+   // Stage Clip smooths every audible control, including the clip and sum
+   // filters and shelf coefficients, while retaining the independent ADAA
+   // soft-clip curve. z[11] is the stage-ready marker, cleared with z.
+   if(e->z[11]<.5f){
+    e->clipStageControl[0]=e->coef[0];e->clipStageControl[1]=e->coef[5];e->clipStageControl[2]=e->coef[4];
+    e->clipStageControl[3]=p[2];e->clipStageControl[4]=p[3];e->clipStageControl[5]=e->coef[1];
+    e->clipStageControl[6]=e->coef[2];e->clipStageControl[7]=e->coef[3];
+    e->eq[0].b0=e->clipShelfTarget.b0;e->eq[0].b1=e->clipShelfTarget.b1;e->eq[0].b2=e->clipShelfTarget.b2;
+    e->eq[0].a1=e->clipShelfTarget.a1;e->eq[0].a2=e->clipShelfTarget.a2;e->eq[0].z1=e->eq[0].z2=0;
+    e->z[0]=e->z[1]=e->z[2]=e->z[3]=0;e->z[11]=1;
+   }
+   float smooth=e->coef[6];
+   e->clipStageControl[0]+=smooth*(e->coef[0]-e->clipStageControl[0]);
+   e->clipStageControl[1]+=smooth*(e->coef[5]-e->clipStageControl[1]);
+   e->clipStageControl[2]+=smooth*(e->coef[4]-e->clipStageControl[2]);
+   e->clipStageControl[3]+=smooth*(p[2]-e->clipStageControl[3]);
+   e->clipStageControl[4]+=smooth*(p[3]-e->clipStageControl[4]);
+   e->clipStageControl[5]+=smooth*(e->coef[1]-e->clipStageControl[5]);
+   e->clipStageControl[6]+=smooth*(e->coef[2]-e->clipStageControl[6]);
+   e->clipStageControl[7]+=smooth*(e->coef[3]-e->clipStageControl[7]);
+   if(fabsf(e->coef[0]-e->clipStageControl[0])<1e-5f)e->clipStageControl[0]=e->coef[0];
+   if(fabsf(e->coef[5]-e->clipStageControl[1])<1e-5f)e->clipStageControl[1]=e->coef[5];
+   if(fabsf(e->coef[4]-e->clipStageControl[2])<1e-5f)e->clipStageControl[2]=e->coef[4];
+   if(fabsf(p[2]-e->clipStageControl[3])<1e-4f)e->clipStageControl[3]=p[2];
+   if(fabsf(p[3]-e->clipStageControl[4])<1e-5f)e->clipStageControl[4]=p[3];
+   if(fabsf(e->coef[1]-e->clipStageControl[5])<1e-6f)e->clipStageControl[5]=e->coef[1];
+   if(fabsf(e->coef[2]-e->clipStageControl[6])<1e-6f)e->clipStageControl[6]=e->coef[2];
+   if(fabsf(e->coef[3]-e->clipStageControl[7])<1e-6f)e->clipStageControl[7]=e->coef[3];
+   e->eq[0].b0+=smooth*(e->clipShelfTarget.b0-e->eq[0].b0);e->eq[0].b1+=smooth*(e->clipShelfTarget.b1-e->eq[0].b1);
+   e->eq[0].b2+=smooth*(e->clipShelfTarget.b2-e->eq[0].b2);e->eq[0].a1+=smooth*(e->clipShelfTarget.a1-e->eq[0].a1);
+   e->eq[0].a2+=smooth*(e->clipShelfTarget.a2-e->eq[0].a2);
+   if(fabsf(e->clipShelfTarget.b0-e->eq[0].b0)<1e-6f)e->eq[0].b0=e->clipShelfTarget.b0;
+   if(fabsf(e->clipShelfTarget.b1-e->eq[0].b1)<1e-6f)e->eq[0].b1=e->clipShelfTarget.b1;
+   if(fabsf(e->clipShelfTarget.b2-e->eq[0].b2)<1e-6f)e->eq[0].b2=e->clipShelfTarget.b2;
+   if(fabsf(e->clipShelfTarget.a1-e->eq[0].a1)<1e-6f)e->eq[0].a1=e->clipShelfTarget.a1;
+   if(fabsf(e->clipShelfTarget.a2-e->eq[0].a2)<1e-6f)e->eq[0].a2=e->clipShelfTarget.a2;
+   float input=x*e->clipStageControl[1],amplified=input*e->clipStageControl[0];
+   float v=(amplified-e->z[0])*e->clipStageControl[5],low=v+e->z[0];e->z[0]=low+v;
+   float signal=amplified-low,clipped=tanh_adaa_bias(signal,e->z[3],e->clipStageControl[3]*.01f);e->z[3]=signal;
+   v=(clipped-e->z[1])*e->clipStageControl[6];low=v+e->z[1];e->z[1]=low+v;
+   float mixed=input*(1-e->clipStageControl[4])+low*e->clipStageControl[4];
+   v=(mixed-e->z[2])*e->clipStageControl[7];low=v+e->z[2];e->z[2]=low+v;
+   y=process(&e->eq[0],low)*e->clipStageControl[2];
+  }else{
+   // Keep smoothing state precise: float increments can round to zero before
+   // reaching the target, leaving a persistent gain error after automation.
+   if(!e->clipReady){e->clipControl[0]=e->coef[5];e->clipControl[1]=e->coef[4];e->clipControl[2]=p[3];e->clipReady=1;}
+   e->clipControl[0]+=e->coef[6]*(e->coef[5]-e->clipControl[0]);
+   e->clipControl[1]+=e->coef[6]*(e->coef[4]-e->clipControl[1]);
+   e->clipControl[2]+=e->coef[6]*(p[3]-e->clipControl[2]);
+   float input=x*e->clipControl[0],amplified=input*e->coef[0];
+   float v=(amplified-e->z[0])*e->coef[1],low=v+e->z[0];e->z[0]=low+v;
+   float bias=p[2]*.01f,signal=amplified-low;
+   // Antiderivative antialiasing of the independent soft clipper. The divided
+   // difference integrates the transfer curve between samples without resampling.
+   float previous=e->z[3],difference=signal-previous,clipped;
+   if(fabsf(difference)<.0001f)clipped=tanhf((signal+previous)*.5f+bias)-tanhf(bias);
+   else {float a=signal+bias,b=previous+bias;
+    double fa=fabs((double)a)+log1p(exp(-2*fabs((double)a))),fb=fabs((double)b)+log1p(exp(-2*fabs((double)b)));
+    clipped=(fa-fb)/difference-tanhf(bias);
+   }
+   e->z[3]=signal;
+   v=(clipped-e->z[1])*e->coef[2];low=v+e->z[1];e->z[1]=low+v;
+   float mixed=input*(1-e->clipControl[2])+low*e->clipControl[2];
+   v=(mixed-e->z[2])*e->coef[3];low=v+e->z[2];e->z[2]=low+v;
+   y=process(&e->eq[0],low)*e->clipControl[1];
   }
-  e->z[3]=signal;
-  v=(clipped-e->z[1])*e->coef[2];low=v+e->z[1];e->z[1]=low+v;
-  float mixed=input*(1-e->clipControl[2])+low*e->clipControl[2];
-  v=(mixed-e->z[2])*e->coef[3];low=v+e->z[2];e->z[2]=low+v;
-  y=process(&e->eq[0],low)*e->clipControl[1];break;
+  break;
  }
  case 14:{float target=p[0]<.5f?0:p[0]<1.5f?p[1]/60:p[2]/60;e->z[0]+=(target-e->z[0])*e->coef[1];s->fxPhase[l][k]=fmod(phase+TAU*e->z[0]/rate,TAU);float doppler=rate*(.002f+.0015f*(p[7]/100)*sinf(phase));buffer[pos]=x;float body=tap(buffer,pos,doppler);float driven=tanhf(body*(1+p[4]*12));float ambience=tap(buffer,pos,rate*(.02f+.15f*p[9]));float amp=.72f+.28f*cosf(phase)*(1-p[6]*.5f);y=(driven*amp+ambience*p[11]*.4f)*e->coef[0];e->stereo=sinf(phase)*fminf(1,p[8]/200)*p[10];break;}
  default:break;
@@ -648,7 +702,7 @@ static void commands(SKSynth *s) {
   else if(c.kind==19){EffectState*e=&s->effect[0][c.key];e->p[24]=c.instrument?1:0;e->p[25]=bounded(c.value,.001f,16);e->p[26]=bounded(c.a,.001f,16);e->p[27]=c.b;e->p[28]=bounded(c.d,20,20000);e->p[29]=bounded(c.seconds,e->p[28],20000);e->coef[4]=1-exp(-TAU*e->p[28]/s->rate);e->coef[5]=1-exp(-TAU*e->p[29]/s->rate);}
   else if(c.kind==23){EffectState*e=&s->effect[0][c.key];int ready=e->p[31]>0;e->p[31]=c.instrument?1:0;e->p[8]=bounded(c.value,0,1);e->p[9]=bounded(c.a,0,1);e->coef[6]=1-exp(-1/(.02*s->rate));if(!ready){e->delayLevels[0]=e->p[8];e->delayLevels[1]=e->p[9];}}
   else if(c.kind==17){int kind=s->fxKind[c.layer][c.key];if(c.pitch<effectCount[kind]){EffectState*e=&s->effect[c.layer][c.key];e->custom=1;
-   if(((kind==3&&c.pitch==4)||(kind==5&&c.pitch==5)||(kind==11&&c.pitch==5)||(kind==13&&c.pitch==10)||(kind==15&&c.pitch==11))&&e->p[c.pitch]!=c.value){clear_delay(s,c.layer,c.key);memset(e->z,0,sizeof(e->z));memset(&e->reverb,0,sizeof(e->reverb));s->delayPosition[c.layer][c.key]=0;s->fxPhase[c.layer][c.key]=0;}
+   if(((kind==3&&c.pitch==4)||(kind==5&&c.pitch==5)||(kind==11&&c.pitch==5)||(kind==13&&c.pitch==10)||(kind==15&&c.pitch==11)||(kind==17&&c.pitch==10))&&e->p[c.pitch]!=c.value){clear_delay(s,c.layer,c.key);memset(e->z,0,sizeof(e->z));memset(&e->reverb,0,sizeof(e->reverb));s->delayPosition[c.layer][c.key]=0;s->fxPhase[c.layer][c.key]=0;if(kind==17){e->clipReady=0;e->eq[0].z1=e->eq[0].z2=0;}}
    e->p[c.pitch]=bounded(c.value,effectMin[kind][c.pitch],effectMax[kind][c.pitch]);effectCoefficients(e,kind,s->rate);}}
   r=(r+1)%QUEUE;
  }

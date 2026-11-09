@@ -34,7 +34,7 @@ Effect IDs are part of the patch format and must remain stable.
 | 14 | Rotor | Native Doppler/amplitude model | Audit permissive rotary candidates; retain if none clearly wins |
 | 15 | SolaVerb | Native ambient/modulated reverb | Improve independently; share only proven primitives |
 | 16 | Silver Reverb | Native acoustic reverb | Improve independently; share only proven primitives |
-| 17 | Clip Distortion | Native symmetrical clip/distortion | Evaluate oversampling and Airwindows candidates |
+| 17 | Clip Distortion | Versioned legacy and Stage Clip cores | `stage-clip-v1` smooths the existing independent ADAA clipper; oversampling and Airwindows comparison remain pending |
 
 An empty effect slot remains ID 0. Adding an effect requires a new ID; an
 existing ID must never be repurposed for a different effect.
@@ -177,8 +177,11 @@ operation, and a measured CPU/memory budget suitable for eight live instances.
    independent ADAA tanh core with smoothed controls and legacy retention. The
    documented Airwindows shootout and blind listening remain pending before it
    is described as an improvement.
-2. **Clip Distortion:** evaluate a versioned core separately from Overdrive;
-   do not add oversampling unless measurements and listening justify its cost.
+2. **Stage Clip Distortion:** candidate `stage-clip-v1` is implemented for the
+   imported ClipDist path. It retains the existing ADAA curve and smooths all
+   audible controls, including filter and shelf coefficients. Blind listening,
+   oversampled-reference alias measurement, and Airwindows comparison remain
+   pending; no oversampling is added.
 3. Keep input, output, mix, tone, and bypass gain conventions consistent across
    all distortion types. Stage Overdrive preserves the legacy drive and boost
    conventions and documents its exact-dry condition.
