@@ -158,7 +158,7 @@ static const float effectDefault[18][32]={
 {},
 {20000,0.707,1},
 {0.8,3,1,0},
-{0.3,1,1000,0.5},
+{0.3,1,1000,0.5,0},
 {10,5000,1},
 {0.65,0.25,0.2,1,1,0},
 {0,20,60,2,-40,0,0},
@@ -178,7 +178,7 @@ static const float effectMin[18][32]={
 {},
 {20,0.1,0},
 {0,0.01,0,0},
-{0,0.0625,20,0},
+{0,0.0625,20,0,0},
 {2,100,0},
 {0,0,0,-24,0,0},
 {-24,0.1,1,1,-60,0,-24},
@@ -198,7 +198,7 @@ static const float effectMax[18][32]={
 {},
 {20000,10,1},
 {1,20,1,1},
-{0.95,2,20000,1},
+{0.95,2,20000,1,1},
 {24,48000,1},
 {20,1,0.95,12,1,1},
 {24,1000,3000,20,0,1,24},
@@ -214,14 +214,25 @@ static const float effectMax[18][32]={
 {200,1,1000,1,20000,20000,20,1,360,1,1},
 {100,20000,100,1,20000,20000,30,20000,60,60},
 };
-static const int effectCount[18]={0,3,4,4,3,6,7,24,4,1,10,5,2,11,12,12,11,10};
+static const int effectCount[18]={0,3,4,5,3,6,7,24,4,1,10,5,2,11,12,12,11,10};
 
 // Delay taps interpolate bounded preallocated memory. All state is render-owned.
 static float tap_capacity(const float *buffer,int pos,float offset,int capacity){
  offset=fminf(capacity-2,fmaxf(1,offset));double at=(double)pos-(double)offset;while(at<0)at+=capacity;
  int i=((int)at)%capacity;float f=(float)(at-floor(at));return buffer[i]*(1-f)+buffer[(i+1)%capacity]*f;
 }
+// MIT Signalsmith DSP's cubic interpolator uses four adjacent samples and a
+// spline polynomial. This C adaptation keeps StageKeys' existing circular,
+// preallocated storage and adds no render-time allocation or framework code.
+static float tap_cubic_capacity(const float *buffer,int pos,float offset,int capacity){
+ offset=fminf(capacity-3,fmaxf(2,offset));double at=(double)pos-(double)offset;while(at<0)at+=capacity;
+ int i=((int)at)%capacity;float f=(float)(at-floor(at));
+ float a=buffer[(i+capacity-1)%capacity],b=buffer[i],c=buffer[(i+1)%capacity],d=buffer[(i+2)%capacity];
+ float cb=c-b,k1=(c-a)*.5f,k3=k1+(d-b)*.5f-cb*2;
+ return b+f*(k1+f*(cb-k1-k3+f*k3));
+}
 #define tap(buffer,pos,offset) tap_capacity(buffer,pos,offset,s->delayLength)
+#define tap_cubic(buffer,pos,offset) tap_cubic_capacity(buffer,pos,offset,s->delayLength)
 static void effectReset(EffectState *e){
  memset(e,0,sizeof(*e));for(int i=0;i<8;i++)e->eq[i].b0=1;
 }
@@ -378,8 +389,8 @@ static float effectProcess(SKSynth*s,int l,int k,float x){
   if(!e->delayReady){e->delayPrevious=e->delayTarget=target;e->delayMix=1;e->delayReady=1;}
   else if(e->delayMix>=1&&fabsf(target-e->delayTarget)>1){e->delayPrevious=e->delayTarget;e->delayTarget=target;e->delayMix=0;}
   float t;
-  if(e->delayMix<1){float a=tap(buffer,pos,e->delayPrevious),b=tap(buffer,pos,e->delayTarget);t=a+(b-a)*e->delayMix;e->delayMix=fminf(1,e->delayMix+e->coef[1]);if(e->delayMix>=1)e->delayPrevious=e->delayTarget;}
-  else t=tap(buffer,pos,e->delayTarget);
+  if(e->delayMix<1){float a=p[4]>.5f?tap_cubic(buffer,pos,e->delayPrevious):tap(buffer,pos,e->delayPrevious),b=p[4]>.5f?tap_cubic(buffer,pos,e->delayTarget):tap(buffer,pos,e->delayTarget);t=a+(b-a)*e->delayMix;e->delayMix=fminf(1,e->delayMix+e->coef[1]);if(e->delayMix>=1)e->delayPrevious=e->delayTarget;}
+  else t=p[4]>.5f?tap_cubic(buffer,pos,e->delayTarget):tap(buffer,pos,e->delayTarget);
   e->z[0]+=e->coef[0]*(t-e->z[0]);buffer[pos]=tanhf(x+e->z[0]*p[0]);y=x*(1-p[3])+e->z[0]*p[3];break;}
  case 4:{e->z[1]+=p[1]/rate;if(e->z[1]>=1){e->z[1]-=floorf(e->z[1]);float levels=powf(2,roundf(p[0])-1);e->z[0]=roundf(x*levels)/levels;}y=x+(e->z[0]-x)*p[2];break;}
  case 5:{
@@ -605,7 +616,7 @@ static void commands(SKSynth *s) {
   else if(c.kind==19){EffectState*e=&s->effect[0][c.key];e->p[24]=c.instrument?1:0;e->p[25]=bounded(c.value,.001f,16);e->p[26]=bounded(c.a,.001f,16);e->p[27]=c.b;e->p[28]=bounded(c.d,20,20000);e->p[29]=bounded(c.seconds,e->p[28],20000);e->coef[4]=1-exp(-TAU*e->p[28]/s->rate);e->coef[5]=1-exp(-TAU*e->p[29]/s->rate);}
   else if(c.kind==23){EffectState*e=&s->effect[0][c.key];int ready=e->p[31]>0;e->p[31]=c.instrument?1:0;e->p[8]=bounded(c.value,0,1);e->p[9]=bounded(c.a,0,1);e->coef[6]=1-exp(-1/(.02*s->rate));if(!ready){e->delayLevels[0]=e->p[8];e->delayLevels[1]=e->p[9];}}
   else if(c.kind==17){int kind=s->fxKind[c.layer][c.key];if(c.pitch<effectCount[kind]){EffectState*e=&s->effect[c.layer][c.key];e->custom=1;
-   if(((kind==5&&c.pitch==5)||(kind==13&&c.pitch==10)||(kind==15&&c.pitch==11))&&e->p[c.pitch]!=c.value){clear_delay(s,c.layer,c.key);memset(e->z,0,sizeof(e->z));memset(&e->reverb,0,sizeof(e->reverb));s->delayPosition[c.layer][c.key]=0;s->fxPhase[c.layer][c.key]=0;}
+   if(((kind==3&&c.pitch==4)||(kind==5&&c.pitch==5)||(kind==13&&c.pitch==10)||(kind==15&&c.pitch==11))&&e->p[c.pitch]!=c.value){clear_delay(s,c.layer,c.key);memset(e->z,0,sizeof(e->z));memset(&e->reverb,0,sizeof(e->reverb));s->delayPosition[c.layer][c.key]=0;s->fxPhase[c.layer][c.key]=0;}
    e->p[c.pitch]=bounded(c.value,effectMin[kind][c.pitch],effectMax[kind][c.pitch]);effectCoefficients(e,kind,s->rate);}}
   r=(r+1)%QUEUE;
  }

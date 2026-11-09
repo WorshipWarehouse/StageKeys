@@ -20,7 +20,7 @@ Effect IDs are part of the patch format and must remain stable.
 |---:|---|---|---|
 | 1 | Tone | Native filter | Retain and strengthen reference tests |
 | 2 | Tremolo | Native amplitude modulation | Retain; consider additional wave shapes independently |
-| 3 | Delay | Native stereo, tempo-sync and ping-pong delay | Evaluate Signalsmith interpolation primitives |
+| 3 | Delay | Versioned legacy-linear and Stage Delay cubic cores | `stage-delay-v1` adapts Signalsmith interpolation |
 | 4 | Bitcrusher | Native quantizer/sample-rate reduction | Retain; add antialias and transition tests |
 | 5 | Chorus | Versioned legacy and Stage Chorus cores | `stage-chorus-v1` adapts DaisySP foundations |
 | 6 | Compressor | Native feed-forward compressor | Retain; improve metering and program-dependent modes independently |
@@ -67,9 +67,10 @@ request:
    imported unless their licenses explicitly permit redistribution.
 6. A dependency review showing that the render path remains framework-free.
 
-The current Stage Chorus provenance is recorded in
-`Licenses/DaisySP-MIT.txt`. StageKeys' independent reverb implementation is
-covered by `Licenses/StageKeys-Dense-Reverb-MIT.txt`.
+Stage Chorus provenance is recorded in `Licenses/DaisySP-MIT.txt`; Stage Delay
+provenance is recorded in `Licenses/Signalsmith-DSP-MIT.txt`. StageKeys'
+independent reverb implementation is covered by
+`Licenses/StageKeys-Dense-Reverb-MIT.txt`.
 
 ## Real-time integration contract
 
@@ -160,9 +161,10 @@ does not replace physical iPad testing.
 
 1. **Stage Chorus:** complete. New instances use `stage-chorus-v1`; the legacy
    core remains available.
-2. **Stage Delay:** prototype higher-order fractional-delay interpolation while
-   preserving sync, independent left/right time, ping-pong, filtering, and
-   MainStage-imported dry/wet behavior.
+2. **Stage Delay:** complete for native delays. New instances use
+   `stage-delay-v1` cubic interpolation while existing and imported delays keep
+   their authored behavior, including sync, independent left/right time,
+   ping-pong, filtering, and MainStage-imported dry/wet routing.
 3. **Stage Flanger:** build on the qualified delay primitive with through-zero
    safety, polarity-aware feedback, stereo phase, and bounded modulation.
 

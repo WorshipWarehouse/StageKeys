@@ -379,7 +379,10 @@ struct EffectEditor: View {
                             Picker("Rotor Speed",selection:Binding(get:{Int(draft.values[0])},set:{var values=draft.values;values[0]=Float($0);draft.parameters=values})) { Text("Brake").tag(0); Text("Slow").tag(1); Text("Fast").tag(2) }.pickerStyle(.segmented).padding(.horizontal,20)
                         }
                         if draft.kind == 3 {
-                            DelayEffectControls(effect:$draft,stereoAvailable:store.patch.layers[index].external != nil)
+                            VStack(spacing:8) {
+                                HStack {Text(draft.effectCore == "stage-delay-v1" ? "Stage Delay · Cubic":"Legacy Delay · Linear").font(.caption).foregroundStyle(.secondary);Spacer();if draft.effectCore != "stage-delay-v1" {Button("Use Stage Delay"){draft.effectCore="stage-delay-v1"}.buttonStyle(StageButtonStyle())}}.padding(.horizontal,20)
+                                DelayEffectControls(effect:$draft,stereoAvailable:store.patch.layers[index].external != nil)
+                            }
                         } else if draft.kind == 7 {
                             ChannelEqualizerControls(bands:equalizerBands,enabled:$draft.enabled).padding(.top,12)
                         } else if draft.kind == 13 {

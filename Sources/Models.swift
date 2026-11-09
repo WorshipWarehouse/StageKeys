@@ -116,6 +116,7 @@ struct AudioEffect: Codable, Equatable {
     }
     static func factoryDefault(kind:Int)->AudioEffect {
         var effect=AudioEffect();effect.kind=kind;effect.parameters=AudioEffectCatalog.defaults(for:kind)
+        if kind==3 {effect.effectCore="stage-delay-v1"}
         if kind==5 {effect.effectCore="stage-chorus-v1"}
         if kind==13 {effect.reverbCore=StageReverbMode.hall.coreID}
         if kind==15 {effect.reverbCore="dense-v1"}
@@ -128,6 +129,7 @@ struct AudioEffect: Codable, Equatable {
         return ImportedDelay(left:Double(values[1]),right:Double(values[1]),leftSynced:true,rightSynced:true,pingPong:true,highCut:values[2])
     }
     var renderValues:[Float] {
+        if kind == 3 {return values+[effectCore == "stage-delay-v1" ? 1:0]}
         if kind == 5 {return values+[effectCore == "stage-chorus-v1" ? 1:0]}
         if kind == 13 {
             var rendered=values
@@ -165,7 +167,7 @@ struct AudioEffect: Codable, Equatable {
         return values
     }
     func validate() -> Bool {
-        guard effectCore.map({kind==5 && $0=="stage-chorus-v1"}) ?? true else{return false}
+        guard effectCore.map({(kind==3 && $0=="stage-delay-v1") || (kind==5 && $0=="stage-chorus-v1")}) ?? true else{return false}
         guard reverbCore.map({(kind == 13 && (["creamcoat","legacy","dense-v1","prima-felt-room-v1"].contains($0) || StageReverbMode(coreID:$0) != nil)) || (kind == 15 && ["legacy","dense-v1"].contains($0))}) ?? true else{return false}
         guard delayPingPong == nil || kind==3 else{return false}
         guard importedDelay.map({kind == 3 && $0.validate()}) ?? true else{return false}
