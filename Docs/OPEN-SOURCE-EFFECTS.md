@@ -27,7 +27,7 @@ Effect IDs are part of the patch format and must remain stable.
 | 7 | Equalizer | Native eight-band parametric EQ | Retain |
 | 8 | Flanger | Versioned legacy and Stage Flanger through-zero cores | `stage-flanger-v1` reuses the qualified Stage Delay cubic tap and Stage Chorus modulation work |
 | 9 | Gain | Native | Retain |
-| 10 | Halo Shimmer | Native pitch-shifted feedback reverb | Evaluate pitch cores separately from the reverb network |
+| 10 | Halo Shimmer | Versioned legacy and Stage Shimmer cores | `stage-shimmer-v1` pitches the direct signal before diffusion and keeps quality out of the tank; blind comparison remains pending |
 | 11 | Overdrive | Versioned legacy and Stage Overdrive cores | `stage-overdrive-v1` is independent ADAA tanh saturation; a documented Airwindows comparison remains pending |
 | 12 | Pitch Shifter | Versioned legacy and Stage Pitch cores | `stage-pitch-v1` uses independent cubic two-head interpolation and smoothing; Signalsmith Stretch benchmarking remains pending |
 | 13 | Stage Reverb | Versioned reverb family | Room, Hall and Ambient profiles active |
@@ -204,8 +204,10 @@ unbounded output or discontinuity during automation.
    cubic two-head shifter with smoothed pitch/amount and exact dry at Pitch 0
    or Amount 0. The render-safe Signalsmith comparison, reported latency, and
    chord tracking remain pending.
-2. Improve Halo Shimmer by separating pitch quality from diffusion, feedback,
-   damping and stereo spread.
+2. **Stage Shimmer:** candidate `stage-shimmer-v1` is implemented with pitch
+   ahead of the diffusion tank, independent pitch quality, smoothed room and
+   wet controls, and legacy retention. Blind reference comparison, measured
+   stereo width, and release CPU qualification remain pending.
 3. Reuse a new pitch core in SolaVerb only after it passes live-latency and
    allocation requirements.
 

@@ -56,7 +56,7 @@ typedef struct {
  double oscSin[8],oscCos[8],stepSin[8],stepCos[8];
  int ready;
 } DenseReverb;
-typedef struct { DenseReverb reverb; float p[32],z[12],coef[8],shiftPhase,stereo; int custom; Biquad eq[8],clipShelfTarget;float clipStageControl[8];float shimmerControl[4],delayLevels[2];double clipControl[3];int shimmerReady,clipReady,flangerReady;float delayPrevious,delayTarget,delayMix;int delayReady; } EffectState;
+typedef struct { DenseReverb reverb; float p[32],z[12],coef[8],shiftPhase,stereo; int custom; Biquad eq[8],clipShelfTarget;float clipStageControl[8];float shimmerControl[4],shimmerStageControl[5],delayLevels[2];double clipControl[3];int shimmerReady,shimmerStageReady,clipReady,flangerReady;float delayPrevious,delayTarget,delayMix;int delayReady; } EffectState;
 struct SKSynth {
  double rate;
  int delayLength,predelayLength;
@@ -165,7 +165,7 @@ static const float effectDefault[18][32]={
 {20,0,0.707,70,0,0.707,100,0,0.707,250,0,0.707,1000,0,0.707,2500,0,0.707,7500,0,0.707,20000,0,0.707},
 {0.2,0.5,0.8,0.5},
 {0},
-{0.75,0.66,0.9,0.75,0.5,100,10000,1,0.2,1},
+{0.75,0.66,0.9,0.75,0.5,100,10000,1,0.2,1,0},
 {0.96,402,4877,0.4,2,0},
 {12,0.2,0},
 {0.5,0,0.3,100,20000,0,1,0.8,0.4,1},
@@ -185,7 +185,7 @@ static const float effectMin[18][32]={
 {20,-24,0.1,20,-24,0.1,20,-24,0.1,20,-24,0.1,20,-24,0.1,20,-24,0.1,20,-24,0.1,20,-24,0.1},
 {0.1,0,-0.95,0,0},
 {-96},
-{0,0,0,0,0,20,200,0,0},
+{0,0,0,0,0,20,200,0,0,0},
 {0,20,600,0,-24,0},
 {-24,0,0},
 {0,0,0,20,200,0,0,0,0,0},
@@ -205,7 +205,7 @@ static const float effectMax[18][32]={
 {20000,24,10,20000,24,10,20000,24,10,20000,24,10,20000,24,10,20000,24,10,20000,24,10,20000,24,10},
 {10,1,0.95,1,1},
 {6},
-{1,0.95,1,1,1,2000,20000,1,1,1},
+{1,0.95,1,1,1,2000,20000,1,1,1,1},
 {1,800,20000,1,12,1},
 {24,1,1},
 {1,200,0.95,2000,20000,1,10,1,1,1,5},
@@ -214,7 +214,7 @@ static const float effectMax[18][32]={
 {200,1,1000,1,20000,20000,20,1,360,1,1},
 {100,20000,100,1,20000,20000,30,20000,60,60,1},
 };
-static const int effectCount[18]={0,3,4,5,3,6,7,24,5,1,10,6,3,11,12,12,11,11};
+static const int effectCount[18]={0,3,4,5,3,6,7,24,5,1,11,6,3,11,12,12,11,11};
 
 // Delay taps interpolate bounded preallocated memory. All state is render-owned.
 static float tap_capacity(const float *buffer,int pos,float offset,int capacity){
@@ -253,7 +253,7 @@ static void effectReset(EffectState *e){
 static void effectCoefficients(EffectState*e,int kind,double rate){
  float *p=e->p;
  if(kind==10)e->coef[6]=1-exp(-1/(rate*.02));
- if(kind==10||kind==15||(kind==13&&p[10]>1.5f))rate/=(1 << (int)roundf((1-p[kind==10||kind==13?9:10])*5));
+ if((kind==10&&p[10]<=.5f)||kind==15||(kind==13&&p[10]>1.5f))rate/=(1 << (int)roundf((1-p[kind==10||kind==13?9:10])*5));
  if(kind==10){
   e->coef[7]=1-exp(-1/(rate*.02));
   // An octave-up read doubles input frequencies. Band-limit the wet pitch
@@ -300,6 +300,58 @@ static float shifted_stage(SKSynth*s,EffectState*e,float *buffer,int pos,float r
  float phase2=phase+.5f;phase2-=floorf(phase2);
  float a=.5f-.5f*cosf(TAU*phase),b=1-a;
  return a*tap_cubic(buffer,pos,16+phase*window)+b*tap_cubic(buffer,pos,16+phase2*window);
+}
+// Stage Shimmer separates the pitch source from the diffusion tank. The pitch
+// shifter sees the direct signal, while room size, feedback, damping and
+// diffusion only shape the wet network. Pitch quality therefore changes the
+// shifter alone instead of downsampling the whole effect.
+static float shimmer_stage_process(SKSynth*s,int l,int k,float x){
+ EffectState*e=&s->effect[l][k];float *p=e->p,*buffer=s->delay[l][k];
+ int pos=s->delayPosition[l][k];double rate=s->rate;float phase=s->fxPhase[l][k],dry=x;
+ if(!e->shimmerStageReady){
+  e->shimmerStageControl[0]=p[0];e->shimmerStageControl[1]=p[1];e->shimmerStageControl[2]=p[2];
+  e->shimmerStageControl[3]=p[3];e->shimmerStageControl[4]=p[4];e->shimmerStageReady=1;
+ }
+ float smooth=e->coef[6];
+ e->shimmerStageControl[0]+=smooth*(p[0]-e->shimmerStageControl[0]);
+ e->shimmerStageControl[1]+=smooth*(p[1]-e->shimmerStageControl[1]);
+ e->shimmerStageControl[2]+=smooth*(p[2]-e->shimmerStageControl[2]);
+ e->shimmerStageControl[3]+=smooth*(p[3]-e->shimmerStageControl[3]);
+ e->shimmerStageControl[4]+=smooth*(p[4]-e->shimmerStageControl[4]);
+ if(fabsf(p[0]-e->shimmerStageControl[0])<1e-5f)e->shimmerStageControl[0]=p[0];
+ if(fabsf(p[1]-e->shimmerStageControl[1])<1e-5f)e->shimmerStageControl[1]=p[1];
+ if(fabsf(p[2]-e->shimmerStageControl[2])<1e-5f)e->shimmerStageControl[2]=p[2];
+ if(fabsf(p[3]-e->shimmerStageControl[3])<1e-5f)e->shimmerStageControl[3]=p[3];
+ if(fabsf(p[4]-e->shimmerStageControl[4])<1e-5f)e->shimmerStageControl[4]=p[4];
+ float amount=e->shimmerStageControl[0],feedback=e->shimmerStageControl[1];
+ float size=e->shimmerStageControl[2],diffusion=e->shimmerStageControl[3];
+ float modulation=e->shimmerStageControl[4];
+ int capacity=s->delayLength/6,index=pos%capacity;
+ float room=.035f+size*.13f,decay=.4f+size*7;
+ SKShimmerPitch*shifter=atomic_load_explicit(&s->shimmer[l][k],memory_order_acquire);
+ float pitch=sk_pitch_process(shifter,x,1 << (int)roundf((1-p[9])*5));
+ float input=x*(1-amount)+pitch*amount,wet=0;
+ const float spacing[4]={1,1.271f,1.617f,1.953f};
+ for(int line=0;line<4;line++){
+  float seconds=room*spacing[line]*(s->stereoSide?1.031f:1);
+  float mod=sinf(phase+line*1.73f+s->stereoSide*.9f)*rate*.0007f*modulation;
+  float*history=buffer+line*capacity;
+  float delayed=tap_capacity(history,index,rate*seconds+mod,capacity);
+  float loop=fminf(.985f,feedback*powf(.001f,seconds/decay));
+  e->z[8+line]+=e->shimmerControl[3]*(delayed-e->z[8+line]);
+  history[index]=input+loop*e->z[8+line];
+  wet+=delayed*.25f;
+ }
+ for(int line=0;line<2;line++){
+  float*history=buffer+(4+line)*capacity;
+  float delayed=tap_capacity(history,index,rate*(line==0?.0071f:.0113f)*(s->stereoSide?1.07f:1),capacity);
+  float a=diffusion*.7f,out=delayed-a*wet;history[index]=wet+a*out;wet=out;
+ }
+ e->z[0]+=e->shimmerControl[2]*(wet-e->z[0]);wet-=e->z[0];
+ e->z[1]+=e->shimmerControl[3]*(wet-e->z[1]);wet=e->z[1];
+ e->z[5]=wet;
+ float y=dry*e->shimmerControl[0]+wet*e->shimmerControl[1];
+ s->fxPhase[l][k]=fmod(phase+TAU*.3f/rate,TAU);return y;
 }
 // Chorus belongs before the reverb tank; keep the direct signal untouched.
 static float cream_input(SKSynth*s,int l,int k,float input){
@@ -390,7 +442,7 @@ static float effectProcess(SKSynth*s,int l,int k,float x){
   e->shimmerControl[0]+=e->coef[6]*(p[7]-e->shimmerControl[0]);
   e->shimmerControl[1]+=e->coef[6]*(p[8]-e->shimmerControl[1]);
  }
- if(kind==10||kind==15||(kind==13&&p[10]>1.5f)){
+ if((kind==10&&p[10]<=.5f)||kind==15||(kind==13&&p[10]>1.5f)){
   int divider=1 << (int)roundf((1-p[kind==10||kind==13?9:10])*5);
   e->z[3]+=x;e->z[4]+=1;
   if(e->z[4]<divider)return (kind==13&&p[10]>1.5f)||(kind==15&&p[11]>0) ? dry*e->reverb.mix[0]+e->z[5]*e->reverb.mix[1] : kind==10?dry*e->shimmerControl[0]+e->z[5]*e->shimmerControl[1]:dry*p[8]+e->z[5]*p[9];
@@ -475,7 +527,9 @@ static float effectProcess(SKSynth*s,int l,int k,float x){
  case 6:{float v=x*e->coef[2],level=fabsf(v),a=level>e->z[0]?e->coef[0]:e->coef[1];e->z[0]=a*e->z[0]+(1-a)*level;float db=20*log10f(fmaxf(1e-9,e->z[0]));float reduction=fmaxf(0,db-p[4])*(1-1/p[3]);y=(dry*(1-p[5])+v*powf(10,-reduction/20)*p[5])*e->coef[3];break;}
  case 7:for(int b=0;b<8;b++)y=process(&e->eq[b],y);break;
  case 9:y=x*e->coef[0];break;
- case 10:{
+ case 10:
+  if(p[10]>.5f){y=shimmer_stage_process(s,l,k,x);break;}
+  {
   // Diffuse the room before octave shifting. The pitch history contains only
   // the wet return, never the dry attack. All buffers are allocated off-thread.
   e->shimmerControl[2]+=e->coef[7]*(e->coef[0]-e->shimmerControl[2]);
@@ -723,7 +777,7 @@ static void commands(SKSynth *s) {
  unsigned r=atomic_load_explicit(&s->read,memory_order_relaxed);
  unsigned w=atomic_load_explicit(&s->write,memory_order_acquire);
  if(atomic_exchange(&s->emergency,0)){
-  memset(s->voices,0,sizeof(s->voices));for(int dl=0;dl<BUSES;dl++)for(int dk=0;dk<3;dk++)clear_delay(s,dl,dk);memset(s->tone,0,sizeof(s->tone));for(int el=0;el<BUSES;el++)for(int ek=0;ek<3;ek++){EffectState*e=&s->effect[el][ek];memset(e->z,0,sizeof(e->z));memset(&e->reverb,0,sizeof(e->reverb));e->shiftPhase=e->stereo=0;e->flangerReady=0;s->delayPosition[el][ek]=0;s->fxPhase[el][ek]=0;for(int eb=0;eb<8;eb++)e->eq[eb].z1=e->eq[eb].z2=0;}for(int l=0;l<BUSES;l++){s->filter[l].z1=s->filter[l].z2=0;s->detector[l]=0;for(int k=0;k<8;k++)s->eq[l][k].z1=s->eq[l][k].z2=0;}s->sustain=0;
+  memset(s->voices,0,sizeof(s->voices));for(int dl=0;dl<BUSES;dl++)for(int dk=0;dk<3;dk++)clear_delay(s,dl,dk);memset(s->tone,0,sizeof(s->tone));for(int el=0;el<BUSES;el++)for(int ek=0;ek<3;ek++){EffectState*e=&s->effect[el][ek];memset(e->z,0,sizeof(e->z));memset(&e->reverb,0,sizeof(e->reverb));e->shiftPhase=e->stereo=0;e->flangerReady=0;e->shimmerReady=e->shimmerStageReady=0;s->delayPosition[el][ek]=0;s->fxPhase[el][ek]=0;for(int eb=0;eb<8;eb++)e->eq[eb].z1=e->eq[eb].z2=0;}for(int l=0;l<BUSES;l++){s->filter[l].z1=s->filter[l].z2=0;s->detector[l]=0;for(int k=0;k<8;k++)s->eq[l][k].z1=s->eq[l][k].z2=0;}s->sustain=0;
   atomic_store_explicit(&s->read,w,memory_order_release);return;
  }
  while(r!=w){Command c=s->queue[r];
@@ -740,7 +794,7 @@ static void commands(SKSynth *s) {
   else if(c.kind==6)s->pan[c.layer]=c.value;
   else if(c.kind==7){s->blockSustain[c.layer]=c.value>0;if(c.value>0)for(int i=0;i<VOICES;i++)if(s->voices[i].layer==c.layer&&!s->voices[i].held)s->voices[i].releasing=1;}
   else if(c.kind==8){s->clockTempo=c.value;}
-  else if(c.kind==9){memset(s->voices,0,sizeof(s->voices));for(int dl=0;dl<BUSES;dl++)for(int dk=0;dk<3;dk++)clear_delay(s,dl,dk);memset(s->tone,0,sizeof(s->tone));for(int el=0;el<BUSES;el++)for(int ek=0;ek<3;ek++){EffectState*e=&s->effect[el][ek];memset(e->z,0,sizeof(e->z));memset(&e->reverb,0,sizeof(e->reverb));e->shiftPhase=e->stereo=0;e->flangerReady=0;s->delayPosition[el][ek]=0;s->fxPhase[el][ek]=0;for(int eb=0;eb<8;eb++)e->eq[eb].z1=e->eq[eb].z2=0;}for(int l=0;l<BUSES;l++){s->filter[l].z1=s->filter[l].z2=0;s->detector[l]=0;for(int k=0;k<8;k++)s->eq[l][k].z1=s->eq[l][k].z2=0;}s->sustain=0;}
+  else if(c.kind==9){memset(s->voices,0,sizeof(s->voices));for(int dl=0;dl<BUSES;dl++)for(int dk=0;dk<3;dk++)clear_delay(s,dl,dk);memset(s->tone,0,sizeof(s->tone));for(int el=0;el<BUSES;el++)for(int ek=0;ek<3;ek++){EffectState*e=&s->effect[el][ek];memset(e->z,0,sizeof(e->z));memset(&e->reverb,0,sizeof(e->reverb));e->shiftPhase=e->stereo=0;e->flangerReady=0;e->shimmerReady=e->shimmerStageReady=0;s->delayPosition[el][ek]=0;s->fxPhase[el][ek]=0;for(int eb=0;eb<8;eb++)e->eq[eb].z1=e->eq[eb].z2=0;}for(int l=0;l<BUSES;l++){s->filter[l].z1=s->filter[l].z2=0;s->detector[l]=0;for(int k=0;k<8;k++)s->eq[l][k].z1=s->eq[l][k].z2=0;}s->sustain=0;}
   else if(c.kind==10){s->customEnvelope[c.layer]=1;s->adsr[c.layer][0]=c.value;s->adsr[c.layer][1]=c.seconds;s->adsr[c.layer][2]=c.a;s->adsr[c.layer][3]=c.b;}
   else if(c.kind==11){s->voiceLimit[c.layer]=c.key;int count=0;for(int i=0;i<VOICES;i++)if(s->voices[i].active&&s->voices[i].layer==c.layer&&++count>c.key)s->voices[i].active=0;}
   else if(c.kind==12)s->preGain[c.layer]=c.value;
@@ -760,7 +814,7 @@ static void commands(SKSynth *s) {
   else if(c.kind==19){EffectState*e=&s->effect[0][c.key];e->p[24]=c.instrument?1:0;e->p[25]=bounded(c.value,.001f,16);e->p[26]=bounded(c.a,.001f,16);e->p[27]=c.b;e->p[28]=bounded(c.d,20,20000);e->p[29]=bounded(c.seconds,e->p[28],20000);e->coef[4]=1-exp(-TAU*e->p[28]/s->rate);e->coef[5]=1-exp(-TAU*e->p[29]/s->rate);}
   else if(c.kind==23){EffectState*e=&s->effect[0][c.key];int ready=e->p[31]>0;e->p[31]=c.instrument?1:0;e->p[8]=bounded(c.value,0,1);e->p[9]=bounded(c.a,0,1);e->coef[6]=1-exp(-1/(.02*s->rate));if(!ready){e->delayLevels[0]=e->p[8];e->delayLevels[1]=e->p[9];}}
   else if(c.kind==17){int kind=s->fxKind[c.layer][c.key];if(c.pitch<effectCount[kind]){EffectState*e=&s->effect[c.layer][c.key];e->custom=1;
-   if(((kind==3&&c.pitch==4)||(kind==5&&c.pitch==5)||(kind==8&&c.pitch==4)||(kind==11&&c.pitch==5)||(kind==12&&c.pitch==2)||(kind==13&&c.pitch==10)||(kind==15&&c.pitch==11)||(kind==17&&c.pitch==10))&&e->p[c.pitch]!=c.value){clear_delay(s,c.layer,c.key);memset(e->z,0,sizeof(e->z));memset(&e->reverb,0,sizeof(e->reverb));s->delayPosition[c.layer][c.key]=0;s->fxPhase[c.layer][c.key]=0;if(kind==8)e->flangerReady=0;if(kind==17){e->clipReady=0;e->eq[0].z1=e->eq[0].z2=0;}if(kind==12)e->shiftPhase=0;}
+   if(((kind==3&&c.pitch==4)||(kind==5&&c.pitch==5)||(kind==8&&c.pitch==4)||(kind==10&&c.pitch==10)||(kind==11&&c.pitch==5)||(kind==12&&c.pitch==2)||(kind==13&&c.pitch==10)||(kind==15&&c.pitch==11)||(kind==17&&c.pitch==10))&&e->p[c.pitch]!=c.value){clear_delay(s,c.layer,c.key);memset(e->z,0,sizeof(e->z));memset(&e->reverb,0,sizeof(e->reverb));s->delayPosition[c.layer][c.key]=0;s->fxPhase[c.layer][c.key]=0;if(kind==8)e->flangerReady=0;if(kind==17){e->clipReady=0;e->eq[0].z1=e->eq[0].z2=0;}if(kind==12)e->shiftPhase=0;if(kind==10){e->shimmerReady=0;e->shimmerStageReady=0;}}
    e->p[c.pitch]=bounded(c.value,effectMin[kind][c.pitch],effectMax[kind][c.pitch]);effectCoefficients(e,kind,s->rate);}}
   r=(r+1)%QUEUE;
  }

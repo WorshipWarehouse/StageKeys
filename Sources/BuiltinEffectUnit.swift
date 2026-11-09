@@ -51,6 +51,7 @@ final class BuiltinEffectUnit: AUAudioUnit {
         if kind==3 {clean.append(values.count>4 && values[4].isFinite && values[4]>=0.5 ? 1:0)}
         if kind==5 {clean.append(values.count>5 && values[5].isFinite && values[5]>=0.5 ? 1:0)}
         if kind==8 {clean.append(values.count>4 && values[4].isFinite && values[4]>=0.5 ? 1:0)}
+        if kind==10 {clean.append(values.count>10 && values[10].isFinite && values[10]>=0.5 ? 1:0)}
         if kind==11 {clean.append(values.count>5 && values[5].isFinite && values[5]>=0.5 ? 1:0)}
         if kind==12 {clean.append(values.count>2 && values[2].isFinite && values[2]>=0.5 ? 1:0)}
         if kind==17 {clean.append(values.count>10 && values[10].isFinite && values[10]>=0.5 ? 1:0)}

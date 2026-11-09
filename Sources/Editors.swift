@@ -415,6 +415,10 @@ struct EffectEditor: View {
                             }
                         } else if [4,10,11,15,16].contains(draft.kind) {
                             VStack(spacing:8) {
+                                if draft.kind == 10 {
+                                    HStack {Text(draft.effectCore == "stage-shimmer-v1" ? "Stage Shimmer · Decoupled":"Legacy Halo Shimmer").font(.caption).foregroundStyle(.secondary);Spacer();if draft.effectCore != "stage-shimmer-v1" {Button("Use Stage Shimmer"){draft.effectCore="stage-shimmer-v1"}.buttonStyle(StageButtonStyle())}}.padding(.horizontal,20)
+                                    Text("Stage Shimmer pitches the direct signal before diffusion, so pitch quality is independent of room size, feedback, damping and diffusion.").font(.caption).foregroundStyle(.secondary).padding(.horizontal,20)
+                                }
                                 if draft.kind == 11 {
                                     HStack {Text(draft.effectCore == "stage-overdrive-v1" ? "Stage Overdrive · Antialiased":"Legacy Overdrive").font(.caption).foregroundStyle(.secondary);Spacer();if draft.effectCore != "stage-overdrive-v1" {Button("Use Stage Overdrive"){draft.effectCore="stage-overdrive-v1"}.buttonStyle(StageButtonStyle())}}.padding(.horizontal,20)
                                     Text("Stage Overdrive adds antiderivative antialiasing and smooths drive, filters, mix and output gain. Mix 0 at 0 dB boost is exact dry.").font(.caption).foregroundStyle(.secondary).padding(.horizontal,20)
