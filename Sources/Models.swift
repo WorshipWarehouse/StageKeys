@@ -118,6 +118,7 @@ struct AudioEffect: Codable, Equatable {
         var effect=AudioEffect();effect.kind=kind;effect.parameters=AudioEffectCatalog.defaults(for:kind)
         if kind==3 {effect.effectCore="stage-delay-v1"}
         if kind==5 {effect.effectCore="stage-chorus-v1"}
+        if kind==10 {effect.effectCore="stage-shimmer-v1"}
         if kind==11 {effect.effectCore="stage-overdrive-v1"}
         if kind==12 {effect.effectCore="stage-pitch-v1"}
         if kind==17 {effect.effectCore="stage-clip-v1"}
@@ -134,6 +135,7 @@ struct AudioEffect: Codable, Equatable {
     var renderValues:[Float] {
         if kind == 3 {return values+[effectCore == "stage-delay-v1" ? 1:0]}
         if kind == 5 {return values+[effectCore == "stage-chorus-v1" ? 1:0]}
+        if kind == 10 {return values+[effectCore == "stage-shimmer-v1" ? 1:0]}
         if kind == 11 {return values+[effectCore == "stage-overdrive-v1" ? 1:0]}
         if kind == 12 {return values+[effectCore == "stage-pitch-v1" ? 1:0]}
         if kind == 17 {return values+[effectCore == "stage-clip-v1" ? 1:0]}
@@ -173,7 +175,7 @@ struct AudioEffect: Codable, Equatable {
         return values
     }
     func validate() -> Bool {
-        guard effectCore.map({(kind==3 && $0=="stage-delay-v1") || (kind==5 && $0=="stage-chorus-v1") || (kind==11 && $0=="stage-overdrive-v1") || (kind==12 && $0=="stage-pitch-v1") || (kind==17 && $0=="stage-clip-v1")}) ?? true else{return false}
+        guard effectCore.map({(kind==3 && $0=="stage-delay-v1") || (kind==5 && $0=="stage-chorus-v1") || (kind==10 && $0=="stage-shimmer-v1") || (kind==11 && $0=="stage-overdrive-v1") || (kind==12 && $0=="stage-pitch-v1") || (kind==17 && $0=="stage-clip-v1")}) ?? true else{return false}
         guard reverbCore.map({(kind == 13 && (["creamcoat","legacy","dense-v1","prima-felt-room-v1"].contains($0) || StageReverbMode(coreID:$0) != nil)) || (kind == 15 && ["legacy","dense-v1"].contains($0))}) ?? true else{return false}
         guard delayPingPong == nil || kind==3 else{return false}
         guard importedDelay.map({kind == 3 && $0.validate()}) ?? true else{return false}
