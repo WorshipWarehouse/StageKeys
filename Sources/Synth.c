@@ -160,7 +160,7 @@ static const float effectDefault[18][32]={
 {0.8,3,1,0},
 {0.3,1,1000,0.5},
 {10,5000,1},
-{0.65,0.25,0.2,1,1},
+{0.65,0.25,0.2,1,1,0},
 {0,20,60,2,-40,0,0},
 {20,0,0.707,70,0,0.707,100,0,0.707,250,0,0.707,1000,0,0.707,2500,0,0.707,7500,0,0.707,20000,0,0.707},
 {0.2,0.5,0.8,0.5},
@@ -180,7 +180,7 @@ static const float effectMin[18][32]={
 {0,0.01,0,0},
 {0,0.0625,20,0},
 {2,100,0},
-{0,0,0,-24,0},
+{0,0,0,-24,0,0},
 {-24,0.1,1,1,-60,0,-24},
 {20,-24,0.1,20,-24,0.1,20,-24,0.1,20,-24,0.1,20,-24,0.1,20,-24,0.1,20,-24,0.1,20,-24,0.1},
 {0.1,0,-0.95,0},
@@ -200,7 +200,7 @@ static const float effectMax[18][32]={
 {1,20,1,1},
 {0.95,2,20000,1},
 {24,48000,1},
-{20,1,0.95,12,1},
+{20,1,0.95,12,1,1},
 {24,1000,3000,20,0,1,24},
 {20000,24,10,20000,24,10,20000,24,10,20000,24,10,20000,24,10,20000,24,10,20000,24,10,20000,24,10},
 {10,1,0.95,1},
@@ -214,7 +214,7 @@ static const float effectMax[18][32]={
 {200,1,1000,1,20000,20000,20,1,360,1,1},
 {100,20000,100,1,20000,20000,30,20000,60,60},
 };
-static const int effectCount[18]={0,3,4,4,3,5,7,24,4,1,10,5,2,11,12,12,11,10};
+static const int effectCount[18]={0,3,4,4,3,6,7,24,4,1,10,5,2,11,12,12,11,10};
 
 // Delay taps interpolate bounded preallocated memory. All state is render-owned.
 static float tap_capacity(const float *buffer,int pos,float offset,int capacity){
@@ -382,7 +382,24 @@ static float effectProcess(SKSynth*s,int l,int k,float x){
   else t=tap(buffer,pos,e->delayTarget);
   e->z[0]+=e->coef[0]*(t-e->z[0]);buffer[pos]=tanhf(x+e->z[0]*p[0]);y=x*(1-p[3])+e->z[0]*p[3];break;}
  case 4:{e->z[1]+=p[1]/rate;if(e->z[1]>=1){e->z[1]-=floorf(e->z[1]);float levels=powf(2,roundf(p[0])-1);e->z[0]=roundf(x*levels)/levels;}y=x+(e->z[0]-x)*p[2];break;}
- case 5:case 8:{float hz=p[0],depth=p[1],feedback=p[2],mix=kind==5?p[4]:p[3];float delay=kind==5?rate*(.015f+.01f*depth*(.5f+.5f*sinf(phase))):rate*(.0005f+.004f*depth*(.5f+.5f*sinf(phase)));float t=tap(buffer,pos,delay);buffer[pos]=tanhf(x+t*feedback);y=(x*(1-mix)+t*mix)*(kind==5?e->coef[0]:1);s->fxPhase[l][k]=fmod(phase+TAU*hz/rate,TAU);break;}
+ case 5:{
+  float hz=p[0],depth=p[1],feedback=p[2],mix=p[4],wet;
+  if(p[5]>.5f){
+   // MIT DaisySP Chorus uses a triangle-modulated delay in the 0.1–8 ms
+   // range. Stage Chorus adapts that foundation into two decorrelated voices
+   // per stereo side; histories remain preallocated by the StageKeys engine.
+   float side=s->stereoSide?1:0;
+   float triA=2/3.14159265358979323846f*asinf(sinf(phase+side*1.57079632679f));
+   float triB=2/3.14159265358979323846f*asinf(sinf(phase+2.09439510239f+side*.73f));
+   float a=tap(buffer,pos,rate*(.00605f+.0055f*depth*triA));
+   float b=tap(buffer,pos,rate*(.0081f+.0043f*depth*triB));
+   wet=(a+b)*.5f;buffer[pos]=tanhf(x+wet*feedback*.85f);
+  }else{
+   float delay=rate*(.015f+.01f*depth*(.5f+.5f*sinf(phase)));
+   wet=tap(buffer,pos,delay);buffer[pos]=tanhf(x+wet*feedback);
+  }
+  y=(x*(1-mix)+wet*mix)*e->coef[0];s->fxPhase[l][k]=fmod(phase+TAU*hz/rate,TAU);break;}
+ case 8:{float hz=p[0],depth=p[1],feedback=p[2],mix=p[3];float delay=rate*(.0005f+.004f*depth*(.5f+.5f*sinf(phase)));float t=tap(buffer,pos,delay);buffer[pos]=tanhf(x+t*feedback);y=x*(1-mix)+t*mix;s->fxPhase[l][k]=fmod(phase+TAU*hz/rate,TAU);break;}
  case 6:{float v=x*e->coef[2],level=fabsf(v),a=level>e->z[0]?e->coef[0]:e->coef[1];e->z[0]=a*e->z[0]+(1-a)*level;float db=20*log10f(fmaxf(1e-9,e->z[0]));float reduction=fmaxf(0,db-p[4])*(1-1/p[3]);y=(dry*(1-p[5])+v*powf(10,-reduction/20)*p[5])*e->coef[3];break;}
  case 7:for(int b=0;b<8;b++)y=process(&e->eq[b],y);break;
  case 9:y=x*e->coef[0];break;
@@ -588,7 +605,7 @@ static void commands(SKSynth *s) {
   else if(c.kind==19){EffectState*e=&s->effect[0][c.key];e->p[24]=c.instrument?1:0;e->p[25]=bounded(c.value,.001f,16);e->p[26]=bounded(c.a,.001f,16);e->p[27]=c.b;e->p[28]=bounded(c.d,20,20000);e->p[29]=bounded(c.seconds,e->p[28],20000);e->coef[4]=1-exp(-TAU*e->p[28]/s->rate);e->coef[5]=1-exp(-TAU*e->p[29]/s->rate);}
   else if(c.kind==23){EffectState*e=&s->effect[0][c.key];int ready=e->p[31]>0;e->p[31]=c.instrument?1:0;e->p[8]=bounded(c.value,0,1);e->p[9]=bounded(c.a,0,1);e->coef[6]=1-exp(-1/(.02*s->rate));if(!ready){e->delayLevels[0]=e->p[8];e->delayLevels[1]=e->p[9];}}
   else if(c.kind==17){int kind=s->fxKind[c.layer][c.key];if(c.pitch<effectCount[kind]){EffectState*e=&s->effect[c.layer][c.key];e->custom=1;
-   if(((kind==13&&c.pitch==10)||(kind==15&&c.pitch==11))&&e->p[c.pitch]!=c.value){clear_delay(s,c.layer,c.key);memset(e->z,0,sizeof(e->z));memset(&e->reverb,0,sizeof(e->reverb));s->delayPosition[c.layer][c.key]=0;s->fxPhase[c.layer][c.key]=0;}
+   if(((kind==5&&c.pitch==5)||(kind==13&&c.pitch==10)||(kind==15&&c.pitch==11))&&e->p[c.pitch]!=c.value){clear_delay(s,c.layer,c.key);memset(e->z,0,sizeof(e->z));memset(&e->reverb,0,sizeof(e->reverb));s->delayPosition[c.layer][c.key]=0;s->fxPhase[c.layer][c.key]=0;}
    e->p[c.pitch]=bounded(c.value,effectMin[kind][c.pitch],effectMax[kind][c.pitch]);effectCoefficients(e,kind,s->rate);}}
   r=(r+1)%QUEUE;
  }

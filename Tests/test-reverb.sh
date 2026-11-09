@@ -3,7 +3,7 @@ set -eu
 repo=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 build=$(mktemp -d "${TMPDIR:-/tmp}/stagekeys-reverb.XXXXXX")
 trap 'rm -rf "$build"' EXIT HUP INT TERM
-for test in DelayIndependentLevelsTests DelayTempoTransitionTests MainStageEffectAudioTests ClipDistAutomationTests ImportedDelayTests ChannelCompressorTests CompressorResponseTests ShimmerAutomationTests DenseReverbAutomationTests DenseReverbTests Reverb2ModesTests CreamCoatTests ReverbChorusPlacementTests ReverbPredelayTests RoomStereoTests SilverEarlyReflectionTests SilverToneDecayTests SolaModulationTests SolaQualityTests ShimmerQualityTests ShimmerToneDecayTests ShimmerTailTests ShimmerAliasTests ShimmerPitchTests; do
+for test in DelayIndependentLevelsTests DelayTempoTransitionTests StageChorusTests MainStageEffectAudioTests ClipDistAutomationTests ImportedDelayTests ChannelCompressorTests CompressorResponseTests ShimmerAutomationTests DenseReverbAutomationTests DenseReverbTests Reverb2ModesTests CreamCoatTests ReverbChorusPlacementTests ReverbPredelayTests RoomStereoTests SilverEarlyReflectionTests SilverToneDecayTests SolaModulationTests SolaQualityTests ShimmerQualityTests ShimmerToneDecayTests ShimmerTailTests ShimmerAliasTests ShimmerPitchTests; do
     xcrun clang -I "$repo/Sources" -std=c11 -O1 -g -fsanitize=address,undefined \
         "$repo/Tests/$test.c" "$repo/Sources/Synth.c" "$repo/Sources/CreamCoat.c" \
         -framework CoreMIDI -o "$build/$test"

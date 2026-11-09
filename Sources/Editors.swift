@@ -393,7 +393,12 @@ struct EffectEditor: View {
                                 }
                                 ScrollView(.horizontal,showsIndicators:false){PrimaVerbControls(sourceCore:draft.usesCreamCoat,denseCore:draft.reverbCore == "dense-v1" || draft.stageReverbMode != nil,values:Binding(get:{draft.values},set:{draft.parameters=$0})).frame(minWidth:600).padding(.horizontal,16).padding(.vertical,8)}
                             }
-                        } else if [4,5,10,11,15,16].contains(draft.kind) {
+                        } else if draft.kind == 5 {
+                            VStack(spacing:8) {
+                                HStack {Text(draft.effectCore == "stage-chorus-v1" ? "Stage Chorus · Stereo":"Legacy Chorus").font(.caption).foregroundStyle(.secondary);Spacer();if draft.effectCore != "stage-chorus-v1" {Button("Use Stage Chorus"){draft.effectCore="stage-chorus-v1"}.buttonStyle(StageButtonStyle())}}.padding(.horizontal,20)
+                                GroupedEffectControls(kind:draft.kind,values:Binding(get:{draft.values},set:{draft.parameters=$0}))
+                            }
+                        } else if [4,10,11,15,16].contains(draft.kind) {
                             GroupedEffectControls(kind:draft.kind,values:Binding(get:{draft.values},set:{draft.parameters=$0}))
                         } else { LazyVGrid(columns:Array(repeating:GridItem(.flexible(),spacing:10),count:3),spacing:15) {
                             ForEach(controls.filter { !(draft.kind==3 && $0.index==1) && !(draft.kind==2 && draft.syncBeats != nil && $0.index==1) && !(draft.kind==14 && $0.index==0) }) { descriptor in
