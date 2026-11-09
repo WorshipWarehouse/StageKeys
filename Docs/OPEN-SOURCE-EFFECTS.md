@@ -25,7 +25,7 @@ Effect IDs are part of the patch format and must remain stable.
 | 5 | Chorus | Versioned legacy and Stage Chorus cores | `stage-chorus-v1` adapts DaisySP foundations |
 | 6 | Compressor | Native feed-forward compressor | Retain; improve metering and program-dependent modes independently |
 | 7 | Equalizer | Native eight-band parametric EQ | Retain |
-| 8 | Flanger | Native modulated short delay | Reuse qualified Stage Chorus/Signalsmith primitives |
+| 8 | Flanger | Versioned legacy and Stage Flanger through-zero cores | `stage-flanger-v1` reuses the qualified Stage Delay cubic tap and Stage Chorus modulation work |
 | 9 | Gain | Native | Retain |
 | 10 | Halo Shimmer | Native pitch-shifted feedback reverb | Evaluate pitch cores separately from the reverb network |
 | 11 | Overdrive | Native filtered saturation | Evaluate selected Airwindows saturation cores |
@@ -70,7 +70,10 @@ request:
 Stage Chorus provenance is recorded in `Licenses/DaisySP-MIT.txt`; Stage Delay
 provenance is recorded in `Licenses/Signalsmith-DSP-MIT.txt`. StageKeys'
 independent reverb implementation is covered by
-`Licenses/StageKeys-Dense-Reverb-MIT.txt`.
+`Licenses/StageKeys-Dense-Reverb-MIT.txt`. Stage Flanger adds no new upstream
+code: it is an independent through-zero modulated-delay implementation that
+reuses the already-noticed Signalsmith cubic interpolator. Its design and
+verification are recorded in [STAGE-FLANGER.md](STAGE-FLANGER.md).
 
 ## Real-time integration contract
 
@@ -165,8 +168,14 @@ does not replace physical iPad testing.
    `stage-delay-v1` cubic interpolation while existing and imported delays keep
    their authored behavior, including sync, independent left/right time,
    ping-pong, filtering, and MainStage-imported dry/wet routing.
-3. **Stage Flanger:** build on the qualified delay primitive with through-zero
-   safety, polarity-aware feedback, stereo phase, and bounded modulation.
+3. **Stage Flanger:** implemented with `stage-flanger-v1`. New instances select
+   it; existing patches keep the legacy core until the editor's explicit upgrade.
+   The Stage core uses a fixed 1.5 ms reference path, a bipolar cubic sweep that
+   crosses zero, 90° stereo modulation phase, signed soft-limited feedback and
+   20 ms control smoothing. Mix 0 is an exact dry bypass; engaged Mix adds the
+   1.5 ms reference latency. Local sanitizer checks pass at 44.1/48/96 kHz;
+   Apple CI, listening and release-build CPU/iPad qualification remain pending.
+   See [STAGE-FLANGER.md](STAGE-FLANGER.md).
 
 Exit gate: no zippering during time changes, no runaway feedback, stable stereo
 operation, and a measured CPU/memory budget suitable for eight live instances.

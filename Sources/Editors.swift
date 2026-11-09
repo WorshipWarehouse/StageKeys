@@ -378,6 +378,12 @@ struct EffectEditor: View {
                         if draft.kind==14 {
                             Picker("Rotor Speed",selection:Binding(get:{Int(draft.values[0])},set:{var values=draft.values;values[0]=Float($0);draft.parameters=values})) { Text("Brake").tag(0); Text("Slow").tag(1); Text("Fast").tag(2) }.pickerStyle(.segmented).padding(.horizontal,20)
                         }
+                        if draft.kind == 8 {
+                            VStack(spacing:6) {
+                                HStack {Text(draft.effectCore == "stage-flanger-v1" ? "Stage Flanger · Through-zero":"Legacy Flanger").font(.caption).foregroundStyle(.secondary);Spacer();if draft.effectCore != "stage-flanger-v1" {Button("Use Stage Flanger"){draft.effectCore="stage-flanger-v1"}.buttonStyle(StageButtonStyle())}}.padding(.horizontal,20)
+                                Text("Stage Flanger uses a 1.5 ms reference path so the comb crosses zero; Mix 0 is exact dry. Feedback remains bounded at either polarity.").font(.caption).foregroundStyle(.secondary).padding(.horizontal,20)
+                            }
+                        }
                         if draft.kind == 3 {
                             VStack(spacing:8) {
                                 HStack {Text(draft.effectCore == "stage-delay-v1" ? "Stage Delay · Cubic":"Legacy Delay · Linear").font(.caption).foregroundStyle(.secondary);Spacer();if draft.effectCore != "stage-delay-v1" {Button("Use Stage Delay"){draft.effectCore="stage-delay-v1"}.buttonStyle(StageButtonStyle())}}.padding(.horizontal,20)

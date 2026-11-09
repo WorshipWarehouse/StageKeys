@@ -22,10 +22,11 @@ SOFTWARE.
 
 StageKeys adaptation scope
 --------------------------
-The Stage Delay cubic interpolation helper in Sources/Synth.c adapts the
-four-sample spline polynomial from Signalsmith DSP's InterpolatorCubic into
-StageKeys' C circular-buffer and versioned effect architecture. StageKeys does
-not vendor Signalsmith's C++ buffer, allocation, FFT, or framework code.
+The cubic interpolation helper shared by Stage Delay and Stage Flanger in
+Sources/Synth.c adapts the four-sample spline polynomial from Signalsmith DSP's
+InterpolatorCubic into StageKeys' C circular-buffer and versioned effect
+architecture. StageKeys does not vendor Signalsmith's C++ buffer, allocation,
+FFT, or framework code.
 
 Upstream: https://github.com/Signalsmith-Audio/dsp
 Reviewed revision: ca390d28c41ea5108a528e2e81faa4088f2f8ac8
