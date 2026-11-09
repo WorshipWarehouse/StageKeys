@@ -369,7 +369,7 @@ static float cream_output(SKSynth*s,int l,int k,float dry,float wet){
 }
 // Eight-line Householder FDN with four input allpasses. Mixing is orthogonal;
 // damped per-line gains stay below unity. All histories are preallocated.
-static void dense_prepare(EffectState*e,int kind,double rate){
+static void dense_prepare(EffectState*e,int kind,double rate,int capacity){
  DenseReverb*r=&e->reverb;float*p=e->p;
  if(r->ready && !memcmp(r->cache,p,12*sizeof(float)))return;
  int ambient=kind==15,profile=ambient?0:(int)roundf(p[10]);float size=p[ambient?1:0],reflect=p[2]/.95f;
@@ -381,10 +381,12 @@ static void dense_prepare(EffectState*e,int kind,double rate){
  float decayBase=ambient?1.2f:profile==3?.12f:profile==4?.35f:profile==5?.9f:.15f;
  float decayScale=ambient?4:profile==3?1.2f:profile==4?2.4f:profile==5?5.5f:1;
  float decay=decayBase+decayScale*reflect/(.03f+(1-reflect)*(1-reflect));
+ float capacitySeconds=(capacity-2)/wetRate;
  for(int i=0;i<8;i++){
-  float seconds=times[i]*scale*(1+shape*((i%3)-1));
+  float seconds=fminf(capacitySeconds,times[i]*scale*(1+shape*((i%3)-1)));
   r->offset[i]=seconds*wetRate;r->feedback[i]=fminf(.9999f,powf(.001f,seconds/decay));
-  float movement=ambient?.35f+p[7]*.35f:profile>=3 ? .2f+p[6]*.25f:1;
+  float rateControl=p[ambient?7:6];
+  float movement=rateControl<=0?0:ambient?.35f+rateControl*.35f:profile>=3 ? .2f+rateControl*.25f:1;
   double step=TAU*(.071+i*.037)*movement/wetRate;
   r->stepSin[i]=sin(step);r->stepCos[i]=cos(step);
   if(!r->ready){r->oscSin[i]=sin(i*1.71);r->oscCos[i]=cos(i*1.71);}
@@ -820,7 +822,7 @@ static void commands(SKSynth *s) {
  }
  // Cache coefficients once per block, never allocate from the render callback.
  for(int l=0;l<BUSES;l++)for(int k=0;k<3;k++)if(s->fxKind[l][k]==13&&s->effect[l][k].p[10]>0&&s->effect[l][k].p[10]<1.5f){SKCreamCoat*c=atomic_load_explicit(&s->cream[l][k],memory_order_acquire);float*p=s->effect[l][k].p;if(c)sk_cream_configure(c,p[0],p[2],p[9],p[1]/200);}
- for(int l=0;l<BUSES;l++)for(int k=0;k<3;k++){int kind=s->fxKind[l][k];EffectState*e=&s->effect[l][k];if((kind==13&&e->p[10]>1.5f)||(kind==15&&e->p[11]>0))dense_prepare(e,kind,s->rate);}
+ for(int l=0;l<BUSES;l++)for(int k=0;k<3;k++){int kind=s->fxKind[l][k];EffectState*e=&s->effect[l][k];if((kind==13&&e->p[10]>1.5f)||(kind==15&&e->p[11]>0))dense_prepare(e,kind,s->rate,s->delayLength/14);}
  atomic_store_explicit(&s->read,r,memory_order_release);
 }
 void sk_process_effects(SKSynth*s,float*audio,uint32_t frames){

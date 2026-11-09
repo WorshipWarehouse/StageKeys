@@ -1690,8 +1690,20 @@ final class PerformanceStore: ObservableObject {
                 layer.importedRack=rack;changed=true
             }
             if var source=layer.mainStageSource,source.applyMIDI(controller:controller,value:Float(value),channel:channel) {
+                let previous=layer.mainStageSource!.effects
                 for (slot,sourceIndex) in source.selectedAudio.enumerated() where layer.effects.indices.contains(slot) && source.effects.indices.contains(sourceIndex) {
-                    layer.effects[slot]=source.effects[sourceIndex]
+                    guard previous.indices.contains(sourceIndex),layer.effects[slot].kind==previous[sourceIndex].kind,
+                          source.effects[sourceIndex].kind==previous[sourceIndex].kind else{continue}
+                    var visible=layer.effects[slot],values=visible.values
+                    let before=previous[sourceIndex].values,after=source.effects[sourceIndex].values
+                    for parameter in after.indices where before.indices.contains(parameter) && values.indices.contains(parameter) && before[parameter] != after[parameter] {values[parameter]=after[parameter]}
+                    visible.parameters=values
+                    if let oldDelay=previous[sourceIndex].importedDelay,let newDelay=source.effects[sourceIndex].importedDelay,var delay=visible.importedDelay {
+                        if oldDelay.dryGain != newDelay.dryGain {delay.dryGain=newDelay.dryGain}
+                        if oldDelay.wetGain != newDelay.wetGain {delay.wetGain=newDelay.wetGain}
+                        visible.importedDelay=delay
+                    }
+                    layer.effects[slot]=visible
                 }
                 layer.mainStageSource=source;changed=true
             }
@@ -2236,7 +2248,7 @@ final class PerformanceStore: ObservableObject {
                     guard channel.unsupportedInstrumentFamily == nil else {outcome(channelIndex,.unsupported,channel.nativeInstrumentStatus);failures.append(channel.name+": "+channel.nativeInstrumentStatus);continue}
                     guard channel.instruments.count==1,let name=channel.instruments.first else{outcome(channelIndex,.unsupported,"Multiple sampler instruments require channel topology translation; none were silently flattened.");failures.append(channel.name+": layered sampler selection requires translation");continue}
                     var candidates=discovered?[name] ?? []
-                    candidates += try files.filter{$0.lastPathComponent==name}.map{try MainStageDiscovery.candidate(file:$0,samples:folder)}
+                    candidates += files.filter{$0.lastPathComponent==name}.compactMap{try? MainStageDiscovery.candidate(file:$0,samples:folder)}
                     var candidateKeys=Set<String>()
                     candidates=candidates.filter{candidateKeys.insert($0.file.standardizedFileURL.path+"\n"+$0.samples.standardizedFileURL.path).inserted}
                     let playable=candidates.filter{$0.sampleIssue==nil && $0.identity != nil}

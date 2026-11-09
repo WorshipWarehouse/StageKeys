@@ -29,6 +29,7 @@ def trajectory(dry, processed, minimum_ms, maximum_ms, step_frames=2048, downsam
     window=512
     points=[]
     previous_lag=None
+    saturated=0
     for original in range(high*downsample, min(len(dry_mono),len(wet_mono))-window*downsample,step_frames):
         wet=[wet_mono[original+i*downsample] for i in range(window)]
         wet_energy=sum(v*v for v in wet)
@@ -48,9 +49,13 @@ def trajectory(dry, processed, minimum_ms, maximum_ms, step_frames=2048, downsam
             score=sum(a*b for a,b in zip(wet,dry_window))/math.sqrt(wet_energy*energy)
             if best is None or abs(score)>abs(best[0]):best=(score,lag)
         if best is not None:
+            if previous_lag is not None and ((search_low > low and best[1] == search_low) or (search_high < high and best[1] == search_high)):
+                saturated += 1
             previous_lag=best[1]
             points.append((original/dry.rate,best[1]*downsample*1000/dry.rate,best[0]))
     if len(points)<12:raise ValueError("capture has too little sustained correlated audio")
+    if saturated > max(2,len(points)//10):
+        raise ValueError("delay tracker saturated its continuity window; reduce step size or increase the search window")
     return points
 
 

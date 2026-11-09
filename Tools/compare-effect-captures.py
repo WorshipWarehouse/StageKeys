@@ -12,7 +12,6 @@ import argparse
 import json
 import math
 import struct
-import wave
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -24,18 +23,7 @@ class Audio:
 
 
 def read_pcm(path: Path) -> Audio:
-    floating = False
-    try:
-        with wave.open(str(path), "rb") as wav:
-            channels = wav.getnchannels()
-            width = wav.getsampwidth()
-            rate = wav.getframerate()
-            frames = wav.getnframes()
-            if wav.getcomptype() != "NONE" or width not in (2, 3, 4):
-                raise ValueError(f"{path}: expected uncompressed 16/24/32-bit PCM WAV")
-            raw = wav.readframes(frames)
-    except wave.Error:
-        channels, width, rate, raw, floating = read_extensible_wave(path)
+    channels, width, rate, raw, floating = read_extensible_wave(path)
     values: list[float] = []
     scale = float(1 << (width * 8 - 1))
     if floating and width == 4:

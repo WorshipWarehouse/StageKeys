@@ -37,9 +37,8 @@ final class AppAudioCapture: NSObject, SCStreamOutput, SCStreamDelegate, @unchec
                 writer.startSession(atSourceTime: sampleBuffer.presentationTimeStamp)
                 began = true
             }
-            if input.isReadyForMoreMediaData, !input.append(sampleBuffer) {
-                failure = writer.error ?? CaptureError.writerFailed
-            }
+            guard input.isReadyForMoreMediaData else { failure = CaptureError.bufferDropped; return }
+            if !input.append(sampleBuffer) { failure = writer.error ?? CaptureError.writerFailed }
         }
     }
 
@@ -64,7 +63,7 @@ final class AppAudioCapture: NSObject, SCStreamOutput, SCStreamDelegate, @unchec
 
 enum CaptureError: LocalizedError {
     case applicationNotFound(String), displayUnavailable, invalidDuration, noAudio, outputExists
-    case startTimedOut, stopTimedOut, unsupportedWriter, writerFailed
+    case startTimedOut, stopTimedOut, unsupportedWriter, writerFailed, bufferDropped
     var errorDescription: String? {
         switch self {
         case .applicationNotFound(let id): return "No running application has bundle identifier \(id)."
@@ -76,6 +75,7 @@ enum CaptureError: LocalizedError {
         case .stopTimedOut: return "ScreenCaptureKit did not stop the app-audio capture within 5 seconds."
         case .unsupportedWriter: return "This system cannot create the requested float PCM CAF."
         case .writerFailed: return "The audio writer failed."
+        case .bufferDropped: return "The audio writer could not keep up; discard this capture and try again."
         }
     }
 }

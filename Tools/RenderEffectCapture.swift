@@ -15,8 +15,9 @@ import Foundation
         guard !FileManager.default.fileExists(atPath: outputURL.path) else {
             throw NSError(domain: "RenderEffectCapture", code: 73, userInfo: [NSLocalizedDescriptionKey: "output already exists"])
         }
-        guard let kind = Int(CommandLine.arguments[3]),
-              let tailSeconds = Double(CommandLine.arguments[4]) else {
+        guard let kind = Int(CommandLine.arguments[3]), (0...17).contains(kind), kind <= Int(Int32.max),
+              let tailSeconds = Double(CommandLine.arguments[4]), tailSeconds.isFinite,
+              (0...600).contains(tailSeconds) else {
             throw NSError(domain: "RenderEffectCapture", code: 64, userInfo: [NSLocalizedDescriptionKey: "invalid kind or tail duration"])
         }
         let parameters = try CommandLine.arguments.dropFirst(5).map { value -> Float in

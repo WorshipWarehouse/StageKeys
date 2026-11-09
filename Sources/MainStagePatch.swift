@@ -561,13 +561,15 @@ enum MainStageDiscovery {
                 var directory:ObjCBool=false
                 guard FileManager.default.fileExists(atPath:location.instruments.path,isDirectory:&directory),directory.boolValue else{throw MainStagePatch.Failure.invalid("Location unavailable")}
                 let files=try MainStagePatch.findSamplerInstruments(names,in:location.instruments).sorted{$0.path<$1.path}
+                var unreadable=0
                 for file in files {
-                    let candidate=try candidate(file:file,samples:location.samples)
+                    guard let candidate=try? candidate(file:file,samples:location.samples) else {unreadable+=1;continue}
                     if !(result.candidates[file.lastPathComponent] ?? []).contains(where:{$0.file.standardizedFileURL==file.standardizedFileURL && $0.samples.standardizedFileURL==location.samples.standardizedFileURL}) {
                         result.candidates[file.lastPathComponent,default:[]].append(candidate)
                     }
                 }
-                result.searches.append(Search(id:String(index),location:location.label,detail:"\(location.instruments.path): \(files.count) matching instrument(s)"))
+                let skipped=unreadable == 0 ? "":"; \(unreadable) unreadable candidate(s) skipped"
+                result.searches.append(Search(id:String(index),location:location.label,detail:"\(location.instruments.path): \(files.count-unreadable) matching instrument(s)\(skipped)"))
             } catch {result.searches.append(Search(id:String(index),location:location.label,detail:"\(location.instruments.path): \(error.localizedDescription)"))}
         }
         return result
