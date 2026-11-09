@@ -31,6 +31,7 @@ import Foundation
         try await wait()
         assert(store.mainStageOutcomes.map(\.state)==[.converted,.converted,.needsSamples],store.libraryImportProgress ?? "No outcomes")
         assert(store.librarySounds.filter{$0.id.hasPrefix("mainstage-channel-")}.count==2)
+        assert(store.librarySounds.filter{$0.id.hasPrefix("mainstage-channel-")}.allSatisfy{$0.id.count<=256},"Converted channel IDs must fit the library schema")
         assert(store.mainStageSearches.first?.detail.contains("1 matching")==true)
         store.assembleConvertedMainStagePatch(readyOnly:true)
         assert(store.patch.layers[0].name=="First" && store.patch.layers[1].name=="Second")
