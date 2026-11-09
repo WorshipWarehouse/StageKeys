@@ -28,7 +28,7 @@ Effect IDs are part of the patch format and must remain stable.
 | 8 | Flanger | Versioned legacy and Stage Flanger through-zero cores | `stage-flanger-v1` reuses the qualified Stage Delay cubic tap and Stage Chorus modulation work |
 | 9 | Gain | Native | Retain |
 | 10 | Halo Shimmer | Native pitch-shifted feedback reverb | Evaluate pitch cores separately from the reverb network |
-| 11 | Overdrive | Native filtered saturation | Evaluate selected Airwindows saturation cores |
+| 11 | Overdrive | Versioned legacy and Stage Overdrive cores | `stage-overdrive-v1` is independent ADAA tanh saturation; a documented Airwindows comparison remains pending |
 | 12 | Pitch Shifter | Native | Research Signalsmith Stretch subject to latency limits |
 | 13 | Stage Reverb | Versioned reverb family | Room, Hall and Ambient profiles active |
 | 14 | Rotor | Native Doppler/amplitude model | Audit permissive rotary candidates; retain if none clearly wins |
@@ -182,12 +182,15 @@ operation, and a measured CPU/memory budget suitable for eight live instances.
 
 ### Phase 2 — nonlinear effects
 
-1. Shoot out native Overdrive and Clip Distortion against a small, documented
-   selection of Airwindows algorithms.
-2. Add oversampling only when alias measurements and listening justify its CPU
-   cost.
+1. **Stage Overdrive:** candidate `stage-overdrive-v1` is implemented as an
+   independent ADAA tanh core with smoothed controls and legacy retention. The
+   documented Airwindows shootout and blind listening remain pending before it
+   is described as an improvement.
+2. **Clip Distortion:** evaluate a versioned core separately from Overdrive;
+   do not add oversampling unless measurements and listening justify its cost.
 3. Keep input, output, mix, tone, and bypass gain conventions consistent across
-   all distortion types.
+   all distortion types. Stage Overdrive preserves the legacy drive and boost
+   conventions and documents its exact-dry condition.
 
 Exit gate: level-matched musical improvement on piano, organ and synth with no
 unbounded output or discontinuity during automation.

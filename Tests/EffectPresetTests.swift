@@ -31,6 +31,9 @@ import Foundation
   let flanger=AudioEffect.factoryDefault(kind:8);assert(flanger.effectCore=="stage-flanger-v1" && flanger.renderValues.last==1 && flanger.validate())
   let fp=EffectPreset(name:"Stage Flange",effect:flanger);try EffectPresetArchive.save([fp],to:qualityURL);assert(EffectPresetArchive.load(qualityURL)==[fp])
   var legacyFlanger=flanger;legacyFlanger.effectCore=nil;assert(legacyFlanger.validate() && legacyFlanger.renderValues.last==0)
+  let overdrive=AudioEffect.factoryDefault(kind:11);assert(overdrive.effectCore=="stage-overdrive-v1" && overdrive.renderValues.last==1 && overdrive.validate())
+  let op=EffectPreset(name:"Stage Drive",effect:overdrive);try EffectPresetArchive.save([op],to:qualityURL);assert(EffectPresetArchive.load(qualityURL)==[op])
+  var legacyOverdrive=overdrive;legacyOverdrive.effectCore=nil;assert(legacyOverdrive.validate() && legacyOverdrive.renderValues.last==0)
   var wrong=delay;wrong.kind=10;assert(!wrong.validate())
   print("PASS: effect preset settings/core round-trip, invalid saves preserve archive, corrupt archive rejected")
  }
