@@ -107,7 +107,21 @@ struct AudioEffect: Codable, Equatable {
         guard kind==3,delayPingPong==true else{return nil}
         return ImportedDelay(left:Double(values[1]),right:Double(values[1]),leftSynced:true,rightSynced:true,pingPong:true,highCut:values[2])
     }
-    var renderValues:[Float] { kind == 13 ? values+[reverbCore == "dense-v1" ? 2:usesCreamCoat ? 1:0]:kind == 15 ? values+[reverbCore == "dense-v1" ? 1:0]:values }
+    var renderValues:[Float] {
+        if kind == 13 {
+            var rendered=values
+            // Measured Felt Room wrapper calibration. Keep the authored/UI
+            // values intact; only its explicitly named render profile receives
+            // the independently measured dense-core mapping.
+            if reverbCore == "prima-felt-room-v1",rendered.count>=10 {
+                rendered[2]=0.37
+                rendered[4]=10000
+                return rendered+[2]
+            }
+            return rendered+[reverbCore == "dense-v1" ? 2:usesCreamCoat ? 1:0]
+        }
+        return kind == 15 ? values+[reverbCore == "dense-v1" ? 1:0]:values
+    }
     var title: String { AudioEffectCatalog.names.indices.contains(kind) ? AudioEffectCatalog.names[kind] : "No Effect" }
     func macroDescriptor(_ index:Int)->AudioEffectParameterDescriptor? {
         if kind==3,importedDelay?.dryGain != nil,[4,5].contains(index) {return .init(index:index,name:index==4 ? "Dry":"Wet",minimum:0,maximum:1,defaultValue:1,unit:"%")}
@@ -122,7 +136,7 @@ struct AudioEffect: Codable, Equatable {
         return values
     }
     func validate() -> Bool {
-        guard reverbCore.map({(kind == 13 && ["creamcoat","legacy","dense-v1"].contains($0)) || (kind == 15 && ["legacy","dense-v1"].contains($0))}) ?? true else{return false}
+        guard reverbCore.map({(kind == 13 && ["creamcoat","legacy","dense-v1","prima-felt-room-v1"].contains($0)) || (kind == 15 && ["legacy","dense-v1"].contains($0))}) ?? true else{return false}
         guard delayPingPong == nil || kind==3 else{return false}
         guard importedDelay.map({kind == 3 && $0.validate()}) ?? true else{return false}
         guard syncBeats.map({ $0.isFinite && (0.0625...4).contains($0) }) ?? true, (0...17).contains(kind), amount.isFinite, (0...1).contains(amount) else { return false }

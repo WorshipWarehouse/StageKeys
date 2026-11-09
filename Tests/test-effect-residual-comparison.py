@@ -41,5 +41,6 @@ with tempfile.TemporaryDirectory() as folder:
     assert clean_fit["dryCancellationDB"] > 60
     assert changed_fit["dryCancellationDB"] < 60
     assert clean_fit["calibrationErrorRMS"] < changed_fit["calibrationErrorRMS"]
+    assert abs(clean_fit["calibrationMilliseconds"] - 8) < 0.01
 
 print("PASS: wet-residual calibration distinguishes deterministic direct-path cancellation from changed source audio")

@@ -21,16 +21,18 @@ def load_comparator():
     return module
 
 
-def residual(module, processed, dry):
+def residual(module, processed, dry, calibration_milliseconds=8.0):
     processed_onset = module.onset(module.mono(processed))
     dry_onset = module.onset(module.mono(dry))
     if processed_onset is None or dry_onset is None:
         raise ValueError("both processed and dry captures must contain a detectable onset")
-    # Fit only the first 52 ms, before the measured PrimaVerb wet onset. This
-    # removes tiny capture gain differences without fitting away reverb energy.
+    # Fit only a declared pre-wet window. The default is shorter than the
+    # smallest observed PrimaVerb predelay, so early reflections are not
+    # mistaken for a changed direct path.
     processed_mono = module.mono(processed)
     dry_mono = module.mono(dry)
-    calibration_frames = min(2500, len(processed_mono) - processed_onset, len(dry_mono) - dry_onset)
+    requested_frames = max(1, round(processed.rate * calibration_milliseconds / 1000))
+    calibration_frames = min(requested_frames, len(processed_mono) - processed_onset, len(dry_mono) - dry_onset)
     best = None
     for lag in range(-32, 33):
         processed_start = processed_onset + max(lag, 0)
@@ -64,6 +66,7 @@ def residual(module, processed, dry):
         "dryAlignmentLagFrames": lag,
         "dryGain": dry_gain,
         "calibrationFrames": calibration_count,
+        "calibrationMilliseconds": calibration_count * 1000 / processed.rate,
         "calibrationErrorRMS": error_rms,
         "dryCancellationDB": cancellation_db,
         "subtractedFrames": length,
@@ -79,6 +82,8 @@ def main():
     parser.add_argument("--output", type=Path)
     parser.add_argument("--minimum-dry-cancellation-db", type=float, default=60.0,
                         help="reject a processed/dry pair whose fitted direct signal cancels by less than this many dB")
+    parser.add_argument("--calibration-milliseconds", type=float, default=8.0,
+                        help="direct-path fitting window; it must end before the effect's first wet output")
     args = parser.parse_args()
     module = load_comparator()
     reference = module.read_pcm(args.reference)
@@ -89,8 +94,10 @@ def main():
     channel_counts = {len(audio.channels) for audio in [reference, reference_dry, candidate, candidate_dry]}
     if len(rates) != 1 or len(channel_counts) != 1:
         raise ValueError("all captures must have matching sample rates and channel counts")
-    reference_wet, reference_alignment = residual(module, reference, reference_dry)
-    candidate_wet, candidate_alignment = residual(module, candidate, candidate_dry)
+    if not math.isfinite(args.calibration_milliseconds) or not 0 < args.calibration_milliseconds <= 100:
+        raise ValueError("calibration milliseconds must be finite and in (0, 100]")
+    reference_wet, reference_alignment = residual(module, reference, reference_dry, args.calibration_milliseconds)
+    candidate_wet, candidate_alignment = residual(module, candidate, candidate_dry, args.calibration_milliseconds)
     for label, alignment in [("reference", reference_alignment), ("candidate", candidate_alignment)]:
         if alignment["dryCancellationDB"] < args.minimum_dry_cancellation_db:
             raise ValueError(

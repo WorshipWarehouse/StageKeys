@@ -76,7 +76,9 @@ their SHA-256 hashes with every accepted calibration.
 
 Wet-residual comparison additionally requires the processed and bypass captures
 to cancel their direct paths by at least 60 dB during the pre-wet calibration
-window. `compare-effect-residuals.py` now rejects weaker cancellation instead of
+window. The default window is 8 ms, shorter than the observed 18 ms predelay;
+other presets must declare a window that ends before their first wet output.
+`compare-effect-residuals.py` rejects weaker cancellation instead of
 misreporting sampler variation as reverb energy. A fixed MIDI performance does
 not make a multisampled instrument deterministic; use a deterministic impulse,
 tone, or noise source with identical direct-path settings for effect tuning.
@@ -100,6 +102,17 @@ of direct-path cancellation and therefore failed the 60 dB gate. Its apparent
 wet-level, centroid, stereo-correlation, and decay differences are not accepted
 calibration targets. The capture remains useful as a listening reference, but
 engine tuning waits for a deterministic probe pair.
+
+On 8 November 2026, two fixed-note processed captures of the observed Felt
+Room preset reached 0.997 correlation, -0.042 dB level drift, identical 0.62 s
+decay, and -61.3 dBFS gain-aligned error. Two bypass captures reached 0.9999
+correlation and -80.2 dBFS aligned error. Against that repeatable probe, the
+old CreamCoat profile measured 0.9508 correlation, -48.93 dBFS aligned error,
++0.268 dB level error, and 0.61 s decay. A preset-specific dense profile with
+the visible 33% reflectivity and 2,884 Hz tone retained in saved/UI state but
+internally mapped to 37% and 10 kHz measured 0.9641 correlation, -50.46 dBFS
+aligned error, +0.081 dB level error, and 0.61 s decay. This bounded Felt Room
+improvement does not establish general PrimaVerb parity.
 
 An effect is not marked matched from control names alone. Release acceptance
 requires bounded numeric tolerances, a blinded listening pass, finite output at
