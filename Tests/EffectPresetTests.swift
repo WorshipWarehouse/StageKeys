@@ -28,6 +28,9 @@ import Foundation
   let chorus=AudioEffect.factoryDefault(kind:5);assert(chorus.effectCore=="stage-chorus-v1" && chorus.renderValues.last==1 && chorus.validate())
   let cp=EffectPreset(name:"Stage Stereo",effect:chorus);try EffectPresetArchive.save([cp],to:qualityURL);assert(EffectPresetArchive.load(qualityURL)==[cp])
   var legacyChorus=chorus;legacyChorus.effectCore=nil;assert(legacyChorus.validate() && legacyChorus.renderValues.last==0)
+  let flanger=AudioEffect.factoryDefault(kind:8);assert(flanger.effectCore=="stage-flanger-v1" && flanger.renderValues.last==1 && flanger.validate())
+  let fp=EffectPreset(name:"Stage Flange",effect:flanger);try EffectPresetArchive.save([fp],to:qualityURL);assert(EffectPresetArchive.load(qualityURL)==[fp])
+  var legacyFlanger=flanger;legacyFlanger.effectCore=nil;assert(legacyFlanger.validate() && legacyFlanger.renderValues.last==0)
   var wrong=delay;wrong.kind=10;assert(!wrong.validate())
   print("PASS: effect preset settings/core round-trip, invalid saves preserve archive, corrupt archive rejected")
  }
