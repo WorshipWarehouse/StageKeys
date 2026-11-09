@@ -101,7 +101,12 @@ enum MainStagePatch {
             throw Failure.invalid("The source patch has no metadata integrity record. Import it again before converting.")
         }
         let context=digest(Data((metadata+"/"+channel.file).utf8))
-        return "mainstage-channel-"+channel.sha256+"-v2-"+context+"-"+variant
+        // The sample-content identity combines the EXS map and sample manifest
+        // hashes. Hashing that long new token keeps conversion IDs within the
+        // library schema's 256-character bound without changing older IDs that
+        // used a single 64-character EXS digest.
+        let token=variant.count<=64 ? variant:digest(Data(variant.utf8))
+        return "mainstage-channel-"+channel.sha256+"-v2-"+context+"-"+token
     }
     static func assembledChannels(_ report:Report,entries:[LibrarySound],selected:Set<Int>?=nil)throws->Patch {
         let channels=report.channels.enumerated().filter{(selected?.contains($0.offset) ?? true) && $0.element.isConvertible}.map(\.element)
