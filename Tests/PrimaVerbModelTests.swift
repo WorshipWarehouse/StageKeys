@@ -16,9 +16,14 @@ import Foundation
   assert(roomEffect.validate()&&roomEffect.values[2]==0.33&&roomEffect.values[4]==2884&&roomEffect.values[6]==0&&roomEffect.values[9]==1)
   assert(roomEffect.reverbCore=="prima-felt-room-v1"&&roomEffect.renderValues[2]==0.37&&roomEffect.renderValues[4]==10000&&roomEffect.renderValues.last==2,"Measured render mapping must not rewrite the visible source controls")
   for kind in [13,15] {
-   let effect=AudioEffect.factoryDefault(kind:kind);assert(effect.reverbCore=="dense-v1" && effect.validate())
-   let decoded=try JSONDecoder().decode(AudioEffect.self,from:JSONEncoder().encode(effect));assert(decoded==effect && decoded.renderValues.last==(kind==13 ? 2:1))
+   let effect=AudioEffect.factoryDefault(kind:kind);assert(effect.reverbCore==(kind==13 ? StageReverbMode.hall.coreID:"dense-v1") && effect.validate())
+   let decoded=try JSONDecoder().decode(AudioEffect.self,from:JSONEncoder().encode(effect));assert(decoded==effect && decoded.renderValues.last==(kind==13 ? 4:1))
    var old=effect;old.reverbCore=nil;assert(old.validate() && old.renderValues.last==0)
+  }
+  for (mode,selector) in zip(StageReverbMode.allCases,[Float(3),4,5]) {
+   var effect=AudioEffect.factoryDefault(kind:13);effect.stageReverbMode=mode
+   assert(effect.validate() && effect.reverbCore==mode.coreID && effect.renderValues.last==selector)
+   let decoded=try JSONDecoder().decode(AudioEffect.self,from:JSONEncoder().encode(effect));assert(decoded==effect && decoded.stageReverbMode==mode)
   }
   print("PASS: legacy PrimaVerb keeps stored values, missing Quality defaults to 100%, zero chorus rate validates, and Felt Room retains observed controls")
  }

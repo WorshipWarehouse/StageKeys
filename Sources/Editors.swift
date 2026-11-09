@@ -383,7 +383,16 @@ struct EffectEditor: View {
                         } else if draft.kind == 7 {
                             ChannelEqualizerControls(bands:equalizerBands,enabled:$draft.enabled).padding(.top,12)
                         } else if draft.kind == 13 {
-                            ScrollView(.horizontal,showsIndicators:false){PrimaVerbControls(sourceCore:draft.usesCreamCoat,denseCore:draft.reverbCore == "dense-v1",values:Binding(get:{draft.values},set:{draft.parameters=$0})).frame(minWidth:600).padding(.horizontal,16).padding(.vertical,8)}
+                            VStack(spacing:8) {
+                                if draft.stageReverbMode != nil {
+                                    Picker("Algorithm",selection:Binding(get:{draft.stageReverbMode ?? .hall},set:{draft.stageReverbMode=$0})) {
+                                        ForEach(StageReverbMode.allCases){mode in Text(mode.title).tag(mode)}
+                                    }.pickerStyle(.segmented).padding(.horizontal,20).accessibilityLabel("Stage Reverb algorithm")
+                                } else {
+                                    HStack {Text("Legacy reverb algorithm").font(.caption).foregroundStyle(.secondary);Spacer();Button("Use Stage Reverb"){draft.reverbCore=StageReverbMode.hall.coreID}.buttonStyle(StageButtonStyle())}.padding(.horizontal,20)
+                                }
+                                ScrollView(.horizontal,showsIndicators:false){PrimaVerbControls(sourceCore:draft.usesCreamCoat,denseCore:draft.reverbCore == "dense-v1" || draft.stageReverbMode != nil,values:Binding(get:{draft.values},set:{draft.parameters=$0})).frame(minWidth:600).padding(.horizontal,16).padding(.vertical,8)}
+                            }
                         } else if [4,5,10,11,15,16].contains(draft.kind) {
                             GroupedEffectControls(kind:draft.kind,values:Binding(get:{draft.values},set:{draft.parameters=$0}))
                         } else { LazyVGrid(columns:Array(repeating:GridItem(.flexible(),spacing:10),count:3),spacing:15) {

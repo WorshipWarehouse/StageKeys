@@ -5,7 +5,7 @@ import Foundation
         let expected = [
             "Bitcrusher", "Chorus", "Compressor", "Delay", "Equalizer",
             "Flanger", "Gain", "Halo Shimmer", "Overdrive", "Pitch Shifter",
-            "PrimaVerb", "Rotor", "SolaVerb", "Tone", "Tremolo",
+            "Stage Reverb", "Rotor", "SolaVerb", "Tone", "Tremolo",
         ]
         let names = AudioEffectCatalog.pickerOrder.map { AudioEffectCatalog.names[$0] }
         precondition(names == expected)

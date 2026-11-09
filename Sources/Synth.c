@@ -208,7 +208,7 @@ static const float effectMax[18][32]={
 {1,0.95,1,1,1,2000,20000,1,1,1},
 {1,800,20000,1,12},
 {24,1},
-{1,200,0.95,2000,20000,1,10,1,1,1,2},
+{1,200,0.95,2000,20000,1,10,1,1,1,5},
 {2,120,600,10,1,12,1,100,200,1,1,1},
 {200,1,0.95,2000,20000,1,1,10,1,1,1,1},
 {200,1,1000,1,20000,20000,20,1,360,1,1},
@@ -282,17 +282,20 @@ static float cream_output(SKSynth*s,int l,int k,float dry,float wet){
 static void dense_prepare(EffectState*e,int kind,double rate){
  DenseReverb*r=&e->reverb;float*p=e->p;
  if(r->ready && !memcmp(r->cache,p,12*sizeof(float)))return;
- int ambient=kind==15;float size=p[ambient?1:0],reflect=p[2]/.95f;
+ int ambient=kind==15,profile=ambient?0:(int)roundf(p[10]);float size=p[ambient?1:0],reflect=p[2]/.95f;
  double wetRate=rate/(1 << (int)roundf((1-p[ambient?10:9])*5));
- float scale=.40f+size*.77f;
+ float scale=profile==3 ? .28f+size*.45f:profile==4 ? .48f+size*.85f:profile==5 ? .70f+size*1.20f:.40f+size*.77f;
  // Acoustic room classes alter geometry as well as time. Ambient size is continuous.
  int room=(int)roundf(size*6);float shape=ambient?0:(room%3-1)*.065f;
  const float times[8]={.0191f,.0263f,.0347f,.0433f,.0569f,.0683f,.0839f,.1073f};
- float decay=(ambient?1.2f:.15f)+(ambient?4:1)*reflect/(.03f+(1-reflect)*(1-reflect));
+ float decayBase=ambient?1.2f:profile==3?.12f:profile==4?.35f:profile==5?.9f:.15f;
+ float decayScale=ambient?4:profile==3?1.2f:profile==4?2.4f:profile==5?5.5f:1;
+ float decay=decayBase+decayScale*reflect/(.03f+(1-reflect)*(1-reflect));
  for(int i=0;i<8;i++){
   float seconds=times[i]*scale*(1+shape*((i%3)-1));
   r->offset[i]=seconds*wetRate;r->feedback[i]=fminf(.9999f,powf(.001f,seconds/decay));
-  double step=TAU*(.071+i*.037)*(ambient?.35+p[7]*.35:1)/wetRate;
+  float movement=ambient?.35f+p[7]*.35f:profile>=3 ? .2f+p[6]*.25f:1;
+  double step=TAU*(.071+i*.037)*movement/wetRate;
   r->stepSin[i]=sin(step);r->stepCos[i]=cos(step);
   if(!r->ready){r->oscSin[i]=sin(i*1.71);r->oscCos[i]=cos(i*1.71);}
  }
@@ -301,7 +304,7 @@ static void dense_prepare(EffectState*e,int kind,double rate){
 }
 static float dense_process(SKSynth*s,int l,int k,float x,float dry,double rate){
  EffectState*e=&s->effect[l][k];DenseReverb*r=&e->reverb;float*p=e->p;
- int ambient=s->fxKind[l][k]==15,capacity=s->delayLength/14,pos=s->delayPosition[l][k]%capacity;
+ int ambient=s->fxKind[l][k]==15,profile=ambient?0:(int)roundf(p[10]),capacity=s->delayLength/14,pos=s->delayPosition[l][k]%capacity;
  float*buffer=s->delay[l][k];
  for(int i=0;i<2;i++)r->damping[i]+=e->coef[7]*(e->coef[i]-r->damping[i]);
  x+=r->crossInput;
@@ -322,7 +325,7 @@ static float dense_process(SKSynth*s,int l,int k,float x,float dry,double rate){
  float v[8],sum=0,wet=0;
  for(int i=0;i<8;i++){
   double old=r->oscSin[i];r->oscSin[i]=old*r->stepCos[i]+r->oscCos[i]*r->stepSin[i];r->oscCos[i]=r->oscCos[i]*r->stepCos[i]-old*r->stepSin[i];
-  float modulation=ambient?p[5]*rate*.00065f*r->oscSin[i]:0;
+  float modulation=ambient?p[5]*rate*.00065f*r->oscSin[i]:profile>=3?p[5]*rate*(profile==5?.0012f:.00055f)*r->oscSin[i]:0;
   float delayed=tap_capacity(buffer+i*capacity,pos,r->offset[i]*(1+s->stereoSide*.013f)+modulation,capacity);
   r->low[i]+=r->damping[1]*(delayed-r->low[i]);
   r->dc[i]+=e->coef[6]*(r->low[i]-r->dc[i]);
@@ -333,7 +336,8 @@ static float dense_process(SKSynth*s,int l,int k,float x,float dry,double rate){
   float value=input*(i%3==0?-.25f:.25f)+sum*.25f-v[i];
   buffer[i*capacity+pos]=fabsf(value)>8 ? 8*tanhf(value/8):value;
  }
- wet=wet*.7f+early*(ambient?.08f:.5f);
+ float earlyMix=ambient?.08f:profile==3?.72f:profile==4?.42f:profile==5?.18f:.5f;
+ wet=wet*.7f+early*earlyMix;
  e->z[1]+=r->damping[1]*(wet-e->z[1]);wet=e->z[1];
  float slew=e->coef[7];r->mix[0]+=slew*(p[ambient?8:7]-r->mix[0]);r->mix[1]+=slew*(p[ambient?9:8]-r->mix[1]);
  e->z[5]=wet;s->fxPhase[l][k]=fmod(phase+TAU*hz/rate,TAU);s->delayPosition[l][k]=(pos+1)%capacity;
