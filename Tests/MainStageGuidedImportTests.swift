@@ -17,11 +17,13 @@ import Foundation
         review.importMainStageAutomatically(patch,locations:[.init(instruments:patch,samples:patch,label:"Synthetic source")],convertAfterDiscovery:false)
         for _ in 0..<1500 where review.libraryImportBusy {try await Task.sleep(nanoseconds:10_000_000)}
         assert(review.librarySounds.isEmpty,"Preflight must not commit a sound before effect selection")
-        assert(review.mainStageOutcomes.map(\.state)==[.pending,.pending,.needsSamples])
+        let preflightStates=review.mainStageOutcomes.map(\.state)
+        assert(preflightStates==[.pending,.pending,.needsSamples],"Preflight states: \(preflightStates.map(\.rawValue)); progress: \(review.libraryImportProgress ?? "nil")")
         assert(review.libraryImportProgress?.contains("No sounds were added")==true)
         review.convertIncludedMainStageSounds()
         for _ in 0..<1500 where review.libraryImportBusy {try await Task.sleep(nanoseconds:10_000_000)}
-        assert(review.mainStageOutcomes.map(\.state)==[.converted,.converted,.needsSamples])
+        let convertedStates=review.mainStageOutcomes.map(\.state)
+        assert(convertedStates==[.converted,.converted,.needsSamples],"Conversion states: \(convertedStates.map(\.rawValue)); progress: \(review.libraryImportProgress ?? "nil")")
         setenv("STAGEKEYS_DATA_DIR",root.path,1)
         let store=PerformanceStore()
         func wait()async throws{for _ in 0..<1500 where store.libraryImportBusy{try await Task.sleep(nanoseconds:10_000_000)};assert(!store.libraryImportBusy)}
