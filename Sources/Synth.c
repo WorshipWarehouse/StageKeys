@@ -274,7 +274,7 @@ static void effectCoefficients(EffectState*e,int kind,double rate){
   e->coef[6]=1-exp(-1/(rate*.02));
   e->coef[0]=pow(10,p[0]/20);e->coef[5]=pow(10,p[8]/20);e->coef[4]=pow(10,p[9]/20);
   for(int i=1;i<=3;i++){float f=p[i==1?1:i==2?4:5],g=tanf(TAU*.5f*fminf(f,rate*.45f)/rate);e->coef[i]=g/(1+g);}
-  Biquad shelf;equalizer(&shelf,rate,6,p[7],p[6],.707f);e->clipShelfTarget=shelf;
+  Biquad shelf={0};equalizer(&shelf,rate,6,p[7],p[6],.707f);e->clipShelfTarget=shelf;
   // The Stage core interpolates these coefficients; legacy receives them now.
   if(p[10]<=.5f){e->eq[0].b0=shelf.b0;e->eq[0].b1=shelf.b1;e->eq[0].b2=shelf.b2;e->eq[0].a1=shelf.a1;e->eq[0].a2=shelf.a2;}
  }
