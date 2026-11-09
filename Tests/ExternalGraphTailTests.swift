@@ -180,7 +180,7 @@ struct ExternalGraphTailTests {
         assert(Set(rack.debugRetiredTailStates.map(\.channel)) == Set([0,1]))
         rack.panic(0, preserveEffectTails: true)
         assert(rack.debugRetiredTailStates.allSatisfy{!$0.silent && $0.gain > 0})
-        let originalUnit = rack.unit(channel: 2)!
+        var originalUnit: AVAudioUnit? = rack.unit(channel: 2)
         let originalNodes = rack.debugOwnedNodeCount
         rack.volume(channel: 2, gain: 0.2, pan: 0)
         rack.noteOn(channel: 2, key: 67, pitch: 67, velocity: 0.7, sourceID: 77)
@@ -199,6 +199,9 @@ struct ExternalGraphTailTests {
             assertionFailure("Expected generated graph edit failure")
         } catch { assert((error as NSError).code == 941) }
         assert(rack.lastGraphFailure?.rollbackSucceeded == true && rack.unit(channel: 2) === originalUnit)
+        // The test must not keep the old sampler alive when a later transaction
+        // truncates its tail, or it would manufacture the retention it checks.
+        originalUnit = nil
         assert(!rack.debugRetiredTailStates.contains{$0.channel == 0}, "A truncated tail must not be resurrected by rollback")
         assert(rack.debugRetiredTailCount == 1 && rack.debugOwnedNodeCount < originalNodes,
                "Rollback must restore a complete graph without the truncated tail")
@@ -257,7 +260,11 @@ struct ExternalGraphTailTests {
         assert(restartAttempts == 2 && rack.lastGraphFailure?.rollbackSucceeded == true)
         assert(!rack.debugRetiredTailStates.contains{$0.channel == 0}, "The truncated tail must stay gone after a failed restart")
         assert(rack.debugRetiredTailCount == 1 && rack.debugOwnedNodeCount < nodesBeforeRestartFailure)
-        assert(rack.debugSamplerTeardownRecords.filter{$0.phase == .retainedPastStop}.isEmpty,
+        let retained = rack.debugSamplerTeardownRecords.filter{$0.phase == .retainedPastStop}
+        if !retained.isEmpty {
+            FileHandle.standardError.write(Data("retained past stop: \(retained)\n".utf8))
+        }
+        assert(retained.isEmpty,
                "No truncated sampler may survive the stopped point before a restart")
         assert((try! render(40)) > 0.000001, "A rollback after truncation must leave a renderable graph")
         let teardown = rack.debugSamplerTeardownRecords
