@@ -421,11 +421,19 @@ struct EffectEditor: View {
                                 }
                                 GroupedEffectControls(kind:draft.kind,values:Binding(get:{draft.values},set:{draft.parameters=$0}))
                             }
-                        } else { LazyVGrid(columns:Array(repeating:GridItem(.flexible(),spacing:10),count:3),spacing:15) {
-                            ForEach(controls.filter { !(draft.kind==3 && $0.index==1) && !(draft.kind==2 && draft.syncBeats != nil && $0.index==1) && !(draft.kind==14 && $0.index==0) }) { descriptor in
-                                EffectKnob(descriptor:descriptor,value:parameter(descriptor))
+                        } else {
+                            VStack(spacing:8) {
+                                if draft.kind == 17 {
+                                    HStack {Text(draft.effectCore == "stage-clip-v1" ? "Stage Clip · Antialiased":"Legacy Clip Distortion").font(.caption).foregroundStyle(.secondary);Spacer();if draft.effectCore != "stage-clip-v1" {Button("Use Stage Clip"){draft.effectCore="stage-clip-v1"}.buttonStyle(StageButtonStyle())}}.padding(.horizontal,20)
+                                    Text("Stage Clip smooths drive, tone, symmetry, clip/sum filters, shelf, mix and gains while retaining the antiderivative soft-clip curve.").font(.caption).foregroundStyle(.secondary).padding(.horizontal,20)
+                                }
+                                LazyVGrid(columns:Array(repeating:GridItem(.flexible(),spacing:10),count:3),spacing:15) {
+                                    ForEach(controls.filter { !(draft.kind==3 && $0.index==1) && !(draft.kind==2 && draft.syncBeats != nil && $0.index==1) && !(draft.kind==14 && $0.index==0) }) { descriptor in
+                                        EffectKnob(descriptor:descriptor,value:parameter(descriptor))
+                                    }
+                                }.padding(20)
                             }
-                        }.padding(20) }
+                        }
                     }
                 }
                 HStack { Spacer(); Button("Discard Changes") { dismiss() }.buttonStyle(StageButtonStyle()); Button("Confirm") { var layer=store.patch.layers[index];layer.effects[slot]=draft;store.confirmAudition(auditionToken,index:index,layer:layer);dismiss() }.buttonStyle(StageButtonStyle(selected:true)) }.padding(16)
