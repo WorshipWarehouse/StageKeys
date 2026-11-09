@@ -167,7 +167,7 @@ static const float effectDefault[18][32]={
 {0},
 {0.75,0.66,0.9,0.75,0.5,100,10000,1,0.2,1},
 {0.96,402,4877,0.4,2,0},
-{12,0.2},
+{12,0.2,0},
 {0.5,0,0.3,100,20000,0,1,0.8,0.4,1},
 {1,44,402,2.5,0,0,0.5,18,130,0.9,0.82,0.35},
 {20,0.5,0.5,100,14000,0.33,0.2,1,0.8,0.4,1},
@@ -187,7 +187,7 @@ static const float effectMin[18][32]={
 {-96},
 {0,0,0,0,0,20,200,0,0},
 {0,20,600,0,-24,0},
-{-24,0},
+{-24,0,0},
 {0,0,0,20,200,0,0,0,0,0},
 {0,1,120,0.1,0,-24,0,1,0,0,0,0},
 {0,0,0,20,200,0,0,0.01,0,0},
@@ -207,14 +207,14 @@ static const float effectMax[18][32]={
 {6},
 {1,0.95,1,1,1,2000,20000,1,1,1},
 {1,800,20000,1,12,1},
-{24,1},
+{24,1,1},
 {1,200,0.95,2000,20000,1,10,1,1,1,5},
 {2,120,600,10,1,12,1,100,200,1,1,1},
 {200,1,0.95,2000,20000,1,1,10,1,1,1,1},
 {200,1,1000,1,20000,20000,20,1,360,1,1},
 {100,20000,100,1,20000,20000,30,20000,60,60,1},
 };
-static const int effectCount[18]={0,3,4,5,3,6,7,24,4,1,10,6,2,11,12,12,11,11};
+static const int effectCount[18]={0,3,4,5,3,6,7,24,4,1,10,6,3,11,12,12,11,11};
 
 // Delay taps interpolate bounded preallocated memory. All state is render-owned.
 static float tap_capacity(const float *buffer,int pos,float offset,int capacity){
@@ -278,7 +278,7 @@ static void effectCoefficients(EffectState*e,int kind,double rate){
   // The Stage core interpolates these coefficients; legacy receives them now.
   if(p[10]<=.5f){e->eq[0].b0=shelf.b0;e->eq[0].b1=shelf.b1;e->eq[0].b2=shelf.b2;e->eq[0].a1=shelf.a1;e->eq[0].a2=shelf.a2;}
  }
- if(kind==12)e->coef[0]=pow(2,p[0]/12);
+ if(kind==12){e->coef[0]=pow(2,p[0]/12);e->coef[1]=1-exp(-1/(rate*.02));}
  if(kind==13||kind==15){e->coef[6]=1-exp(-TAU*5/rate);e->coef[7]=1-exp(-1/(rate*.02));}
  if(kind==10||kind==13||kind==15){int low=kind==10?5:3,tone=kind==10?6:4;e->coef[0]=1-exp(-TAU*p[low]/rate);e->coef[1]=1-exp(-TAU*p[tone]/rate);}
  if(kind==14){e->coef[0]=pow(10,p[5]/20);e->coef[1]=1-exp(-1/(rate*p[3]));}
@@ -289,6 +289,16 @@ static float shifted(SKSynth*s,EffectState*e,float *buffer,int pos,float ratio,d
  float phase2=phase+.5f;phase2-=floorf(phase2);
  float a=.5f-.5f*cosf(TAU*phase),b=1-a;
  return a*tap(buffer,pos,16+phase*window)+b*tap(buffer,pos,16+phase2*window);
+}
+// Stage Pitch uses the existing two-head, 60 ms window with cubic reads. The
+// independent implementation changes no upstream code; pitch and amount are
+// smoothed in the render path, and the heads reset when the core is selected.
+static float shifted_stage(SKSynth*s,EffectState*e,float *buffer,int pos,float ratio,double rate){
+ float window=fminf(s->delayLength/4,rate*.06),phase=e->shiftPhase;
+ phase+=(1-ratio)/window;phase-=floorf(phase);e->shiftPhase=phase;
+ float phase2=phase+.5f;phase2-=floorf(phase2);
+ float a=.5f-.5f*cosf(TAU*phase),b=1-a;
+ return a*tap_cubic(buffer,pos,16+phase*window)+b*tap_cubic(buffer,pos,16+phase2*window);
 }
 // Chorus belongs before the reverb tank; keep the direct signal untouched.
 static float cream_input(SKSynth*s,int l,int k,float input){
@@ -533,7 +543,20 @@ static float effectProcess(SKSynth*s,int l,int k,float x){
    e->z[0]+=e->coef[0]*(x-e->z[0]);float v=x-e->z[0],drive=1+p[0]*30;v=tanhf(v*drive)/tanhf(drive);e->z[1]+=e->coef[1]*(v-e->z[1]);y=(x*(1-p[3])+e->z[1]*p[3])*e->coef[2];
   }
   break;}
- case 12:buffer[pos]=x;y=p[0]==0?x:x*(1-p[1])+shifted(s,e,buffer,pos,e->coef[0],rate)*p[1];break;
+ case 12:
+  buffer[pos]=x;
+  if(p[2]>.5f){
+   // Smooth pitch and amount over 20 ms. Pitch 0 or Amount 0 is exact dry;
+   // a change to either target fades to dry instead of hard-switching.
+   if(e->z[11]<.5f){e->z[5]=e->coef[0];e->z[6]=p[0]==0?0:p[1];e->shiftPhase=0;e->z[11]=1;}
+   float smooth=e->coef[1],target=p[0]==0?0:p[1];
+   e->z[5]+=smooth*(e->coef[0]-e->z[5]);
+   e->z[6]+=smooth*(target-e->z[6]);
+   if(fabsf(e->coef[0]-e->z[5])<1e-5f)e->z[5]=e->coef[0];
+   if(fabsf(target-e->z[6])<1e-5f)e->z[6]=target;
+   y=e->z[6]<1e-6f?x:x*(1-e->z[6])+shifted_stage(s,e,buffer,pos,e->z[5],rate)*e->z[6];
+  }else y=p[0]==0?x:x*(1-p[1])+shifted(s,e,buffer,pos,e->coef[0],rate)*p[1];
+  break;
  case 16:{
   int prepos=s->predelayPosition[l][k];
   float input=p[0]>0?tap_capacity(s->predelay[l][k],prepos,rate*p[0]*.001f,s->predelayLength):x;
@@ -702,7 +725,7 @@ static void commands(SKSynth *s) {
   else if(c.kind==19){EffectState*e=&s->effect[0][c.key];e->p[24]=c.instrument?1:0;e->p[25]=bounded(c.value,.001f,16);e->p[26]=bounded(c.a,.001f,16);e->p[27]=c.b;e->p[28]=bounded(c.d,20,20000);e->p[29]=bounded(c.seconds,e->p[28],20000);e->coef[4]=1-exp(-TAU*e->p[28]/s->rate);e->coef[5]=1-exp(-TAU*e->p[29]/s->rate);}
   else if(c.kind==23){EffectState*e=&s->effect[0][c.key];int ready=e->p[31]>0;e->p[31]=c.instrument?1:0;e->p[8]=bounded(c.value,0,1);e->p[9]=bounded(c.a,0,1);e->coef[6]=1-exp(-1/(.02*s->rate));if(!ready){e->delayLevels[0]=e->p[8];e->delayLevels[1]=e->p[9];}}
   else if(c.kind==17){int kind=s->fxKind[c.layer][c.key];if(c.pitch<effectCount[kind]){EffectState*e=&s->effect[c.layer][c.key];e->custom=1;
-   if(((kind==3&&c.pitch==4)||(kind==5&&c.pitch==5)||(kind==11&&c.pitch==5)||(kind==13&&c.pitch==10)||(kind==15&&c.pitch==11)||(kind==17&&c.pitch==10))&&e->p[c.pitch]!=c.value){clear_delay(s,c.layer,c.key);memset(e->z,0,sizeof(e->z));memset(&e->reverb,0,sizeof(e->reverb));s->delayPosition[c.layer][c.key]=0;s->fxPhase[c.layer][c.key]=0;if(kind==17){e->clipReady=0;e->eq[0].z1=e->eq[0].z2=0;}}
+   if(((kind==3&&c.pitch==4)||(kind==5&&c.pitch==5)||(kind==11&&c.pitch==5)||(kind==12&&c.pitch==2)||(kind==13&&c.pitch==10)||(kind==15&&c.pitch==11)||(kind==17&&c.pitch==10))&&e->p[c.pitch]!=c.value){clear_delay(s,c.layer,c.key);memset(e->z,0,sizeof(e->z));memset(&e->reverb,0,sizeof(e->reverb));s->delayPosition[c.layer][c.key]=0;s->fxPhase[c.layer][c.key]=0;if(kind==17){e->clipReady=0;e->eq[0].z1=e->eq[0].z2=0;}if(kind==12)e->shiftPhase=0;}
    e->p[c.pitch]=bounded(c.value,effectMin[kind][c.pitch],effectMax[kind][c.pitch]);effectCoefficients(e,kind,s->rate);}}
   r=(r+1)%QUEUE;
  }

@@ -34,6 +34,9 @@ import Foundation
   let clip=AudioEffect.factoryDefault(kind:17);assert(clip.effectCore=="stage-clip-v1" && clip.renderValues.last==1 && clip.validate())
   let cpclip=EffectPreset(name:"Stage Clip",effect:clip);try EffectPresetArchive.save([cpclip],to:qualityURL);assert(EffectPresetArchive.load(qualityURL)==[cpclip])
   var legacyClip=clip;legacyClip.effectCore=nil;assert(legacyClip.validate() && legacyClip.renderValues.last==0)
+  let pitch=AudioEffect.factoryDefault(kind:12);assert(pitch.effectCore=="stage-pitch-v1" && pitch.renderValues.last==1 && pitch.validate())
+  let pp=EffectPreset(name:"Stage Pitch",effect:pitch);try EffectPresetArchive.save([pp],to:qualityURL);assert(EffectPresetArchive.load(qualityURL)==[pp])
+  var legacyPitch=pitch;legacyPitch.effectCore=nil;assert(legacyPitch.validate() && legacyPitch.renderValues.last==0)
   var wrong=delay;wrong.kind=10;assert(!wrong.validate())
   print("PASS: effect preset settings/core round-trip, invalid saves preserve archive, corrupt archive rejected")
  }

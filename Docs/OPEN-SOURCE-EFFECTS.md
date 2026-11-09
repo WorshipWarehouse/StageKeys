@@ -29,7 +29,7 @@ Effect IDs are part of the patch format and must remain stable.
 | 9 | Gain | Native | Retain |
 | 10 | Halo Shimmer | Native pitch-shifted feedback reverb | Evaluate pitch cores separately from the reverb network |
 | 11 | Overdrive | Versioned legacy and Stage Overdrive cores | `stage-overdrive-v1` is independent ADAA tanh saturation; a documented Airwindows comparison remains pending |
-| 12 | Pitch Shifter | Native | Research Signalsmith Stretch subject to latency limits |
+| 12 | Pitch Shifter | Versioned legacy and Stage Pitch cores | `stage-pitch-v1` uses independent cubic two-head interpolation and smoothing; Signalsmith Stretch benchmarking remains pending |
 | 13 | Stage Reverb | Versioned reverb family | Room, Hall and Ambient profiles active |
 | 14 | Rotor | Native Doppler/amplitude model | Audit permissive rotary candidates; retain if none clearly wins |
 | 15 | SolaVerb | Native ambient/modulated reverb | Improve independently; share only proven primitives |
@@ -191,8 +191,10 @@ unbounded output or discontinuity during automation.
 
 ### Phase 3 — pitch and ambient effects
 
-1. Benchmark the existing pitch shifter against a render-safe Signalsmith
-   prototype, including reported latency and chord tracking.
+1. **Stage Pitch:** candidate `stage-pitch-v1` is implemented as an independent
+   cubic two-head shifter with smoothed pitch/amount and exact dry at Pitch 0
+   or Amount 0. The render-safe Signalsmith comparison, reported latency, and
+   chord tracking remain pending.
 2. Improve Halo Shimmer by separating pitch quality from diffusion, feedback,
    damping and stereo spread.
 3. Reuse a new pitch core in SolaVerb only after it passes live-latency and
