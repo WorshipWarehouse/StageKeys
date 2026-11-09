@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Add an opt-in `stage-shimmer-v1` Halo Shimmer core that pitches the direct signal before diffusion, keeps Quality out of the reverb tank, smooths room and wet controls, and retains legacy patches.
+
 - Add an opt-in `stage-pitch-v1` Pitch Shifter core with cubic two-head interpolation, 20 ms pitch/amount smoothing, exact dry at Pitch 0 or Amount 0, and legacy patch retention.
 
 - Add an opt-in `stage-clip-v1` Clip Distortion core that retains the independent ADAA soft-clip curve while smoothing drive, tone, symmetry, clip/sum filters, shelf and gains, with legacy imported-effect retention.
