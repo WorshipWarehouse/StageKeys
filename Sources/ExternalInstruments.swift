@@ -854,11 +854,11 @@ final class ExternalInstrumentRack {
             var document: [String: Any]?
         }
         private var entries: [ObjectIdentifier: Entry] = [:]
-        #if DEBUG
         private struct WeakSampler { weak var value: AVAudioUnitSampler?; init(_ sampler: AVAudioUnitSampler) { value = sampler } }
         private struct Disposal { let sampler: WeakSampler; let channel: Int }
-        private var records: [SamplerTeardownRecord] = []
         private var disposals: [Disposal] = []
+        #if DEBUG
+        private var records: [SamplerTeardownRecord] = []
         private static let recordLimit = 64
         var debugRecords: [SamplerTeardownRecord] { records }
         #endif
@@ -888,9 +888,8 @@ final class ExternalInstrumentRack {
         }
         func removeAll() {
             entries.removeAll()
-            #if DEBUG
-            disposals.removeAll()
-            #endif
+            // Recovery must not forget a sampler still owned outside the rack.
+            // Keep weak pending disposals until a stopped-point check succeeds.
         }
         #if DEBUG
         func record(_ phase: SamplerTeardownRecord.Phase, channel: Int, generation: UInt64,
@@ -899,25 +898,36 @@ final class ExternalInstrumentRack {
                                                  engineRunning: engineRunning, retainedTail: retainedTail, attached: attached))
             if records.count > Self.recordLimit { records.removeFirst(records.count - Self.recordLimit) }
         }
+        #endif
         func noteDisposal(_ sampler: AVAudioUnitSampler, channel: Int) {
+            guard !disposals.contains(where: { $0.sampler.value === sampler }) else { return }
             disposals.append(Disposal(sampler: WeakSampler(sampler), channel: channel))
         }
-        /// Called at the stopped point before `engine.start()`. Anything still
-        /// alive here still has an owner the transaction did not release, which
-        /// is exactly the ordering #192 must exclude.
-        func verifyDisposals(generation: UInt64, engineRunning: Bool, retainedTails: Int) {
+        /// No detached sampler can be allowed to die after rendering resumes.
+        /// Keep weak pending references across failed transactions and retries;
+        /// an external owner must release them while the engine is stopped.
+        func verifyDisposals(generation: UInt64, engineRunning: Bool) throws {
             guard !disposals.isEmpty else { return }
+            #if DEBUG
             for disposal in disposals {
                 let alive = disposal.sampler.value
                 record(alive == nil ? .releasedBeforeRestart : .retainedPastStop, channel: disposal.channel,
                        generation: generation, engineRunning: engineRunning,
-                       retainedTail: retainedTails > 0, attached: alive?.engine != nil)
+                       retainedTail: false, attached: alive?.engine != nil)
             }
-            disposals.removeAll()
+            #endif
+            disposals.removeAll { $0.sampler.value == nil }
+            guard !engineRunning, disposals.isEmpty else {
+                throw NSError(domain: "StageKeysSamplerTeardown", code: 192,
+                    userInfo: [NSLocalizedDescriptionKey:
+                        "A previous instrument is still releasing. Audio is stopped. Retry Start Audio after it finishes."])
+            }
         }
-        #endif
     }
     private let samplerRegistry = SamplerRegistry()
+    func validateSamplerDisposals() throws {
+        try samplerRegistry.verifyDisposals(generation: graphGeneration, engineRunning: engine.isRunning)
+    }
     private func rememberSampler(_ sampler:AVAudioUnitSampler,document:[String:Any]?=nil) {
         if let document,document["StageKeys.NativeSampler"] != nil {
             samplerRegistry.store(sampler, document: document);return
@@ -1079,6 +1089,7 @@ final class ExternalInstrumentRack {
         try restoreSamplers(samplers)
         restoreMixers(snapshot.mixers)
         replayNotes()
+        try validateSamplerDisposals()
         if wasRunning {
             #if DEBUG
             try injectGraphFault(.restartEngine)
@@ -1203,12 +1214,8 @@ final class ExternalInstrumentRack {
         } catch { outcome.restoration = error }
         restoreMixers(edit!.mixers)
         if outcome.restoration == nil { replayNotes() }
-        #if DEBUG
-        // The #192 guarantee: every sampler truncated or purged in this stopped
-        // transaction has no rack-side owner left before the engine restarts.
-        samplerRegistry.verifyDisposals(generation: graphGeneration, engineRunning: engine.isRunning,
-                                        retainedTails: retiredTails.count)
-        #endif
+        do { try validateSamplerDisposals() }
+        catch { outcome.restoration = outcome.restoration ?? error }
         // A partially restored graph must not resume as if every instrument was
         // ready. The controller/store expose an explicit manual recovery state.
         if wasRunning && outcome.restoration == nil {
@@ -1334,14 +1341,14 @@ final class ExternalInstrumentRack {
         if var edit = pendingGraphEdit { forget(ids, in: &edit); pendingGraphEdit = edit }
         if var snapshot = preparedRollback { forget(ids, in: &snapshot); preparedRollback = snapshot }
         samplerRegistry.forget(ids)
-        #if DEBUG
         for sampler in nodes.compactMap({ $0 as? AVAudioUnitSampler }) {
             samplerRegistry.noteDisposal(sampler, channel: tail.channel)
+            #if DEBUG
             samplerRegistry.record(phase, channel: tail.channel, generation: graphGeneration,
                                    engineRunning: engine.isRunning, retainedTail: false,
                                    attached: sampler.engine != nil)
+            #endif
         }
-        #endif
     }
     private func purgeSilentRetiredTails() {
         let silent=retiredTails.filter(\.silent)

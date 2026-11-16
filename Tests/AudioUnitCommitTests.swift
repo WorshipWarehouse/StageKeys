@@ -16,7 +16,10 @@ import AVFoundation
         proposed.id = store.patch.layers[0].id
         proposed.external = ExternalSound(kind: .audioUnit, name: identity.name, component: identity)
         let previous = store.patch.layers[0]
-        let unit = rack.unit(channel: 0)!
+        // Identity observations must not keep retired samplers alive across
+        // unrelated later commits. Deliberate ownership is tested separately.
+        weak var unit = rack.unit(channel: 0)
+        assert(unit != nil)
         let root = URL(fileURLWithPath: ProcessInfo.processInfo.environment["STAGEKEYS_DATA_DIR"]!)
         let path = root.appendingPathComponent("setlist.json")
         let saved = try Data(contentsOf: path)
@@ -103,7 +106,8 @@ import AVFoundation
         store.commitLayer(0, proposed)
         let native = TestFixtures.layer(1)
         store.commitLayer(0, native)
-        let nativeUnit = rack.unit(channel: 0)!
+        weak var nativeUnit = rack.unit(channel: 0)
+        assert(nativeUnit != nil)
         reply(AVAudioUnitSampler())
         assert(store.patch.layers[0] == native && rack.unit(channel: 0) === nativeUnit)
 
@@ -116,6 +120,7 @@ import AVFoundation
         let accepted = AVAudioUnitSampler()
         reply(accepted)
         assert(store.patch.layers[0].external == proposed.external && store.patch.layers[0].gain == proposed.gain && rack.unit(channel: 0) === accepted)
+        assert(unit == nil, "The replaced original sampler must be released before restart")
         assert(store.patch.layers[0].pluginState != nil, "The successful save captures the accepted plugin state")
         assert(store.audio.loadedUnit(channel: 0, sound: proposed.external) === accepted)
         assert(store.takePluginInterfaceRequest() == 0 && store.takePluginInterfaceRequest() == nil)

@@ -36,9 +36,11 @@ references released nodes.
 
 The transaction snapshot is moved out of its storage before completion and
 filtered in place, so no second copy of the sampler list survives the restart.
-Immediately before `engine.start()`, DEBUG builds check every sampler that the
-transaction truncated or purged and record `releasedBeforeRestart` or
-`retainedPastStop`. The bounded 64-entry ledger (`attached`, `retired`,
+Immediately before forward, rollback or manual-start `engine.start()`, all builds
+check weak references to samplers the transaction truncated or purged. A sampler
+still alive blocks restart and keeps the existing stopped/manual-retry state;
+recovery cannot erase this guard. DEBUG builds additionally record
+`releasedBeforeRestart` or `retainedPastStop`. The bounded 64-entry ledger (`attached`, `retired`,
 `truncated`, `purged`, `releasedBeforeRestart`, `retainedPastStop`) is exposed
 as an optional field in the existing local support report; release builds record
 nothing. No plug-in state, path, sample payload or session content is kept.
@@ -48,7 +50,9 @@ rollback, and a forward restart failure whose rollback restart succeeds. It
 asserts the evicted tail stays gone, the restored graph still renders, and no
 truncated sampler is still alive at the stopped point. This is generated-tone
 evidence on the offline graph; the owner's live macOS crash remains
-unreproduced.
+unreproduced. The follow-up [#192 acceptance record](SAMPLER-DISPOSAL-192.md)
+contains the intentional retained-owner failure/retry regression and a 96-switch
+master-muted live run; these are not audible quality or general AU guarantees.
 
 ## Verification
 

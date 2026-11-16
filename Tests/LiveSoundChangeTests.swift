@@ -12,7 +12,10 @@ import AVFoundation
         store.captureSnapshot(0)
         store.save()
         let original = store.patch.layers[0]
-        guard let oldUnit=store.audio.externalRack!.unit(channel:0) else {
+        // Observe identity without extending a retired sampler's lifetime into
+        // later successful removal/edit transactions.
+        weak var oldUnit=store.audio.externalRack!.unit(channel:0)
+        guard oldUnit != nil else {
             let failure=store.audio.lastChangeFailure?.lastGraphFailure
             fatalError("Initial imported instrument failed to load: \(store.message ?? "no diagnostic"); graph operation=\(String(describing:failure?.operation?.code)), restore=\(String(describing:failure?.restoration?.code)), restart=\(String(describing:failure?.restart?.code))")
         }
@@ -43,7 +46,8 @@ import AVFoundation
         let before = try energy()
         assert(before > 0.01)
         let generation = store.audio.externalRack!.graphGeneration
-        let otherUnit = store.audio.externalRack!.unit(channel: 1)!
+        weak var otherUnit = store.audio.externalRack!.unit(channel: 1)
+        assert(otherUnit != nil)
 
         var missing = original
         missing.name = "Missing replacement"
