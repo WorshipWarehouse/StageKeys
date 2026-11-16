@@ -12,7 +12,11 @@ import Foundation
         refreshableChannelLookahead()
         clearedChannelLookahead()
         pollingQuantization()
-        print("PASS: earliest deadline selection, gate/step ordering and polling-grid quantization")
+        repeatedPitchBoundaryOrdering()
+        clockInputGuards()
+        gridAcrossTempos()
+        boundedStallAndStop()
+        print("PASS: earliest deadline selection, gate/step ordering, polling-grid quantization and clock boundary regressions")
     }
 
     /// The armed deadline must be the earliest of the pending step, gate release
@@ -272,5 +276,120 @@ import Foundation
             total += late
         }
         return (maximum, emitted.isEmpty ? 0 : total / Double(emitted.count), emitted.count)
+    }
+}
+
+// Test scenarios adapted from WorshipWarehouse/Clean-Room-SK StepClockTests
+// (554661c0665f082713003a45d92db468879fa92a), with owner-authorized reuse.
+// Keep StageKeys' bounded stall policy and phase-preserving tempo semantics.
+extension MIDIFXTimerTests {
+    struct ClockEvent {
+        let on: Bool
+        let key: Int
+        let at: Double
+    }
+
+    static func repeatedPitchBoundaryOrdering() {
+        let p = MIDIFXProcessor(automaticallySchedule: false)
+        var events: [ClockEvent] = []
+        p.onNoteAt = { _, key, _, _, _, at in events.append(.init(on: true, key: key, at: at)) }
+        p.onOffAt = { _, key, _, at in events.append(.init(on: false, key: key, at: at)) }
+        var program = MIDIProgram()
+        program.kind = .arpeggiator; program.subdivision = 0.5; program.gate = 1
+        p.configure(channel: 0, program: program, tempo: 120)
+        p.noteOn(channel: 0, key: 60, pitch: 60, velocity: 1)
+        var active = events[0].key
+        for step in 1...200 {
+            let at = Double(step) * 0.25
+            let before = events.count
+            p.advance(to: at)
+            let pair = Array(events.dropFirst(before))
+            assert(pair.count == 2, "A repeated pitch must have exactly one release and one attack")
+            assert(!pair[0].on && pair[0].key == active && pair[1].on)
+            assert(abs(pair[0].at - at) < 1e-9 && abs(pair[1].at - at) < 1e-9)
+            assert(pair[1].key != active, "Each generated voice keeps a distinct ownership key")
+            active = pair[1].key
+            p.advance(to: at)
+            assert(events.count == before + 2, "An identical tick must not duplicate events")
+        }
+        p.panic()
+        assert(events.last?.on == false && events.last?.key == active)
+        assert(p.nextDeadline == nil)
+    }
+
+    static func clockInputGuards() {
+        let p = MIDIFXProcessor(automaticallySchedule: false)
+        var notes = 0
+        p.onNote = { _, _, _, _ in notes += 1 }
+        var program = MIDIProgram(); program.kind = .arpeggiator
+        program.subdivision = 0.5; program.gate = 0.5
+        p.configure(channel: 0, program: program, tempo: 120)
+        p.noteOn(channel: 0, key: 60, pitch: 60, velocity: 1)
+        let deadline = p.nextDeadline
+        for invalid in [Double.nan, .infinity, -.infinity, -1] {
+            p.advance(to: invalid)
+            assert(notes == 1 && p.nextDeadline == deadline, "Invalid clocks cannot mutate the phrase")
+        }
+        p.advance(to: 0.25)
+        assert(notes == 2)
+        let next = p.nextDeadline
+        p.advance(to: 0.1)
+        assert(notes == 2 && p.nextDeadline == next, "A backward tick cannot rewind the phrase")
+        p.advance(to: 0.5)
+        assert(notes == 3, "Valid ticks must still work after rejected input")
+    }
+
+    static func gridAcrossTempos() {
+        for tempo in [72.0, 127, 300] {
+            for division in [0.125, 0.5, 1] {
+                let p = MIDIFXProcessor(automaticallySchedule: false)
+                var emitted: [Double] = []
+                p.onNoteAt = { _, _, _, _, _, at in emitted.append(at) }
+                var program = MIDIProgram(); program.kind = .arpeggiator
+                program.subdivision = division; program.gate = 0.5
+                p.configure(channel: 0, program: program, tempo: tempo)
+                p.noteOn(channel: 0, key: 60, pitch: 60, velocity: 1)
+                let period = 60 / tempo * division
+                for step in 1...200 {
+                    // A fixed small dispatch delay must not accumulate into grid drift.
+                    p.advance(to: Double(step) * period + 0.000001)
+                }
+                assert(emitted.count == 201)
+                for (step, at) in emitted.enumerated() {
+                    assert(abs(at - Double(step) * period) < 1e-8,
+                           "Scheduled timestamps must stay on the authored musical grid")
+                }
+            }
+        }
+    }
+
+    static func boundedStallAndStop() {
+        let p = MIDIFXProcessor(automaticallySchedule: false)
+        var events: [ClockEvent] = []
+        p.onNoteAt = { _, key, _, _, _, at in events.append(.init(on: true, key: key, at: at)) }
+        p.onOffAt = { _, key, _, at in events.append(.init(on: false, key: key, at: at)) }
+        var program = MIDIProgram(); program.kind = .arpeggiator
+        program.subdivision = 0.5; program.gate = 0.5
+        p.configure(channel: 0, program: program, tempo: 120)
+        p.noteOn(channel: 0, key: 60, pitch: 60, velocity: 1)
+        let firstKey = events[0].key
+        p.advance(to: 120.01)
+        assert(events.count == 3, "A two-minute stall must not replay hundreds of missed notes")
+        assert(!events[1].on && events[1].key == firstKey)
+        assert(abs(events[1].at - 0.125) < 1e-9)
+        assert(events[2].on && abs(events[2].at - 120) < 1e-9)
+        p.noteOff(channel: 0, key: 60)
+        assert(events.last?.on == false && events.last?.key == events[2].key)
+        assert(p.nextDeadline == nil)
+        let stopped = events.count
+        p.advance(to: 240)
+        assert(events.count == stopped, "Releasing the source must cancel the phrase")
+        p.noteOn(channel: 0, key: 64, pitch: 64, velocity: 1)
+        assert(events.last?.on == true && events.last?.at == 240,
+               "A new phrase after idle starts at the current clock")
+        p.panic()
+        let panicked = events.count
+        p.advance(to: 300)
+        assert(events.count == panicked && p.nextDeadline == nil)
     }
 }
