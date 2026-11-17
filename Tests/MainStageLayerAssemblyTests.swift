@@ -27,6 +27,30 @@ import Foundation
         for invalid in [Array(entries.prefix(1)),entries+[entries[0]]] {
             do {_ = try MainStagePatch.assembledChannels(report,entries:invalid);assertionFailure("Incomplete/ambiguous patch assembled")}catch{}
         }
+        // Another archive can hold a channel with the same stripped bytes. A legacy ID
+        // proves only the strip, so this archive's own conversion has to win; a v2 ID
+        // embeds the metadata digest, so it may stand in when this archive has none.
+        var foreignLegacy=entries[0]
+        foreignLegacy.id="mainstage-channel-"+channels[0].sha256+"-foreign"
+        foreignLegacy.sourceArchiveID=UUID().uuidString
+        foreignLegacy.layer?.gain=0.91
+        let preferred=try MainStagePatch.assembledChannels(report,entries:entries+[foreignLegacy])
+        assert(preferred.layers[0].gain==entries[0].layer!.gain,
+               "This archive's conversion must win over a legacy ID from another archive")
+        do {_ = try MainStagePatch.assembledChannels(report,entries:[foreignLegacy,entries[1]])
+            assertionFailure("A legacy conversion from another archive assembled")}catch{}
+        let metadataReport=MainStagePatch.Report(sourceArchiveID:archive,name:"Source Patch",channels:channels,
+                                                 blockers:[],preservedFiles:["data.plist":String(repeating:"e",count:64)])
+        var modernLocal=entries[0]
+        modernLocal.id=try MainStagePatch.conversionID(metadataReport,channel:channels[0],variant:"instrument-hash")
+        var modernForeign=entries[0]
+        modernForeign.id=try MainStagePatch.conversionID(metadataReport,channel:channels[0],variant:"other-samples")
+        modernForeign.sourceArchiveID=UUID().uuidString
+        modernForeign.layer?.gain=0.77
+        let both=try MainStagePatch.assembledChannels(metadataReport,entries:[modernLocal,modernForeign,entries[1]])
+        assert(both.layers[0].gain==modernLocal.layer!.gain,"The current archive's variant must win")
+        let fallback=try MainStagePatch.assembledChannels(metadataReport,entries:[modernForeign,entries[1]])
+        assert(fallback.layers[0].gain==modernForeign.layer!.gain,"A compatible v2 conversion must stand in")
         // A channel can also be converted by hosting the Audio Unit it saved.
         let hostedChannel=MainStagePatch.Channel(name:"Pad",file:"pad.cst",sha256:String(repeating:"a",count:64),instruments:[],devices:[.init(name:"OB-Xd",offset:0,byteCount:1,format:"PSDD")],hasMappings:false,hasMIDIState:false)
         assert(hostedChannel.isConvertible,"A saved Audio Unit makes a channel convertible")

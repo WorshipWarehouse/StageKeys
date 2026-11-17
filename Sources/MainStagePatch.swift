@@ -121,10 +121,18 @@ enum MainStagePatch {
             // cannot match another channel. Archive equality would additionally
             // reject a preserved duplicate whose commit was refused, because that
             // entry keeps the archive ID it was first converted from.
-            let matches=entries.filter{entry in
+            let candidates=entries.filter{entry in
                 guard entry.id.hasPrefix("mainstage-channel-"+channel.sha256+"-") else{return false}
                 return !entry.id.contains("-v2-") || modernPrefix.map{entry.id.hasPrefix($0)} == true
             }
+            // A legacy ID carries no metadata digest, so only this archive's own
+            // conversion of that strip can vouch for its settings. A v2 ID embeds the
+            // metadata digest and the variant, so it may stand in from another archive —
+            // but only when this archive holds no conversion of its own, so a duplicate
+            // that lost its commit still assembles.
+            let local=candidates.filter{$0.sourceArchiveID == report.sourceArchiveID}
+            let compatible=candidates.filter{$0.id.contains("-v2-")}
+            let matches=local.isEmpty ? compatible : local
             guard matches.count==1,let entry=matches.first,var layer=entry.layer,
                   let kind=layer.external?.kind,kind == .samplerPreset || kind == .audioUnit else {
                 throw Failure.invalid("\(channel.name): convert the channel first and resolve multiple converted versions before assembling this patch.")
