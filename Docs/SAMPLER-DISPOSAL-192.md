@@ -21,7 +21,7 @@ No patch/library/session schema changes. A failed edit keeps authored and saved 
 | #192 criterion | Evidence |
 | --- | --- |
 | Synthetic detach/eviction ordering | `ExternalGraphTailTests` retains truncation, eviction, rollback and release-before-restart checks. `GraphCompletionFailureTests.unsafeSamplerReleaseRecovery` forces a second sampler owner and verifies forward/rollback/manual-start refusal until release. |
-| Rapid live sampler switches beyond the two-tail bound | `VerifySamplerDisposal`: 96 production `Store.choose` switches, 94 verified stopped releases, 14.350000 seconds, maximum two tails / 33 rack-owned nodes, unchanged route at 48 kHz / 512 frames. |
+| Rapid live sampler switches beyond the two-tail bound | `VerifySamplerDisposal`: 96 production `Store.choose` switches, 94 verified stopped releases, 15.513645 seconds, maximum two tails / 33 rack-owned nodes, unchanged route at 48 kHz / 512 frames. |
 | Local lifecycle evidence | DEBUG support JSON roundtrip retains `retainedPastStop`; the prerequisite records attach/retire/truncate/purge/release facts with channel/generation/engine/attachment state, without sample or plug-in state. |
 | Unsafe case stops and preserves the saved patch, with explicit retry | New regression asserts audio-failed/stopped state and failed rollback restart, exact authored/saved bytes, refusal of retry while retained, then finite nonzero playback after release and explicit retry. |
 | Original scenario reproduced or explicitly unreproduced | Unreproduced: the original private patch and CoreAudio assertion are unknown. The recorded generated live run follows the same `choose → applyPatch → finishGraphChanges` operation family on Mac16,10 / macOS 27.2. No claim to have reproduced the original trap. |
@@ -47,7 +47,7 @@ STAGEKEYS_DATA_DIR=/private/tmp/stagekeys-192-live-NEW /private/tmp/stagekeys-19
 
 Committed sanitized run facts and exact relevant input hashes: [Sampler-Disposal-192.json](../Calibrations/Sampler-Disposal-192.json). No audio is captured. 460800 post-protection output frames progressed, with zero invalid output samples. Master mute means this does not prove audible quality or pre-protection sample validity. Counts and the short duration are observations, not memory/CPU limits, latency or soak qualification. The existing default output was used without publishing its potentially identifying UID.
 
-Final unsigned artifact gates passed on the final production inputs:
+Before the merge-review tail-cap follow-up, unsigned artifact gates passed on the `b282106` production inputs:
 
 ```
 Tools/verify-release.sh mac /private/tmp/stagekeys-192-mac-final
@@ -56,8 +56,32 @@ Tools/verify-release.sh simulator /private/tmp/stagekeys-192-simulator-final
 
 Both compile Release code (including the all-build disposal guard), validate the committed project artifacts and enforce sample-free contents/document metadata; the Simulator gate also validates the compiled icon. These are unsigned builds, not installation or physical iPad evidence. Gate inventory, seven runner-regression checks, distribution content validation and diff whitespace checks passed.
 
-Final default inventory: **141 programs accounted for, 130 reported passes, 11 explicit private-fixture skips, zero remaining failures** (131 Swift and 10 native C programs).
+Before that follow-up, the default inventory was: **141 programs accounted for, 130 reported passes, 11 explicit private-fixture skips, zero remaining failures** (131 Swift and 10 native C programs).
 
 The initial full run stopped at AU-commit ownership, then resumed after the test/production correction; later success-path tests exposed the remaining test-only strong identity observers described above. Unchanged passing programs retained their results. The final tail ran against this task's byte-identical final verification core. The combined report verifies exact set equality and no duplicates against `Tests/run-local-library.py`'s default plan. It does not erase the failed-attempt logs or count an earlier failing program as passed without a successful rerun. This is complete default coverage across isolated runs, not a claim that one uninterrupted command passed from beginning to end.
 
 Raw local outcomes: `/private/tmp/stagekeys-192-complete-results.json`; final-tail log: `/private/tmp/stagekeys-192-cached-final.log`. The 11 skips require private piano/EXS/MainStage fixtures and are not compatibility evidence. `PianoHeldNoteTests` also reports pass without its optional private fixture: its private-piano case was **not exercised**. No private audio, user sessions or plug-in state is committed. The unchanged separate 23-program reverb sanitizer suite was not rerun locally for this Swift-only ownership change; hosted CI retains that gate. Sandbox compiler-plugin failures and a retry blocked by the initial build's database lock were environment attempts, not passing builds; fresh unrestricted build directories are used for the final gates.
+
+
+## Merge-review tail-cap follow-up
+
+Review of #197/#206 found one remaining actionable thread: after one batch
+retires several active voices, rollback protection can temporarily keep more
+than two tails. The next graph transaction previously trimmed overflow only if
+it retired another instrument. `enforceRetiredTailCap` now also runs after the
+next transaction's silent-tail purge, while stopped. It still never evicts
+current rollback voices just to satisfy the target. Documentation now states
+this deferred-bound policy rather than claiming an unconditional two-tail cap.
+
+Two isolated generated regressions in `ExternalGraphTailTests` start with three
+protected sampler tails, then add a sound to an empty slot (no new retirement).
+Both successful and failed/rolled-back edits trim the oldest committed sampler,
+preserve every active voice, and prove release before restart using only that
+generation's records. The new check fails on `b282106` before the fix.
+
+The five focused disposal/rollback/AU/support programs passed after this final
+review change, as did inventory, seven runner regressions, distribution and
+whitespace checks. The updated sanitized live record contains the repeated
+96-switch run on these exact source hashes. Full hosted Mac/Simulator,
+processing/sanitizer and library checks must pass on this follow-up and the
+combined parent branch before the authorized merge to main.

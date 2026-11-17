@@ -297,7 +297,56 @@ struct ExternalGraphTailTests {
         }
         assert((try! render(20)) > 0.000001, "Restored multi-voice rollback instruments must render")
         rack.panic()
-        print("PASS: new voice renders over retired tail, generated tail cap, Panic rollback/forward completion, retained unrelated notes, and verified sampler release before restart")
+        try deferredTailCap(piano: piano, replacement: organ, extra: keys, failEdit: false)
+        try deferredTailCap(piano: piano, replacement: organ, extra: keys, failEdit: true)
+        print("PASS: deferred multi-voice cap enforcement and new voice renders over retired tail, generated tail cap, Panic rollback/forward completion, retained unrelated notes, and verified sampler release before restart")
+    }
+
+    /// A batch cannot free rollback voices. Once committed, a later structural
+    /// edit must trim those tails even if that edit retires no existing sound.
+    private static func deferredTailCap(piano: ExternalSound, replacement: ExternalSound,
+                                        extra: ExternalSound, failEdit: Bool) throws {
+        let audio = AudioController()
+        defer { audio.stop() }
+        try audio.prepareOffline()
+        let rack = audio.externalRack!
+        func load(_ sound: ExternalSound, _ channel: Int) throws {
+            var failure: Error?
+            rack.load(sound, channel: channel) { if case .failure(let error) = $0 { failure = error } }
+            if let failure { throw failure }
+        }
+        for channel in 0..<3 { try load(piano, channel) }
+        try rack.withGraphChanges {
+            for channel in 0..<3 { try load(replacement, channel) }
+        }
+        assert(rack.debugRetiredTailCount == 3, "Rollback voices stay protected until commit")
+        let activeIDs = (0..<3).map { ObjectIdentifier(rack.unit(channel: $0)!) }
+        do {
+            try rack.withGraphChanges {
+                try load(extra, 3) // Empty slot: this creates no new tail.
+                if failEdit { throw NSError(domain: "GeneratedCapRollback", code: 944) }
+            }
+            assert(!failEdit)
+        } catch { assert(failEdit && (error as NSError).code == 944) }
+        assert(rack.debugRetiredTailCount == 2,
+               "The next structural edit must enforce the cap without another retirement")
+        assert((0..<3).map { ObjectIdentifier(rack.unit(channel: $0)!) } == activeIDs)
+        assert(rack.contains(3) != failEdit)
+        let records = rack.debugSamplerTeardownRecords.filter { $0.generation == rack.graphGeneration }
+        assert(records.contains { $0.phase == .truncated && $0.channel == 0 && !$0.engineRunning })
+        assert(records.contains { $0.phase == .releasedBeforeRestart && $0.channel == 0 && !$0.attached })
+        assert(!records.contains { $0.phase == .retainedPastStop })
+        if failEdit { assert(rack.lastGraphFailure?.rollbackSucceeded == true) }
+        rack.noteOn(channel: 0, key: 60, pitch: 60, velocity: 0.8)
+        var energy = 0.0
+        for _ in 0..<20 {
+            let buffer = try audio.offlineBlock()
+            for frame in 0..<Int(buffer.frameLength) {
+                let sample = buffer.floatChannelData![0][frame]
+                assert(sample.isFinite); energy += Double(sample * sample)
+            }
+        }
+        assert(energy > 0.000001, "Live rollback voices must remain playable after deferred trimming")
     }
 
     private static func importTone(_ url: URL, frequency: Double, rack: ExternalInstrumentRack) throws -> ExternalSound {

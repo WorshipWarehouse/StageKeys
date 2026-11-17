@@ -1242,6 +1242,7 @@ final class ExternalInstrumentRack {
             pendingGraphEdit = GraphEdit(rollback: preparedRollback ?? rollbackSnapshot(), mixers: mixerState(), samplers: samplerState(), wasRunning: engine.isRunning)
             if engine.isRunning { engine.stop() }
             purgeSilentRetiredTails()
+            enforceRetiredTailCap()
         }
         try operation()
     }
@@ -1264,12 +1265,15 @@ final class ExternalInstrumentRack {
         let unique=nodes.filter{seen.insert(ObjectIdentifier($0)).inserted}
         let tail=RetiredTail(channel:channel,nodes:unique,mixer:mixer)
         retiredTails.append(tail)
-        // Hard count bound: deliberately truncate the oldest tail if needed,
-        // even if it is still audible. A voice retired by this transaction is
-        // still the rollback instrument, however, so it must remain available
-        // until the transaction has committed. A later graph edit may evict it
-        // once it is represented as a tail rather than a live rollback voice.
-        while retiredTails.count>maxRetiredTails {
+        enforceRetiredTailCap()
+        scheduleTailExpiry(tail)
+    }
+    /// Evict only committed tails while stopped. Rollback voices retired in the
+    /// current batch remain protected; trim that deferred overflow on the next
+    /// structural transaction, even if it does not retire another instrument.
+    private func enforceRetiredTailCap() {
+        precondition(graphBatchDepth > 0 && !engine.isRunning)
+        while retiredTails.count > maxRetiredTails {
             let protected = Set(pendingGraphEdit?.rollback.voices.values
                 .flatMap(ownedNodes).map(ObjectIdentifier.init) ?? [])
             guard let index = retiredTails.firstIndex(where: { candidate in
@@ -1277,7 +1281,6 @@ final class ExternalInstrumentRack {
             }) else { break }
             disposeRetiredTail(retiredTails.remove(at: index), phase: .truncated)
         }
-        scheduleTailExpiry(tail)
     }
     private func scheduleTailExpiry(_ tail: RetiredTail) {
         tail.muteWorkItem?.cancel()

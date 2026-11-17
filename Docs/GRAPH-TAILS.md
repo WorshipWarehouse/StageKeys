@@ -11,7 +11,7 @@ StageKeys keeps a replaced audio graph connected through a dedicated tail mixer 
 
 ## Bounds and controls
 
-- At most two retired graphs are retained. A third retirement detaches the oldest tail during the graph transaction that is already stopping the engine.
+- The normal retained-tail target is two. A batch retiring several active voices can temporarily exceed it because those voices must remain available for rollback. At the next structural graph transaction, the engine stops and trims eligible committed tails even if the edit retires no new instrument. Current rollback voices are never evicted merely to hit the count target.
 - A retired graph's output is muted after 20 seconds. Silent graph nodes are detached during the next graph transaction; no engine stop is introduced solely to retire a tail.
 - Retired samplers are excluded from the sampler-restoration list, so later patch transactions cannot reload them and delay the new instrument.
 - `Silence Previous` and explicit Panic silence retired tails immediately. Normal patch changes preserve them when `Silence Previous` is off.
@@ -22,7 +22,7 @@ StageKeys keeps a replaced audio graph connected through a dedicated tail mixer 
 A hosted sampler that leaves the active graph is released through one
 ownership registry and one disposal order. The registry keeps samplers weakly
 plus their retained document state, so it can never keep a detached sampler
-alive. Truncating the oldest tail (the documented hard two-tail bound) runs the
+alive. Truncating an eligible oldest tail (the two-tail target above) runs the
 same order while the engine is stopped: mute, disconnect, detach, forget every
 rack-side owner, then drop the references.
 
