@@ -44,13 +44,23 @@ int main(void){
   printf("PASS Stage Flanger %d Hz: zero mix is exact dry\n",rate);
 
   // A new or reset Stage core starts disengaged and fades in, so its cleared
-  // delay taps cannot produce a one-sample dropout.
+  // delay taps cannot produce a one-sample dropout. Checking sample 0 alone
+  // cannot tell a fade from an instant engage (a comb whose 1.5 ms reference tap
+  // is still empty also leaves sample 0 near dry), so compare windows: the first
+  // samples stay close to dry and the tail has visibly diverged.
   SKSynth*fade=sk_create_effects(rate);assert(fade);
   configure(fade,1,.5f,.5f,.5f,1);
-  fill(wet,N,rate,440,.2f);
-  float first=wet[0];
-  sk_process_effects(fade,wet,N);
-  assert(fabsf(wet[0]-first)<1e-6f);
+  int engaged=rate/4;                       // 250 ms, well past the 20 ms fade
+  fill(wet,engaged,rate,440,.2f);
+  memcpy(dry,wet,engaged*sizeof(float));
+  sk_process_effects(fade,wet,engaged);
+  int head=16;double headDiff=0;
+  for(int i=0;i<head;i++)headDiff+=fabsf(wet[i]-dry[i]);
+  headDiff/=head;
+  int tailStart=rate/10;double tailDiff=0;   // 100 ms onward: fully engaged
+  for(int i=tailStart;i<engaged;i++)tailDiff+=fabsf(wet[i]-dry[i]);
+  tailDiff/=(engaged-tailStart);
+  assert(headDiff<1e-2f&&tailDiff>5e-2f&&tailDiff>headDiff*4);
   sk_destroy(fade);
   printf("PASS Stage Flanger %d Hz: starts disengaged after reset\n",rate);
 
