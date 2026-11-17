@@ -107,11 +107,27 @@ import Foundation
   rejects(container(body(audioExtra:1)),.audioNotBlockAligned(bytes:2045,block:2044))
   rejects(container(Array(body().prefix(0x732+118))),.audioGridOutsideBody(start:2236,bodyBytes:0x732+118))
 
-  // Limits are enforced before any payload work.
+  // Padding after the terminator is part of the fixed field, so a control byte
+  // there is reported instead of returning a truncated name; a space is padding.
+  var controlPadding=body();controlPadding[0x1c+17]=0x01
+  rejects(container(controlPadding),.invalidText(offset:0x1c))
+  var spacePadding=body();spacePadding[0x1c+17]=0x20
+  let spacedReport=try NordPiano.inspect(container(spacePadding))
+  assert(spacedReport.name.contains("Astoria Grand"))
+
+  // Limits are enforced before any payload work, through both entrypoints.
   do {_ = try NordPiano.inspect(valid,limits:.init(maximumFileBytes:100,maximumStrokes:4096));fatalError("Oversized file accepted")}
   catch let problem as NordPiano.Problem {assert(problem == .fileTooLarge(bytes:valid.count,maximum:100))}
   do {_ = try NordPiano.inspect(container(body(strokes:2)),limits:.init(maximumFileBytes:1<<20,maximumStrokes:1));fatalError("Stroke limit ignored")}
   catch let problem as NordPiano.Problem {assert(problem == .invalidStrokeCount(2))}
+
+  let raw=[UInt8](valid)
+  do {
+   _ = try raw.withUnsafeBytes { (buffer:UnsafeRawBufferPointer) -> NordPiano.Report in
+    try NordPiano.inspect(buffer,limits:.init(maximumFileBytes:100,maximumStrokes:4096))
+   }
+   fatalError("Oversized raw buffer accepted")
+  } catch let problem as NordPiano.Problem {assert(problem == .fileTooLarge(bytes:valid.count,maximum:100))}
 
   let legacy=try NordPiano.inspect(container(body(),generation:0))
   assert(legacy.generation==0 && legacy.checksum == .unestablished)

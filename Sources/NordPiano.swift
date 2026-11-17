@@ -107,7 +107,11 @@ enum NordPiano {
         }
     }
 
+    /// The raw-buffer entrypoint owns the same admission limits as the `Data`
+    /// one, so a caller cannot bypass the bounded contract by wrapping bytes.
     static func inspect(_ bytes: UnsafeRawBufferPointer, limits: Limits) throws -> Report {
+        if bytes.count == 0 { throw Problem.empty }
+        if bytes.count > limits.maximumFileBytes { throw Problem.fileTooLarge(bytes: bytes.count, maximum: limits.maximumFileBytes) }
         guard bytes.count >= 0x2c else { throw Problem.truncatedHeader(bytes: bytes.count, minimum: 0x2c) }
         guard ascii(bytes, at: 0, length: 4) == "CBIN" else { throw Problem.badMagic }
         let generationWord = le32(bytes, at: 4)
@@ -248,12 +252,22 @@ enum NordPiano {
     }
 
     /// Reads a NUL-padded field, rejecting control bytes rather than guessing.
+    /// Bytes after the terminator are padding, so they must be an empty byte or
+    /// a space: anything else means this is not the padded text the container
+    /// documents, and the field is reported instead of partially read.
     private static func text(_ bytes: UnsafeRawBufferPointer, at offset: Int, length: Int) throws -> String {
         var slice: [UInt8] = []
         var index = offset
         while index < offset + length {
             let byte = bytes[index]
-            if byte == 0 { break }
+            if byte == 0 {
+                var padding = index + 1
+                while padding < offset + length {
+                    guard bytes[padding] == 0 || bytes[padding] == 0x20 else { throw Problem.invalidText(offset: offset) }
+                    padding += 1
+                }
+                break
+            }
             guard byte >= 0x20, byte != 0x7f else { throw Problem.invalidText(offset: offset) }
             slice.append(byte)
             index += 1

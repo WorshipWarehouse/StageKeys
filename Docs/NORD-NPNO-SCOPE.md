@@ -60,7 +60,8 @@ documented stream versions and reports rather than repairs anything else.
   directory fits inside the body.
 - The documented audio grid: aligned start inside the body, zero gap, and a whole
   number of blocks of audio.
-- NUL-padded text fields, rejecting control bytes instead of guessing.
+- NUL-padded text fields, rejecting control bytes instead of guessing and requiring the bytes after the terminator to be zero or a space.
+- The bounded file-size limit and the stroke limit apply to the raw-buffer entrypoint as well as the `Data` one, so neither caller can skip admission.
 - Exposes covered-key count, audio start/length and the block size for a later
   mapping step (#213).
 
