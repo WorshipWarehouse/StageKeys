@@ -71,13 +71,13 @@ struct TonicPanel: View {
             VStack(spacing: 4) {
                 HStack(spacing: 4) {
                     Button { store.toggleTonic(store.tonicLastRoot) } label: {
-                        Image(systemName:"power").frame(width:38,height:46)
+                        Image(systemName:"power").frame(width: CGFloat(StageA11y.denseWidth(.tonicPower)), height: CGFloat(StageA11y.denseHeight(.tonicPower)))
                     }.buttonStyle(.plain).background(store.tonic == nil ? StageTheme.raised.opacity(0.5):StageTheme.selected.opacity(0.7),in:RoundedRectangle(cornerRadius:5)).accessibilityLabel("Tonic Pad power").accessibilityValue(store.tonic == nil ? "Off":"On")
                     Button(action:onSettings) {
                         VStack(alignment:.leading,spacing:3) {Text("Tonic Pad").font(.system(size:11)).foregroundStyle(.secondary);Text(store.tonicLabel).font(StageTheme.font(12,weight:.semibold)).lineLimit(1)}.frame(maxWidth:.infinity,alignment:.leading).frame(height:46).padding(.horizontal,6)
                     }.buttonStyle(.plain).background(StageTheme.raised.opacity(0.5),in:RoundedRectangle(cornerRadius:5)).accessibilityLabel("Tonic Pad Settings, \(store.tonicLabel)")
                     Button {store.toggleTonicPatchLock()}label:{
-                        Group {if store.tonicLocked {Image(systemName:"lock.fill")} else {Text("Patch\nLock").font(.system(size:11,weight:.semibold))}}.frame(width:40,height:46)
+                        Group {if store.tonicLocked {Image(systemName:"lock.fill")} else {Text("Patch\nLock").font(.system(size:11,weight:.semibold))}}.frame(width: CGFloat(StageA11y.denseWidth(.tonicPatchLock)), height: CGFloat(StageA11y.denseHeight(.tonicPatchLock)))
                     }.buttonStyle(.plain).background(store.tonicLocked ? StageTheme.selected:StageTheme.raised.opacity(0.5),in:RoundedRectangle(cornerRadius:5)).foregroundStyle(store.tonicLocked ? StageTheme.base:.primary).accessibilityLabel("Tonic Pad Patch Lock").accessibilityValue(store.tonicLocked ? "Saved":"Not saved")
                 }
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 4), count: 4), spacing: 4) {
@@ -104,7 +104,7 @@ struct SoundModule: View {
         VStack(spacing: 6) {
             HStack(spacing: 0) {
                 Button { open(.browser(index)) } label: { Text(layer.loaded ? layer.name : "").font(StageTheme.font(13, weight: .bold)).lineLimit(2).frame(maxWidth: .infinity, alignment: .leading).frame(height: 40) }.buttonStyle(.plain)
-                Button { open(.sound(index)) } label: { Image(systemName: "slider.horizontal.3").foregroundStyle(color).frame(width: 34, height: 45).background(StageTheme.raised.opacity(0.25)) }.buttonStyle(.plain).disabled(!layer.loaded).accessibilityLabel("Sound \(index+1) settings")
+                Button { open(.sound(index)) } label: { Image(systemName: "slider.horizontal.3").foregroundStyle(color).frame(width: CGFloat(StageA11y.denseWidth(.mixerSoundSettings)), height: CGFloat(StageA11y.denseHeight(.mixerSoundSettings))).background(StageTheme.raised.opacity(0.25)) }.buttonStyle(.plain).disabled(!layer.loaded).accessibilityLabel("Sound \(index+1) settings")
             }
             Divider().opacity(0.2)
             if layer.loaded {
@@ -147,7 +147,7 @@ struct SoundModule: View {
         let hasEffect = layer.octaveEffect || (layer.midiProgram?.kind != nil && layer.midiProgram?.kind != .bypass)
         return HStack(spacing: 0) {
             Button { if hasEffect { store.toggleMIDIEffect(index) } else { open(.midi(index)) } } label: {
-                Image(systemName: "power").font(.system(size: 14)).frame(width: 34, height: 49).background(hasEffect && layer.midiEffectEnabled ? color.opacity(0.7) : Color.clear)
+                Image(systemName: "power").font(.system(size: 14)).frame(width: CGFloat(StageA11y.denseWidth(.midiEffectBypass)), height: CGFloat(StageA11y.denseHeight(.midiEffectBypass))).background(hasEffect && layer.midiEffectEnabled ? color.opacity(0.7) : Color.clear)
             }.buttonStyle(.plain).accessibilityLabel("Sound \(index+1) MIDI effect bypass").accessibilityValue(hasEffect && layer.midiEffectEnabled ? "On":"Off")
             Button { open(.midi(index)) } label: {
                 VStack(alignment: .leading, spacing: 3) {
@@ -163,7 +163,7 @@ struct SoundModule: View {
             Button {
                 if effect.kind == 0 { open(.effect(index, slot)) }
                 else { var fx = effect; fx.enabled.toggle(); store.setEffect(index, slot, fx) }
-            } label: { Image(systemName: "power").font(.system(size: 14)).frame(width: 36, height: 49).background(effect.kind > 0 && effect.enabled ? color.opacity(0.7) : Color.clear) }.buttonStyle(.plain).accessibilityLabel("Sound \(index+1) effect \(slot+1) bypass").accessibilityValue(effect.kind > 0 && effect.enabled ? "On":"Off")
+            } label: { Image(systemName: "power").font(.system(size: 14)).frame(width: CGFloat(StageA11y.denseWidth(.audioEffectBypass)), height: CGFloat(StageA11y.denseHeight(.audioEffectBypass))).background(effect.kind > 0 && effect.enabled ? color.opacity(0.7) : Color.clear) }.buttonStyle(.plain).accessibilityLabel("Sound \(index+1) effect \(slot+1) bypass").accessibilityValue(effect.kind > 0 && effect.enabled ? "On":"Off")
             Button { open(.effect(index, slot)) } label: { VStack(alignment: .leading, spacing: 3) { Text("Audio 0\(slot+1)").font(.system(size: 11)).foregroundStyle(.secondary); Text(effect.title).font(StageTheme.font(14, weight: .semibold)) }.frame(maxWidth: .infinity, alignment: .leading).padding(.leading, 5) }.buttonStyle(.plain).accessibilityLabel("Sound \(index+1) Audio \(slot+1) \(effect.title)")
         }.frame(height: 49).background(StageTheme.raised.opacity(0.55), in: RoundedRectangle(cornerRadius: 6)).clipShape(RoundedRectangle(cornerRadius: 6))
     }

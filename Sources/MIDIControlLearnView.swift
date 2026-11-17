@@ -36,7 +36,7 @@ struct MIDIControlLearnView: View {
                 }
                 Spacer()
                 Button("Reset All") { store.resetMIDILearn() }.buttonStyle(StageButtonStyle()).help("Remove every learned controller assignment; fixed modulation, sustain, panic and program-change routes remain")
-                Button { store.learningTarget = nil; dismiss() } label: { Image(systemName: "xmark").font(.system(size: 18)).frame(width: 30,height: 30) }.buttonStyle(.plain).accessibilityLabel("Close MIDI Learn")
+                Button { store.learningTarget = nil; dismiss() } label: { Image(systemName: "xmark").font(.system(size: 18)).frame(width: CGFloat(StageA11y.denseWidth(.midiLearnClose)), height: CGFloat(StageA11y.denseHeight(.midiLearnClose))) }.buttonStyle(.plain).accessibilityLabel("Close MIDI Learn")
             }.padding(20).background(StageTheme.base)
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {

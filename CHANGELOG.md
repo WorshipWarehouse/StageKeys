@@ -12,6 +12,8 @@
 
 - Size each library rating star's tappable box from the audited target (28 pt with the pointer, 44 pt on touch) instead of 17 × 28 pt, so a rating is no longer a 17 pt-wide target; the drawn 12 pt glyph and the rating values are unchanged (#19).
 
+- Size the twelve dense controls that shipped below the audited touch minimum (Tonic pad power and patch lock, sound settings and both effect bypasses, metronome, count-in, import, main menu, MIDI Learn close, library sort and the number steppers) from `StageA11y.DenseControl`, so each reaches 44 pt on iPhone and iPad while the pointer keeps its existing box (#19).
+
 - Size the workspace strip's sustain, layer-range and keyboard-range buttons from the audited hit-target minimum (44 pt on touch, 30 pt with the pointer) instead of a fixed 30 x 28 box, so the three smallest performer controls are reachable on iPad and iPhone (#19).
 
 - Stop completed AU loader callbacks from retaining the replaced sampler, and refuse forward, rollback and manual audio restart while a purged/truncated sampler is still retained; preserve the stopped recovery guard until release, with generated failure/retry coverage and a 96-switch live-output verification for #192.
