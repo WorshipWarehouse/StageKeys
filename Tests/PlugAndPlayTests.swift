@@ -181,7 +181,6 @@ import CoreMIDI
     assert(store.message?.contains("fixed route") == true,"A refused learn explains the reserved route")
     store.message = nil
     send(a,0xb0,64,0);wait { !store.sustain }
-    store.save();let relearned=PerformanceStore();assert(relearned.assignedCC(.master)==30 && relearned.assignedCC(.nextPatch)==31)
     store.setlist.patches[0].programChangeEnabled=true;store.setlist.patches[0].programChangeNumber=99
     store.choose(1);send(b,0xc2,99,0);wait { store.midiLog.first?.contains("Ch 03 · C0 · 99 · 0") == true }
     assert(store.selected==1,"Secondary Program Change must not select a patch")
@@ -193,6 +192,11 @@ import CoreMIDI
     send(a,0x90,67,100);wait { store.isNoteHeld(67) }
     store.panic();try store.setlist.validate()
     assert(store.message == nil,store.message ?? "")
+    // Reload last: a second store starts MIDI and audio work, and creating it beside
+    // the program-change assertions starved the patch activation that follows.
+    store.save();let relearned=PerformanceStore()
+    assert(relearned.assignedCC(.master)==30 && relearned.assignedCC(.nextPatch)==31,
+           "A refused reserved-CC learn must keep the saved assignment")
     print("PASS: Primary-only note/Program Change, filtered Primary/Secondary controls, CC1/64 ownership, velocity scaling, learned Tonic/effect/snapshot/navigation routes, assignment and source/channel persistence, hot-plug, output safety and reserved-CC learn refusal")
  }
 }
