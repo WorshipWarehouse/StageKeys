@@ -2121,7 +2121,10 @@ final class PerformanceStore: ObservableObject {
             catch {
                 discardManaged(repairedPreset)
                 // Another process changed the catalog since this repair read it.
-                // Publish nothing rather than replacing that edit with this snapshot.
+                // Publish nothing rather than replacing that edit with this snapshot,
+                // and adopt the stored catalog so a retry compares against the file
+                // that is actually there instead of failing on the stale copy again.
+                if let current=try? SoundLibrary(url:libraryDirectory.appendingPathComponent("sound-library.json")).read() {librarySounds=current}
                 refreshLibraryContent()
                 message="Could not save the repaired sound because the library changed while it was being repaired: \(error.localizedDescription)";return
             }
