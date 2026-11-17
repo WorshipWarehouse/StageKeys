@@ -78,6 +78,17 @@ struct ImportedDelay: Codable, Equatable {
     }
     func seconds(_ value:Double,synced:Bool,tempo:Float)->Float {Float(min(16,max(0.001,synced ? value*60/Double(tempo) : value)))}
 }
+enum StageReverbMode:String,CaseIterable,Identifiable {
+    case room,hall,ambient
+    var id:String {rawValue}
+    var title:String {rawValue.capitalized}
+    var coreID:String {"stage-\(rawValue)-v2"}
+    init?(coreID:String?) {
+        guard let coreID else{return nil}
+        guard let mode=Self.allCases.first(where:{$0.coreID==coreID}) else{return nil}
+        self=mode
+    }
+}
 struct AudioEffect: Codable, Equatable {
     var kind = 0 // 0 bypass, 1 tone, 2 tremolo, 3 delay
     var amount: Float = 0.5
@@ -86,8 +97,15 @@ struct AudioEffect: Codable, Equatable {
     var delayPingPong: Bool?
     var syncBeats: Float?
     var parameters: [Float]?
+    /// Versioned implementation selector for non-reverb effects. Nil retains
+    /// the legacy StageKeys algorithm when opening an existing patch.
+    var effectCore:String?
     /// Explicitly retained through edits; absent on legacy imported reverbs.
     var reverbCore: String?
+    var stageReverbMode:StageReverbMode? {
+        get {StageReverbMode(coreID:reverbCore)}
+        set {if let newValue {reverbCore=newValue.coreID}}
+    }
     var usesCreamCoat: Bool {
         guard kind == 13 else { return false }
         if let reverbCore { return reverbCore == "creamcoat" }
@@ -98,7 +116,15 @@ struct AudioEffect: Codable, Equatable {
     }
     static func factoryDefault(kind:Int)->AudioEffect {
         var effect=AudioEffect();effect.kind=kind;effect.parameters=AudioEffectCatalog.defaults(for:kind)
-        if kind==13 || kind==15 {effect.reverbCore="dense-v1"}
+        if kind==3 {effect.effectCore="stage-delay-v1"}
+        if kind==5 {effect.effectCore="stage-chorus-v1"}
+        if kind==8 {effect.effectCore="stage-flanger-v1"}
+        if kind==10 {effect.effectCore="stage-shimmer-v1"}
+        if kind==11 {effect.effectCore="stage-overdrive-v1"}
+        if kind==12 {effect.effectCore="stage-pitch-v1"}
+        if kind==17 {effect.effectCore="stage-clip-v1"}
+        if kind==13 {effect.reverbCore=StageReverbMode.hall.coreID}
+        if kind==15 {effect.reverbCore="dense-v1"}
         if kind==3 {effect.parameters![1]=0.75;effect.delayPingPong=true}
         return effect
     }
@@ -107,7 +133,36 @@ struct AudioEffect: Codable, Equatable {
         guard kind==3,delayPingPong==true else{return nil}
         return ImportedDelay(left:Double(values[1]),right:Double(values[1]),leftSynced:true,rightSynced:true,pingPong:true,highCut:values[2])
     }
-    var renderValues:[Float] { kind == 13 ? values+[reverbCore == "dense-v1" ? 2:usesCreamCoat ? 1:0]:kind == 15 ? values+[reverbCore == "dense-v1" ? 1:0]:values }
+    var renderValues:[Float] {
+        if kind == 3 {return values+[effectCore == "stage-delay-v1" ? 1:0]}
+        if kind == 5 {return values+[effectCore == "stage-chorus-v1" ? 1:0]}
+        if kind == 8 {return values+[effectCore == "stage-flanger-v1" ? 1:0]}
+        if kind == 10 {return values+[effectCore == "stage-shimmer-v1" ? 1:0]}
+        if kind == 11 {return values+[effectCore == "stage-overdrive-v1" ? 1:0]}
+        if kind == 12 {return values+[effectCore == "stage-pitch-v1" ? 1:0]}
+        if kind == 17 {return values+[effectCore == "stage-clip-v1" ? 1:0]}
+        if kind == 13 {
+            var rendered=values
+            // Measured Felt Room wrapper calibration. Keep the authored/UI
+            // values intact; only its explicitly named render profile receives
+            // the independently measured dense-core mapping.
+            if reverbCore == "prima-felt-room-v1",rendered.count>=10 {
+                rendered[2]=0.37
+                rendered[4]=10000
+                return rendered+[2]
+            }
+            let selector:Float
+            switch reverbCore {
+            case "dense-v1":selector=2
+            case StageReverbMode.room.coreID:selector=3
+            case StageReverbMode.hall.coreID:selector=4
+            case StageReverbMode.ambient.coreID:selector=5
+            default:selector=usesCreamCoat ? 1:0
+            }
+            return rendered+[selector]
+        }
+        return kind == 15 ? values+[reverbCore == "dense-v1" ? 1:0]:values
+    }
     var title: String { AudioEffectCatalog.names.indices.contains(kind) ? AudioEffectCatalog.names[kind] : "No Effect" }
     /// Resolves a learnable parameter range, including imported-delay-only controls.
     func macroDescriptor(_ index:Int)->AudioEffectParameterDescriptor? {
@@ -125,7 +180,8 @@ struct AudioEffect: Codable, Equatable {
         return values
     }
     func validate() -> Bool {
-        guard reverbCore.map({(kind == 13 && ["creamcoat","legacy","dense-v1"].contains($0)) || (kind == 15 && ["legacy","dense-v1"].contains($0))}) ?? true else{return false}
+        guard effectCore.map({(kind==3 && $0=="stage-delay-v1") || (kind==5 && $0=="stage-chorus-v1") || (kind==8 && $0=="stage-flanger-v1") || (kind==10 && $0=="stage-shimmer-v1") || (kind==11 && $0=="stage-overdrive-v1") || (kind==12 && $0=="stage-pitch-v1") || (kind==17 && $0=="stage-clip-v1")}) ?? true else{return false}
+        guard reverbCore.map({(kind == 13 && (["creamcoat","legacy","dense-v1","prima-felt-room-v1"].contains($0) || StageReverbMode(coreID:$0) != nil)) || (kind == 15 && ["legacy","dense-v1"].contains($0))}) ?? true else{return false}
         guard delayPingPong == nil || kind==3 else{return false}
         guard importedDelay.map({kind == 3 && $0.validate()}) ?? true else{return false}
         guard syncBeats.map({ $0.isFinite && (0.0625...4).contains($0) }) ?? true, (0...17).contains(kind), amount.isFinite, (0...1).contains(amount) else { return false }
@@ -186,6 +242,16 @@ struct MainStageSourceRecord: Codable, Equatable {
         omitted.count <= 128 && omitted.allSatisfy { $0.count <= 2000 } &&
         (retainedShaping.map { $0.count <= 64 && $0.allSatisfy { !$0.key.isEmpty && $0.key.count <= 96 && $0.value.count <= 160 } } ?? true) &&
         issues.count <= 128 && issues.allSatisfy { $0.count <= 2000 }
+    }
+    /// Apply only mappings that passed bounded translation. The complete source
+    /// effect list is the macro target; callers copy selected effects into the
+    /// visible slots after this update. Unsupported source mappings never enter
+    /// `macros`, so they remain archived but inactive.
+    mutating func applyMIDI(controller:Int,value:Float,channel:Int)->Bool {
+        var rack=ImportedRack(effects:effects,macros:macros)
+        guard rack.validate(),rack.applyMIDI(controller:controller,value:value,channel:channel) else{return false}
+        effects=rack.effects;macros=rack.macros
+        return true
     }
 }
 struct ImportedBranch: Codable, Equatable {
