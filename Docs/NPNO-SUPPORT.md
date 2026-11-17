@@ -38,11 +38,13 @@ spans, the number of unclassified bytes, and the state. It is inspection evidenc
 
 - the report is never given a playable or converted label;
 - the input is opened read-only and its hash is unchanged by inspection;
-- every refusal is raised before any digest is taken, so an oversized, malformed or
-  over-ceiling file is never read into a hash;
-- the digest then streams the **same opened file** from its start and refuses a length change, so a
-  file replaced or rewritten between classification and hashing is refused (`inputChanged`) instead
-  of being described from two different reads.
+- every **admission** refusal — container, type, layout, truncation, the input ceiling, the
+  unclassified-payload ceiling and the span checks — is raised before any digest is taken, so an
+  oversized, malformed or over-ceiling file is never read into a hash;
+- the digest then streams the **same opened file** from its start and refuses a length change. That
+  consistency check (`inputChanged`) can only be decided while reading or after the read finishes,
+  so it is not an admission refusal: it replaces the report instead of publishing a digest taken
+  from a different read than the one that was classified.
 
 Spans are the three four-byte tags. Every gap between them is reported as `unclassified`, including
 the four unidentified bytes at offset 4 that sit between the container and type tags. A span that leaves the input, overlaps another span, is empty, or
