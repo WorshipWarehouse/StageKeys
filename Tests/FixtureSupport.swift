@@ -87,3 +87,38 @@ extension TestFixtures {
         strip.append(device);return strip
     }
 }
+
+extension TestFixtures {
+    /// Original two-layer stereo piano fixture: order-zero PCM residuals,
+    /// independent fixed-width writer, no vendor bytes or copied test vectors.
+    static func nordPiano() -> Data {
+        let channels=2,block=1022*channels,count=2,frames=(block-2)/4-64
+        let start=((0x732+count*118+192+block-1)/block)*block-192
+        var body=[UInt8](repeating:0,count:start+count*block)
+        func put(_ offset:Int,_ value:Int,_ bytes:Int=2) {for i in 0..<bytes {body[offset+i]=UInt8(truncatingIfNeeded:value >> ((bytes-1-i)*8))}}
+        body.replaceSubrange(0..<4,with:Array("CNSP".utf8));put(4,0x464)
+        body.replaceSubrange(0x1c..<0x1c+15,with:Array("Synthetic Piano".utf8))
+        for key in 0..<128 {body[0x8c+key]=255}
+        for key in 59...61 {body[0x8c+key]=60}
+        body[0x18c+59]=UInt8(bitPattern:-2);body[0x18c+61]=2
+        put(0x61c,0x464);put(0x61e,channels);put(0x620,count);put(0x622+60*2,count)
+        for i in 0..<count {
+            let r=0x732+i*118,at=start+i*block
+            put(r,at,4);body[r+5]=UInt8(i*100);body[r+0x74]=UInt8(i*100)
+            put(r+6,frames,4);put(r+10,1);put(r+0x1c,0,4);put(r+0x20,256,4)
+            body[r+0x72]=20;put(at,16)
+            for frame in 0..<(block-2)/4 {
+                let sample=Int(sin(Double(frame)*2*Double.pi/128)*Double(i==0 ? 8000:2000))
+                put(at+2+frame*4,sample);put(at+4+frame*4,-sample/2)
+            }
+        }
+        var crc:UInt32=0xffffffff
+        for byte in body {crc ^= UInt32(byte);for _ in 0..<8 {crc=(crc&1 != 0) ? (crc>>1)^0xedb88320:crc>>1}}
+        crc ^= 0xffffffff
+        var header=[UInt8](repeating:0,count:44)
+        header.replaceSubrange(0..<4,with:Array("CBIN".utf8));header[4]=1
+        header.replaceSubrange(8..<12,with:Array("npno".utf8));header[20]=88;header[21]=2
+        for i in 0..<4 {header[24+i]=UInt8(truncatingIfNeeded:crc>>(i*8))}
+        return Data(header+body)
+    }
+}

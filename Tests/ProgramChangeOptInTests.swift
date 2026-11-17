@@ -27,14 +27,17 @@ import CoreMIDI
   store.setlist=legacy
   let rack=store.audio.externalRack!
   wait{rack.unit(channel:0) != nil}
-  let originalUnit=rack.unit(channel:0)!
+  // Identity checks must not prolong sampler ownership across later switches.
+  weak var originalUnit=rack.unit(channel:0)
+  assert(originalUnit != nil)
   store.choose(1)
   wait{rack.unit(channel:0) != nil && rack.unit(channel:0) !== originalUnit}
   store.captureSnapshot(0)
   store.setlist.patches[1].tempoLocked=false;store.liveTempo=132
   let id=store.patch.id,snapshot=store.activeSnapshot,tempo=store.patch.tempo,layers=store.patch.layers.map(\.id)
   let appliedLayers=store.patch.layers,performedTempo=store.performedTempo
-  let soundingUnit=rack.unit(channel:0)!
+  weak var soundingUnit=rack.unit(channel:0)
+  assert(soundingUnit != nil)
   for _ in 0..<10 {_ = try store.audio.offlineBlock()}
   store.audio.noteOn(key:60,pitch:60,instrument:0,layer:0,velocity:0.8)
   var soundEnergy=0.0
