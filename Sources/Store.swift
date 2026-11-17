@@ -2092,7 +2092,6 @@ final class PerformanceStore: ObservableObject {
                 let original=try library.read()
                 var entries=original
                 var outcomes:[LibraryBulkImport.Outcome]=[]
-                var digests=Set<String>()
                 for url in sources {
                     if libraryImportCancelRequested {break}
                     libraryImportProgress="Preparing "+LibraryBulkImport.displayName(url)
@@ -2100,10 +2099,12 @@ final class PerformanceStore: ObservableObject {
                     let access=url.startAccessingSecurityScopedResource()
                     do {
                         let digest=try AssetDigest.sha256(url)
-                        if !digests.insert(digest).inserted {
-                            outcomes.append(.skipped(name:LibraryBulkImport.displayName(url),reason:"Same content as another selected file"))
-                        } else if let name=LibraryBulkImport.duplicateName(digest:digest,in:entries) {
+                        // Check what was actually prepared, not what was attempted:
+                        // a failed file must not reserve its content for a later one.
+                        if let name=LibraryBulkImport.duplicateName(digest:digest,in:original) {
                             outcomes.append(.skipped(name:LibraryBulkImport.displayName(url),reason:"Already in My Sounds as "+name))
+                        } else if LibraryBulkImport.duplicateName(digest:digest,in:entries) != nil {
+                            outcomes.append(.skipped(name:LibraryBulkImport.displayName(url),reason:"Same content as another selected file"))
                         } else {
                             let (sound,notes,layer)=try prepareLibrarySound(url,sampleRoot:sampleRoot)
                             var entry=LibrarySound(id:UUID().uuidString,name:sound.name,collection:"My Sounds",sound:sound,layer:layer,conversionNotes:notes)

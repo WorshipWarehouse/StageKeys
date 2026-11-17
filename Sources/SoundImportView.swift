@@ -123,7 +123,7 @@ struct SoundImportView:View {
             }.overlay(alignment:.bottom) {
                 if store.libraryImportBusy {Button("Cancel Import Before Commit") {store.cancelLibraryImport()}.buttonStyle(StageButtonStyle()).padding().background(StageTheme.base)}
             }
-        }.fileImporter(isPresented:$choosing,allowedContentTypes:choice == .file ? [.audio,.data] : choice == .mainStage ? [.package,.folder,.data] : choice == .backup ? [.folder,.data]:[.folder],allowsMultipleSelection:true) {result in
+        }.fileImporter(isPresented:$choosing,allowedContentTypes:choice == .file ? [.audio,.data] : choice == .mainStage ? [.package,.folder,.data] : choice == .backup ? [.folder,.data]:[.folder],allowsMultipleSelection:choice == .file) {result in
             switch result {
             case .success(let urls):
                 guard let url=urls.first else {status="Choose at least one file or folder.";return}
