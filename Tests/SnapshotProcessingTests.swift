@@ -136,6 +136,37 @@ import AVFoundation
         rack.debugGraphFault = nil
         store.recall(auTarget)
         assert(store.patch.layers[3].pluginState == data && store.patch.layers[4].pluginState == data)
-        print("PASS snapshot processing: cross-layer rollback, held audio, saved bytes, retry, effect edits and malformed recall")
+        // #112: a snapshot owns performance state, not the sound editor's shaping
+        // values. Capturing and recalling one must leave the channel's envelope, Mod
+        // Filter, EQ and compressor exactly as the performer set them, while the
+        // captured pan still applies, and a save must persist those values unchanged.
+        let editorChannel = 0
+        func shape(_ settings: ChannelSettings) {
+            store.setlist.patches[store.selected].layers[editorChannel].channelSettings = settings
+        }
+        var captured = store.setlist.patches[store.selected].layers[editorChannel].channelSettings
+        captured.attack = 0.07; captured.release = 2.5
+        captured.filterMin = 300; captured.filterMax = 4_000; captured.resonance = 3.2
+        captured.eqEnabled = false; captured.compressorEnabled = true; captured.threshold = -12
+        shape(captured)
+        var shapedTarget = Snapshot(name: "Generated shaping ownership", gains: store.patch.layers.map(\.gain))
+        shapedTarget.seconds = 0
+        shapedTarget.sounds = store.patch.layers.map(SnapshotSoundState.init)
+        shapedTarget.sounds![editorChannel].pan = -0.45
+        // The performer edits the sound after the scene was captured.
+        var edited = captured
+        edited.attack = 0.4; edited.filterMax = 12_000; edited.threshold = -6
+        shape(edited)
+        store.recall(shapedTarget)
+        assert(store.setlist.patches[store.selected].layers[editorChannel].channelSettings == edited,
+               "Recalling a snapshot must not overwrite the sound editor's shaping values")
+        assert(abs(store.patch.layers[editorChannel].pan + 0.45) < 0.0001,
+               "The snapshot's own pan must still be recalled")
+        store.save()
+        let reloaded = try! JSONDecoder().decode(Setlist.self, from: Data(contentsOf: path))
+        let savedPatch = reloaded.patches.first { $0.id == store.patch.id }!
+        assert(savedPatch.layers[editorChannel].channelSettings == edited,
+               "Per-sound shaping values must survive a save and reload")
+        print("PASS snapshot processing: cross-layer rollback, held audio, saved bytes, retry, effect edits, malformed recall and shaping ownership")
     }
 }
