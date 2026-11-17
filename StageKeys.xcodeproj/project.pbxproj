@@ -22,6 +22,7 @@
 		09EE8366C951A4DC3E071A3D /* MIDIFXProcessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E2E4B0335A0CF004B70F310 /* MIDIFXProcessor.swift */; };
 		ACD160000000000000000001 /* MIDIAudioTimeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACD160000000000000000003 /* MIDIAudioTimeline.swift */; };
 		ACD161000000000000000001 /* MIDIDeliveryPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACD161000000000000000003 /* MIDIDeliveryPolicy.swift */; };
+		BB12010000000000000000A1 /* NpnoPreflight.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB12010000000000000000A3 /* NpnoPreflight.swift */; };
 		0A11C9F2C53F78077E3DDDA7 /* AudioController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5AC6701C177B156C5256CD0 /* AudioController.swift */; };
 		0AE3EF986C8F8C67E7E699E7 /* MIDIPrograms.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37DC9989A265AC3477867CFC /* MIDIPrograms.swift */; };
 		0F0691181F56802DC1E1127E /* SetlistLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA27432EBE775B734A1C07E5 /* SetlistLibrary.swift */; };
@@ -43,6 +44,7 @@
 		3BE6A59ECF59A9B12069F2EE /* MIDIFXProcessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E2E4B0335A0CF004B70F310 /* MIDIFXProcessor.swift */; };
 		ACD160000000000000000002 /* MIDIAudioTimeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACD160000000000000000003 /* MIDIAudioTimeline.swift */; };
 		ACD161000000000000000002 /* MIDIDeliveryPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACD161000000000000000003 /* MIDIDeliveryPolicy.swift */; };
+		BB12010000000000000000A2 /* NpnoPreflight.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB12010000000000000000A3 /* NpnoPreflight.swift */; };
 		3DD320EAD331E89DD06D4C89 /* AudioController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5AC6701C177B156C5256CD0 /* AudioController.swift */; };
 		43BEEAD5F32858CBE1D15390 /* IBMPlexSans-Bold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = A1A45EC813D367F33C720602 /* IBMPlexSans-Bold.ttf */; };
 		48648164B366ABBB58AE0E9F /* SamplerInterchange.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3A3010041D10648ABE486A3 /* SamplerInterchange.swift */; };
@@ -174,6 +176,7 @@
 		9E2E4B0335A0CF004B70F310 /* MIDIFXProcessor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MIDIFXProcessor.swift; sourceTree = "<group>"; };
 		ACD160000000000000000003 /* MIDIAudioTimeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MIDIAudioTimeline.swift; sourceTree = "<group>"; };
 		ACD161000000000000000003 /* MIDIDeliveryPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MIDIDeliveryPolicy.swift; sourceTree = "<group>"; };
+		BB12010000000000000000A3 /* NpnoPreflight.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NpnoPreflight.swift; sourceTree = "<group>"; };
 		A1A45EC813D367F33C720602 /* IBMPlexSans-Bold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "IBMPlexSans-Bold.ttf"; sourceTree = "<group>"; };
 		A5AC6701C177B156C5256CD0 /* AudioController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioController.swift; sourceTree = "<group>"; };
 		AF7EC5A09FDE6710F6A75BDB /* EXSNative.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EXSNative.swift; sourceTree = "<group>"; };
@@ -322,6 +325,7 @@
 				9E2E4B0335A0CF004B70F310 /* MIDIFXProcessor.swift */,
 				ACD160000000000000000003 /* MIDIAudioTimeline.swift */,
 				ACD161000000000000000003 /* MIDIDeliveryPolicy.swift */,
+				BB12010000000000000000A3 /* NpnoPreflight.swift */,
 				6FF0C68207D55A4733835A37 /* MIDIInput.swift */,
 				37DC9989A265AC3477867CFC /* MIDIPrograms.swift */,
 				DC0938544D22DFEF7A932295 /* Models.swift */,
@@ -487,6 +491,7 @@
 				3BE6A59ECF59A9B12069F2EE /* MIDIFXProcessor.swift in Sources */,
 				ACD160000000000000000002 /* MIDIAudioTimeline.swift in Sources */,
 				ACD161000000000000000002 /* MIDIDeliveryPolicy.swift in Sources */,
+				BB12010000000000000000A2 /* NpnoPreflight.swift in Sources */,
 				085A3A95E7337305564BF6F4 /* MIDIInput.swift in Sources */,
 				BD5C35B6C4653F9D14F7828C /* MIDIPrograms.swift in Sources */,
 				AE7C2C135DCBDDF5E103EA55 /* MainStagePatch.swift in Sources */,
@@ -544,6 +549,7 @@
 				09EE8366C951A4DC3E071A3D /* MIDIFXProcessor.swift in Sources */,
 				ACD160000000000000000001 /* MIDIAudioTimeline.swift in Sources */,
 				ACD161000000000000000001 /* MIDIDeliveryPolicy.swift in Sources */,
+				BB12010000000000000000A1 /* NpnoPreflight.swift in Sources */,
 				B5BB778F702D378AEDE8E666 /* MIDIInput.swift in Sources */,
 				0AE3EF986C8F8C67E7E699E7 /* MIDIPrograms.swift in Sources */,
 				8B02C35130C5B97BE58EFC51 /* MainStagePatch.swift in Sources */,
