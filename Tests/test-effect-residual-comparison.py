@@ -42,5 +42,17 @@ with tempfile.TemporaryDirectory() as folder:
     assert changed_fit["dryCancellationDB"] < 60
     assert clean_fit["calibrationErrorRMS"] < changed_fit["calibrationErrorRMS"]
     assert abs(clean_fit["calibrationMilliseconds"] - 8) < 0.01
+    # A processed capture longer than its dry file keeps that tail: the residual
+    # must not be truncated to the dry length.
+    tailed = clean + [0.02 * math.sin(index * 0.05) for index in range(12000)]
+    tailed_path = folder / "tailed.wav"
+    tailed_samples = (tailed + [0.0] * (len(dry) - len(tailed))) if len(tailed) < len(dry) else tailed
+    with wave.open(str(tailed_path), "wb") as output:
+        output.setnchannels(1)
+        output.setsampwidth(2)
+        output.setframerate(48000)
+        output.writeframes(b"".join(struct.pack("<h", round(max(-1, min(1, value)) * 32767)) for value in tailed_samples))
+    _, tailed_fit = residuals.residual(comparison, comparison.read_pcm(tailed_path), comparison.read_pcm(paths[0]))
+    assert tailed_fit["subtractedFrames"] > len(dry), "the processed tail must not be truncated to the dry length"
 
 print("PASS: wet-residual calibration distinguishes deterministic direct-path cancellation from changed source audio")

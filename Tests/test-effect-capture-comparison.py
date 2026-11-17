@@ -64,3 +64,21 @@ for i in range(1,rate//10):
     settling[i]=math.exp(-i/2000)
 assert comparison.decay_seconds(settling,rate) is not None,"a settling capture must report a decay"
 print("PASS: the centroid covers the full band and decay waits for a settled tail")
+
+# A swapped stereo pair downmixes to the same mono signal; the per-channel metrics
+# are what expose it, and the mono summary alone cannot.
+rate=48000
+left=[0.3*math.sin(i*0.01) for i in range(2048)]
+right=[0.1*math.sin(i*0.02+0.3) for i in range(2048)]
+swapped=comparison.describe(comparison.Audio(rate,[left,right]),comparison.Audio(rate,[right,left]))
+assert swapped["correlation"]>0.99,"the mono downmix cannot see a channel swap"
+assert swapped["channelMetrics"][0]["correlation"]<0.5 and swapped["channelMetrics"][1]["correlation"]<0.5,swapped["channelMetrics"]
+# A candidate that outlasts the reference keeps its tail for decay and reports
+# both capture lengths.
+short=[0.0]*96+[0.3*math.exp(-i/200) for i in range(4096)]
+longer=short+[0.2]*8000
+report=comparison.describe(comparison.Audio(rate,[short]),comparison.Audio(rate,[longer]))
+assert report["captureFrames"]["candidate"]>report["captureFrames"]["reference"]
+assert report["referenceDecay60Seconds"] is not None
+assert report["candidateDecay60Seconds"] is None,"a candidate that never settles must report no decay"
+print("PASS: per-channel metrics expose a channel swap and a longer candidate keeps its tail")

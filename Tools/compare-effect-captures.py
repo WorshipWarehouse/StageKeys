@@ -160,11 +160,16 @@ def describe(reference: Audio, candidate: Audio, align_onsets: bool = False) -> 
     gain = sum(a * b for a, b in zip(ref, cand)) / ref_energy if ref_energy else 1.0
     aligned = [gain * value for value in ref]
     error = [a - b for a, b in zip(aligned, cand)]
+    # Tail metrics use each capture's own aligned samples: truncating to the
+    # shorter capture would hide an echo only the longer one carries.
+    ref_tail = mono(reference)
+    cand_tail = mono(candidate)
     ref_onset, cand_onset = onset(ref), onset(cand)
     result: dict[str, object] = {
         "sampleRate": reference.rate,
         "channels": len(reference.channels),
         "framesCompared": length,
+        "captureFrames": {"reference": len(reference.channels[0]), "candidate": len(candidate.channels[0])},
         "captureStartOffsetMilliseconds": capture_offset,
         "referencePeak": max((abs(v) for v in ref), default=0.0),
         "candidatePeak": max((abs(v) for v in cand), default=0.0),
@@ -178,11 +183,30 @@ def describe(reference: Audio, candidate: Audio, align_onsets: bool = False) -> 
         "referenceOnsetFrame": ref_onset,
         "candidateOnsetFrame": cand_onset,
         "onsetDeltaMilliseconds": None if ref_onset is None or cand_onset is None else (cand_onset - ref_onset) * 1000 / reference.rate,
-        "referenceDecay60Seconds": decay_seconds(ref, reference.rate),
-        "candidateDecay60Seconds": decay_seconds(cand, candidate.rate),
-        "referenceCentroidHz": spectral_centroid(ref, reference.rate),
-        "candidateCentroidHz": spectral_centroid(cand, candidate.rate),
+        "referenceDecay60Seconds": decay_seconds(ref_tail, reference.rate),
+        "candidateDecay60Seconds": decay_seconds(cand_tail, candidate.rate),
+        "referenceCentroidHz": spectral_centroid(ref_tail, reference.rate),
+        "candidateCentroidHz": spectral_centroid(cand_tail, candidate.rate),
     }
+    # A swapped stereo pair downmixes to the same mono signal, so each channel is
+    # measured on its own; the mono metrics stay as summaries.
+    channel_metrics = []
+    for index, (reference_channel, candidate_channel) in enumerate(zip(reference.channels, candidate.channels)):
+        pair_reference = reference_channel[:length]
+        pair_candidate = candidate_channel[:length]
+        pair_energy = sum(v * v for v in pair_reference)
+        pair_gain = sum(a * b for a, b in zip(pair_reference, pair_candidate)) / pair_energy if pair_energy else 1.0
+        pair_error = [pair_gain * a - b for a, b in zip(pair_reference, pair_candidate)]
+        channel_metrics.append({
+            "channel": index,
+            "referenceRMS": rms(pair_reference),
+            "candidateRMS": rms(pair_candidate),
+            "correlation": correlation(pair_reference, pair_candidate),
+            "leastSquaresReferenceGain": pair_gain,
+            "gainAlignedErrorRMS": rms(pair_error),
+            "gainAlignedErrorDBFS": 20 * math.log10(max(rms(pair_error), 1e-12)),
+        })
+    result["channelMetrics"] = channel_metrics
     if len(reference.channels) == 2:
         result["referenceStereoCorrelation"] = correlation(reference.channels[0][:length], reference.channels[1][:length])
         result["candidateStereoCorrelation"] = correlation(candidate.channels[0][:length], candidate.channels[1][:length])
