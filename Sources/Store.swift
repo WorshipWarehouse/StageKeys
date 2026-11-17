@@ -2117,10 +2117,13 @@ final class PerformanceStore: ObservableObject {
             updated[index].sound=restored
             updated[index].managedFileSHA256=repairedDigest
             if updated[index].layer?.external != nil {updated[index].layer?.external=restored}
-            do {try SoundLibrary(url:libraryDirectory.appendingPathComponent("sound-library.json")).write(updated)}
+            do {try SoundLibrary(url:libraryDirectory.appendingPathComponent("sound-library.json")).commitImport(updated,replacing:librarySounds)}
             catch {
                 discardManaged(repairedPreset)
-                message="Could not save the repaired sound: \(error.localizedDescription)";return
+                // Another process changed the catalog since this repair read it.
+                // Publish nothing rather than replacing that edit with this snapshot.
+                refreshLibraryContent()
+                message="Could not save the repaired sound because the library changed while it was being repaired: \(error.localizedDescription)";return
             }
             librarySounds=updated;refreshLibraryContent()
             message=libraryContentIssues[id]==nil ? "Reconnected \(restored.name). The sound is ready to add again.":"Copied \(restored.name), but this sound still reports missing content."
