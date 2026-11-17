@@ -81,6 +81,18 @@ import Foundation
         let legacySnapshot = Data(#"{"effects":[{"amount":0.5,"enabled":true,"kind":0},{"amount":0.5,"enabled":true,"kind":0},{"amount":0.5,"enabled":true,"kind":0}],"midiEffectEnabled":true,"pan":0}"#.utf8)
         let restored = try JSONDecoder().decode(SnapshotSoundState.self, from: legacySnapshot)
         assert(restored.pluginState == nil && restored.effects.count == 3)
+        // A saved plug-in state belongs to the instrument it was captured from, so a
+        // layer that now holds a different Audio Unit must not receive it.
+        var sourceLayer = Layer(name: "Source", instrument: -1, gain: 0.8)
+        sourceLayer.external = ExternalSound(kind: .audioUnit, name: "Source AU")
+        var targetLayer = sourceLayer
+        targetLayer.external = ExternalSound(kind: .audioUnit, name: "Other AU")
+        assert(SnapshotSoundState(sourceLayer).belongs(to: sourceLayer.external))
+        assert(!SnapshotSoundState(sourceLayer).belongs(to: targetLayer.external),
+               "A snapshot state must not travel to a different Audio Unit")
+        var legacyState = SnapshotSoundState(sourceLayer); legacyState.external = nil
+        assert(legacyState.belongs(to: targetLayer.external),
+               "A state saved before identity existed keeps the legacy restore path")
         print("PASS: Audio Unit legacy decode, identity stability, metadata round-trip, ordering, availability, vendor search and snapshot state compatibility")
     }
 }

@@ -1258,6 +1258,8 @@ final class PerformanceStore: ObservableObject {
         if let controls=setlist.controlAssignments {
             for (cc,target) in controls { if case .soundLevel(let old)=target { if old == index { setlist.controlAssignments?[cc] = .soundLevel(destination) } else if old == destination { setlist.controlAssignments?[cc] = .soundLevel(index) } } }
         }
+        // The pending undo holds gains and sound states in the old layer order.
+        snapshotUndo = nil
         applyPatch(); save()
     }
     func reorderLayer(_ source: Int, _ destination: Int) {
@@ -1274,6 +1276,8 @@ final class PerformanceStore: ObservableObject {
         if let controls=setlist.controlAssignments {
             for (cc,target) in controls { if case .soundLevel(let previous)=target, let position=order.firstIndex(of:previous) { setlist.controlAssignments?[cc] = .soundLevel(position) } }
         }
+        // The pending undo holds gains and sound states in the old layer order.
+        snapshotUndo = nil
         applyPatch(); save()
     }
     func setGain(_ index: Int, _ value: Float) {
@@ -1382,7 +1386,8 @@ final class PerformanceStore: ObservableObject {
                 setlist.patches[selected].layers[i].pan = state.pan
                 setlist.patches[selected].layers[i].midiProgram = state.midiProgram
                 setlist.patches[selected].layers[i].midiEffectEnabled = state.midiEffectEnabled
-                if let data = state.pluginState, patch.layers[i].external?.kind == .audioUnit {
+                if let data = state.pluginState, patch.layers[i].external?.kind == .audioUnit,
+                   state.belongs(to: patch.layers[i].external) {
                     setlist.patches[selected].layers[i].pluginState = data
                 }
                 configureMIDI(i, patch.layers[i])
@@ -1551,6 +1556,14 @@ final class PerformanceStore: ObservableObject {
         }
         midiEffectSaveWork = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: work)
+    }
+    /// Move a snapshot slot. The pending undo names a slot by index, so a move
+    /// invalidates it instead of letting it overwrite whatever now sits there.
+    func moveSnapshot(_ index: Int, _ destination: Int) {
+        guard patch.snapshots.indices.contains(index), patch.snapshots.indices.contains(destination), index != destination else { return }
+        snapshotUndo = nil
+        setlist.patches[selected].snapshots.swapAt(index, destination)
+        save()
     }
     func clearSnapshot(_ index: Int) {
         guard patch.snapshots.indices.contains(index) else { return }

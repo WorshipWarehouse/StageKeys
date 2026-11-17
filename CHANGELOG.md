@@ -1,6 +1,6 @@
 ## Unreleased
 
-- Keep the snapshot a capture or clear replaced available for one-step Undo, bound to the patch that recorded it, so re-capturing a named slot or clearing it no longer discards its levels, notes and transition without a way back (#16).
+- Keep the snapshot a capture or clear replaced available for one-step Undo, bound to the patch that recorded it, so re-capturing a named slot or clearing it no longer discards its levels, notes and transition without a way back (#16). Moving a snapshot slot or a layer drops that pending Undo instead of restoring into the slot or layer order that moved, and a saved Audio Unit state is only restored to the instrument it was captured from.
 
 - Add experimental, bounded Nord `.npno` attack-only conversion into the native sampler with feature/size preview, exact integer decoding, key/velocity/loop/tuning maps, background preparation, cancellation rollback, duplicate source identities and personal-pack portability. Resonance/release banks and Nord-specific dynamics are disclosed as unsupported; physical Mac/iPad live qualification remains open (#212–#216). Retain the adapted decoder’s BSD notice and exclude Nord assets from distribution.
 

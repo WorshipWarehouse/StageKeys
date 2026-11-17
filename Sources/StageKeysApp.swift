@@ -352,7 +352,7 @@ struct PerformanceView: View {
                         .contextMenu {
                             if populated {
                                 Button("Customize…") { sheet = .snapshot(i) }
-                                if i > 0 { Button("Move Left") { store.setlist.patches[store.selected].snapshots.swapAt(i, i-1); store.save() } }
+                                if i > 0 { Button("Move Left") { store.moveSnapshot(i, i - 1) } }
                                 Button("Clear", role: .destructive) { store.clearSnapshot(i) }
                             }
                             Button("Capture Current Mix") { store.captureSnapshot(i) }

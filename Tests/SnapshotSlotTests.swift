@@ -56,6 +56,22 @@ import AVFoundation
         store.undoSnapshotChange()
         assert(store.patch.snapshots.allSatisfy(\.isEmptySlot), "A stale undo must not restore into another patch")
         store.clearSnapshot(99)
+        // A slot move must drop the pending undo rather than let it overwrite the
+        // snapshot that moved into that index.
+        store.captureSnapshot(0); store.captureSnapshot(1)
+        let slotZero = store.patch.snapshots[0].id, slotOne = store.patch.snapshots[1].id
+        store.captureSnapshot(0)
+        assert(store.snapshotUndo != nil)
+        store.moveSnapshot(1, 0)
+        assert(store.patch.snapshots[0].id == slotOne && store.patch.snapshots[1].id == slotZero)
+        assert(store.snapshotUndo == nil, "Moving a snapshot slot must drop the pending undo")
+        store.undoSnapshotChange()
+        assert(store.patch.snapshots[0].id == slotOne, "A dropped undo must not overwrite the moved slot")
+        // A layer move reorders the gains the undo carries, so it drops the undo too.
+        store.captureSnapshot(0)
+        assert(store.snapshotUndo != nil)
+        store.moveLayer(0, 1)
+        assert(store.snapshotUndo == nil, "Moving a layer must drop the pending snapshot undo")
         store.panic()
         print("PASS: sparse capture, stable cleared slots, empty recall guard, index bounds and legacy/session round trips")
         print("PASS: a capture over a populated slot and a clear each keep one-step undo, scoped to their patch")
