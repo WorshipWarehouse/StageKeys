@@ -2037,15 +2037,27 @@ final class PerformanceStore: ObservableObject {
             }
             var updated=librarySounds
             guard let index=updated.firstIndex(where:{$0.id==id}) else{discardManaged(repairedPreset);return}
-            updated[index].sound=repaired
-            if updated[index].layer?.external != nil {updated[index].layer?.external=repaired}
+            // The repaired preset has new bytes, so the stored managed-file digest
+            // must describe the published file. A preset rebuilt from a retained
+            // original is named after its content, so the entry keeps the name the
+            // user already sees instead of exposing that digest.
+            guard let repairedDigest=try? AssetDigest.sha256(repairedPreset) else {
+                discardManaged(repairedPreset)
+                message="Could not repair \(name): the repaired preset could not be read."
+                return
+            }
+            var restored=repaired
+            restored.name=sound.name
+            updated[index].sound=restored
+            updated[index].managedFileSHA256=repairedDigest
+            if updated[index].layer?.external != nil {updated[index].layer?.external=restored}
             do {try SoundLibrary(url:libraryDirectory.appendingPathComponent("sound-library.json")).write(updated)}
             catch {
                 discardManaged(repairedPreset)
                 message="Could not save the repaired sound: \(error.localizedDescription)";return
             }
             librarySounds=updated;refreshLibraryContent()
-            message=libraryContentIssues[id]==nil ? "Reconnected \(repaired.name). The sound is ready to add again.":"Copied \(repaired.name), but this sound still reports missing content."
+            message=libraryContentIssues[id]==nil ? "Reconnected \(restored.name). The sound is ready to add again.":"Copied \(restored.name), but this sound still reports missing content."
         } catch {message="Could not repair \(name): \(error.localizedDescription)"}
     }
     @discardableResult
