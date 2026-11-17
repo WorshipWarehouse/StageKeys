@@ -110,7 +110,7 @@ else:
 
 for fragment in ['SetlistSchema.supported', '.unsupportedVersion', 'sessionSavedByNewerVersion',
                  'recoverPreviousSession', 'SetlistSchema.current + 1', 'incompatibleNewer',
-                 'changedShape']:
+                 'changedShape', 'SessionDocument.decode']:
     if fragment not in tests:
         fail(f'Tests/SessionSchemaVersionTests.swift no longer exercises {fragment!r}')
 

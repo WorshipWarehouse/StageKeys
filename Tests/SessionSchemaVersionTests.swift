@@ -31,7 +31,7 @@ import Darwin
 
     private static func refusal(_ data: Data) -> SetlistError? {
         do {
-            _ = try JSONDecoder().decode(Setlist.self, from: data).upgraded()
+            _ = try SessionDocument.decode(data).upgraded()
             return nil
         } catch let error as SetlistError {
             return error
@@ -51,7 +51,7 @@ import Darwin
 
         // Every supported schema decodes, validates and migrates to the current one.
         for version in SetlistSchema.supported {
-            let decoded = try JSONDecoder().decode(Setlist.self, from: try fixture(version: version))
+            let decoded = try SessionDocument.decode(try fixture(version: version))
             let migrated = try decoded.upgraded()
             assert(migrated.version == SetlistSchema.current,
                    "schema \(version) did not migrate to \(SetlistSchema.current)")
@@ -60,7 +60,7 @@ import Darwin
         }
         // A legacy document with fewer slots is padded, not rejected or truncated.
         for version in [1, 2, 3] {
-            let migrated = try JSONDecoder().decode(Setlist.self, from: try legacyFixture(version: version)).upgraded()
+            let migrated = try SessionDocument.decode(try legacyFixture(version: version)).upgraded()
             assert(migrated.version == SetlistSchema.current)
             assert(migrated.patches[0].layers.count == 15 && migrated.patches[0].snapshots[0].gains.count == 15,
                    "schema \(version) did not pad layers and snapshot gains to fifteen slots")
@@ -158,7 +158,7 @@ import Darwin
         assert(damagedStore.sessionRecoveryRequired && !damagedStore.sessionSavedByNewerVersion,
                "Damage must not be classified as a newer schema")
         damagedStore.recoverPreviousSession()
-        let recovered = try JSONDecoder().decode(Setlist.self, from: Data(contentsOf: damagedPrimary))
+        let recovered = try SessionDocument.decode(Data(contentsOf: damagedPrimary))
         assert(recovered.version == SetlistSchema.current,
                "Explicit recovery must still restore the previous copy over a damaged session")
         assert(!damagedStore.sessionRecoveryRequired)
