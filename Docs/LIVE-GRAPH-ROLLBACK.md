@@ -11,8 +11,11 @@ Tail truncation is committed into the rollback snapshot (see
 cannot be restored, so the snapshot is pruned as one unit - nodes, routes that
 referenced them, captured voices, tail records and branch records - and a
 rollback after truncation restores the remaining graph without dangling routes.
-That is a deliberate limit of the documented hard two-tail bound, not a general
-rollback of released audio.
+Current pre-transaction live voices are protected from truncation, so rolling
+back a multi-voice edit restores them all. This can temporarily exceed the
+two-tail target until the next structural edit trims committed tails. Trimming
+previously committed tails remains permanent across rollback; it is not a
+general rollback of released audio.
 
 Note intent records pitch, velocity, source and key release under sustain. Sampler reloads replay owned notes, including note-on/note-off under the retained pedal. Pedal release, source release, Panic and replacement retirements clear the corresponding intent. Successful replacement does not inherit the retired sound's notes. Retriggering can be audible: no phase, sample-position, envelope, scheduler-time or uninterrupted release-tail continuity is claimed. DSP histories are not serialized by the parameter snapshot.
 

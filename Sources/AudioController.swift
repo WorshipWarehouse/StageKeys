@@ -469,7 +469,10 @@ final class AudioController {
         try session.setPreferredIOBufferDuration(0.0053)
         try session.setActive(true)
         #endif
-        if !engine.isRunning { engine.prepare(); try engine.start() }
+        if !engine.isRunning {
+            try externalRackStorage?.validateSamplerDisposals()
+            engine.prepare(); try engine.start()
+        }
         #if DEBUG
         if let failure = debugFailureAfterEngineStart?() { throw failure }
         #endif
@@ -670,6 +673,7 @@ final class AudioController {
                 return false
             }
             let previousUnit = rack.unit(channel: index)
+            let hadPreviousUnit = previousUnit != nil
             let previousGeneration = rack.graphGeneration
             unavailableConfigurations.insert(index)
             var rejected = false
@@ -682,7 +686,7 @@ final class AudioController {
                 guard shouldInstall?() ?? true else { throw ExternalInstrumentError.superseded }
                 if self.patchLoading { rack.volume(channel: index, gain: 0, pan: layer.pan) }
                 if let state = layer.pluginState { try rack.restoreStateData(state, channel: index) }
-            }) { [weak self] result in
+            }) { [weak self, weak previousUnit] result in
                 guard let self, self.configurationRequests[index] == request else { completion?(false); return }
                 switch result {
                 case .success:
@@ -704,7 +708,7 @@ final class AudioController {
                         completion?(false)
                         return
                     }
-                    let unchanged = rack.unit(channel: index) === previousUnit && (rack.graphGeneration == previousGeneration || rack.lastGraphFailure?.rollbackSucceeded == true)
+                    let unchanged = (!hadPreviousUnit || previousUnit != nil) && rack.unit(channel: index) === previousUnit && (rack.graphGeneration == previousGeneration || rack.lastGraphFailure?.rollbackSucceeded == true)
                     if unchanged && self.externalSounds[index] != sound {
                         self.unavailableConfigurations.remove(index)
                     } else {
@@ -897,6 +901,7 @@ final class AudioController {
         let format = AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 2)!
         try engine.enableManualRenderingMode(.offline, format: format, maximumFrameCount: 512)
         try externalRack?.prepareOfflineSamples()
+        try externalRackStorage?.validateSamplerDisposals()
         try engine.start()
     }
     func offlineBlock() throws -> AVAudioPCMBuffer {
