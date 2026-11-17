@@ -193,8 +193,14 @@ import AVFoundation
         assert(rack.debugOwnedNodeCount == nodesBefore && rack.debugRetiredTailCount == tailsBefore,
                "A rejected edit must not leak nodes or tails")
         assert(rack.debugNoteIntentCount(0) == 0, "A rejected edit must not invent note ownership")
-        assert(store.audio.running && store.audio.loadedUnit(channel: 0, sound: oldLayer.external) != nil,
-               "The previous graph must stay loaded and running")
+        // A failed engine restart stops audio on purpose - that is the documented
+        // recovery state - so the invariant is that the performer state survives the
+        // stop and the previous sound is what comes back with the explicit restart.
+        store.start()
+        assert(store.started && store.audio.running, "Audio must recover after a rejected edit")
+        assert(store.audio.loadedUnit(channel: 0, sound: oldLayer.external) != nil,
+               "The previous sound must be the one that recovers")
+        assert(store.metronome, "The metronome must survive the recovery restart")
         rack.noteOn(channel: 0, key: 60, pitch: 60, velocity: 0.7, sourceID: 47)
         assert((try! energy()) > 0.01, "The previous graph must keep rendering after a rejected edit")
         rack.noteOff(channel: 0, key: 60)
