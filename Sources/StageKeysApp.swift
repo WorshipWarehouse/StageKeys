@@ -362,6 +362,11 @@ struct PerformanceView: View {
                     ForEach(0..<max(5, store.patch.snapshots.count), id: \.self) { i in Button("Capture into Slot \(i + 1)") { store.captureSnapshot(i) } }
                     Button("Next Empty Slot") { store.saveSnapshot() }
                 } label: { Image(systemName: "square.and.arrow.down").padding(10) }.accessibilityLabel("Capture Snapshot")
+                if let undo = store.snapshotUndo {
+                    Button("Undo \(undo.action)") { store.undoSnapshotChange() }.buttonStyle(StageButtonStyle())
+                        .accessibilityLabel("Undo \(undo.action)")
+                        .help("Restore the snapshot that the last capture or clear replaced.")
+                }
             }
         }.frame(height: 54)
     }

@@ -194,6 +194,11 @@ final class PerformanceStore: ObservableObject {
     @Published var reverb: Float = 22 { didSet { audio.space(reverb) } }
     @Published var transition: Float = 1.5
     @Published var activeSnapshot: UUID?
+    /// One-step undo for the last destructive snapshot edit. It is bound to the
+    /// patch that recorded it, so a later patch change can never restore another
+    /// patch's snapshot into the current one.
+    struct SnapshotUndo { var patchID: UUID; var action: String; var index: Int; var snapshot: Snapshot }
+    @Published var snapshotUndo: SnapshotUndo?
     @Published var learning: Int?
     @Published var learningTarget: MIDIControlTarget?
     @Published var midiActivity = false
@@ -1147,6 +1152,7 @@ final class PerformanceStore: ObservableObject {
             catch { message = error.localizedDescription; return }
         }
         cancelAudition(); cancelTransition(); panic(preserveTonic:true,preserveEffectTails:!setlist.patches[index].silencePrevious); capturePluginStates(); selected = index; activeSnapshot = nil
+        snapshotUndo = nil
         if patch.silencePrevious { panic(preserveTonic:true) }
         if patch.visualMode != 0 { notesMode = patch.visualMode == 2 }
         // A locked patch recalls its own tempo without overwriting the shared
@@ -1550,10 +1556,12 @@ final class PerformanceStore: ObservableObject {
         guard patch.snapshots.indices.contains(index) else { return }
         cancelTransition()
         let oldID = patch.snapshots[index].id
+        let replaced = patch.snapshots[index]
         var empty = Snapshot(name: "Snapshot \(index + 1)", gains: patch.layers.map { _ in 0 })
         empty.emptySlot = true
         setlist.patches[selected].snapshots[index] = empty
         if activeSnapshot == oldID { activeSnapshot = nil }
+        snapshotUndo = replaced.isEmptySlot ? nil:SnapshotUndo(patchID: patch.id, action: "Clear Snapshot \(index + 1)", index: index, snapshot: replaced)
         save()
     }
     func captureSnapshot(_ index: Int) {
@@ -1567,6 +1575,7 @@ final class PerformanceStore: ObservableObject {
             empty.emptySlot = true
             setlist.patches[selected].snapshots.append(empty)
         }
+        let replaced = patch.snapshots[index]
         setlist.patches[selected].snapshots[index].emptySlot = nil
         setlist.patches[selected].snapshots[index].gains = gains
         activeSnapshot = patch.snapshots[index].id
@@ -1580,6 +1589,19 @@ final class PerformanceStore: ObservableObject {
             setlist.patches[selected].snapshots[snapshotIndex].tonicShimmer = tonicShimmer
             setlist.patches[selected].snapshots[snapshotIndex].tonicTimbre = tonicTimbre
         }
+        snapshotUndo = replaced.isEmptySlot ? nil:SnapshotUndo(patchID: patch.id, action: "Capture over Snapshot \(index + 1)", index: index, snapshot: replaced)
+        save()
+    }
+    /// Restore the slot the last capture or clear replaced. The undo is consumed
+    /// even when it belongs to another patch, so a stale entry can never be
+    /// applied to the document that replaced it.
+    func undoSnapshotChange() {
+        guard let undo=snapshotUndo else{return}
+        snapshotUndo=nil
+        guard undo.patchID==patch.id,patch.snapshots.indices.contains(undo.index) else{return}
+        cancelTransition()
+        setlist.patches[selected].snapshots[undo.index]=undo.snapshot
+        activeSnapshot=nil
         save()
     }
     func updateTempo(_ value: Double) {
