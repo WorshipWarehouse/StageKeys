@@ -33,7 +33,7 @@ struct SoundImportView:View {
                 Text("IMPORT FROM").font(StageTheme.font(11,weight:.bold)).tracking(1.2).foregroundStyle(.secondary)
                 LazyVGrid(columns:[GridItem(.flexible(),spacing:12),GridItem(.flexible(),spacing:12)],spacing:12) {
                     ImportSourceCard(icon:"pianokeys",title:"MainStage",detail:"Patch or channel strip · choose the effects that fill StageKeys’ visible slots",accent:StageTheme.selected){choice = .mainStage;choosing=true}
-                    ImportSourceCard(icon:"waveform.badge.plus",title:"Instrument File",detail:"StageKeys Sampler, EXS, AUPRESET, experimental Nord NPNO, audio file or supported sound bank",accent:StageTheme.colors[1]){choice = .file;choosing=true}
+                    ImportSourceCard(icon:"waveform.badge.plus",title:"Instrument File",detail:"StageKeys Sampler, EXS, AUPRESET, experimental Nord NPNO, audio file or supported sound bank · select several audio files at once",accent:StageTheme.colors[1]){choice = .file;choosing=true}
                     ImportSourceCard(icon:"folder.badge.plus",title:"Sampler Folder",detail:"Scan a folder for EXS and AUPRESET instruments with their original samples",accent:StageTheme.colors[2]){choice = .library;choosing=true}
                     ImportSourceCard(icon:"shippingbox.fill",title:"Sound Pack",detail:"Install a personal StageKeys pack or a separately downloaded sound library",accent:StageTheme.colors[3]){choice = .backup;choosing=true}
                 }
@@ -123,10 +123,16 @@ struct SoundImportView:View {
             }.overlay(alignment:.bottom) {
                 if store.libraryImportBusy {Button("Cancel Import Before Commit") {store.cancelLibraryImport()}.buttonStyle(StageButtonStyle()).padding().background(StageTheme.base)}
             }
-        }.fileImporter(isPresented:$choosing,allowedContentTypes:choice == .file ? [.audio,.data] : choice == .mainStage ? [.package,.folder,.data] : choice == .backup ? [.folder,.data]:[.folder]) {result in
+        }.fileImporter(isPresented:$choosing,allowedContentTypes:choice == .file ? [.audio,.data] : choice == .mainStage ? [.package,.folder,.data] : choice == .backup ? [.folder,.data]:[.folder],allowsMultipleSelection:choice == .file) {result in
             switch result {
-            case .success(let url):
+            case .success(let urls):
+                guard let url=urls.first else {status="Choose at least one file or folder.";return}
                 switch choice {
+                case .file where urls.count > 1:
+                    // One transaction, so a failure or cancellation leaves the catalog unchanged.
+                    // Sampler instruments need their own sample folder, so those stay one at a time.
+                    if urls.allSatisfy({!LibraryBulkImport.needsSampleFolder($0)}) {store.importLibrarySounds(urls);status=nil}
+                    else {status="Import Nord pianos, MainStage patches, sound packs, EXS and AUPRESET one at a time. Select audio or sound-bank files together."}
                 case .file:
                     if url.pathExtension.lowercased()=="stagekeyspack" {store.importLibraryBackup(url);status=nil}
                     else if url.pathExtension.lowercased()=="npno" {store.inspectNordSound(url);status=nil}

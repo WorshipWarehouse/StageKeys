@@ -20,10 +20,11 @@ struct SettingsEditor: View {
                 }.padding(12).frame(width: 210).background(StageTheme.base)
 
                 Form {
-                    if store.ratingsRecoveryRequired || store.presetsRecoveryRequired {
+                    if store.ratingsRecoveryRequired || store.favoritesRecoveryRequired || store.presetsRecoveryRequired {
                         Section("Personal Metadata Recovery") {
-                            Text("Some saved ratings or personal effect presets could not be loaded. Their writes are blocked to preserve the original files.").foregroundStyle(.orange)
+                            Text("Some saved ratings, favorites or personal effect presets could not be loaded. Their writes are blocked to preserve the original files.").foregroundStyle(.orange)
                             if store.ratingsRecoveryRequired {Button("Recover Previous Ratings") {store.recoverPreviousRatings()}}
+                            if store.favoritesRecoveryRequired {Button("Recover Previous Favorites") {store.recoverPreviousFavorites()}}
                             if store.presetsRecoveryRequired {Button("Recover Previous Effect Presets") {store.recoverPreviousPresets()}}
                             Text("Restores the previous validated copy and retains damaged bytes. Current patches and active effects stay unchanged. If no valid recovery copy exists, restore your backup.").font(.caption)
                         }
@@ -37,9 +38,15 @@ struct SettingsEditor: View {
                     }
                     if store.sessionRecoveryRequired || store.settingsRecoveryRequired {
                         Section("Session Recovery") {
-                            Text("Saved data could not be loaded. Automatic saves are blocked to preserve the original files.").foregroundStyle(.orange)
-                            Button("Recover Previous Session") { store.recoverPreviousSession() }
-                            Text("Restores the last known good copy and retains the damaged file. If no recovery copy exists, restore a portable backup or contact support.").font(.caption)
+                            Text(store.sessionSavedByNewerVersion
+                                 ? "This session was saved by a newer StageKeys version. Update StageKeys to open it; automatic saves are blocked and the saved files are left unchanged."
+                                 : "Saved data could not be loaded. Automatic saves are blocked to preserve the original files.").foregroundStyle(.orange)
+                            if store.sessionSavedByNewerVersion {
+                                Text("Recovering an older copy would replace the newer session, so it is not offered until StageKeys is updated.").font(.caption)
+                            } else {
+                                Button("Recover Previous Session") { store.recoverPreviousSession() }
+                                Text("Restores the last known good copy and retains the damaged file. If no recovery copy exists, restore a portable backup or contact support.").font(.caption)
+                            }
                         }
                     }
                     switch section {
@@ -111,15 +118,42 @@ struct SettingsEditor: View {
                         Section("Shared Hall Reverb") { Slider(value:$store.reverb,in:0...65);Text("Wet Mix: \(Int(store.reverb)) %") }
                         Section("Local Diagnostics") {
                             Button("Copy Support Diagnostics") { store.copySupportDiagnostics() }
-                            Text("Copies app version, audio rate/buffer, reported latency, MIDI/sound counts, limiter state and the last audio-change failure. No automatic upload. Device names, paths, samples, setlists and plug-in state are excluded.").font(.caption).foregroundStyle(.secondary)
+                            Text("Copies app version, audio rate/buffer, reported latency, detected output-pair count, MIDI/sound counts, limiter state and the last audio-change failure. No automatic upload. Device names, paths, samples, setlists and plug-in state are excluded.").font(.caption).foregroundStyle(.secondary)
                             Button(store.audioCheckRecording ? "Stop Audio Check" : "Record 30-Second Audio Check") {
                                 if store.audioCheckRecording { store.stopAudioCheck() } else { store.startAudioCheck() }
                             }
                             Text("Audio checks record your performance to a local file only. Share a recording only when you choose to.").font(.caption).foregroundStyle(.secondary)
                         }
                     case "Flex Routing":
-                        Section("Stereo Output") { Text("All modules and the tonic pad feed the system stereo output. Per-module pan is available in Sound Settings.") }
-                        Text("Multiple hardware outputs and category routing are not implemented.").foregroundStyle(.secondary)
+                        Section("Selected Output") {
+                            Text(store.audioStatus?.name ?? "No audio output is selected.")
+                            Text(store.selectedOutputChannels.map { String($0) + " reported output channels" } ?? "Output channel count unavailable")
+                            Text(store.outputRoutingState.message).font(.caption)
+                                .foregroundStyle(store.outputRoutingState.isAvailable ? Color.secondary : Color.orange)
+                        }
+                        Section("Detected Pairs") {
+                            if store.availableOutputPairs.isEmpty {
+                                Text("No stereo pair is reported for the selected device.").foregroundStyle(Color.secondary)
+                            } else {
+                                ForEach(store.availableOutputPairs) { pair in
+                                    HStack {
+                                        Image(systemName: pair.index == 0 ? "checkmark.circle.fill" : "circle.dashed")
+                                            .foregroundStyle(pair.index == 0 ? Color.green : Color.secondary)
+                                        Text(pair.title)
+                                        Spacer()
+                                        Text(pair.index == 0 ? "Active" : "Detected").foregroundStyle(Color.secondary)
+                                    }
+                                }
+                            }
+                            if let count=store.selectedOutputChannels,FlexRouting.unpairedChannels(count)>0 {
+                                Text("1 unpaired channel").foregroundStyle(Color.secondary)
+                            }
+                            Text("Derived from the device's reported output channel count. A leftover unpaired channel is not a stereo destination, and a device that reports no channels shows none.").font(.caption).foregroundStyle(Color.secondary)
+                        }
+                        Section("Routing") {
+                            Text("Every sound, the Tonic Pad and the click are mixed to Output 1–2.").foregroundStyle(Color.secondary)
+                            Text("Per-sound pan and gain remain in Sound Settings. Category defaults, per-sound destinations and mixing to an extra detected pair are not implemented yet (#107), so StageKeys never sends audio to a pair it only reports.").font(.caption).foregroundStyle(Color.secondary)
+                        }
                     case "Metronome":
                         Section("Metronome") {
                             Toggle("Metronome", isOn: $store.metronome)
@@ -315,7 +349,17 @@ struct SetlistBrowser: View {
                             ForEach(store.archivedSetlists) { entry in HStack { Text(entry.name); Spacer(); Button("Restore") { store.restoreLocalSetlist(entry.token) } }.padding(10) }
                         }.padding(14)
                     }
-                    ForEach(Array(store.setlistLibraryIssues.enumerated()),id:\.offset) { _, issue in Text("\(issue.fileName): \(issue.message)").font(.caption).foregroundStyle(.orange).frame(maxWidth:.infinity,alignment:.leading) }
+                    ForEach(Array(store.setlistLibraryIssues.enumerated()),id:\.offset) { _, issue in
+                        HStack(spacing:12) {
+                            Text("\(issue.fileName): \(issue.message)").font(.caption).foregroundStyle(.orange).frame(maxWidth:.infinity,alignment:.leading)
+                            if issue.recoverable, let id=issue.fileID {
+                                Button("Restore Previous Copy") { store.recoverPreviousSetlist(id) }
+                                    .buttonStyle(StageButtonStyle())
+                                    .help("Restore the last validated copy of this setlist. The damaged file is retained.")
+                                    .accessibilityLabel("Restore the previous copy of \(issue.fileName)")
+                            }
+                        }
+                    }
                 }.padding(.horizontal,20)
             }
             HStack { Text("Stored on this device").font(.caption).foregroundStyle(.secondary); Spacer(); Button("Done") { store.save(); dismiss() }.buttonStyle(StageButtonStyle(selected:true)) }.padding(20)

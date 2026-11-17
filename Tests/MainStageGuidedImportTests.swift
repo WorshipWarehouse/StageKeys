@@ -1,10 +1,31 @@
 import Foundation
+import Darwin
 
 @main struct MainStageGuidedImportTests {
     @MainActor static func main()async throws {
         let root=URL(fileURLWithPath:ProcessInfo.processInfo.environment["STAGEKEYS_DATA_DIR"]!)
         let patch=root.appendingPathComponent("Synthetic.patch")
         let instrument=try TestFixtures.exs(in:patch)
+        // Dependency preflight can read big-endian records without claiming
+        // native translation support; system importer eligibility stays intact.
+        var big=try Data(contentsOf:instrument);let little=try EXSNative.chunks(big)
+        var offset=0
+        for part in little {
+            for field in [0,4,8] {big.replaceSubrange(offset+field..<offset+field+4,with:big[offset+field..<offset+field+4].reversed())}
+            big.replaceSubrange(offset+16..<offset+20,with:big[offset+16..<offset+20].reversed())
+            if part.kind==1 {for field in [88,92] where part.body.count>=field+4 {big.replaceSubrange(offset+84+field..<offset+84+field+4,with:big[offset+84+field..<offset+84+field+4].reversed())}}
+            offset += 84+part.body.count
+        }
+        let bigURL=root.appendingPathComponent("Big.exs");try big.write(to:bigURL)
+        let littleManifest=try EXSNative.validateSampleReferences(instrument,sampleRoot:patch)
+        let bigManifest=try EXSNative.validateSampleReferences(bigURL,sampleRoot:patch)
+        assert(bigManifest.sha256==littleManifest.sha256)
+        do {_ = try EXSNative.chunks(big);fatalError("Big-endian native translation must remain explicitly unsupported")}catch{}
+        let narrow=root.appendingPathComponent("Narrow Instruments");try FileManager.default.createDirectory(at:narrow,withIntermediateDirectories:true)
+        try Data().write(to:narrow.appendingPathComponent("A.exs"));try Data().write(to:narrow.appendingPathComponent("B.exs"))
+        var limitNotice:String?
+        let partial=try MainStagePatch.findSamplerInstruments(["A.exs","B.exs"],in:narrow,limit:1,onLimit:{limitNotice=$0})
+        assert(partial.count==1 && limitNotice?.contains("incomplete")==true)
         let sample=patch.appendingPathComponent("Fixture.wav"),sampleHash=try AssetDigest.sha256(sample),instrumentHash=try AssetDigest.sha256(instrument)
         let strip=TestFixtures.mainStageStrip(["Fixture.exs"])
         try strip.write(to:patch.appendingPathComponent("First.cst"));try strip.write(to:patch.appendingPathComponent("Second.cst"))
@@ -46,12 +67,36 @@ import Foundation
         store.importMainStageAutomatically(patch,locations:[.init(instruments:patch,samples:patch,label:"Synthetic source")]);try await wait()
         assert(store.librarySounds.count==count && store.mainStageOutcomes[0].state == .duplicate)
         let catalog=root.appendingPathComponent("sound-library.json"),before=try Data(contentsOf:catalog)
+        // A duplicate is already installed, so a failure in the rest of the batch
+        // must not relabel it. Hold the catalog lock so the commit cannot finish.
+        let lockPath=catalog.appendingPathExtension("lock").path,lockDescriptor=open(lockPath,O_RDWR)
+        assert(lockDescriptor>=0 && flock(lockDescriptor,LOCK_EX|LOCK_NB)==0,"Could not hold the catalog lock")
+        store.importMainStageAutomatically(patch,locations:[.init(instruments:patch,samples:patch,label:"Synthetic source")]);try await wait()
+        flock(lockDescriptor,LOCK_UN);close(lockDescriptor)
+        assert(store.mainStageOutcomes.map(\.state)==[.duplicate,.duplicate,.needsSamples],store.libraryImportProgress ?? "No outcomes")
+        assert(store.mainStageOutcomes.prefix(2).allSatisfy{$0.detail.contains("Already installed")},store.mainStageOutcomes.map(\.detail).joined(separator:"; "))
+        assert(store.libraryImportProgress?.contains("Another library operation")==true,store.libraryImportProgress ?? "No failure message")
+        assert((try! Data(contentsOf:catalog))==before,"A refused commit must not rewrite the catalog")
+        let patchesBefore=store.setlist.patches.count
+        store.assembleConvertedMainStagePatch(readyOnly:true)
+        assert(store.setlist.patches.count==patchesBefore+1,"Ready-only assembly must add a patch")
+        assert(store.setlist.patches.last?.layers[0].name=="First" && store.setlist.patches.last?.layers[1].name=="Second","Preserved duplicates must still assemble after a refused commit")
+        assert((try! Data(contentsOf:catalog))==before,"Ready-only assembly must not publish a refused archive-ID rewrite")
         store.importMainStageAutomatically(patch,locations:[.init(instruments:patch,samples:patch,label:"Synthetic source")]);store.cancelLibraryImport();try await wait()
         assert((try! Data(contentsOf:catalog))==before)
         let other=root.appendingPathComponent("Conflicting");_ = try TestFixtures.exs(in:other)
-        var conflicting=try Data(contentsOf:other.appendingPathComponent("Fixture.exs"));conflicting.append(0);try conflicting.write(to:other.appendingPathComponent("Fixture.exs"))
+        var conflicting=try Data(contentsOf:other.appendingPathComponent("Fixture.exs"));conflicting[20]=88;try conflicting.write(to:other.appendingPathComponent("Fixture.exs"))
         let result=MainStageDiscovery.find(["Fixture.exs"],locations:[.init(instruments:patch,samples:patch,label:"A"),.init(instruments:other,samples:other,label:"B")])
         assert(Set(result.candidates["Fixture.exs"]!.map(\.sha256)).count==2,"Different source bytes must remain ambiguous")
+        let choiceRoot=root.appendingPathComponent("explicit-choice-data");setenv("STAGEKEYS_DATA_DIR",choiceRoot.path,1)
+        let choiceStore=PerformanceStore()
+        choiceStore.importMainStageAutomatically(patch,locations:[.init(instruments:patch,samples:patch,label:"A"),.init(instruments:other,samples:other,label:"B")],convertAfterDiscovery:false)
+        for _ in 0..<1500 where choiceStore.libraryImportBusy {try await Task.sleep(nanoseconds:10_000_000)}
+        assert(choiceStore.mainStageOutcomes.first?.state == .needsSamples)
+        choiceStore.importMainStageSamplers(patch,allowPartial:true)
+        for _ in 0..<1500 where choiceStore.libraryImportBusy {try await Task.sleep(nanoseconds:10_000_000)}
+        assert(choiceStore.mainStageOutcomes.prefix(2).allSatisfy{$0.state == .converted},choiceStore.libraryImportProgress ?? "Explicit selection did not resolve ambiguity")
+        setenv("STAGEKEYS_DATA_DIR",root.path,1)
         #if os(macOS)
         let standard=MainStageDiscovery.locations(source:patch,retained:patch)
         assert(standard.contains{$0.label=="User MainStage content"})

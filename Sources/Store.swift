@@ -140,6 +140,7 @@ final class PerformanceStore: ObservableObject {
                 midiSources: midiSources.filter(\.connected).count, loadedSlots: patch.layers.filter(\.loaded).count,
                 limiterBypassed: masterLimiterBypassed, recording: audioCheckRecording,
                 lastAudioChangeFailure: audio.lastChangeFailure,
+                usableOutputPairs: usableOutputPairCount,
                 samplerTeardown: audio.samplerTeardownEvidence)
             let text = try report.json()
             #if os(macOS)
@@ -394,6 +395,9 @@ final class PerformanceStore: ObservableObject {
     /// off or stopped, so the patch/live tempo policy resumes immediately.
     @Published private(set) var clockTempo: Double?
     private var midiClockTempo = MIDIClockTempo()
+    /// Which timing the current tempo window is built from. Mixing packet stamps with
+    /// receipt times inside one 24-pulse window reports a tempo that never happened.
+    private var midiClockPacketTiming: Bool?
     private var midiClockRunning = false
     private var midiClockSource: Int32?
     /// Drop every piece of external-clock state so the stored patch/live tempo
@@ -588,6 +592,8 @@ final class PerformanceStore: ObservableObject {
     @Published var gainMatchTargetDB:Double = -24
     @Published var gainMatchReferenceName:String?
     @Published private(set) var soundRatings:[String:Int]=[:]
+    /// Personal favorites keyed by rating id, persisted next to the ratings.
+    @Published private(set) var soundFavorites:[String:Bool]=[:]
     @Published var libraryRangePreview: Layer?
     private var libraryRangePreviewIndex: Int?
     var displayedLayers:[Layer] {
@@ -609,6 +615,11 @@ final class PerformanceStore: ObservableObject {
         guard let updated=SoundRatingArchive.setting(value,for:id,in:soundRatings) else{return}
         do {try SoundRatingArchive.save(updated,to:saveURL.deletingLastPathComponent().appendingPathComponent("sound-ratings.json"));soundRatings=updated}
         catch {message="Could not save sound rating: \(error.localizedDescription)"}
+    }
+    func toggleFavorite(_ id:String) {
+        guard let updated=SoundFavoriteArchive.toggling(id,in:soundFavorites) else{return}
+        do {try SoundFavoriteArchive.save(updated,to:saveURL.deletingLastPathComponent().appendingPathComponent("sound-favorites.json"));soundFavorites=updated}
+        catch {message="Could not save sound favorite: \(error.localizedDescription)"}
     }
     func setSoundRecommended(_ id:String,_ value:Bool) {
         guard let index=librarySounds.firstIndex(where:{$0.id==id}) else{return}
@@ -798,9 +809,14 @@ final class PerformanceStore: ObservableObject {
     private var legacyVersion = 1
     private var legacyData: Data?
     @Published private(set) var sessionRecoveryRequired = false
+    /// The saved session names a schema newer than this build reads. It stays on
+    /// disk untouched, autosaves stay blocked, and recovery must not replace it
+    /// with an older copy: the user has to update StageKeys instead.
+    @Published private(set) var sessionSavedByNewerVersion = false
     @Published private(set) var settingsRecoveryRequired = false
     @Published private(set) var libraryRecoveryRequired = false
     @Published private(set) var ratingsRecoveryRequired = false
+    @Published private(set) var favoritesRecoveryRequired = false
     @Published private(set) var presetsRecoveryRequired = false
     var patch: Patch { setlist.patches[selected] }
     var hasUnavailableLegacyVoices:Bool {patch.layers.contains{$0.instrument>=0 && $0.external==nil && $0.midiDestinationID==nil}}
@@ -809,6 +825,8 @@ final class PerformanceStore: ObservableObject {
         saveURL = base.appendingPathComponent("setlist.json")
         do {soundRatings=try SoundRatingArchive.read(base.appendingPathComponent("sound-ratings.json"))}
         catch {ratingsRecoveryRequired=true;message="Saved ratings could not be read. Writes are blocked; recover the previous ratings in Settings."}
+        do {soundFavorites=try SoundFavoriteArchive.read(base.appendingPathComponent("sound-favorites.json"))}
+        catch {favoritesRecoveryRequired=true;message="Saved favorites could not be read. Writes are blocked; recover the previous favorites in Settings."}
         do {effectPresets=try EffectPresetArchive.read(base.appendingPathComponent("effect-presets.json"))}
         catch {presetsRecoveryRequired=true;message="Personal effect presets could not be read. Writes are blocked; recover the previous presets in Settings."}
         if let data=try? Data(contentsOf:base.appendingPathComponent("mainstage-import-report.json")),data.count<=2_000_000 {
@@ -823,7 +841,16 @@ final class PerformanceStore: ObservableObject {
         catch { libraryRecoveryRequired=true;message = "Could not read sound library: \(error.localizedDescription). Catalog writes are blocked to preserve it. Open Settings to recover the previous catalog." }
         if FileManager.default.fileExists(atPath: saveURL.path) {
             do { let data = try RecoverableSessionFile.read(saveURL); let loaded = try JSONDecoder().decode(Setlist.self, from: data); setlist = try loaded.upgraded(); if loaded.version < 4 { legacyData = data; legacyVersion = loaded.version } }
-            catch { sessionRecoveryRequired = true; message = "Could not load the saved setlist: \(error.localizedDescription). Automatic saves are blocked to preserve it. Open Settings to recover the previous session." }
+            catch {
+                sessionRecoveryRequired = true
+                if let schema = error as? SetlistError,
+                   case let .unsupportedVersion(saved, supported) = schema, saved > supported.upperBound {
+                    sessionSavedByNewerVersion = true
+                    message = "Could not load the saved setlist: \(error.localizedDescription) Automatic saves are blocked to preserve it."
+                } else {
+                    message = "Could not load the saved setlist: \(error.localizedDescription). Automatic saves are blocked to preserve it. Open Settings to recover the previous session."
+                }
+            }
         }
         let settingsURL = base.appendingPathComponent("settings.json")
         if let data = try? RecoverableSessionFile.read(settingsURL), let settings = try? JSONDecoder().decode(SessionSettings.self, from: data), settings.validate() {
@@ -890,7 +917,7 @@ final class PerformanceStore: ObservableObject {
                 self.sendMIDI(destination, 0x80 | UInt8(l.midiOutputChannel), UInt8(pitch), 0)
             } else { self.audio.noteOff(key: key, channel: channel, force: force, at: at) }
         }
-        midi.onSourceEvent = { [weak self] source, status, a, b in self?.handleMIDI(status, a, b, source: source) }
+        midi.onSourceEvent = { [weak self] source, status, a, b, time, fromPacket in self?.handleMIDI(status, a, b, source: source, at: time, fromPacket: fromPacket) }
         midi.onInventory = { [weak self] sources, devices in
             guard let self else { return }
             self.midiSources = sources; self.midiDevices = devices
@@ -1051,6 +1078,23 @@ final class PerformanceStore: ObservableObject {
         try? audio.deviceController.buffer(frameCount: frames)
         refreshAudioDevices()
     }
+    /// Output channels of the selected device, or nil when the capability is not
+    /// known. Read from the enumerated device rather than queried again, so the
+    /// report cannot disagree with the device the user selected.
+    var selectedOutputChannels: UInt32? {
+        AudioOutputDevice.selectedChannels(in:audioOutputs,id:audioStatus?.deviceID,name:audioStatus?.name)
+    }
+    /// Stereo pairs the selected device reports. Pair 0 is the only one that is
+    /// mixed to today; the rest are reported, not routed.
+    var availableOutputPairs: [FlexOutputPair] {
+        FlexRouting.pairs(channels: selectedOutputChannels ?? 0)
+    }
+    var outputRoutingState: FlexRouteState {
+        FlexRouting.state(pair: 0, channels: selectedOutputChannels)
+    }
+    var usableOutputPairCount: Int? {
+        selectedOutputChannels.map { FlexRouting.pairs(channels: $0).count }
+    }
     func refreshAudioDevices() {
         guard !audio.offline else { return }
         do {
@@ -1196,10 +1240,10 @@ final class PerformanceStore: ObservableObject {
         if !started && !audio.running { audio.prepareOfflineEditing(); return }
         applyPatch(); recallTonicPatch(); audio.clock(performedTempo, metronome)
     }
-    private func applyPatch() {
-        audio.withInstrumentCatalog { applyPreparedPatch() }
+    private func applyPatch(forceAudioUnitReload:Bool=false) {
+        audio.withInstrumentCatalog { applyPreparedPatch(forceAudioUnitReload:forceAudioUnitReload) }
     }
-    private func applyPreparedPatch() {
+    private func applyPreparedPatch(forceAudioUnitReload:Bool=false) {
         do { try audio.preparePatchResources(patch.layers) }
         catch { audio.rejectPatchChange(error); message = error.localizedDescription; return }
         cancelTransition()
@@ -1250,7 +1294,7 @@ final class PerformanceStore: ObservableObject {
             try audio.withGraphChanges {
                 for (i, l) in patch.layers.enumerated() {
                     configureMIDI(i, l)
-                    let accepted = audio.configure(i, l, shouldInstall: { [weak self] in
+                    let accepted = audio.configure(i, l, forceReload:forceAudioUnitReload && l.external?.kind == .audioUnit, shouldInstall: { [weak self] in
                         guard let self else { return false }
                         return self.patchLoadGeneration == generation && self.patch.id == patchID &&
                             self.patch.layers.indices.contains(i) && self.patch.layers[i] == l
@@ -1731,10 +1775,18 @@ final class PerformanceStore: ObservableObject {
     /// Route 24-PPQN clock and transport from the configured controller. Tempo
     /// is measured only after Start/Continue and only until Stop or disconnect,
     /// so ticks from a stopped source cannot replace the stored tempo.
-    private func handleMIDIClock(_ status: UInt8, source: Int32, at now: Double) {
+    private func handleMIDIClock(_ status: UInt8, source: Int32, at now: Double, fromPacket: Bool = false) {
         guard metronomeSettings.followsMIDIClock, acceptsMIDIClock(source: source) else { return }
         switch status {
         case 0xF8:
+            // Packet stamps and receipt times measure different intervals, so a
+            // window that changed timing mid-run mixes them and biases the tempo.
+            // Start a fresh window on the change; a source that always sends zero
+            // stamps simply stays on receipt-only timing.
+            if midiClockPacketTiming != fromPacket {
+                midiClockPacketTiming = fromPacket
+                midiClockTempo.reset(); clockTempo = nil
+            }
             // A tick may only advance the run selected by its Start/Continue.
             // The other configured source may be sending clock concurrently;
             // ignoring it avoids double-advancing the click or stealing tempo.
@@ -1752,7 +1804,7 @@ final class PerformanceStore: ObservableObject {
             guard !midiClockRunning || midiClockSource == nil || midiClockSource == source else { return }
             midiClockRunning = true
             midiClockSource = source
-            midiClockTempo.reset(); clockTempo = nil
+            midiClockTempo.reset(); midiClockPacketTiming = nil; clockTempo = nil
             if status == 0xFA { audio.midiClockStart(at: now) }
             else { audio.midiClockContinue(at: now) }
         case 0xFC:
@@ -1769,8 +1821,10 @@ final class PerformanceStore: ObservableObject {
     #endif
 
     /// Routes an incoming event only to its accepted controller slot and target type.
-    private func handleMIDI(_ status: UInt8, _ a: UInt8, _ b: UInt8, source: Int32) {
-        if status >= 0xF8 { handleMIDIClock(status, source: source, at: ProcessInfo.processInfo.systemUptime); return }
+    private func handleMIDI(_ status: UInt8, _ a: UInt8, _ b: UInt8, source: Int32, at time: Double, fromPacket: Bool = false) {
+        // `time` is the driver's packet stamp for clock messages, so a delayed main-queue
+        // delivery cannot stretch the interval the tempo is measured from.
+        if status >= 0xF8 { handleMIDIClock(status, source: source, at: time, fromPacket: fromPacket); return }
         if status >= 0xF0 { return }
         midiActivity.toggle()
         midiLog.insert((midiSources.first(where: { $0.id == source })?.name ?? "MIDI") + String(format: " · Ch %02d · %02X · %d · %d", Int(status & 15) + 1, status & 0xf0, a, b), at: 0)
@@ -2137,12 +2191,178 @@ final class PerformanceStore: ObservableObject {
             message=libraryContentIssues[id]==nil ? "Restored \(name). The sound is ready to add again.":"Copied \(name), but this sound still reports missing content."
         } catch { message="Could not restore \(name): \(error.localizedDescription)" }
     }
+    /// Repair a sampler preset whose samples were moved: re-resolve the retained
+    /// original (or the managed preset when no original was kept) against the
+    /// folder the user points at, copy the samples back into managed storage and
+    /// publish the rewritten preset. Nothing changes unless the repaired preset
+    /// reports no content issue, and the previous managed files are kept because
+    /// saved patches may still reference them.
+    func relinkLibrarySamples(_ id:String,from folder:URL) {
+        guard let rack=audio.externalRack,let entry=librarySounds.first(where:{$0.id==id}),
+              let sound=entry.sound ?? entry.layer?.external,sound.kind == .samplerPreset,
+              let name=sound.fileName else {
+            message="Choose a sampler sound that reports missing samples to repair.";return
+        }
+        let access=folder.startAccessingSecurityScopedResource()
+        defer {if access{folder.stopAccessingSecurityScopedResource()}}
+        let libraryDirectory=saveURL.deletingLastPathComponent()
+        let source=entry.originalInstrument.map{libraryDirectory.appendingPathComponent($0.file)}
+            ?? rack.libraryURL.appendingPathComponent(name)
+        func discardManaged(_ preset:URL) {
+            try? FileManager.default.removeItem(at:preset)
+            try? FileManager.default.removeItem(at:URL(fileURLWithPath:preset.deletingPathExtension().path+"-samples"))
+        }
+        do {
+            let repaired:ExternalSound
+            if source.pathExtension.lowercased() == "exs" {repaired=try rack.importEXS(source,sampleRoot:folder)}
+            else {repaired=try rack.importPreset(source,sampleRoot:folder)}
+            guard let repairedName=repaired.fileName else {throw ExternalInstrumentError.unsupportedFormat}
+            let repairedPreset=rack.libraryURL.appendingPathComponent(repairedName)
+            guard ExternalInstrumentRack.contentIssue(in:repairedPreset,kind:.samplerPreset)==nil else {
+                discardManaged(repairedPreset)
+                message="Those samples do not complete \(name). Choose the folder that holds all of its samples; nothing was changed."
+                return
+            }
+            do {try ExternalInstrumentRack.validateRepairedPreset(repairedPreset,library:rack.libraryURL)}
+            catch {discardManaged(repairedPreset);message=error.localizedDescription;return}
+            var updated=librarySounds
+            guard let index=updated.firstIndex(where:{$0.id==id}) else{discardManaged(repairedPreset);return}
+            // The repaired preset has new bytes, so the stored managed-file digest
+            // must describe the published file. A preset rebuilt from a retained
+            // original is named after its content, so the entry keeps the name the
+            // user already sees instead of exposing that digest.
+            guard let repairedDigest=try? AssetDigest.sha256(repairedPreset) else {
+                discardManaged(repairedPreset)
+                message="Could not repair \(name): the repaired preset could not be read."
+                return
+            }
+            var restored=repaired
+            restored.name=sound.name
+            updated[index].sound=restored
+            updated[index].managedFileSHA256=repairedDigest
+            if updated[index].layer?.external != nil {updated[index].layer?.external=restored}
+            do {try SoundLibrary(url:libraryDirectory.appendingPathComponent("sound-library.json")).commitImport(updated,replacing:librarySounds)}
+            catch {
+                discardManaged(repairedPreset)
+                // Another process changed the catalog since this repair read it. Publish
+                // nothing rather than replacing that edit with a stale snapshot, and let
+                // the caller retry against the refreshed catalog.
+                if let current=try? SoundLibrary(url:libraryDirectory.appendingPathComponent("sound-library.json")).read() {librarySounds=current}
+                refreshLibraryContent()
+                message="Could not save the repaired sound because the library changed while it was being repaired: \(error.localizedDescription)";return
+            }
+            librarySounds=updated;refreshLibraryContent()
+            message=libraryContentIssues[id]==nil ? "Reconnected \(restored.name). The sound is ready to add again.":"Copied \(restored.name), but this sound still reports missing content."
+        } catch {message="Could not repair \(name): \(error.localizedDescription)"}
+    }
+    /// Remove one user-imported sound from My Sounds. The managed preset/sample bytes
+    /// are left in place because saved patches, setlists and snapshots reference them
+    /// by file name; removing the catalog entry must never make saved work unplayable.
+    /// Bundled and optional-library entries are not user imports and stay listed.
+    @discardableResult
+    func removeLibrarySound(_ id:String) -> LibrarySound? {
+        guard !libraryImportBusy else{message="Wait for the running library import to finish before removing a sound.";return nil}
+        guard let entry=librarySounds.first(where:{$0.id==id}) else{message="That sound is no longer in the library. Refresh and try again.";return nil}
+        guard entry.collection=="My Sounds" else{message="Only sounds you imported into My Sounds can be removed here. \(entry.name) belongs to \(entry.collection).";return nil}
+        let library=SoundLibrary(url:saveURL.deletingLastPathComponent().appendingPathComponent("sound-library.json"))
+        let removed:LibrarySound
+        do { removed=try library.delete(id:id) }
+        catch {message="Could not remove \(entry.name): \(error.localizedDescription)";return nil}
+        // The removal is committed, so the row leaves the published catalog even
+        // when the follow-up read fails; that is a refresh problem, not a failed
+        // removal. The managed file stays so saved patches keep playing.
+        librarySounds.removeAll{$0.id==id};refreshLibraryContent()
+        do { librarySounds=try library.read();refreshLibraryContent() }
+        catch {message="Removed \(removed.name) from My Sounds, but the catalog could not be re-read: \(error.localizedDescription). Its file stays in the library folder so saved patches keep playing.";return removed}
+        message="Removed \(removed.name) from My Sounds. Its file stays in the library folder so saved patches keep playing. Use Undo to restore the entry with its tags and settings."
+        return removed
+    }
+    /// Undo one removal by appending the exact entry that removal reported. The
+    /// managed file was never deleted, so this restores the entry's tags, saved
+    /// settings and identity instead of re-importing a file and losing them.
+    @discardableResult
+    func restoreLibrarySound(_ entry: LibrarySound) -> Bool {
+        guard !libraryImportBusy else{message="Wait for the running library import to finish before restoring a sound.";return false}
+        guard !librarySounds.contains(where:{$0.id==entry.id}) else{message="\(entry.name) is already in My Sounds.";return false}
+        let library=SoundLibrary(url:saveURL.deletingLastPathComponent().appendingPathComponent("sound-library.json"))
+        do { try library.append(entry) }
+        catch {message="Could not restore \(entry.name): \(error.localizedDescription)";return false}
+        librarySounds.append(entry);refreshLibraryContent()
+        // A read after the committed append only replaces the local copy; the
+        // restored entry is already published and is not rolled back on failure.
+        if let refreshed=try? library.read() {librarySounds=refreshed;refreshLibraryContent()}
+        message="Restored \(entry.name) to My Sounds."
+        return true
+    }
     @discardableResult
     func importLibrarySound(_ url:URL,sampleRoot:URL?=nil)->ExternalSound? {
         guard !libraryImportBusy else{message="A sound library import is already running.";return nil}
         do {
             return try installLibrarySound(url,sampleRoot:sampleRoot)
         }catch{message=error.localizedDescription;return nil}
+    }
+    /// Add several user-selected files as one catalog transaction (#8). Every
+    /// accepted file is prepared first; nothing is committed until the batch is
+    /// complete, a repeated or already-installed source is skipped by content
+    /// identity, and a rejected batch leaves the catalog bytes unchanged.
+    func importLibrarySounds(_ urls:[URL],sampleRoot:URL?=nil) {
+        guard !libraryImportBusy else{message="A sound library import is already running.";return}
+        let sources=LibraryBulkImport.uniqueSources(urls)
+        guard !sources.isEmpty else{message="Choose at least one sound file.";return}
+        guard sampleRoot==nil,sources.count<=512,sources.allSatisfy({!LibraryBulkImport.needsSampleFolder($0)}) else{message="Choose up to 512 self-contained audio or sound-bank files. Sampler instruments require their separate sample-folder flow.";return}
+        libraryImportCancelRequested=false;libraryImportBusy=true
+        Task { @MainActor in
+            var owned=Set<URL>(),committed=false
+            defer{if !committed {for file in owned {try? FileManager.default.removeItem(at:file)}};libraryImportBusy=false}
+            do {
+                let library=SoundLibrary(url:saveURL.deletingLastPathComponent().appendingPathComponent("sound-library.json"))
+                let original=try library.read()
+                var entries=original
+                var outcomes:[LibraryBulkImport.Outcome]=[]
+                for url in sources {
+                    if libraryImportCancelRequested {break}
+                    libraryImportProgress="Preparing "+LibraryBulkImport.displayName(url)
+                    await Task.yield()
+                    if libraryImportCancelRequested {break}
+                    let access=url.startAccessingSecurityScopedResource()
+                    var preparedFile:URL?
+                    do {
+                        let digest=try AssetDigest.sha256(url)
+                        // Check what was actually prepared, not what was attempted:
+                        // a failed file must not reserve its content for a later one.
+                        if let name=LibraryBulkImport.duplicateName(digest:digest,in:original) {
+                            outcomes.append(.skipped(name:LibraryBulkImport.displayName(url),reason:"Already in My Sounds as "+name))
+                        } else if LibraryBulkImport.duplicateName(digest:digest,in:entries) != nil {
+                            outcomes.append(.skipped(name:LibraryBulkImport.displayName(url),reason:"Same content as another selected file"))
+                        } else {
+                            let (sound,notes,layer)=try prepareLibrarySound(url,sampleRoot:nil)
+                            var entry=LibrarySound(id:UUID().uuidString,name:sound.name,collection:"My Sounds",sound:sound,layer:layer,conversionNotes:notes)
+                            guard let name=sound.fileName,let rack=audio.externalRack,LibraryRepair.safeName(name) else{throw ExternalInstrumentError.unsupportedFormat}
+                            let managed=rack.libraryURL.appendingPathComponent(name);preparedFile=managed
+                            let actual=try AssetDigest.sha256(managed)
+                            guard actual==digest else{throw MainStagePatch.Failure.invalid("The source changed during import. Select the original file and retry.")}
+                            entry.managedFileSHA256=actual
+                            try SoundLibrary.validate([entry])
+                            owned.insert(managed);preparedFile=nil
+                            entries.append(entry)
+                            outcomes.append(.added(name:sound.name))
+                        }
+                    } catch {if let preparedFile {try? FileManager.default.removeItem(at:preparedFile)};outcomes.append(.failed(name:LibraryBulkImport.displayName(url),reason:LibraryBulkImport.failureReason(error)))}
+                    if access {url.stopAccessingSecurityScopedResource()}
+                }
+                libraryImportProgress="Prepared \(LibraryBulkImport.addedNames(outcomes).count) sounds. Checking library before commit…"
+                await Task.yield()
+                guard !libraryImportCancelRequested else {
+                    libraryImportProgress="Import cancelled. No prepared catalog entries were committed.";return
+                }
+                guard !LibraryBulkImport.addedNames(outcomes).isEmpty else {
+                    libraryImportProgress=LibraryBulkImport.summary(outcomes);return
+                }
+                try library.commitImport(entries,replacing:original)
+                committed=true;librarySounds=entries;refreshLibraryContent()
+                libraryImportProgress=LibraryBulkImport.summary(outcomes)
+            }catch{libraryImportProgress="Import not committed: "+error.localizedDescription}
+        }
     }
     @Published var portableImportIssues:[String]=[]
     #if os(macOS)
@@ -2322,33 +2542,50 @@ final class PerformanceStore: ObservableObject {
                 let library=SoundLibrary(url:saveURL.deletingLastPathComponent().appendingPathComponent("sound-library.json"))
                 let original=try library.read()
                 var entries=original,imported=0,skipped=0,failures:[String]=[]
+                let committedIDs=Set(original.map(\.id))
                 for (channelIndex,channel) in report.channels.enumerated() where selection.contains(channelIndex) && !channel.instruments.isEmpty {
                     guard channel.unsupportedInstrumentFamily == nil else {outcome(channelIndex,.unsupported,channel.nativeInstrumentStatus);failures.append(channel.name+": "+channel.nativeInstrumentStatus);continue}
                     guard channel.instruments.count==1,let name=channel.instruments.first else{outcome(channelIndex,.unsupported,"Multiple sampler instruments require channel topology translation; none were silently flattened.");failures.append(channel.name+": layered sampler selection requires translation");continue}
                     var candidates=discovered?[name] ?? []
-                    candidates += files.filter{$0.lastPathComponent==name}.compactMap{try? MainStageDiscovery.candidate(file:$0,samples:folder)}
+                    let folderCandidates=files.filter{$0.lastPathComponent==name}.compactMap{try? MainStageDiscovery.candidate(file:$0,samples:folder)}
+                    candidates += folderCandidates
                     var candidateKeys=Set<String>()
                     candidates=candidates.filter{candidateKeys.insert($0.file.standardizedFileURL.path+"\n"+$0.samples.standardizedFileURL.path).inserted}
                     let playable=candidates.filter{$0.sampleIssue==nil && $0.identity != nil}
-                    guard !playable.isEmpty,Set(playable.compactMap(\.identity)).count==1 else{let reason=playable.isEmpty ? (candidates.compactMap(\.sampleIssue).first ?? "Instrument not found in searched locations; choose its sample folder."):"Different EXS maps or sample contents share this filename; choose the intended source folder.";outcome(channelIndex,.needsSamples,reason);failures.append(name+": "+reason);continue}
-                    let file=playable[0].file
+                    // The folder the user just chose settles a conflict between cached
+                    // candidates when it supplies exactly one playable identity; a folder
+                    // that itself holds several identities is still ambiguous.
+                    let folderPaths=Set(folderCandidates.map{$0.file.standardizedFileURL.path})
+                    let chosen=playable.filter{folderPaths.contains($0.file.standardizedFileURL.path)}
+                    let chosenIdentities=Set(chosen.compactMap(\.identity))
+                    let selected:MainStageDiscovery.Candidate?
+                    if chosenIdentities.count==1 {selected=chosen.first}
+                    else if chosenIdentities.isEmpty && Set(playable.compactMap(\.identity)).count==1 {selected=playable[0]}
+                    else {selected=nil}
+                    guard let selected else{let reason=playable.isEmpty ? (candidates.compactMap(\.sampleIssue).first ?? "Instrument not found in searched locations; choose its sample folder."):chosenIdentities.count>1 ? "The chosen folder holds more than one playable version of this sampler instrument; choose the folder holding the intended one.":"Different EXS maps or sample contents share this filename; choose the intended source folder.";outcome(channelIndex,.needsSamples,reason);failures.append(name+": "+reason);continue}
                     libraryImportProgress="Importing MainStage channel: "+channel.name
                     await Task.yield();try checkLibraryImportCancellation()
                     let assetsBefore=managedImportAssets()
                     var createdSound:ExternalSound?,createdOriginal:StageKeysSampler.Original?
                     do {
                         let processing=try mainStageProcessing(channelIndex)
-                        let id=try MainStagePatch.conversionID(report,channel:channel,variant:playable[0].identity!)
+                        // The conversion ID and the retained original must describe the
+                        // identity that was actually selected, not the first cached one.
+                        let identity=selected.identity!
+                        let id=try MainStagePatch.conversionID(report,channel:channel,variant:identity)
                         if let existing=entries.firstIndex(where:{$0.id==id}) {
                             entries[existing].sourceArchiveID=report.sourceArchiveID
-                            outcome(channelIndex,.duplicate,"Already installed; personal edits retained.",id)
+                            outcome(channelIndex,committedIDs.contains(id) ? .duplicate:.prepared,committedIDs.contains(id) ? "Already installed; personal edits retained.":"Shares a conversion with an earlier channel in this import.",id)
                             skipped+=1;continue
                         }
                         var prepared:(ExternalSound,[String]?,Layer?)?
                         var preparationError:Error?
-                        for candidate in playable {
+                        var importedCandidate=selected
+                        // Only the selected identity may be imported; equivalent candidates
+                        // (same EXS map and samples) stay available as fallbacks.
+                        for candidate in playable where candidate.identity == identity {
                             let access=candidate.samples.startAccessingSecurityScopedResource();defer{if access{candidate.samples.stopAccessingSecurityScopedResource()}}
-                            do {prepared=try prepareLibrarySound(candidate.file,sampleRoot:candidate.samples);break}
+                            do {prepared=try prepareLibrarySound(candidate.file,sampleRoot:candidate.samples);importedCandidate=candidate;break}
                             catch{preparationError=error}
                         }
                         guard let (sound,notes,template)=prepared else {
@@ -2366,7 +2603,7 @@ final class PerformanceStore: ObservableObject {
                         layer.name=channel.name;layer.external=sound
                         let applied=try processing.applying(to:layer,selection:mainStageSelection(channelIndex))
                         layer=applied.layer
-                        let original=try StageKeysSampler.retainOriginal(file,library:saveURL.deletingLastPathComponent())
+                        let original=try StageKeysSampler.retainOriginal(importedCandidate.file,library:saveURL.deletingLastPathComponent())
                         createdOriginal=original
                         // One layer hosts one instrument: a channel that also saved an Audio
                         // Unit keeps that state in the archive instead of losing it silently.
@@ -2396,7 +2633,7 @@ final class PerformanceStore: ObservableObject {
                             let id=try MainStagePatch.conversionID(report,channel:channel,variant:"audio-unit")
                             if let existing=entries.firstIndex(where:{$0.id==id}) {
                                 entries[existing].sourceArchiveID=archiveID
-                                outcome(channelIndex,.duplicate,"Already installed; personal edits retained.",id)
+                                outcome(channelIndex,committedIDs.contains(id) ? .duplicate:.prepared,committedIDs.contains(id) ? "Already installed; personal edits retained.":"Shares a conversion with an earlier channel in this import.",id)
                                 skipped+=1;continue
                             }
                             let applied=try processing.applying(to:hosted.layer,selection:mainStageSelection(channelIndex))
@@ -2413,7 +2650,7 @@ final class PerformanceStore: ObservableObject {
                 for index in mainStageOutcomes.indices where mainStageOutcomes[index].state == .prepared {mainStageOutcomes[index].state = .converted}
                 libraryImportProgress="Added \(imported) sounds · \(skipped) already installed · \(failures.count) need attention. Review conversion notes for unsupported routing and processing. "+failures.joined(separator:"; ")
             }catch{
-                for index in mainStageOutcomes.indices where [.pending,.prepared,.duplicate].contains(mainStageOutcomes[index].state) {mainStageOutcomes[index].state = libraryImportCancelRequested ? .cancelled:.failed;mainStageOutcomes[index].detail=error.localizedDescription}
+                for index in mainStageOutcomes.indices where mainStageOutcomes[index].state.awaitingCommit {mainStageOutcomes[index].state = libraryImportCancelRequested ? .cancelled:.failed;mainStageOutcomes[index].detail=error.localizedDescription}
                 libraryImportProgress=error.localizedDescription
             }
         }
@@ -2450,7 +2687,7 @@ final class PerformanceStore: ObservableObject {
         guard !patchLock,let report=mainStageImportReport,setlist.patches.count<128 else{return}
         do {
             let selected=readyOnly ? Set(mainStageOutcomes.filter{[.converted,.duplicate].contains($0.state)}.map(\.id)):nil
-            var assembled=try MainStagePatch.assembledChannels(report,entries:librarySounds,selected:selected)
+            var assembled=try MainStagePatch.assembledChannels(report,entries:librarySounds,selected:selected,confirmedEntries:Dictionary(uniqueKeysWithValues:mainStageOutcomes.filter{[.converted,.duplicate].contains($0.state) && $0.soundIDs.count==1}.map{($0.id,$0.soundIDs[0])}))
             if readyOnly {assembled.conversionNotes=Array(((assembled.conversionNotes ?? [])+mainStageOutcomes.filter{![.converted,.duplicate].contains($0.state)}.map{"Not included: \($0.name) · \($0.detail)"}).prefix(128)).map{String($0.prefix(2000))}}
             setlist.patches.append(assembled);choose(setlist.patches.count-1);save()
             message="Converted channels added as a new patch. Review Conversion Notes in Patch Settings before performing."
@@ -2566,6 +2803,11 @@ final class PerformanceStore: ObservableObject {
         l.id = patch.layers[index].id; l.midiDestinationID = destination.id; commitLayer(index, l)
     }
     func save() {
+        // Do not hide a damaged/future active library document by autosaving it.
+        if let id=currentSetlistID {
+            do {_ = try localSetlistLibrary().load(id:id)}
+            catch {message="The active saved setlist could not be read. Restore its previous copy or explicitly replace it before saving. "+error.localizedDescription;refreshSetlists();return}
+        }
         guard !sessionRecoveryRequired, !settingsRecoveryRequired else {
             message = "Automatic saves are blocked because saved session data could not be loaded. Recover the previous session in Settings; the original files remain untouched."
             return
@@ -2597,6 +2839,12 @@ final class PerformanceStore: ObservableObject {
             ratingsRecoveryRequired=false;message="Previous ratings restored; damaged bytes retained."
         } catch {message="Could not recover ratings: \(error.localizedDescription). Existing files were retained."}
     }
+    func recoverPreviousFavorites() {
+        do {
+            soundFavorites=try SoundFavoriteArchive.recover(saveURL.deletingLastPathComponent().appendingPathComponent("sound-favorites.json"))
+            favoritesRecoveryRequired=false;message="Previous favorites restored; damaged bytes retained."
+        } catch {message="Could not recover favorites: \(error.localizedDescription). Existing files were retained."}
+    }
     func recoverPreviousPresets() {
         do {
             effectPresets=try EffectPresetArchive.recover(saveURL.deletingLastPathComponent().appendingPathComponent("effect-presets.json"))
@@ -2613,6 +2861,10 @@ final class PerformanceStore: ObservableObject {
     func recoverPreviousSession() {
         do {
             if sessionRecoveryRequired {
+                guard !sessionSavedByNewerVersion else {
+                    message = "Recovering the previous session would replace a session saved by a newer StageKeys version. Update StageKeys to open it; nothing was changed."
+                    return
+                }
                 let data = try RecoverableSessionFile.restore(saveURL) {
                     let candidate = try JSONDecoder().decode(Setlist.self, from: $0).upgraded()
                     // Validate live admission before publishing recovery bytes or
@@ -2623,6 +2875,7 @@ final class PerformanceStore: ObservableObject {
                 panic(); cancelAudition(); cancelTransition()
                 setlist = recovered; selected = 0; activeSnapshot = nil; currentSetlistID = nil
                 sessionRecoveryRequired = false
+                sessionSavedByNewerVersion = false
                 if started { applyPatch(); recallTonicPatch(); audio.clock(performedTempo, metronome) }
             }
             if settingsRecoveryRequired {
@@ -2868,6 +3121,48 @@ final class PerformanceStore: ObservableObject {
     }
     func restoreLocalSetlist(_ token: UUID) {
         do { _ = try localSetlistLibrary().restore(token:token); refreshSetlists() } catch { message = error.localizedDescription }
+    }
+    /// Restore one saved document's validated previous copy. The copy is decoded
+    /// and admitted before it replaces the damaged file, and the current performance
+    /// is only replaced when the recovered document is the setlist being performed;
+    /// otherwise the next autosave would write the damaged state back over it.
+    func recoverPreviousSetlist(_ id: UUID) {
+        // Restoring a document is a setlist change, so it follows the same lock as
+        // opening one: the live performance must not be replaced while it is locked.
+        guard !patchLock else { message = "Unlock patches before changing setlists."; return }
+        do {
+            let library = try localSetlistLibrary()
+            // Decode and admit the candidate before the previous copy replaces the
+            // damaged file. A rejected activation must leave the recoverable bytes
+            // on disk instead of publishing a document the next autosave overwrites.
+            let candidate = try library.previous(id: id)
+            if id == currentSetlistID { try prepareSetlistActivation(candidate) }
+            let descriptor = try library.recoverPrevious(id: id)
+            refreshSetlists()
+            guard id == currentSetlistID else {
+                message = "Previous copy of \(descriptor.name) restored. The damaged file was retained; the current performance was not changed."
+                return
+            }
+            // Clear the message before applying the patch so a synchronous graph
+            // failure stays visible instead of being replaced by the success text.
+            message = nil
+            panic(); cancelTransition()
+            // An audition captured from the outgoing document must end before the
+            // recovered layers replace it: restoring it afterwards would treat the
+            // recovered layer as the audition's original and write the live state
+            // over the recovered plug-in state.
+            cancelAudition()
+            setlist = candidate; selected = 0; activeSnapshot = nil
+            if started || audio.running {
+                // Even a matching cached state must replace editor-mutated live
+                // state. A nil source state gets a fresh default AU instance.
+                applyPatch(forceAudioUnitReload:true); recallTonicPatch(); audio.clock(performedTempo, metronome)
+            } else {audio.prepareOfflineEditing()}
+            save()
+            if message == nil { message = "Previous copy of \(descriptor.name) restored and opened. The damaged file was retained." }
+        } catch {
+            message = "Could not recover the previous setlist copy: \(error.localizedDescription). Existing files were retained."
+        }
     }
     func load(_ url: URL) {
         guard !patchLock else { message = "Unlock patches before changing setlists."; return }

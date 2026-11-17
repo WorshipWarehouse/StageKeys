@@ -265,6 +265,7 @@ final class AudioController {
     }
     private var externalSounds: [Int: ExternalSound] = [:]
     private var externalStates: [Int: Data] = [:]
+    private var forcedPluginReloads=Set<Int>()
     private var samplerAttacks:[Int:Float]=[:]
     private var samplerHostCurves:[Int:Int]=[:]
     private var levels: [Int: Float] = [:]
@@ -596,6 +597,7 @@ final class AudioController {
     }
     private func invalidateInstrumentCaches() {
         cancelPendingConfigurations()
+        forcedPluginReloads.removeAll()
         externalSounds.removeAll(); externalStates.removeAll()
         samplerAttacks.removeAll(); samplerHostCurves.removeAll()
         effects.removeAll(); importedRacks.removeAll()
@@ -654,17 +656,18 @@ final class AudioController {
     /// accepted, including pending asynchronous AU loads. Later state/effect or
     /// graph-finalization failures are not covered by this acceptance result.
     @discardableResult
-    func configure(_ index: Int, _ layer: Layer, shouldInstall: (() -> Bool)? = nil, completion: ((Bool) -> Void)? = nil) -> Bool {
-        withInstrumentCatalog { configurePrepared(index, layer, shouldInstall: shouldInstall, completion: completion) }
+    func configure(_ index: Int, _ layer: Layer, forceReload: Bool = false, shouldInstall: (() -> Bool)? = nil, completion: ((Bool) -> Void)? = nil) -> Bool {
+        withInstrumentCatalog { configurePrepared(index, layer, forceReload: forceReload, shouldInstall: shouldInstall, completion: completion) }
     }
-    private func configurePrepared(_ index: Int, _ layer: Layer, shouldInstall: (() -> Bool)?, completion: ((Bool) -> Void)?) -> Bool {
+    private func configurePrepared(_ index: Int, _ layer: Layer, forceReload: Bool, shouldInstall: (() -> Bool)?, completion: ((Bool) -> Void)?) -> Bool {
         do { try prepareSoundChange(index, layer) }
         catch { onError?(error.localizedDescription); completion?(false); return false }
         let request = UUID()
         configurationRequests[index] = request
         externalRack?.cancelPendingLoad(index)
         let hostCurve = layer.importedRack?.mainStageAmplitudeVelocityCurve ?? layer.external?.nativeSampler?.rack.mainStageAmplitudeVelocityCurve
-        let changed = samplerHostCurves[index] != hostCurve || externalSounds[index] != layer.external ||
+        if forceReload {forcedPluginReloads.insert(index)}
+        let changed = forcedPluginReloads.contains(index) || samplerHostCurves[index] != hostCurve || externalSounds[index] != layer.external ||
             externalStates[index] != layer.pluginState || samplerAttacks[index] != layer.samplerAttackMinimum
         if changed, let sound = layer.external {
             guard let rack = externalRack else {
@@ -690,6 +693,7 @@ final class AudioController {
                 guard let self, self.configurationRequests[index] == request else { completion?(false); return }
                 switch result {
                 case .success:
+                    self.forcedPluginReloads.remove(index)
                     self.externalSounds[index] = sound
                     self.externalStates[index] = layer.pluginState
                     self.samplerAttacks[index] = layer.samplerAttackMinimum
@@ -727,6 +731,7 @@ final class AudioController {
                 completion?(false)
                 return false
             }
+            forcedPluginReloads.remove(index)
             externalSounds[index] = nil
             onLookaheadEligibilityLost?(index)
             externalStates[index] = layer.pluginState

@@ -133,6 +133,13 @@ struct AudioEffect: Codable, Equatable {
         guard kind==3,delayPingPong==true else{return nil}
         return ImportedDelay(left:Double(values[1]),right:Double(values[1]),leftSynced:true,rightSynced:true,pingPong:true,highCut:values[2])
     }
+    var primaVerbEditableValues:[Float] {
+        reverbCore == "prima-felt-room-v1" ? Array(renderValues.prefix(10)):values
+    }
+    mutating func editPrimaVerbValues(_ edited:[Float]) {
+        if reverbCore == "prima-felt-room-v1" {reverbCore="dense-v1"}
+        parameters=edited
+    }
     var renderValues:[Float] {
         if kind == 3 {return values+[effectCore == "stage-delay-v1" ? 1:0]}
         if kind == 5 {return values+[effectCore == "stage-chorus-v1" ? 1:0]}
@@ -147,8 +154,12 @@ struct AudioEffect: Codable, Equatable {
             // values intact; only its explicitly named render profile receives
             // the independently measured dense-core mapping.
             if reverbCore == "prima-felt-room-v1",rendered.count>=10 {
-                rendered[2]=0.37
-                rendered[4]=10000
+                // The measured mapping replaces the authored Reflectivity (0.33) and
+                // Tone (2884) only while both are untouched. Once a performer edits
+                // either control, the edited value is what the renderer receives, so
+                // the calibrated preset keeps its sound and edits still work.
+                if abs(rendered[2]-0.33)<0.005 { rendered[2]=0.37 }
+                if abs(rendered[4]-2884)<1 { rendered[4]=10000 }
                 return rendered+[2]
             }
             let selector:Float
@@ -173,6 +184,9 @@ struct AudioEffect: Codable, Equatable {
     }
     var values: [Float] {
         if let parameters { if kind == 15 && parameters.count == 10 {return parameters+[1]}; return (kind == 13 || kind == 10) && parameters.count == 9 ? parameters+[1]:parameters }
+        // Missing selectors/parameters belong to the pre-versioned Chorus.
+        // New factory instances carry explicit Stage values instead.
+        if kind == 5 && effectCore == nil {return [0.68,0.4,0.2,1,1]}
         var values = AudioEffectCatalog.defaults(for: kind)
         if kind == 1 { values[0] = min(20000,max(20,-48000 * log(1 - (0.004 + amount*amount*0.8)) / (2 * .pi))) }
         if kind == 2 { values[0] = amount }
@@ -558,8 +572,17 @@ enum ProgramChangeMapping {
         return values.first { !taken.contains($0) } ?? position
     }
 }
+/// Schema boundary for a saved session. Older documents are migrated on load,
+/// the current one is loaded as saved, and anything newer is refused by name so a
+/// downgrade cannot be mistaken for corruption.
+enum SetlistSchema {
+    static let oldestSupported = 1
+    static let current = 4
+    static var supported: ClosedRange<Int> { oldestSupported...current }
+}
+
 struct Setlist: Codable {
-    var version = 4
+    var version = SetlistSchema.current
     var name = "My Setlist"
     var patches = [Patch.make()]
     var assignments: [Int: Int] = [:]
@@ -575,10 +598,13 @@ struct Setlist: Codable {
                 if s.patches[i].snapshots[j].sounds != nil { s.patches[i].snapshots[j].sounds! += s.patches[i].layers.suffix(15-count).map(SnapshotSoundState.init) }
             }
         }
-        s.version = 4; return s
+        s.version = SetlistSchema.current; return s
     }
     func validate() throws {
-        guard (1...4).contains(version), !patches.isEmpty, patches.count <= 128, name.count <= 200 else { throw SetlistError.invalid }
+        guard SetlistSchema.supported.contains(version) else {
+            throw SetlistError.unsupportedVersion(saved: version, supported: SetlistSchema.supported)
+        }
+        guard !patches.isEmpty, patches.count <= 128, name.count <= 200 else { throw SetlistError.invalid }
         guard Set(patches.map(\.id)).count == patches.count else { throw SetlistError.invalid }
         for p in patches {
             guard p.conversionNotes.map({$0.count<=128 && $0.allSatisfy{$0.count<=2000}}) ?? true else {throw SetlistError.invalid}
@@ -605,9 +631,38 @@ struct Setlist: Codable {
         guard assignments.allSatisfy({ (0...127).contains($0.key) && (0...14).contains($0.value) }) else { throw SetlistError.invalid }
     }
 }
-enum SetlistError: LocalizedError {
+// Decode the version before the current payload shape on every session path,
+// including startup, library documents, portable shares and recovery previews.
+extension Setlist {
+    private enum CodingKeys:String,CodingKey {case version,name,patches,assignments,controlAssignments}
+    init(from decoder:Decoder)throws {
+        let values=try decoder.container(keyedBy:CodingKeys.self)
+        version=try values.decode(Int.self,forKey:.version)
+        guard SetlistSchema.supported.contains(version) else {
+            throw SetlistError.unsupportedVersion(saved: version, supported: SetlistSchema.supported)
+        }
+        name=try values.decode(String.self,forKey:.name)
+        patches=try values.decode([Patch].self,forKey:.patches)
+        assignments=try values.decode([Int:Int].self,forKey:.assignments)
+        controlAssignments=try values.decodeIfPresent([Int:MIDIControlTarget].self,forKey:.controlAssignments)
+    }
+}
+enum SetlistError: LocalizedError, Equatable {
     case invalid
-    var errorDescription: String? { "This setlist has unsupported or invalid settings." }
+    /// A saved document names a schema this build does not read. It is kept apart
+    /// from `invalid` so a session from a newer build is never reported as damage.
+    case unsupportedVersion(saved: Int, supported: ClosedRange<Int>)
+    var errorDescription: String? {
+        switch self {
+        case .invalid:
+            return "This setlist has unsupported or invalid settings."
+        case let .unsupportedVersion(saved, supported):
+            if saved > supported.upperBound {
+                return "This session was saved by a newer StageKeys version (schema \(saved)); this build reads schema \(supported.lowerBound)–\(supported.upperBound). Update StageKeys to open it. The saved files were left unchanged."
+            }
+            return "This session uses schema \(saved), which this build does not read (supported: \(supported.lowerBound)–\(supported.upperBound)). The saved files were left unchanged."
+        }
+    }
 }
 
 struct EffectPreset: Codable, Equatable, Identifiable {

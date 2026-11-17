@@ -1,14 +1,43 @@
 ## Unreleased
 
+<<<<<<< HEAD
 - Forward an incoming MIDI pitch wheel to hosted samplers and Audio Units instead of dropping it: `Store.handleMIDI` now accepts 14-bit `0xE0` from the primary controller, publishes the position, sends it to every hosted voice (parallel imported branches included), and recentres the wheel on Panic and Stop so a discarded bend cannot transpose the next chord. The instrument keeps its own bend range; the native `Synth.c` voice core ignores the wheel and is documented as such (#3).
+=======
+- Keep a channel that is already installed in the library reported as a duplicate, with the reason it was skipped, when a later channel or the catalog commit fails or the import is cancelled; only outcomes still waiting to commit are closed, so a refused batch no longer turns an installed channel into a failure (#5).
+
+- Name the saved-session schema a build reads (1–4) and refuse a session saved by a newer StageKeys version with its own message instead of "unsupported or invalid settings"; autosave and Recover Previous Session no longer replace that session with an older copy, and a damaged session keeps the existing recovery path (#20).
+
+- Add single-transaction multi-file import from Import Sounds: every accepted file is prepared before anything is committed, a repeated selection or an already-installed source is skipped by content identity, and a mixed batch reports added, skipped and failed counts instead of overwriting the catalog; sampler instruments still ask for their sample folder one at a time, and a cancelled or rejected batch leaves the catalog bytes unchanged (#8).
+>>>>>>> origin/main
 
 - Add experimental, bounded Nord `.npno` attack-only conversion into the native sampler with feature/size preview, exact integer decoding, key/velocity/loop/tuning maps, background preparation, cancellation rollback, duplicate source identities and personal-pack portability. Resonance/release banks and Nord-specific dynamics are disclosed as unsupported; physical Mac/iPad live qualification remains open (#212–#216). Retain the adapted decoder’s BSD notice and exclude Nord assets from distribution.
 
 - Add a bounded, read-only Nord piano-library (`.npno`) preflight that validates the documented CBIN container, CNSP prefix, key map, stroke directory and audio-grid alignment, reports its checksum verdict and refuses truncated, oversized, misaligned or unsupported-version input without decoding or copying the body; the versioned support contract, field provenance and unresolved licensing/content questions are recorded in `Docs/NORD-NPNO-SCOPE.md` (#211).
 
+- Make personal favorites a first-class library filter: a star on each row toggles a favorite, the Favorites filter composes with search and facets, and a favorite is stored next to the ratings in a bounded `sound-favorites.json` that refuses malformed entries, keeps the previous validated copy and offers the same Settings recovery as ratings (#17). Favorites are personal metadata, so they are not written into the sound catalog, samples, patches or setlists.
+
+- Offer a repair for a library sound whose managed samples moved: the footer's single repair action now covers both content issues, a missing file keeps the existing Locate flow and missing samples open a folder picker that re-resolves the retained original preset against the chosen folder, copying the samples back into managed storage and publishing only a preset that reports no content issue. A wrong or incomplete folder leaves the catalog, the setlist and the entry's message unchanged, and the previous managed preset is kept because saved patches may reference it (#17).
+
+- Translate EXS instrument transpose the way the source sampler applies it: the zone key ranges, group key ranges and root keys move with the pitch, so a boundary key can select a different source zone instead of always retriggering the authored one. Zones moved outside MIDI 0–127 are bounded and a shifted root outside the keyboard is refused; the existing-library synthesis upgrade refuses a transposed source rather than moving an edited map, so re-import is required for already-converted instruments (#7).
+
+- Size each library rating star's tappable box from the audited target (28 pt with the pointer, 44 pt on touch) instead of 17 × 28 pt, so a rating is no longer a 17 pt-wide target; the drawn 12 pt glyph and the rating values are unchanged (#19).
+
+- Size the twelve dense controls that shipped below the audited touch minimum (Tonic pad power and patch lock, sound settings and both effect bypasses, metronome, count-in, import, main menu, MIDI Learn close, library sort and the number steppers) from `StageA11y.DenseControl`, so each reaches 44 pt on iPhone and iPad while the pointer keeps its existing box (#19).
+
+- Size the workspace strip's sustain, layer-range and keyboard-range buttons from the audited hit-target minimum (44 pt on touch, 30 pt with the pointer) instead of a fixed 30 x 28 box, so the three smallest performer controls are reachable on iPad and iPhone (#19).
+
+- Report the selected audio device's detected stereo output pairs from its real channel count, name a saved or requested pair that this device cannot provide instead of substituting one, and add a bounded pair count to local support diagnostics. Per-sound/category routing to extra pairs is still unimplemented, so no audio is sent to a pair that is only reported (#107).
+
+- Date received MIDI clock pulses with the CoreMIDI packet timestamp, falling back to the main-queue receipt time when the driver sends no usable stamp, so queued main-thread work no longer stretches the interval the tempo is measured from (#108).
+
 - Stop completed AU loader callbacks from retaining the replaced sampler, and refuse forward, rollback and manual audio restart while a purged/truncated sampler is still retained; preserve the stopped recovery guard until release, with generated failure/retry coverage and a 96-switch live-output verification for #192.
 
 - Release a truncated or purged hosted sampler through one ownership registry and disposal order while the engine is stopped, commit the truncation into the rollback so a restored graph never references released nodes, and record the verified pre-restart release in the local support report (#192). The live macOS crash remains unreproduced and this is not a general rollback of released audio.
+
+- Add **Remove from My Sounds** to the library row menu for sounds you imported, backed by a catalog delete that keeps the managed preset/sample bytes so saved patches and setlists keep playing; the removal notice offers **Undo**, which restores the same entry with its tags and stored digest, while bundled and optional-library entries stay installed.
+
+
+- Keep one validated previous copy of every saved setlist document, preserve unreadable bytes beside it instead of rotating them, and add an explicit **Restore Previous Copy** action to the setlist error rows in Settings; the setlist being performed is decoded and admitted before the copy is published, so a rejected activation cannot leave a file the next autosave overwrites, and Patch Lock refuses recovery before any bytes change.
 - Report each retained MainStage channel shaping value individually with its archived-value representation, store it in the layer's source record so it survives persistence, backup and setlist sharing, and stop telling users to set an envelope that Sound Settings hides for a converted sampler or hosted plug-in (#112). Containers are recorded as counts and strings are truncated to 120 characters, so this is a bounded representation, not the complete source value; keep the original MainStage document when you need the full setting. Shaping keys longer than the record limit are reported and skipped instead of stored, and sharing redacts absolute and home-relative paths in keys and values, so one oversized or path-like field cannot block an import or leak a local location.
 - Add optional per-sound sample-peak/RMS meters after each sound's fader and pan, with no taps while disabled and persisted legacy-safe settings; document the signal point and its true-peak/loudness limits.
 - Add the versioned `stage-flanger-v1` core with a 1.5 ms reference path, a bipolar cubic sweep that crosses zero, per-channel modulation phase, signed soft-limited feedback and 20 ms control smoothing. Mix 0 stays an exact dry bypass; engaging the effect adds the 1.5 ms reference latency. Existing flanger patches keep the legacy core until the editor's **Use Stage Flanger** action is chosen; the core identifier is preserved through presets, patches and snapshots.

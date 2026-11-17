@@ -21,6 +21,13 @@ import CoreMIDI
     wait { store.midiSources.contains(where:{$0.name=="Test Keyboard A"}) && store.midiSources.contains(where:{$0.name=="Test Keyboard B"}) }
     store.primarySourceID=store.midiSources.first{$0.name=="Test Keyboard A"}!.id;store.midiChannel=0
     store.secondarySourceID=store.midiSources.first{$0.name=="Test Keyboard B"}!.id;store.secondaryChannel = 2
+    // Exercise the production route with only this test's virtual sources.
+    // Unrelated physical clock traffic must not overwrite the monitor witness.
+    let receive=store.midi.onSourceEvent
+    let tracked=Set([store.primarySourceID,store.secondarySourceID])
+    store.midi.onSourceEvent={source,status,a,b,time,fromPacket in
+        if tracked.contains(source) {receive?(source,status,a,b,time,fromPacket)}
+    }
     func send(_ source:MIDIEndpointRef,_ status:UInt8,_ data1:UInt8,_ data2:UInt8) {
         var list=MIDIPacketList()
         withUnsafeMutablePointer(to:&list) { p in

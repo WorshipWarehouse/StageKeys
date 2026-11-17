@@ -24,7 +24,7 @@ forbidden={'.caf','.wav','.aif','.aifc','.aiff','.sd2','.flac','.mp3','.m4a','.s
 # MainStage documents are bundles, so match the path component as well as a plain file name.
 document_suffixes=('.patch','.concert','.stagekeyspack','.stagekeyssetlist')
 # Files the app writes into its own data directory for the user.
-user_files={'sound-library.json','manifest.json','setlist.json'}
+user_files={'sound-favorites.json','sound-library.json','manifest.json','setlist.json'}
 def private(path):
  name=path.name.lower()
  return (path.suffix.lower() in forbidden or name in user_files
@@ -58,7 +58,7 @@ if args.bundle:
   raise SystemExit('Bundle has no application Info.plist')
  entries = list(args.bundle.rglob('*'))
  paths += [x.relative_to(args.bundle) for x in entries]
- for notice in ('StageKeys-MIT.txt','Airwindows-MIT.txt','EXS-Parser-MIT.md','Drawbar-BSD-3-Clause.txt','StageKeys-Dense-Reverb-MIT.txt','OFL.txt'):
+ for notice in ('StageKeys-MIT.txt','Airwindows-MIT.txt','EXS-Parser-MIT.md','Drawbar-BSD-3-Clause.txt','DaisySP-MIT.txt','Signalsmith-DSP-MIT.txt','StageKeys-Dense-Reverb-MIT.txt','OFL.txt'):
   if not any(x.is_file() and x.name == notice for x in entries):
    raise SystemExit('Required bundled license missing: '+notice)
 factory=[]

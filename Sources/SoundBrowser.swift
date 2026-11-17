@@ -14,6 +14,15 @@ struct SoundBrowser: View {
     @State private var showingImportNotes=false
     @State private var locating=false
     @State private var locateTarget:String?
+    @State private var locatingSamples=false
+    @State private var samplesTarget:String?
+    /// Result of the last library edit. The sheet is modal, so the store's own
+    /// message would otherwise be shown behind it.
+    @State private var removalFeedback=LibraryRemovalFeedback()
+    /// A repair result from `store.message`, shown here because this modal does not
+    /// otherwise display the store's message and must not consume removal feedback.
+    @State private var repairNotice:String?
+    /// The entry the last successful removal reported, so its notice can offer Undo.
     @State private var auditionToken:UUID?
     @State private var instruments=ExternalInstrumentRack.instruments()
     private var targetLayer:Layer {store.patch.layers[index]}
@@ -66,6 +75,7 @@ struct SoundBrowser: View {
             }
         }.map {sound in
             var item=sound;item.rating=store.soundRatings[sound.ratingID] ?? 0
+            item.favorite=store.soundFavorites[sound.ratingID] != nil
             item.addedOrder=entryOrder[sound.ratingID] ?? 0
             return item
         }
@@ -74,7 +84,7 @@ struct SoundBrowser: View {
     private var results:[BrowserSound] {query.results(sounds)}
     private var selection:BrowserSound? {results.first{$0.id == selectedID}}
     private var emptyState:LibraryEmptyState {
-        LibraryEmptyState.resolve(catalogUnreadable:store.libraryRecoveryRequired,searching:!query.search.isEmpty,filtering:!query.filters.isEmpty)
+        LibraryEmptyState.resolve(catalogUnreadable:store.libraryRecoveryRequired,searching:!query.search.isEmpty,filtering:!query.filters.isEmpty || query.favoritesOnly)
     }
     var body:some View {
         EditorFrame(title:"Library",width:960,height:650,showsHeader:false) {
@@ -82,7 +92,9 @@ struct SoundBrowser: View {
             // One recovery control at a time: with no result rows the empty state
             // carries the action, and the bar covers a catalog that still lists rows.
             if store.libraryRecoveryRequired && !results.isEmpty {libraryErrorBar}
-            if !query.activeFilters.isEmpty {filterBar}
+            filterBar
+            if let notice=removalFeedback.text {libraryNoticeBar(notice,showsUndo:removalFeedback.removed != nil)}
+            if let notice=repairNotice {libraryNoticeBar(notice,onDismiss:{repairNotice=nil})}
             GeometryReader {geometry in
                 ScrollView(.horizontal) {
                     HStack(spacing:0) {
@@ -100,6 +112,16 @@ struct SoundBrowser: View {
             defer {locateTarget=nil}
             guard case .success(let url)=result,let id=locateTarget else{return}
             store.relinkLibrarySound(id,from:url)
+            if let message=store.message {repairNotice=message;store.message=nil}
+        }
+        .fileImporter(isPresented:$locatingSamples,allowedContentTypes:[.folder]) { result in
+            defer {samplesTarget=nil}
+            guard case .success(let url)=result,let id=samplesTarget else{return}
+            store.relinkLibrarySamples(id,from:url)
+            // The repair reports through `store.message`; carry it into the browser's
+            // own notice so a rejected folder explains itself, without touching any
+            // pending removal Undo.
+            if let message=store.message {repairNotice=message;store.message=nil}
         }
         .onAppear {
             store.refreshLibraryContent()
@@ -109,10 +131,13 @@ struct SoundBrowser: View {
         .onChange(of:facets){savedFacets=$0.map(\.rawValue).joined(separator:"|")}
         .onDisappear {endPreview()}
         .onChange(of:selectedID){_ in previewRange();if auditionToken != nil {auditionSelection()}}
-        .onChange(of:collection){_ in selectedID=nil;query.filters=[:]}
+        .onChange(of:collection){_ in selectedID=nil;query.filters=[:];removalFeedback.dismiss()}
         .onChange(of:query.search){_ in clearHiddenSelection()}
         .onChange(of:query.filters){_ in clearHiddenSelection()}
         .onChange(of:store.librarySounds){_ in clearHiddenSelection();store.refreshLibraryContent()}
+        // Unfavoriting can remove the selected row from Favorites results; the
+        // selection observer then ends its audition and range preview.
+        .onChange(of:store.soundFavorites){_ in clearHiddenSelection()}
     }
     private var header:some View {
         HStack(spacing:16) {
@@ -164,6 +189,32 @@ struct SoundBrowser: View {
         }.padding(.horizontal,16).frame(minHeight:46).background(StageTheme.raised.opacity(0.3))
         .accessibilityElement(children:.contain)
     }
+    /// Removal keeps the managed file, so the outcome is stated here with its own
+    /// dismiss control instead of disappearing into a modal-obscured message.
+    private func libraryNoticeBar(_ text:String,showsUndo:Bool=false,onDismiss:(()->Void)?=nil)->some View {
+        HStack(spacing:12) {
+            Image(systemName:"checkmark.circle.fill").foregroundStyle(StageTheme.selected)
+            Text(text).font(StageTheme.font(12)).fixedSize(horizontal:false,vertical:true)
+            Spacer(minLength:0)
+            if showsUndo {
+                Button("Undo"){undoRemoval()}.buttonStyle(StageButtonStyle())
+                    .accessibilityLabel("Undo the removal")
+                    .help("Put the removed sound back in My Sounds with its tags and saved settings.")
+            }
+            Button("Dismiss"){if let onDismiss {onDismiss()} else {removalFeedback.dismiss()}}.buttonStyle(StageButtonStyle())
+                .accessibilityLabel("Dismiss the library message")
+        }.padding(.horizontal,16).frame(minHeight:46).background(StageTheme.raised.opacity(0.3))
+        .accessibilityElement(children:.contain)
+    }
+    /// Undo needs no catalog recovery: removal keeps the managed file, so the
+    /// removed entry is appended back and keeps its identity, tags and settings.
+    private func undoRemoval() {
+        guard let removed=removalFeedback.removed else{return}
+        let restored=store.restoreLibrarySound(removed)
+        removalFeedback.restoration(succeeded:restored,message:store.message ?? (restored ? "Restored \(removed.name).":"Could not restore \(removed.name)."))
+        if restored {selectedID=removed.id}
+        store.message=nil
+    }
     private var filterBar:some View {
         ScrollView(.horizontal,showsIndicators:false) {
             HStack(spacing:8) {
@@ -183,26 +234,72 @@ struct SoundBrowser: View {
                      .accessibilityLabel("Remove \(filter.facet.rawValue) filter: \(filter.value)")
                      .help("Remove this filter")
                 }
-                Button("Clear Filters") {query.filters=[:];clearHiddenSelection()}
-                    .font(StageTheme.font(12,weight:.semibold)).buttonStyle(.plain)
-                    .accessibilityLabel("Clear all library filters")
+                Button {query.favoritesOnly.toggle();clearHiddenSelection()} label: {
+                    HStack(spacing:6) {
+                        Image(systemName:query.favoritesOnly ? "star.fill":"star").font(.system(size:10,weight:.bold))
+                        Text("Favorites").font(StageTheme.font(12))
+                    }.padding(.horizontal,10).padding(.vertical,7)
+                     .background(query.favoritesOnly ? selectionColor : StageTheme.raised.opacity(0.35),in:Capsule())
+                     .overlay(Capsule().stroke(Color.white.opacity(0.10)))
+                }.buttonStyle(.plain)
+                 .accessibilityLabel(query.favoritesOnly ? "Show all sounds":"Show favorite sounds only")
+                 .help("Show favorites only")
+                if !query.activeFilters.isEmpty || query.favoritesOnly {
+                    Button("Clear Filters") {query.filters=[:];query.favoritesOnly=false;clearHiddenSelection()}
+                        .font(StageTheme.font(12,weight:.semibold)).buttonStyle(.plain)
+                        .accessibilityLabel("Clear all library filters")
+                }
             }.padding(.horizontal,16).frame(height:38)
         }.background(StageTheme.base)
+    }
+    private var favoriteTarget:CGFloat {
+        #if os(iOS)
+        return CGFloat(StageA11y.ratingStarTarget(touch:true))
+        #else
+        return CGFloat(StageA11y.ratingStarTarget(touch:false))
+        #endif
+    }
+    private func soundNameButton(_ sound:BrowserSound)->some View {
+        Button{selectedID=sound.id}label:{VStack(alignment:.leading,spacing:5){Text(sound.name).font(StageTheme.font(16)).multilineTextAlignment(.leading);if collection == "MainStage Archive" {Text(sound.playable ? "Playable":"Needs Conversion").font(StageTheme.font(11)).foregroundStyle(.secondary)};if sound.unavailableReason != nil || sound.contentIssue != nil {Text("Unavailable").font(StageTheme.font(11)).foregroundStyle(.orange)};if sound.collection == "Audio Units" {Text(sound.tags.sourceModel).font(StageTheme.font(11)).foregroundStyle(.secondary)}}.frame(maxWidth:.infinity,alignment:.leading).padding(.leading,14).padding(.vertical,13)}.buttonStyle(.plain).accessibilityLabel("\(sound.name), \((sound.unavailableReason != nil || sound.contentIssue != nil) ? "Unavailable" : sound.playable ? "Playable":"Needs Conversion")")
+    }
+    private func favoriteButton(_ sound:BrowserSound)->some View {
+        Button{store.toggleFavorite(sound.ratingID)
+            // A failed save leaves the favorite unchanged and says why in `store.message`,
+            // which this modal does not otherwise show; keep any pending removal Undo.
+            if let message=store.message {repairNotice=message;store.message=nil}
+        }label:{Image(systemName:sound.favorite ? "star.fill":"star").font(.system(size:13,weight:.semibold)).frame(width:favoriteTarget,height:favoriteTarget).contentShape(Rectangle())}.buttonStyle(.plain).padding(.trailing,4)
+                                .accessibilityLabel(sound.favorite ? "Remove \(sound.name) from favorites":"Add \(sound.name) to favorites")
+                                .help(sound.favorite ? "Remove from favorites":"Add to favorites")
+    }
+    @ViewBuilder private func resultRow(_ sound:BrowserSound)->some View {
+        #if os(iOS)
+        VStack(alignment:.leading,spacing:0) {
+            soundNameButton(sound)
+            HStack(spacing:0) {
+                favoriteButton(sound)
+                SoundRatingControl(name:sound.name,rating:sound.rating){store.rateSound(sound.ratingID,$0)}.padding(.horizontal,12)
+                Spacer(minLength:0)
+            }
+        }
+        #else
+        HStack(spacing:0) {
+            soundNameButton(sound)
+            favoriteButton(sound)
+            SoundRatingControl(name:sound.name,rating:sound.rating){store.rateSound(sound.ratingID,$0)}.padding(.horizontal,12)
+        }
+        #endif
     }
     private var resultColumn:some View {
         VStack(spacing:0) {
             HStack(spacing:8) {
                 Text("Order by").font(StageTheme.font(12))
                 LibraryChoiceMenu(title:query.ordering.rawValue,choices:LibrarySort.allCases.map(\.rawValue),accessibility:"Order by \(query.ordering.rawValue)"){if let order=LibrarySort(rawValue:$0){query.order(by:order)}}
-                Button{query.ascending.toggle()}label:{Image(systemName:query.ascending ? "arrow.down.to.line" : "arrow.up.to.line").frame(width:30,height:42)}.buttonStyle(.plain).accessibilityLabel(query.ascending ? "Sort descending" : "Sort ascending")
+                Button{query.ascending.toggle()}label:{Image(systemName:query.ascending ? "arrow.down.to.line" : "arrow.up.to.line").frame(width: CGFloat(StageA11y.denseWidth(.librarySort)), height: CGFloat(StageA11y.denseHeight(.librarySort)))}.buttonStyle(.plain).accessibilityLabel(query.ascending ? "Sort descending" : "Sort ascending")
             }.padding(8).frame(height:70)
             ScrollView {
                 LazyVStack(spacing:2) {
                     ForEach(results){sound in
-                        HStack(spacing:0){
-                            Button{selectedID=sound.id}label:{VStack(alignment:.leading,spacing:5){Text(sound.name).font(StageTheme.font(16)).multilineTextAlignment(.leading);if collection == "MainStage Archive" {Text(sound.playable ? "Playable":"Needs Conversion").font(StageTheme.font(11)).foregroundStyle(.secondary)};if sound.unavailableReason != nil || sound.contentIssue != nil {Text("Unavailable").font(StageTheme.font(11)).foregroundStyle(.orange)};if sound.collection == "Audio Units" {Text(sound.tags.sourceModel).font(StageTheme.font(11)).foregroundStyle(.secondary)}}.frame(maxWidth:.infinity,alignment:.leading).padding(.leading,14).padding(.vertical,13)}.buttonStyle(.plain).accessibilityLabel("\(sound.name), \((sound.unavailableReason != nil || sound.contentIssue != nil) ? "Unavailable" : sound.playable ? "Playable":"Needs Conversion")")
-                            SoundRatingControl(name:sound.name,rating:sound.rating){store.rateSound(sound.ratingID,$0)}.padding(.horizontal,12)
-                        }.background(selectedID == sound.id ? selectionColor:.clear,in:RoundedRectangle(cornerRadius:7)).foregroundStyle(selectedID == sound.id ? .white:.white.opacity(0.85))
+                        resultRow(sound).background(selectedID == sound.id ? selectionColor:.clear,in:RoundedRectangle(cornerRadius:7)).foregroundStyle(selectedID == sound.id ? .white:.white.opacity(0.85))
                          .contextMenu {if let entry=sound.entry {
                             Button(sound.tags.recommended == true ? "Remove from Recommended":"Mark Recommended"){store.setSoundRecommended(entry.id,sound.tags.recommended != true)}
                             Menu("Note Range") {
@@ -212,6 +309,20 @@ struct SoundBrowser: View {
                                 Divider();Button("Clear Note Range Tags"){store.setSoundNoteRanges(entry.id,[])}
                             }
                             Menu("Complexity"){ForEach(["Simple","Moderate","Complex"],id:\.self){value in Button(value){store.setSoundComplexity(entry.id,value)}};Divider();Button("Clear Complexity"){store.setSoundComplexity(entry.id,nil)}}
+                            // Only user imports are removable here: bundled and
+                            // optional-library entries are installed content, and the
+                            // catalog should not offer to delete them by accident.
+                            if entry.collection == "My Sounds" {
+                                Divider()
+                                Button(role:.destructive) {
+                                    if let removed=store.removeLibrarySound(entry.id) {
+                                        removalFeedback.removal(removed,message:store.message ?? "Removed \(removed.name) from My Sounds. Its file stays in the library folder so saved patches keep playing. Use Undo to restore it.")
+                                    }
+                                    else {removalFeedback.removal(nil,message:store.message ?? "Could not remove this sound.")}
+                                    store.message=nil
+                                    selectedID=nil
+                                } label:{Label("Remove from My Sounds",systemImage:"trash")}
+                            }
                         }}
 
                     }
@@ -259,7 +370,14 @@ struct SoundBrowser: View {
                     #endif
                 }
             }.font(StageTheme.font(12)).frame(maxWidth:.infinity,alignment:.leading)
-            if let selection,let issue=selection.contentIssue,issue == .missingFile {Button(issue.locateTitle){locateTarget=selection.id;locating=true}.buttonStyle(StageButtonStyle()).accessibilityLabel("Locate the saved file for \(selection.name)").help("Choose the same sound file from its current location. It is copied into the library; a different sound is refused.")}
+            if let selection,let issue=selection.contentIssue {
+                Button(issue.repairTitle) {
+                    if issue.repairsWithFolder {samplesTarget=selection.id;locatingSamples=true}
+                    else {locateTarget=selection.id;locating=true}
+                }.buttonStyle(StageButtonStyle())
+                    .accessibilityLabel(issue.repairsWithFolder ? "Choose the sample folder for \(selection.name)":"Locate the saved file for \(selection.name)")
+                    .help(issue.repairsWithFolder ? "Choose the folder that now holds this preset's samples. They are copied into the library; an incomplete folder is refused and nothing changes.":"Choose the same sound file from its current location. It is copied into the library; a different sound is refused.")
+            }
             if selection?.entry?.conversionNotes?.isEmpty == false {Button("Import Notes"){showingImportNotes=true}.buttonStyle(StageButtonStyle()).popover(isPresented:$showingImportNotes){ScrollView{VStack(alignment:.leading,spacing:12){ForEach(selection?.entry?.conversionNotes ?? [],id:\.self){Text($0)}}.padding(20)}.frame(width:420,height:300)}}
             Button("Refresh Audio Units") { instruments=ExternalInstrumentRack.instruments(); store.refreshUnavailablePatchInstruments(installed: instruments) }.buttonStyle(StageButtonStyle())
             if collection == "External MIDI" {Button("Refresh"){store.refreshMIDIDestinations()}.buttonStyle(StageButtonStyle())}
@@ -326,6 +444,16 @@ private struct LibraryActionStyle:ButtonStyle {
 }
 
 private struct SoundRatingControl:View {
+    /// A star's tappable box, not its glyph: 44 pt on touch and 28 pt with the
+    /// pointer (`StageA11y`). The drawn star stays 12 pt so the row looks the
+    /// same, and a rating tap is no longer a 17 pt-wide strip.
+    private static var starTarget:CGFloat {
+        #if os(iOS)
+        return CGFloat(StageA11y.ratingStarTarget(touch: true))
+        #else
+        return CGFloat(StageA11y.ratingStarTarget(touch: false))
+        #endif
+    }
     let name:String
     let rating:Int
     let set:(Int)->Void
@@ -338,7 +466,9 @@ private struct SoundRatingControl:View {
                         if star<=rating {Image(systemName:"star.fill").font(.system(size:12))}
                         else if hovering {Image(systemName:"star").font(.system(size:12))}
                         else {Circle().frame(width:3,height:3)}
-                    }.frame(width:17,height:28).contentShape(Rectangle())
+                    }
+                    .frame(width:Self.starTarget,height:Self.starTarget)
+                    .contentShape(Rectangle())
                 }.buttonStyle(.plain)
                 .accessibilityLabel("Rate \(name) \(star) stars")
                 .accessibilityValue(star<=rating ? "Selected":"Not selected")

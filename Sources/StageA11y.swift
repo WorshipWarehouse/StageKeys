@@ -23,6 +23,69 @@ enum StageA11y {
         let minimum=pointer ? minimumPointerTarget:minimumTouchTarget
         return width >= minimum && height >= minimum
     }
+    /// One star in a five-star rating row. The drawn glyph is an icon, not the
+    /// target: only its tappable box grows, and touch needs more room than a
+    /// pointer. The shipped library control sized each star 17×28 pt, which
+    /// missed even the pointer minimum.
+    static func ratingStarTarget(touch: Bool)->Double {touch ? minimumTouchTarget:minimumPointerTarget}
+
+    /// The audited box for the workspace strip's icon buttons (sustain, layer
+    /// ranges, keyboard ranges). Touch platforms take the touch minimum; a mouse
+    /// pointer keeps the compact dense box, which still clears the pointer one.
+    static func workspaceButtonTarget(touch: Bool)->Double {touch ? minimumTouchTarget:30}
+
+    /// Dense icon buttons that shipped with a fixed box narrower or shorter than
+    /// the audited touch minimum: the Tonic pad's power and patch-lock boxes, the
+    /// mixer's sound-settings and effect-bypass buttons, four transport boxes, the
+    /// MIDI Learn close button, the library sort button and the +/- number steppers.
+    /// Each keeps its shipped size for the pointer and takes the touch minimum on
+    /// iPhone/iPad, so no view carries a threshold of its own.
+    enum DenseControl: String, CaseIterable {
+        case tonicPower, tonicPatchLock, mixerSoundSettings, midiEffectBypass, audioEffectBypass
+        case metronome, countIn, importSounds, mainMenu, midiLearnClose, librarySort, numberStepper
+        /// The size the control shipped with, measured from the source at the
+        /// audit and kept here as the failing witness and the pointer size.
+        var shippedWidth: Double {
+            switch self {
+            case .tonicPower, .metronome: return 38
+            case .tonicPatchLock, .mainMenu: return 40
+            case .mixerSoundSettings, .midiEffectBypass, .countIn: return 34
+            case .audioEffectBypass, .numberStepper: return 36
+            case .importSounds, .midiLearnClose, .librarySort: return 30
+            }
+        }
+        var shippedHeight: Double {
+            switch self {
+            case .tonicPower, .tonicPatchLock: return 46
+            case .mixerSoundSettings: return 45
+            case .midiEffectBypass, .audioEffectBypass: return 49
+            case .metronome, .countIn: return 44
+            case .importSounds, .mainMenu: return 36
+            case .midiLearnClose: return 30
+            case .librarySort, .numberStepper: return 42
+            }
+        }
+    }
+
+    /// True where the audited touch minimum applies (iPhone and iPad).
+    static var touchTargetsApply: Bool {
+        #if os(iOS)
+        return true
+        #else
+        return false
+        #endif
+    }
+
+    /// The rendered box for a dense control: the touch minimum on touch, and the
+    /// shipped size with the pointer, lifted to the pointer minimum if it is under.
+    static func denseWidth(_ control: DenseControl, touch: Bool)->Double {
+        max(touch ? minimumTouchTarget:minimumPointerTarget, control.shippedWidth)
+    }
+    static func denseHeight(_ control: DenseControl, touch: Bool)->Double {
+        max(touch ? minimumTouchTarget:minimumPointerTarget, control.shippedHeight)
+    }
+    static func denseWidth(_ control: DenseControl)->Double {denseWidth(control, touch: touchTargetsApply)}
+    static func denseHeight(_ control: DenseControl)->Double {denseHeight(control, touch: touchTargetsApply)}
 
     /// The release palette. These are the only colour definitions: `StageTheme`
     /// builds SwiftUI colours from them instead of carrying its own copies.

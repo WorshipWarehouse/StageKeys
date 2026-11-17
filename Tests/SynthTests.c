@@ -11,6 +11,10 @@ static double render(SKSynth *s,int blocks) {
 }
 static void event(void *ctx,uint8_t status,uint8_t a,uint8_t b){int *count=ctx;assert(status==0x90);assert(a==60);assert(b==100);(*count)++;}
 static void realtime_event(void *ctx,uint8_t status,uint8_t a,uint8_t b){int *count=ctx;assert(status==0xF8);assert(a==0);assert(b==0);(*count)++;}
+typedef struct { int count; uint64_t stamps[4]; } TimedEvents;
+static void timed_event(void *context,uint8_t status,uint8_t a,uint8_t b,uint64_t ticks){
+ (void)a;(void)b;TimedEvents *events=context;assert(status==0xf8);assert(events->count<4);events->stamps[events->count++]=ticks;
+}
 int main(void){
  SKSynth *s=sk_create(48000);assert(s);
  assert(render(s,1)==0);
@@ -30,6 +34,10 @@ int main(void){
  for(int i=0;i<150;i++)sk_note_on(s,i,60+i%24,i%3,0,1);assert(render(s,30)>0.1);sk_panic(s);assert(render(s,1)==0);
  MIDIEventList list;MIDIEventPacket *packet=MIDIEventListInit(&list,kMIDIProtocol_1_0);UInt32 word=0x20903c64;assert(MIDIEventListAdd(&list,sizeof(list),packet,0,1,&word));int count=0;sk_read_midi(&list,event,&count);assert(count==1);
  // UMP type-1 system realtime is the MIDI Clock/Start/Continue/Stop path.
+ MIDIEventList clockList;MIDIEventPacket *clockPacket=MIDIEventListInit(&clockList,kMIDIProtocol_1_0);UInt32 clockWord=0x10F80000;
+ clockPacket=MIDIEventListAdd(&clockList,sizeof(clockList),clockPacket,100,1,&clockWord);assert(clockPacket);
+ clockPacket=MIDIEventListAdd(&clockList,sizeof(clockList),clockPacket,1100,1,&clockWord);assert(clockPacket&&clockList.numPackets==2);
+ TimedEvents timed={0};sk_read_midi_timed(&clockList,timed_event,&timed);assert(timed.count==2&&timed.stamps[0]==100&&timed.stamps[1]==1100);
  MIDIEventList realtimeList;MIDIEventPacket *realtimePacket=MIDIEventListInit(&realtimeList,kMIDIProtocol_1_0);UInt32 realtimeWord=0x10F80000;assert(MIDIEventListAdd(&realtimeList,sizeof(realtimeList),realtimePacket,0,1,&realtimeWord));int realtimeCount=0;sk_read_midi(&realtimeList,realtime_event,&realtimeCount);assert(realtimeCount==1);
  sk_destroy(s);puts("PASS: instruments, release, sustain, transpose identity, fades, panic, overflow, voice bounds, MIDI UMP");
 }
