@@ -41,12 +41,14 @@ import Foundation
         assert(NpnoPreflight.PlaybackState.allCases == [.inspectionOnly],
                "This increment has exactly one state: inspection-only")
         let kinds = inspection.spans.map { $0.kind }
-        assert(kinds == [.container, .unclassified, .content, .unclassified],
+        assert(kinds == [.container, .unclassified, .type, .unclassified, .content, .unclassified],
                "Unexpected span classification: \(kinds)")
-        assert(inspection.spans.map { $0.offset } == [0, 12, 44, 48],
+        assert(inspection.spans.map { $0.offset } == [0, 4, 8, 12, 44, 48],
                "Spans must stay in ascending order")
-        assert(inspection.unclassifiedBytes == valid.count - 16,
-               "Unclassified bytes must be the input minus the classified header and content tags")
+        assert(inspection.spans.contains(NpnoPreflight.Span(kind: .unclassified, offset: 4, length: 4)),
+               "The unidentified word at offset 4 must stay unclassified")
+        assert(inspection.unclassifiedBytes == valid.count - 12,
+               "Unclassified bytes must be the input minus the three classified tags")
         assert(inspection.sha256 == AssetDigest.sha256(valid),
                "The report must carry the hash of the unchanged input")
 
@@ -65,6 +67,18 @@ import Foundation
         let fromDisk = try NpnoPreflight.inspect(url: file)
         assert(fromDisk.sha256 == inspection.sha256 && fromDisk.byteCount == inspection.byteCount)
         assert(fromDisk.spans == inspection.spans && fromDisk.state == .inspectionOnly)
+        // The digest comes from one opened stream, so a file whose length moved
+        // under the reader is refused instead of being described by two reads.
+        let stream = try FileHandle(forReadingFrom: file)
+        defer { try? stream.close() }
+        let streamedDigest = try NpnoPreflight.digest(handle: stream, expectedBytes: valid.count)
+        assert(streamedDigest == inspection.sha256,
+               "The streamed digest must match the in-memory digest of the same bytes")
+        expect(.inputChanged, "a file shorter than the reported byte count") {
+            let handle = try FileHandle(forReadingFrom: file)
+            defer { try? handle.close() }
+            return try NpnoPreflight.digest(handle: handle, expectedBytes: valid.count + 4)
+        }
 
         expect(.empty, "an empty input") { try NpnoPreflight.inspect(Data()) }
         expect(.oversizedInput, "an input past the file ceiling") {
@@ -80,8 +94,8 @@ import Foundation
         expect(.unsupportedLayout, "a content tag this build does not recognise") {
             try NpnoPreflight.inspect(fixture(content: "XXXX"))
         }
-        expect(.unsupportedLayout, "a header read shorter than the observed content tag") {
-            try NpnoPreflight.inspect(valid, limits: .init(maximumReadBytes: 40))
+        expect(.unsupportedLayout, "a header read shorter than the observed tags") {
+            try NpnoPreflight.inspect(valid, limits: .init(maximumReadBytes: 8))
         }
         expect(.unclassifiedPayloadTooLarge, "payload beyond the inspection ceiling") {
             try NpnoPreflight.inspect(fixture(byteCount: 4096), limits: .init(maximumUnclassifiedBytes: 1024))

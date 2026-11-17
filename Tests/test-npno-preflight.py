@@ -14,7 +14,7 @@ def fail(message):
 LIMITS = ['maximumFileBytes', 'maximumUnclassifiedBytes', 'maximumReadBytes', 'maximumSpans']
 REFUSALS = ['empty', 'oversizedInput', 'truncated', 'unexpectedContainer', 'unexpectedType',
             'unsupportedLayout', 'unclassifiedPayloadTooLarge', 'tooManySpans', 'overlappingSpan',
-            'spanOutOfRange']
+            'spanOutOfRange', 'inputChanged']
 # APIs that would turn inspection into a write, a network fetch or an upload.
 WRITE_APIS = ['write(to:', 'createFile(', 'FileHandle(forWritingTo', '.removeItem(',
               'URLSession', 'replaceItemAt']
@@ -37,18 +37,37 @@ for refusal in REFUSALS:
     if f'.{refusal}' not in tests:
         fail(f'Tests/NpnoPreflightTests.swift no longer exercises the {refusal} refusal')
 
-# Inspection must refuse before it hashes: an oversized or malformed input is
-# never read into the digest.
-start = source.find('static func inspect(_ data: Data')
-end = source.find('static func inspect(url:')
-if start < 0 or end < 0 or end <= start:
-    fail('cannot locate the in-memory inspection entry point')
+# Inspection must refuse before it hashes, and must hash the same opened stream
+# it classified, so no refusal can be reached after a digest is taken.
+def pieces(name):
+    found = []
+    for piece in re.split(r'\n    static func ', source)[1:]:
+        if piece.startswith(name):
+            found.append(piece)
+    return found
+
+memory = pieces('inspect(_ data: Data')
+file_entry = pieces('inspect(url:')
+classify = pieces('classify(prefix:')
+digest = pieces('digest(handle:')
+if not memory or not file_entry or not classify or not digest:
+    fail('cannot locate the inspection entry points')
 else:
-    body = source[start:end]
-    if body.find('try classify(') < 0 or body.find('AssetDigest.sha256') < 0:
+    memory, file_entry, classify, digest = memory[0], file_entry[0], classify[0], digest[0]
+    if 'try classify(' not in memory or 'AssetDigest.sha256' not in memory:
         fail('in-memory inspection no longer classifies and then hashes the input')
-    elif body.find('try classify(') > body.find('AssetDigest.sha256'):
+    elif memory.find('try classify(') > memory.find('AssetDigest.sha256'):
         fail('in-memory inspection hashes the input before it refuses a bad one')
+    if 'try classify(' not in file_entry or 'digest(handle:' not in file_entry:
+        fail('file inspection no longer classifies and then hashes the same file')
+    elif file_entry.find('try classify(') > file_entry.find('digest(handle:'):
+        fail('file inspection hashes the file before it refuses a bad one')
+    if 'AssetDigest.sha256(url)' in source:
+        fail('file inspection reopens the file for its digest instead of using the opened stream')
+    if 'throw Refusal.unclassifiedPayloadTooLarge' not in classify:
+        fail('the unclassified-payload ceiling is no longer enforced before hashing')
+    if 'throw Refusal.inputChanged' not in digest or 'AssetDigest.sha256(handle,' not in digest:
+        fail('the digest no longer streams the opened file and refuses a changed length')
 
 for api in WRITE_APIS:
     if api in source:

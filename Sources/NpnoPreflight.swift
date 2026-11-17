@@ -14,13 +14,14 @@ enum NpnoPreflight {
     static let typeTag = "npno"
     /// Content-section tag observed at offset 44.
     static let contentTag = "CNSP"
-    /// Offset of `contentTag`, recorded as an observation of the two private
-    /// examples rather than a documented field of the format.
+    static let tagBytes = 4
+    /// Offsets of the observed tags. They are observations of the two private
+    /// examples, not documented fields of the format.
+    static let containerTagOffset = 0
+    static let typeTagOffset = 8
     static let contentTagOffset = 44
-    /// Classified prefix: `CBIN`, an unidentified four-byte word, then `npno`.
-    static let headerBytes = 12
     /// Smallest input this build recognises: through the observed content tag.
-    static let minimumBytes = contentTagOffset + 4
+    static let minimumBytes = contentTagOffset + tagBytes
 
     /// Explicit work limits. Every input is held to these before any payload is
     /// read, hashed or copied.
@@ -49,6 +50,7 @@ enum NpnoPreflight {
         case tooManySpans
         case overlappingSpan
         case spanOutOfRange
+        case inputChanged
     }
 
     /// A classified byte range. Spans describe bytes only; nothing is decoded.
@@ -79,44 +81,61 @@ enum NpnoPreflight {
 
     /// Inspects in-memory bytes. Refusals are raised before the input is hashed.
     static func inspect(_ data: Data, limits: Limits = .standard) throws -> Inspection {
-        let spans = try classify(prefix: data.prefix(limits.maximumReadBytes), byteCount: data.count, limits: limits)
-        return try report(spans: spans, byteCount: data.count, digest: AssetDigest.sha256(data), limits: limits)
+        let spans = try classify(prefix: data.prefix(limits.maximumReadBytes),
+                                 byteCount: data.count, limits: limits)
+        return report(spans: spans, byteCount: data.count, digest: AssetDigest.sha256(data))
     }
 
     /// Inspects a file without loading it: only `maximumReadBytes` are read to
-    /// classify it, and the digest streams the unchanged bytes.
+    /// classify it, and the digest streams the same opened file.
     static func inspect(url: URL, limits: Limits = .standard) throws -> Inspection {
         let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
         let size = (attributes[.size] as? NSNumber)?.intValue ?? 0
-        guard size > 0 else { throw Refusal.empty }
-        guard size <= limits.maximumFileBytes else { throw Refusal.oversizedInput }
         let handle = try FileHandle(forReadingFrom: url)
         defer { try? handle.close() }
-        let prefix = try handle.read(upToCount: min(size, limits.maximumReadBytes)) ?? Data()
+        let prefix = try handle.read(upToCount: min(max(size, 0), limits.maximumReadBytes)) ?? Data()
         let spans = try classify(prefix: prefix, byteCount: size, limits: limits)
-        return try report(spans: spans, byteCount: size, digest: AssetDigest.sha256(url), limits: limits)
+        let digest = try digest(handle: handle, expectedBytes: size, limits: limits)
+        return report(spans: spans, byteCount: size, digest: digest)
+    }
+
+    /// Hashes the same opened file from its start, refusing output that does not
+    /// match the length the classification was made from. A file replaced or
+    /// rewritten between classification and hashing is refused, not reported.
+    static func digest(handle: FileHandle, expectedBytes: Int, limits: Limits = .standard) throws -> String {
+        guard expectedBytes > 0 else { throw Refusal.empty }
+        guard expectedBytes <= limits.maximumFileBytes else { throw Refusal.oversizedInput }
+        _ = try handle.seek(toOffset: 0)
+        let streamed = try AssetDigest.sha256(handle, byteCount: expectedBytes)
+        guard streamed.read == expectedBytes else { throw Refusal.inputChanged }
+        guard (try handle.read(upToCount: 1))?.isEmpty != false else { throw Refusal.inputChanged }
+        return streamed.digest
     }
 
     /// Classifies the observed header and fills the gaps as unclassified bytes.
-    /// The four-byte word at offset 4 is reported as unclassified because its
-    /// meaning is unknown, not because it is believed to be a version.
+    /// The four-byte word at offset 4 stays unclassified because its meaning is
+    /// unknown, not because it is believed to be a version.
     static func classify(prefix: Data, byteCount: Int, limits: Limits = .standard) throws -> [Span] {
         guard byteCount > 0 else { throw Refusal.empty }
         guard byteCount <= limits.maximumFileBytes else { throw Refusal.oversizedInput }
         guard byteCount >= minimumBytes else { throw Refusal.truncated }
-        guard tag(prefix, at: 0) == containerTag else { throw Refusal.unexpectedContainer }
-        guard tag(prefix, at: 8) == typeTag else { throw Refusal.unexpectedType }
+        guard prefix.count >= minimumBytes else { throw Refusal.unsupportedLayout }
+        guard tag(prefix, at: containerTagOffset) == containerTag else { throw Refusal.unexpectedContainer }
+        guard tag(prefix, at: typeTagOffset) == typeTag else { throw Refusal.unexpectedType }
         guard tag(prefix, at: contentTagOffset) == contentTag else { throw Refusal.unsupportedLayout }
         var spans: [Span] = []
         var cursor = 0
-        for (kind, offset, length) in [(Span.Kind.container, 0, headerBytes),
-                                       (Span.Kind.content, contentTagOffset, 4)] {
+        for (kind, offset) in [(Span.Kind.container, containerTagOffset),
+                               (Span.Kind.type, typeTagOffset),
+                               (Span.Kind.content, contentTagOffset)] {
             if offset > cursor { spans.append(Span(kind: .unclassified, offset: cursor, length: offset - cursor)) }
-            spans.append(Span(kind: kind, offset: offset, length: length))
-            cursor = offset + length
+            spans.append(Span(kind: kind, offset: offset, length: tagBytes))
+            cursor = offset + tagBytes
         }
         if byteCount > cursor { spans.append(Span(kind: .unclassified, offset: cursor, length: byteCount - cursor)) }
         try validate(spans: spans, fileLength: byteCount, limits: limits)
+        let unclassified = spans.filter { $0.kind == .unclassified }.reduce(0) { $0 + $1.length }
+        guard unclassified <= limits.maximumUnclassifiedBytes else { throw Refusal.unclassifiedPayloadTooLarge }
         return spans
     }
 
@@ -134,20 +153,18 @@ enum NpnoPreflight {
         }
     }
 
-    /// Builds the report, refusing before publication when the unclassified
-    /// payload exceeds the inspection ceiling.
-    static func report(spans: [Span], byteCount: Int, digest: String,
-                       limits: Limits = .standard) throws -> Inspection {
+    /// Assembles the report. Every limit is already enforced by `classify`, so a
+    /// refused input is never hashed and this step cannot fail after hashing.
+    static func report(spans: [Span], byteCount: Int, digest: String) -> Inspection {
         let unclassified = spans.filter { $0.kind == .unclassified }.reduce(0) { $0 + $1.length }
-        guard unclassified <= limits.maximumUnclassifiedBytes else { throw Refusal.unclassifiedPayloadTooLarge }
         return Inspection(byteCount: byteCount, sha256: digest, spans: spans,
                           unclassifiedBytes: unclassified, state: .inspectionOnly)
     }
 
     private static func tag(_ bytes: Data, at offset: Int) -> String? {
         guard offset >= 0 else { return nil }
-        let slice = bytes.dropFirst(offset).prefix(4)
-        guard slice.count == 4, slice.allSatisfy({ $0 >= 0x20 && $0 < 0x7F }) else { return nil }
+        let slice = bytes.dropFirst(offset).prefix(tagBytes)
+        guard slice.count == tagBytes, slice.allSatisfy({ $0 >= 0x20 && $0 < 0x7F }) else { return nil }
         return String(decoding: slice, as: UTF8.self)
     }
 }
