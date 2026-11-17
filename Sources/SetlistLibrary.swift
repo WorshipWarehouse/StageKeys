@@ -61,6 +61,11 @@ struct SetlistLibraryDescriptor: Identifiable, Equatable {
 struct SetlistLibraryIssue: Equatable {
     let fileName: String
     let message: String
+    /// The saved document's identity when the name is one, so the browser can
+    /// offer recovery for exactly this document rather than the whole library.
+    var fileID: UUID? = nil
+    /// True when a validated previous copy exists beside the unreadable document.
+    var recoverable: Bool = false
 }
 struct SetlistLibraryInventory {
     var entries: [SetlistLibraryDescriptor]
@@ -78,7 +83,7 @@ struct SetlistTrashInventory {
     var issues: [SetlistLibraryIssue]
 }
 enum SetlistLibraryError: LocalizedError {
-    case full, oversized, unsafeFile, name, restoreConflict, recoveryRequired
+    case full, oversized, unsafeFile, name, restoreConflict, recoveryRequired, noPreviousCopy
     var errorDescription: String? {
         switch self {
         case .recoveryRequired: return "Recover the saved session data in Settings before changing or copying the active setlist."
@@ -87,6 +92,7 @@ enum SetlistLibraryError: LocalizedError {
         case .unsafeFile: return "The setlist file is not a regular local library file."
         case .name: return "Enter a setlist name of 1–200 characters."
         case .restoreConflict: return "The original setlist identity is already in use. Duplicate or rename it before restoring."
+        case .noPreviousCopy: return "This setlist has no validated previous copy to restore."
         }
     }
 }
@@ -115,6 +121,13 @@ final class SetlistLibrary {
         guard trash.resolvingSymlinksInPath().standardizedFileURL.path == trash.path else { throw SetlistLibraryError.unsafeFile }
     }
     private func file(_ id: UUID) -> URL { root.appendingPathComponent(id.uuidString + ".json") }
+    /// The one validated rotation copy, named so `candidates` (`.json` only) never
+    /// lists it as a saved setlist.
+    private func previousFile(_ id: UUID) -> URL { RecoverableSessionFile.previous(file(id)) }
+    /// The bytes a save publishes must be bytes this library can read back.
+    private static func document(_ data: Data) throws -> Setlist {
+        try JSONDecoder().decode(Setlist.self, from: data).upgraded()
+    }
     private func trashFile(_ token: UUID) -> URL { trash.appendingPathComponent(token.uuidString + ".json") }
     private func candidates(_ directory: URL) throws -> [URL] {
         guard directory.resolvingSymlinksInPath().standardizedFileURL.path == directory.path else { throw SetlistLibraryError.unsafeFile }
@@ -142,7 +155,13 @@ final class SetlistLibrary {
                 guard let id = UUID(uuidString: url.deletingPathExtension().lastPathComponent) else { throw SetlistLibraryError.unsafeFile }
                 let setlist = try JSONDecoder().decode(Setlist.self, from: bytes(url, directory: root)).upgraded()
                 result.entries.append(try descriptor(setlist, id: id, url: url))
-            } catch { result.issues.append(SetlistLibraryIssue(fileName: url.lastPathComponent, message: error.localizedDescription)) }
+            } catch {
+                let id = UUID(uuidString: url.deletingPathExtension().lastPathComponent)
+                // Report exactly which document failed and whether a validated
+                // previous copy exists, so recovery is offered only where it can work.
+                result.issues.append(SetlistLibraryIssue(fileName: url.lastPathComponent, message: error.localizedDescription,
+                                                         fileID: id, recoverable: id.map { hasPreviousCopy(id: $0) } ?? false))
+            }
         }
         result.entries.sort { $0.modifiedDate == $1.modifiedDate ? $0.id.uuidString < $1.id.uuidString : $0.modifiedDate > $1.modifiedDate }
         result.issues.sort { $0.fileName < $1.fileName }
@@ -159,14 +178,46 @@ final class SetlistLibrary {
         guard root.resolvingSymlinksInPath().standardizedFileURL.path == root.path else { throw SetlistLibraryError.unsafeFile }
         guard (try? target.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) != true else { throw SetlistLibraryError.unsafeFile }
         let exists = manager.fileExists(atPath: target.path)
-        if exists { _ = try bytes(target, directory: root) }
-        else if try candidates(root).filter({ UUID(uuidString: $0.deletingPathExtension().lastPathComponent) != nil }).count >= 128 { throw SetlistLibraryError.full }
+        // Read the current document once: it is both the size/safety check and the
+        // candidate rotation copy below.
+        let existing: Data?
+        if exists { existing = try bytes(target, directory: root) } else { existing = nil }
+        if !exists, try candidates(root).filter({ UUID(uuidString: $0.deletingPathExtension().lastPathComponent) != nil }).count >= 128 { throw SetlistLibraryError.full }
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
         let data = try encoder.encode(upgraded)
         guard data.count <= byteLimit else { throw SetlistLibraryError.oversized }
+        // Keep one recoverable copy of the last readable document. A failed or
+        // wrongly rewritten save then has a route back instead of only an error row.
+        // Bytes that no longer decode are preserved beside the document and are never
+        // rotated over a good previous copy.
+        if let old = existing, old != data {
+            if (try? Self.document(old)) != nil {
+                try old.write(to: previousFile(id), options: .atomic)
+            } else {
+                try old.write(to: root.appendingPathComponent(id.uuidString + ".json.damaged-" + UUID().uuidString), options: .atomic)
+            }
+        }
         try data.write(to: target, options: .atomic)
         return try descriptor(upgraded, id: id, url: target)
+    }
+    /// True when this document has a rotation copy a reader can actually decode.
+    func hasPreviousCopy(id: UUID) -> Bool {
+        let url = previousFile(id)
+        let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
+        guard values?.isRegularFile == true, values?.isSymbolicLink != true,
+              let data = try? RecoverableSessionFile.read(url, limit: byteLimit) else { return false }
+        return (try? Self.document(data)) != nil
+    }
+    /// Restore this document's validated previous copy. The unreadable primary is
+    /// retained beside it, and the restored document replaces it atomically. This is
+    /// a file restore only: callers decide whether the live session changes.
+    @discardableResult
+    func recoverPrevious(id: UUID) throws -> SetlistLibraryDescriptor {
+        guard hasPreviousCopy(id: id) else { throw SetlistLibraryError.noPreviousCopy }
+        let target = file(id)
+        let data = try RecoverableSessionFile.restore(target, limit: byteLimit) { _ = try Self.document($0) }
+        return try descriptor(try Self.document(data), id: id, url: target)
     }
     @discardableResult
     func rename(id: UUID, name: String) throws -> SetlistLibraryDescriptor {

@@ -315,7 +315,17 @@ struct SetlistBrowser: View {
                             ForEach(store.archivedSetlists) { entry in HStack { Text(entry.name); Spacer(); Button("Restore") { store.restoreLocalSetlist(entry.token) } }.padding(10) }
                         }.padding(14)
                     }
-                    ForEach(Array(store.setlistLibraryIssues.enumerated()),id:\.offset) { _, issue in Text("\(issue.fileName): \(issue.message)").font(.caption).foregroundStyle(.orange).frame(maxWidth:.infinity,alignment:.leading) }
+                    ForEach(Array(store.setlistLibraryIssues.enumerated()),id:\.offset) { _, issue in
+                        HStack(spacing:12) {
+                            Text("\(issue.fileName): \(issue.message)").font(.caption).foregroundStyle(.orange).frame(maxWidth:.infinity,alignment:.leading)
+                            if issue.recoverable, let id=issue.fileID {
+                                Button("Restore Previous Copy") { store.recoverPreviousSetlist(id) }
+                                    .buttonStyle(StageButtonStyle())
+                                    .help("Restore the last validated copy of this setlist. The damaged file is retained.")
+                                    .accessibilityLabel("Restore the previous copy of \(issue.fileName)")
+                            }
+                        }
+                    }
                 }.padding(.horizontal,20)
             }
             HStack { Text("Stored on this device").font(.caption).foregroundStyle(.secondary); Spacer(); Button("Done") { store.save(); dismiss() }.buttonStyle(StageButtonStyle(selected:true)) }.padding(20)
