@@ -30,6 +30,15 @@ import Foundation
   let other=LibraryQuery(storedOrder:"Random",storedSeed:43).results(sounds).map(\.id)
   assert(other != pinned,"A different stored seed produces a different order")
 
+  // Navigating out of the browser clears the search and filters; that must not
+  // disturb the saved order or draw a new Random seed.
+  var navigating=LibraryQuery(storedOrder:"Random",storedSeed:42)
+  navigating.search="pad";navigating.filters[.type]="Synth Pads"
+  assert(navigating.results(sounds).isEmpty,"The fixture search filters every row out")
+  navigating.search="";navigating.filters=[:]
+  assert(navigating.results(sounds).map(\.id) == pinned,"Clearing the search and filters keeps the saved Random order")
+  assert(navigating.shuffleSeed == 42,"Clearing transient state does not draw a new seed")
+
   // An absent seed is drawn rather than stored as the 0 sentinel, and an unknown or
   // missing order falls back to Name without inventing a shuffle.
   assert(LibraryQuery(storedOrder:"Random",storedSeed:0).shuffleSeed != 0,"A missing Random seed is drawn, never kept as zero")

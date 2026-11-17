@@ -177,7 +177,6 @@ struct SoundBrowser: View {
     private func clearTransientQuery() {
         query.search=""
         query.filters=[:]
-        query.favoritesOnly=false
         clearHiddenSelection()
     }
     private var filterBar:some View {

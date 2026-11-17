@@ -62,13 +62,31 @@ if '.onChange(of:query.shuffleSeed)' not in browser.replace(' ', ''):
 if re.search(r'@AppStorage\("library\.shuffleSeed"\)[^\n]*UInt64', browser):
     fail('@AppStorage cannot store a UInt64 seed; persist it as text')
 
+# Leaving the browser through the empty-state actions used to rebuild the query,
+# which made the ordering observers store Name over the performer's preference.
+if re.search(r'Button\("Add Audio Unit"\)\{collection="Audio Units";query=LibraryQuery\(\)\}', browser):
+    fail('the Add Audio Unit action replaces the whole library query and overwrites the saved order')
+if re.search(r'Button\("MIDI Routing"\)\{collection="External MIDI";query=LibraryQuery\(\)\}', browser):
+    fail('the MIDI Routing action replaces the whole library query and overwrites the saved order')
+clear = re.search(r'private func clearTransientQuery\(\) \{(.*?)\n    \}', browser, re.S)
+if not clear:
+    fail('Sources/SoundBrowser.swift no longer clears transient library state separately')
+else:
+    body = clear.group(1)
+    if 'query.ordering' in body or 'query.shuffleSeed' in body:
+        fail('the transient clear rewrites the saved library order')
+    if 'LibraryQuery()' in body:
+        fail('the transient clear still replaces the whole library query')
+if 'clearTransientQuery()' not in browser:
+    fail('the empty-state actions no longer use the transient clear')
+
 if not test_path.exists():
     fail('Tests/LibraryOrderPersistenceTests.swift is missing')
 else:
     test = test_path.read_text()
     for fragment in ['storedOrder:"Random"', 'storedSeed:', 'storedOrder:"Rating"',
                      'storedOrder:"Bogus"', 'shuffleSeed != 0', 'shuffleSeed == 0',
-                     'library order']:
+                     'library order', 'keeps the saved Random order']:
         if fragment not in test:
             fail(f'Tests/LibraryOrderPersistenceTests.swift no longer exercises {fragment!r}')
 
