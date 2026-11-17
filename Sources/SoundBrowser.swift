@@ -191,10 +191,12 @@ struct SoundBrowser: View {
     /// removed entry is appended back and keeps its identity, tags and settings.
     private func undoRemoval() {
         guard let removed=removedSound else{return}
-        removedSound=nil
         if store.restoreLibrarySound(removed) {
+            removedSound=nil
             notice=store.message ?? "Restored \(removed.name) to My Sounds."
             selectedID=removed.id
+        // A refused Undo keeps the entry so it can be retried with the same tags
+        // and saved settings instead of being lost with the button.
         } else { notice=store.message ?? "Could not restore \(removed.name)." }
         store.message=nil
     }
@@ -256,7 +258,13 @@ struct SoundBrowser: View {
                                         removedSound=removed
                                         notice="Removed \(removed.name) from My Sounds. Its file stays in the library folder so saved patches keep playing."
                                     }
-                                    else {removedSound=nil;notice=store.message ?? "Could not remove this sound."}
+                                    // A failed attempt must not drop the Undo for an
+                                    // earlier removal: keep that entry and name it in
+                                    // the same notice, so the button stays honest.
+                                    else {
+                                        let failure=store.message ?? "Could not remove this sound."
+                                        notice=removedSound.map { "\(failure) \($0.name) can still be put back with Undo." } ?? failure
+                                    }
                                     store.message=nil
                                     selectedID=nil
                                 } label:{Label("Remove from My Sounds",systemImage:"trash")}
