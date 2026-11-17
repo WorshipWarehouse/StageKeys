@@ -1,18 +1,20 @@
 # Nord piano libraries (`.npno`): support contract v1
 
-This contract accompanies the bounded, read-only preflight in
+This original inspection contract accompanies the bounded, read-only preflight in
 `Sources/NordPiano.swift` (issue #211). It deliberately covers **inspection only**.
-Nothing here is a claim that StageKeys can decode, map, play or convert a Nord
-piano library, and no inspection result may be shown to a user as "playable".
+Inspection alone never labels a file playable. The subsequent experimental
+decoder, attack-only mapping and transactional import are specified separately in
+[NORD-NATIVE-VALIDATION.md](NORD-NATIVE-VALIDATION.md).
 
 ## Scope
 
 | Item | State |
 | --- | --- |
 | `.npno` container and metadata prefix, read-only | Experimental, bounded preflight |
-| Sample decoding, layer selection, loops, pedals | Not implemented (#212) |
-| Mapping into a native StageKeys instrument | Not implemented (#213) |
-| Transactional import and personal-pack export | Not implemented (#214) |
+| Sample decoding | Bounded integer decoder, see native validation (#212) |
+| Layer selection / loops / pedals | Partial native translation with explicit differences (#213) |
+| Mapping into a native StageKeys instrument | Experimental attack-only translation (#213) |
+| Transactional import and personal-pack export | Implemented software path; physical transfer unqualified (#214/#216) |
 | `.nsmp`, Nord programs, effects, organ/synth emulation, USB transfer | Out of scope |
 
 Accepted input is a CBIN container whose tag is `npno` and whose body starts with
@@ -23,9 +25,11 @@ container generation or tag is refused rather than guessed.
 
 The format description used here is the public documentation for the independent
 `nord-format` Rust crate (`https://docs.rs/nord-format/0.9.0/`, module
-`nord_format::formats::npno` and `nord_format::cbin`). No upstream source code was
-copied, adapted or added as a dependency; only published field descriptions and
-their stated confidence were used. Confidence labels below are the ones that
+`nord_format::formats::npno` and `nord_format::cbin`). The initial preflight used field descriptions only. The subsequent stroke parser,
+codec and velocity selector adapt the BSD-3-Clause `nord-format` implementation
+from jmoo/drawbar tree `210472d0b462a663a731b44966f478f50ce8a091`;
+`Licenses/Drawbar-BSD-3-Clause.txt` preserves John Moore’s notice and is bundled
+on both Apple targets. No upstream audio fixtures were copied. Confidence labels below are the ones that
 documentation attaches to each fact.
 
 | Fact | Value used | Provenance |
@@ -44,7 +48,7 @@ documentation attaches to each fact.
 | Stroke count | BE `u16` at 0x620 | Inferred from specimens |
 | Per-root stroke counts | 128 × BE `u16` at 0x622, summing to the stroke count | Inferred from specimens |
 | Stroke directory | `N` × 118-byte records at 0x732 | Inferred from specimens |
-| Audio region | follows the directory, whole `1022 × channels` blocks, first span on a grid offset by 192 bytes, gap before it zero | Confirmed on hardware (layout); the 192-byte bias is *unexplained* |
+| Audio region | follows the directory, whole `1022 × channels` blocks, first span on a grid minus 192 bytes, gap before it zero | Confirmed on hardware (layout); the 192-byte bias is *unexplained* |
 
 The prefix offsets are explicitly marked "inferred from specimens; not confirmed
 on hardware" upstream. This reader therefore validates them only against the two
@@ -88,11 +92,11 @@ reporting that it was not checked.
 
 ## Provenance, licensing and content terms
 
-- Upstream `nord-format` is separately owned third-party software whose licence
-  was **not** reviewed for reuse here, so no code, test vector or asset from it is
-  copied, vendored or linked. The published field descriptions are used as
-  documentation only. If a compatible-reuse route is later preferred, the owner
-  must approve it in writing before any upstream code enters this MIT repository.
+- Upstream `nord-format` is BSD-3-Clause, copyright 2023–2026 John Moore.
+  Its retained notice covers the adapted stroke layout, decoder and measured
+  velocity selector; StageKeys authorship does not relicense that material.
+  OpenNord is AGPL-3.0 and G1-Emu GPL-3.0; neither implementation was copied.
+  The supplied `nordstage/ns4decode` URL returned 404 on 17 November 2026.
 - The two owner-selected examples (Astoria Grand XL 6.1 and EP9 Stockholm XL 6.0)
   are private verification inputs, not redistributable fixtures. Public tests use
   only the synthetic fixtures in `Tests/NordPianoInspectionTests.swift`.
@@ -102,18 +106,22 @@ reporting that it was not checked.
 - No decrypting or access-control bypass is performed or planned. Unknown
   container, codec or musical semantics are reported as unknown.
 
-## Private-example reports: pending
+## Private-example reports
 
-The sanitized inspection reports and unchanged input hashes required for the two
-private `.npno` examples were **not** produced: those files are not present in the
-environment that implemented this contract, and no vendor bytes may be added to
-the repository or CI. `nord-piano-preflight <file>`-style reporting for the owner's
-files therefore remains outstanding evidence for #211 and must be run where the
-files legitimately exist. This contract is not closed by the synthetic corpus
-alone.
+Both owner-selected inputs were inspected locally on 17 November 2026. The original
+preflight added the grid bias instead of subtracting it; authentic files caught
+that error and the independent synthetic grid assertions now cover the correction.
 
-## Next step
+| Input | Bytes | SHA256 | Stream / content | Channels | Strokes | Directory end / first audio (body offsets) | CRC32 |
+| --- | ---: | --- | --- | ---: | ---: | --- | --- |
+| Astoria Grand XL 6.1.npno | 218673104 | `6b43e12ce6345ec9a45c546fb30aff0970d13742d1016fe28fd593f34fd6b57c` | 0x464 / 610 | 2 | 1558 | 185686 / 185812 | verified 0xf4c30571 |
+| EP9 Stockholm XL 6.0.npno | 105794226 | `5e72678d8cc2c760aa6485e9bb9b760013e5f09c2198c19ff37837490fa842ae` | 0x464 / 600 | 1 | 2196 | 260970 / 261440 | verified 0xbdb042a2 |
 
-#212 needs the stroke-record and codec fields, which this contract does not
-interpret. It must extend this document with the new offsets and their provenance
-before any decoded PCM is claimed.
+Both cover 109 keys. All directory spans are validated by the later `index` entry
+point, all source strokes decode with exact overlap/frame counts and no clipping,
+and every stored middle-C attack layer is checked. Astoria banks: 589 attack,
+589 resonance, 380 release. Stockholm: 1465 attack, 731 release. Aggregate decoded
+PCM: 790936272 and 444601356 bytes respectively. These are private local evidence,
+not redistributable fixtures or hardware/Nord listening comparisons. The full
+production-path audit and outstanding device criteria are in the native validation
+record. No source or derived audio is committed.

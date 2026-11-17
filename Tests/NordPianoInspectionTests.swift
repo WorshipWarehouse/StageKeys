@@ -4,7 +4,7 @@ import Foundation
   // Anchor the test's own CRC with the standard check value so the fixtures do
   // not merely agree with the reader under test.
   func crc(_ bytes:[UInt8])->UInt32 {
-   var table:[UInt32]=(0..<256).map{index->UInt32 in var value=UInt32(index);for _ in 0..<8 {value=(value&1)==1 ? 0xEDB88320^(value>>1):value>>1};return value}
+   let table:[UInt32]=(0..<256).map{index->UInt32 in var value=UInt32(index);for _ in 0..<8 {value=(value&1)==1 ? 0xEDB88320^(value>>1):value>>1};return value}
    var value:UInt32=0xFFFFFFFF
    for byte in bytes {value=table[Int((value^UInt32(byte))&0xff)]^(value>>8)}
    return value^0xFFFFFFFF
@@ -35,7 +35,7 @@ import Foundation
    put(rootCount,&bytes,0x622+60*2)
    bytes+=[UInt8](repeating:0,count:118*strokes)
    let block=1022*Int(channels)
-   let start=192+((bytes.count-192+block-1)/block)*block
+   let start=((bytes.count+192+block-1)/block)*block-192
    bytes+=[UInt8](repeating:0,count:start-bytes.count)
    bytes+=[UInt8](repeating:0x5a,count:block*audioBlocks+audioExtra)
    return bytes
@@ -71,8 +71,8 @@ import Foundation
   assert(report.name=="Astoria Grand" && report.variant=="XL" && report.voicing=="XL")
   assert(report.channels==2 && report.strokes==1 && report.coveredKeys==5)
   assert(report.directoryEnd==0x732+118 && report.audioBlockBytes==2044)
-  assert(report.audioStart==2236 && report.audioBytes==2044,"Aligned audio start and one whole block")
-  assert(report.audioStart % 2044==192,"The audio grid is offset from whole blocks by 192 bytes")
+  assert(report.audioStart==3896 && report.audioBytes==2044,"Aligned audio start and one whole block")
+  assert((report.audioStart + 192) % 2044==0,"The audio grid is offset from whole blocks by 192 bytes")
   if case .verified = report.checksum {} else {fatalError("A correct container checksum must verify: \(report.checksum)")}
   assert(report.notes.contains{$0.contains("Inspection only")} && report.notes.contains{$0.contains("not labelled playable")})
   assert(report.notes.contains{$0.contains("not validated yet")},"Per-stroke spans stay explicitly unverified")
@@ -105,7 +105,7 @@ import Foundation
   rejects(container(gap),.nonZeroAlignmentGap(offset:0x732+118))
 
   rejects(container(body(audioExtra:1)),.audioNotBlockAligned(bytes:2045,block:2044))
-  rejects(container(Array(body().prefix(0x732+118))),.audioGridOutsideBody(start:2236,bodyBytes:0x732+118))
+  rejects(container(Array(body().prefix(0x732+118))),.audioGridOutsideBody(start:3896,bodyBytes:0x732+118))
 
   // Padding after the terminator is part of the fixed field, so a control byte
   // there is reported instead of returning a truncated name; a space is padding.

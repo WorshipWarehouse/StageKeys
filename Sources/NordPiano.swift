@@ -222,9 +222,8 @@ enum NordPiano {
     /// The first position at or after `origin` on the documented audio grid:
     /// whole blocks offset by the alignment bias.
     static func alignedAudioStart(after origin: Int, blockBytes: Int) -> Int {
-        let base = max(origin, audioAlignmentBias)
-        let blocks = (base - audioAlignmentBias + blockBytes - 1) / blockBytes
-        return audioAlignmentBias + blocks * blockBytes
+        let blocks = (origin + audioAlignmentBias + blockBytes - 1) / blockBytes
+        return blocks * blockBytes - audioAlignmentBias
     }
 
     // MARK: - Byte helpers
@@ -293,5 +292,205 @@ enum NordPiano {
             index += 1
         }
         return crc ^ 0xFFFF_FFFF
+    }
+}
+
+// Stroke layout and codec adapted from John Moore's BSD-3-Clause nord-format,
+// drawbar tree 210472d0b462a663a731b44966f478f50ce8a091.
+// See Licenses/Drawbar-BSD-3-Clause.txt. This does not establish Nord sonic parity.
+extension NordPiano {
+    struct DecodeFailure: Error, LocalizedError {
+        let reason: String
+        var errorDescription: String? { reason }
+    }
+    struct Stroke: Equatable {
+        let root, bank, layer, threshold: Int
+        let frames, blocks, offset: Int
+        let seeds: [[Int64]]
+        let loopStart, loopEnd, trim, noteOffFade: Int
+    }
+    struct Index {
+        let report: Report
+        let strokes: [Stroke]
+        let keyMap: [Int]
+        let fineTune: [Int]
+        let decodedBytes: Int
+    }
+    static let sampleRate = 35_002
+    /// PCM admission is independent of compressed size. Decode one stroke at a time.
+    static let maximumDecodedBytes = 1_500_000_000
+    static let maximumStrokeFrames = sampleRate * 180
+    static func index(_ data: Data) throws -> Index {
+        let report = try inspect(data)
+        guard report.generation == 1, case .verified = report.checksum else {
+            throw DecodeFailure(reason: "Playback requires a type-1 container with a verified CRC32.")
+        }
+        return try data.withUnsafeBytes { (raw: UnsafeRawBufferPointer) in
+            let base = 0x2c
+            func u16(_ at: Int) -> Int { Int(be16(raw, at: base + at)) }
+            func u32(_ at: Int) -> Int { Int(be32(raw, at: base + at)) }
+            var strokes: [Stroke] = [], cursor = report.audioStart, total = 0
+            for root in 0..<128 {
+                for _ in 0..<u16(0x622 + root * 2) {
+                    let record = prefixBytes + strokes.count * strokeRecordBytes
+                    let offset = u32(record), frames = u32(record + 6), blocks = u16(record + 10)
+                    let size = blocks * report.audioBlockBytes
+                    guard offset == cursor, blocks > 0, frames > 0,
+                          frames <= maximumStrokeFrames,
+                          frames <= blocks * ((report.audioBlockBytes - 2) * 8 / report.channels - 64),
+                          size <= data.count - base - cursor else {
+                        throw DecodeFailure(reason: "Invalid or excessive stroke span at record \(strokes.count).")
+                    }
+                    total += frames * report.channels * 2
+                    guard total <= maximumDecodedBytes else { throw DecodeFailure(reason: "Decoded piano exceeds the 1.5 GB limit.") }
+                    let seeds = (0..<2).map { channel in (0..<4).map { i in
+                        Int64(Int16(bitPattern: UInt16(u16(record + 12 + (channel * 4 + i) * 2))))
+                    } }
+                    strokes.append(Stroke(root: root, bank: Int(raw[base + record + 4]), layer: Int(raw[base + record + 5]),
+                        threshold: Int(raw[base + record + 0x74]), frames: frames, blocks: blocks, offset: base + offset, seeds: seeds,
+                        loopStart: u32(record + 0x1c), loopEnd: u32(record + 0x1c) + u32(record + 0x20),
+                        trim: Int(Int16(bitPattern: UInt16(u16(record + 0x34)))), noteOffFade: Int(raw[base + record + 0x72])))
+                    cursor += size
+                }
+            }
+            guard cursor == data.count - base else { throw DecodeFailure(reason: "Unclaimed bytes follow the last stroke.") }
+            let roots = Set(strokes.map(\.root))
+            let keys = (0..<128).map { Int(raw[base + 0x8c + $0]) }
+            guard keys.allSatisfy({ $0 == 255 || roots.contains($0) }) else { throw DecodeFailure(reason: "Key map references an absent root.") }
+            return Index(report: report, strokes: strokes, keyMap: keys,
+                fineTune: (0..<128).map { Int(Int8(bitPattern: raw[base + 0x18c + $0])) }, decodedBytes: total)
+        }
+    }
+
+    /// Lossless integer PCM; refuses malformed predictors, clipping, overlaps and
+    /// frame counts. Cancellation is checked every block, outside the render thread.
+    static func decode(_ data: Data, stroke: Stroke, channels: Int,
+                       cancelled: () -> Bool = { false }) throws -> [Int16] {
+        guard (1...2).contains(channels) else { throw DecodeFailure(reason: "Invalid channel count.") }
+        let blockBytes = 1022 * channels
+        guard stroke.blocks > 0, stroke.frames > 0,
+              stroke.frames <= maximumStrokeFrames, stroke.seeds.count == 2,
+              stroke.seeds.allSatisfy({ $0.count == 4 }), stroke.offset >= 0,
+              stroke.offset <= data.count, stroke.blocks <= (data.count - stroke.offset) / blockBytes else {
+            throw DecodeFailure(reason: "Invalid decode request.")
+        }
+        return try data.withUnsafeBytes { (raw: UnsafeRawBufferPointer) in
+            let coefficients: [[Int64]] = [[], [1], [2, -1], [3, -3, 1], [4, -6, 4, -1]]
+            var history = stroke.seeds.map { Array($0.reversed()) }
+            var tail: [Int16] = [], result: [Int16] = []
+            result.reserveCapacity(stroke.frames * channels)
+            for block in 0..<stroke.blocks {
+                if cancelled() { throw CancellationError() }
+                let at = stroke.offset + block * blockBytes
+                let header = Int(be16(raw, at: at)), width = header & 31, order = (header >> 5) & 7
+                guard (1...16).contains(width), order <= 4 else { throw DecodeFailure(reason: "Unsupported residual width or predictor order.") }
+                let frames = (blockBytes - 2) * 8 / (width * channels), owned = frames - 64
+                guard owned >= 4, owned <= stroke.frames - result.count / channels else { throw DecodeFailure(reason: "Block exceeds declared frame count.") }
+                var reservoir: UInt64 = 0, held = 0, next = at + 2
+                var decoded: [Int16] = []; decoded.reserveCapacity(frames * channels)
+                for _ in 0..<frames {
+                    for channel in 0..<channels {
+                        while held < width {
+                            guard next + 2 <= at + blockBytes else { throw DecodeFailure(reason: "Truncated residual fields.") }
+                            reservoir |= UInt64(be16(raw, at: next)) << held
+                            held += 16; next += 2
+                        }
+                        let bits = Int64(reservoir & ((1 << width) - 1)), sign: Int64 = 1 << (width - 1)
+                        reservoir >>= width; held -= width
+                        var value = (bits ^ sign) - sign
+                        for j in 0..<order {
+                            let product = history[channel][j].multipliedReportingOverflow(by: coefficients[order][j])
+                            let sum = value.addingReportingOverflow(product.partialValue)
+                            guard !product.overflow, !sum.overflow else { throw DecodeFailure(reason: "Predictor overflow.") }
+                            value = sum.partialValue
+                        }
+                        guard let sample = Int16(exactly: value) else { throw DecodeFailure(reason: "Decoded sample clips; codec does not describe this stroke.") }
+                        decoded.append(sample)
+                        history[channel][3] = history[channel][2]
+                        history[channel][2] = history[channel][1]
+                        history[channel][1] = history[channel][0]
+                        history[channel][0] = value
+                    }
+                }
+                if !tail.isEmpty, !decoded.prefix(tail.count).elementsEqual(tail) { throw DecodeFailure(reason: "Block overlap mismatch.") }
+                for channel in 0..<channels {
+                    history[channel] = (0..<4).map { Int64(decoded[(owned - 1 - $0) * channels + channel]) }
+                }
+                result.append(contentsOf: decoded.prefix(owned * channels))
+                tail = Array(decoded.suffix(64 * channels))
+            }
+            guard result.count == stroke.frames * channels else { throw DecodeFailure(reason: "Decoded frame count differs from the record.") }
+            return result
+        }
+    }
+}
+
+extension NordPiano {
+    struct Zone: Equatable {
+        let stroke, key, velocityLow, velocityHigh: Int
+        let fineTuneCents, gainDB: Double
+    }
+    /// Electro 5 Touch 0 measurements from nord-format; interpolated switching
+    /// estimate, not a verified curve for every Nord instrument.
+    static func topVelocity(_ threshold: Int) -> Int {
+        let reach = [127,107,105,99,93,85,79,73,67,61,57,53,51,45,43,39,33,31,27,23,21]
+        guard (0...200).contains(threshold) else { return 0 }
+        let step = threshold / 10, into = threshold % 10
+        return reach[step] - ((reach[step] - reach[min(step + 1, 20)]) * into + 9) / 10
+    }
+    /// Explicit attack-only translation. All other banks remain unmodified in
+    /// the input and are listed as unsupported, never mixed into attack layers.
+    static func zones(_ index: Index, libraryGain: Int) throws -> [Zone] {
+        var result: [Zone] = []
+        var selections: [Int:[Int]] = [:]
+        let attacks = Dictionary(grouping:index.strokes.indices.filter { index.strokes[$0].bank == 0 }, by:{index.strokes[$0].root})
+        for (root,candidates) in attacks {
+            let layers=Set(candidates.map{index.strokes[$0].layer}).sorted()
+            var louder: [Int:Int] = [:]
+            for (position,layer) in layers.enumerated() {louder[layer] = position == 0 ? 0:layers[position-1]}
+            let thresholds=candidates.map { i -> (Int,Int) in
+                let stroke=index.strokes[i]
+                return (i,index.report.streamVersion == 0x464 ? stroke.threshold:((louder[stroke.layer,default:0]+stroke.layer)*5+1)/2)
+            }
+            var selected: [Int] = []
+            for velocity in 1...127 {
+                var best: Int?, bestThreshold = -1
+                for (i,threshold) in thresholds where velocity <= topVelocity(threshold) && threshold >= bestThreshold {
+                    best=i;bestThreshold=threshold
+                }
+                guard let best else {throw DecodeFailure(reason:"Velocity map leaves a gap at root \(root), velocity \(velocity).")}
+                selected.append(best)
+            }
+            selections[root]=selected
+        }
+        for key in 0..<128 where index.keyMap[key] != 255 {
+            guard let selected=selections[index.keyMap[key]] else {throw DecodeFailure(reason:"A covered key has no attack recording.")}
+            var low = 1
+            while low <= 127 {
+                let i = selected[low - 1], stroke = index.strokes[i]
+                var high = low
+                while high < 127, selected[high] == i { high += 1 }
+                guard stroke.loopStart >= 0, stroke.loopEnd >= stroke.loopStart, stroke.loopEnd <= stroke.frames else {
+                    throw DecodeFailure(reason: "Unsupported loop marks at stroke \(i).")
+                }
+                if index.report.streamVersion == 0x450, stroke.trim < 0 { throw DecodeFailure(reason: "Negative version-5 trim needs silent-zone translation.") }
+                let gain = index.report.streamVersion == 0x464 ? Double(min(108, libraryGain - stroke.trim)) / 10 : -Double(stroke.trim)
+                guard (-96...24).contains(gain) else { throw DecodeFailure(reason: "Stroke gain exceeds native limits.") }
+                result.append(Zone(stroke:i,key:key,velocityLow:low,velocityHigh:high,fineTuneCents:Double(index.fineTune[key])*0.7,gainDB:gain))
+                low = high + 1
+            }
+        }
+        guard !result.isEmpty, result.count <= 16384 else { throw DecodeFailure(reason: "Empty or excessive native zone map.") }
+        return result
+    }
+    static func read(_ url: URL) throws -> Data {
+        let values = try url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
+        guard values.isRegularFile == true, let size = values.fileSize, size > 0, size <= Limits().maximumFileBytes else {
+            throw DecodeFailure(reason: "Choose a regular .npno file no larger than 512 MiB.")
+        }
+        let handle = try FileHandle(forReadingFrom: url); defer { try? handle.close() }
+        let bytes = try handle.read(upToCount: size + 1) ?? Data()
+        guard bytes.count == size else { throw DecodeFailure(reason: "Source changed or was truncated while reading.") }
+        return bytes
     }
 }
