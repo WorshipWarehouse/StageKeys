@@ -77,6 +77,33 @@ struct MIDIClockTempo {
         return smoothed
     }
 }
+/// Dates a received MIDI clock pulse.
+///
+/// CoreMIDI stamps each packet in mach absolute host ticks; a driver may also send
+/// 0, meaning "as soon as possible". The clock path measures monotonic seconds —
+/// the same timebase `ProcessInfo.systemUptime` reads — so the driver's stamp can
+/// date the pulse instead of main-queue delivery. Issue #108 records why this
+/// matters: receipt times add the delivery delay to every interval, which biases
+/// the measured tempo, and a burst of queued main-thread work adds it unevenly.
+///
+/// A stamp is trusted only inside `maximumLatency` of the receipt, so a driver on
+/// another epoch falls back to the receipt time instead of reporting a tempo that
+/// never happened.
+enum MIDIClockTimestamp {
+    static let maximumLatency = 5.0
+    /// Host ticks to monotonic seconds; nil when the stamp or timebase is unusable.
+    static func seconds(hostTicks: UInt64, numer: UInt32, denom: UInt32) -> Double? {
+        guard hostTicks > 0, numer > 0, denom > 0 else { return nil }
+        let value = Double(hostTicks) * Double(numer) / Double(denom) / 1_000_000_000
+        return value.isFinite && value > 0 ? value : nil
+    }
+    /// The pulse time the metronome and the tempo smoother should use.
+    static func at(packetTicks: UInt64, numer: UInt32, denom: UInt32, receipt: Double) -> Double {
+        guard let packet = seconds(hostTicks: packetTicks, numer: numer, denom: denom),
+              receipt.isFinite, abs(packet - receipt) <= maximumLatency else { return receipt }
+        return packet
+    }
+}
 struct SessionSettings: Codable {
     var selectedPatchID: UUID?
     var activeSnapshotID: UUID?

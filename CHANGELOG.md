@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Date received MIDI clock pulses with the CoreMIDI packet timestamp, falling back to the main-queue receipt time when the driver sends no usable stamp, so queued main-thread work no longer stretches the interval the tempo is measured from (#108).
+
 - Stop completed AU loader callbacks from retaining the replaced sampler, and refuse forward, rollback and manual audio restart while a purged/truncated sampler is still retained; preserve the stopped recovery guard until release, with generated failure/retry coverage and a 96-switch live-output verification for #192.
 
 - Release a truncated or purged hosted sampler through one ownership registry and disposal order while the engine is stopped, commit the truncation into the rollback so a restored graph never references released nodes, and record the verified pre-restart release in the local support report (#192). The live macOS crash remains unreproduced and this is not a general rollback of released audio.

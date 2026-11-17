@@ -699,6 +699,11 @@ void sk_render(SKSynth *s,float *left,float *right,uint32_t frames){
   left[n]=tanhf(sumL);if(right)right[n]=tanhf(sumR);
  }
 }
+// The receive block dates clock pulses with the driver's stamp, not the time the
+// callback reached the main queue. A zero stamp means "as soon as possible".
+uint64_t sk_read_midi_first_timestamp(const MIDIEventList *list){
+ return list&&list->numPackets?list->packet[0].timeStamp:0;
+}
 // Decode MIDI 1 UMP, including system realtime transport, and MIDI 2
 // channel-voice note/CC messages. Packet traversal is C-native.
 void sk_read_midi(const MIDIEventList *list,SKMIDIEvent callback,void *context){

@@ -93,6 +93,40 @@ import Foundation
         for i in 1...24 { afterGap = gap.tick(at: 2 + Double(i) / 36) }
         assert(afterGap != nil && abs(afterGap! - 90) < 0.01)
 
+        // Issue #108 records the receipt-time gap: tempo followed the moment a pulse
+        // reached the main queue, so other main-thread work stretched every interval.
+        // A CoreMIDI packet stamp dates the pulse at the driver; the receipt-only
+        // path is kept here as the pre-fix witness the fix has to beat.
+        let numer: UInt32 = 125, denom: UInt32 = 3 // an Apple mach timebase
+        func ticks(_ seconds: Double) -> UInt64 {
+            UInt64((seconds * 1_000_000_000 * Double(denom) / Double(numer)).rounded())
+        }
+        assert(MIDIClockTimestamp.at(packetTicks: 0, numer: numer, denom: denom, receipt: 42) == 42,
+               "a zero stamp means as soon as possible and must fall back to the receipt")
+        assert(MIDIClockTimestamp.at(packetTicks: ticks(900), numer: numer, denom: denom, receipt: 42) == 42,
+               "a stamp on another epoch must fall back instead of inventing a tempo")
+        assert(MIDIClockTimestamp.at(packetTicks: ticks(41.5), numer: 0, denom: 0, receipt: 42) == 42,
+               "an unusable timebase must fall back to the receipt")
+        assert(abs(MIDIClockTimestamp.at(packetTicks: ticks(41.5), numer: numer, denom: denom, receipt: 42) - 41.5) < 1e-6,
+               "a stamp inside the latency window is the pulse time")
+        assert(abs(MIDIClockTimestamp.seconds(hostTicks: ticks(2), numer: numer, denom: denom)! - 2) < 1e-6)
+        let origin = 10_000.0, spacing = 60.0 / 120.0 / 24.0 // 24 pulses per quarter at 120 BPM
+        var stamped = MIDIClockTempo(), receiptOnly = MIDIClockTempo()
+        var stampedTempo: Double?, receiptTempo: Double?
+        for pulse in 0...24 {
+            let trueTime = origin + Double(pulse) * spacing
+            // Each pulse is delivered a little later than the last: the main queue is
+            // busy, which is exactly the bias the packet stamp removes.
+            let delivered = trueTime + Double(pulse) * 0.0005
+            stampedTempo = stamped.tick(at: MIDIClockTimestamp.at(packetTicks: ticks(trueTime), numer: numer,
+                                                                 denom: denom, receipt: delivered)) ?? stampedTempo
+            receiptTempo = receiptOnly.tick(at: delivered) ?? receiptTempo
+        }
+        assert(stampedTempo != nil && abs(stampedTempo! - 120) < 0.001,
+               "the packet stamp must recover the true tempo")
+        assert(receiptTempo != nil && abs(receiptTempo! - 120) > 1,
+               "the receipt-only path must show the delivery delay this fix removes")
+
         // A deselected clock cannot send Stop through the source filter.
         // Release it on reassignment so the replacement source can start.
         let store = PerformanceStore()
