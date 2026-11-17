@@ -586,6 +586,8 @@ final class PerformanceStore: ObservableObject {
     @Published var gainMatchTargetDB:Double = -24
     @Published var gainMatchReferenceName:String?
     @Published private(set) var soundRatings:[String:Int]=[:]
+    /// Personal favorites keyed by rating id, persisted next to the ratings.
+    @Published private(set) var soundFavorites:[String:Bool]=[:]
     @Published var libraryRangePreview: Layer?
     private var libraryRangePreviewIndex: Int?
     var displayedLayers:[Layer] {
@@ -607,6 +609,11 @@ final class PerformanceStore: ObservableObject {
         guard let updated=SoundRatingArchive.setting(value,for:id,in:soundRatings) else{return}
         do {try SoundRatingArchive.save(updated,to:saveURL.deletingLastPathComponent().appendingPathComponent("sound-ratings.json"));soundRatings=updated}
         catch {message="Could not save sound rating: \(error.localizedDescription)"}
+    }
+    func toggleFavorite(_ id:String) {
+        guard let updated=SoundFavoriteArchive.toggling(id,in:soundFavorites) else{return}
+        do {try SoundFavoriteArchive.save(updated,to:saveURL.deletingLastPathComponent().appendingPathComponent("sound-favorites.json"));soundFavorites=updated}
+        catch {message="Could not save sound favorite: \(error.localizedDescription)"}
     }
     func setSoundRecommended(_ id:String,_ value:Bool) {
         guard let index=librarySounds.firstIndex(where:{$0.id==id}) else{return}
@@ -763,6 +770,7 @@ final class PerformanceStore: ObservableObject {
     @Published private(set) var settingsRecoveryRequired = false
     @Published private(set) var libraryRecoveryRequired = false
     @Published private(set) var ratingsRecoveryRequired = false
+    @Published private(set) var favoritesRecoveryRequired = false
     @Published private(set) var presetsRecoveryRequired = false
     var patch: Patch { setlist.patches[selected] }
     var hasUnavailableLegacyVoices:Bool {patch.layers.contains{$0.instrument>=0 && $0.external==nil && $0.midiDestinationID==nil}}
@@ -771,6 +779,8 @@ final class PerformanceStore: ObservableObject {
         saveURL = base.appendingPathComponent("setlist.json")
         do {soundRatings=try SoundRatingArchive.read(base.appendingPathComponent("sound-ratings.json"))}
         catch {ratingsRecoveryRequired=true;message="Saved ratings could not be read. Writes are blocked; recover the previous ratings in Settings."}
+        do {soundFavorites=try SoundFavoriteArchive.read(base.appendingPathComponent("sound-favorites.json"))}
+        catch {favoritesRecoveryRequired=true;message="Saved favorites could not be read. Writes are blocked; recover the previous favorites in Settings."}
         do {effectPresets=try EffectPresetArchive.read(base.appendingPathComponent("effect-presets.json"))}
         catch {presetsRecoveryRequired=true;message="Personal effect presets could not be read. Writes are blocked; recover the previous presets in Settings."}
         if let data=try? Data(contentsOf:base.appendingPathComponent("mainstage-import-report.json")),data.count<=2_000_000 {
@@ -2512,6 +2522,12 @@ final class PerformanceStore: ObservableObject {
             soundRatings=try SoundRatingArchive.recover(saveURL.deletingLastPathComponent().appendingPathComponent("sound-ratings.json"))
             ratingsRecoveryRequired=false;message="Previous ratings restored; damaged bytes retained."
         } catch {message="Could not recover ratings: \(error.localizedDescription). Existing files were retained."}
+    }
+    func recoverPreviousFavorites() {
+        do {
+            soundFavorites=try SoundFavoriteArchive.recover(saveURL.deletingLastPathComponent().appendingPathComponent("sound-favorites.json"))
+            favoritesRecoveryRequired=false;message="Previous favorites restored; damaged bytes retained."
+        } catch {message="Could not recover favorites: \(error.localizedDescription). Existing files were retained."}
     }
     func recoverPreviousPresets() {
         do {

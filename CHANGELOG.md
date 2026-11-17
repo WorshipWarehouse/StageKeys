@@ -4,6 +4,8 @@
 
 - Add a bounded, read-only Nord piano-library (`.npno`) preflight that validates the documented CBIN container, CNSP prefix, key map, stroke directory and audio-grid alignment, reports its checksum verdict and refuses truncated, oversized, misaligned or unsupported-version input without decoding or copying the body; the versioned support contract, field provenance and unresolved licensing/content questions are recorded in `Docs/NORD-NPNO-SCOPE.md` (#211).
 
+- Make personal favorites a first-class library filter: a star on each row toggles a favorite, the Favorites filter composes with search and facets, and a favorite is stored next to the ratings in a bounded `sound-favorites.json` that refuses malformed entries, keeps the previous validated copy and offers the same Settings recovery as ratings (#17). Favorites are personal metadata, so they are not written into the sound catalog, samples, patches or setlists.
+
 - Stop completed AU loader callbacks from retaining the replaced sampler, and refuse forward, rollback and manual audio restart while a purged/truncated sampler is still retained; preserve the stopped recovery guard until release, with generated failure/retry coverage and a 96-switch live-output verification for #192.
 
 - Release a truncated or purged hosted sampler through one ownership registry and disposal order while the engine is stopped, commit the truncation into the rollback so a restored graph never references released nodes, and record the verified pre-restart release in the local support report (#192). The live macOS crash remains unreproduced and this is not a general rollback of released audio.

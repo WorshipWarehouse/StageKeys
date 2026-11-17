@@ -66,6 +66,7 @@ struct SoundBrowser: View {
             }
         }.map {sound in
             var item=sound;item.rating=store.soundRatings[sound.ratingID] ?? 0
+            item.favorite=store.soundFavorites[sound.ratingID] != nil
             item.addedOrder=entryOrder[sound.ratingID] ?? 0
             return item
         }
@@ -74,7 +75,7 @@ struct SoundBrowser: View {
     private var results:[BrowserSound] {query.results(sounds)}
     private var selection:BrowserSound? {results.first{$0.id == selectedID}}
     private var emptyState:LibraryEmptyState {
-        LibraryEmptyState.resolve(catalogUnreadable:store.libraryRecoveryRequired,searching:!query.search.isEmpty,filtering:!query.filters.isEmpty)
+        LibraryEmptyState.resolve(catalogUnreadable:store.libraryRecoveryRequired,searching:!query.search.isEmpty,filtering:!query.filters.isEmpty || query.favoritesOnly)
     }
     var body:some View {
         EditorFrame(title:"Library",width:960,height:650,showsHeader:false) {
@@ -113,6 +114,9 @@ struct SoundBrowser: View {
         .onChange(of:query.search){_ in clearHiddenSelection()}
         .onChange(of:query.filters){_ in clearHiddenSelection()}
         .onChange(of:store.librarySounds){_ in clearHiddenSelection();store.refreshLibraryContent()}
+        // Unfavoriting can remove the selected row from Favorites results; the
+        // selection observer then ends its audition and range preview.
+        .onChange(of:store.soundFavorites){_ in clearHiddenSelection()}
     }
     private var header:some View {
         HStack(spacing:16) {
@@ -183,7 +187,17 @@ struct SoundBrowser: View {
                      .accessibilityLabel("Remove \(filter.facet.rawValue) filter: \(filter.value)")
                      .help("Remove this filter")
                 }
-                Button("Clear Filters") {query.filters=[:];clearHiddenSelection()}
+                Button {query.favoritesOnly.toggle();clearHiddenSelection()} label: {
+                    HStack(spacing:6) {
+                        Image(systemName:query.favoritesOnly ? "star.fill":"star").font(.system(size:10,weight:.bold))
+                        Text("Favorites").font(StageTheme.font(12))
+                    }.padding(.horizontal,10).padding(.vertical,7)
+                     .background(query.favoritesOnly ? selectionColor : StageTheme.raised.opacity(0.35),in:Capsule())
+                     .overlay(Capsule().stroke(Color.white.opacity(0.10)))
+                }.buttonStyle(.plain)
+                 .accessibilityLabel(query.favoritesOnly ? "Show all sounds":"Show favorite sounds only")
+                 .help("Show favorites only")
+                Button("Clear Filters") {query.filters=[:];query.favoritesOnly=false;clearHiddenSelection()}
                     .font(StageTheme.font(12,weight:.semibold)).buttonStyle(.plain)
                     .accessibilityLabel("Clear all library filters")
             }.padding(.horizontal,16).frame(height:38)
@@ -201,6 +215,9 @@ struct SoundBrowser: View {
                     ForEach(results){sound in
                         HStack(spacing:0){
                             Button{selectedID=sound.id}label:{VStack(alignment:.leading,spacing:5){Text(sound.name).font(StageTheme.font(16)).multilineTextAlignment(.leading);if collection == "MainStage Archive" {Text(sound.playable ? "Playable":"Needs Conversion").font(StageTheme.font(11)).foregroundStyle(.secondary)};if sound.unavailableReason != nil || sound.contentIssue != nil {Text("Unavailable").font(StageTheme.font(11)).foregroundStyle(.orange)};if sound.collection == "Audio Units" {Text(sound.tags.sourceModel).font(StageTheme.font(11)).foregroundStyle(.secondary)}}.frame(maxWidth:.infinity,alignment:.leading).padding(.leading,14).padding(.vertical,13)}.buttonStyle(.plain).accessibilityLabel("\(sound.name), \((sound.unavailableReason != nil || sound.contentIssue != nil) ? "Unavailable" : sound.playable ? "Playable":"Needs Conversion")")
+                            Button{store.toggleFavorite(sound.ratingID)}label:{Image(systemName:sound.favorite ? "star.fill":"star").font(.system(size:13,weight:.semibold))}.buttonStyle(.plain).padding(.trailing,4)
+                                .accessibilityLabel(sound.favorite ? "Remove \(sound.name) from favorites":"Add \(sound.name) to favorites")
+                                .help(sound.favorite ? "Remove from favorites":"Add to favorites")
                             SoundRatingControl(name:sound.name,rating:sound.rating){store.rateSound(sound.ratingID,$0)}.padding(.horizontal,12)
                         }.background(selectedID == sound.id ? selectionColor:.clear,in:RoundedRectangle(cornerRadius:7)).foregroundStyle(selectedID == sound.id ? .white:.white.opacity(0.85))
                          .contextMenu {if let entry=sound.entry {
