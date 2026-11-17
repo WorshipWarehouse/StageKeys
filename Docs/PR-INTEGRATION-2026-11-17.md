@@ -24,12 +24,12 @@ reviewed PR commits and reconciles their overlapping changes.
 | [#222](https://github.com/WorshipWarehouse/StageKeys/pull/222) | `a15ed704bad5` | Add personal sound favorites as a library filter (#17) |
 | [#224](https://github.com/WorshipWarehouse/StageKeys/pull/224) | `0abd3f21ecce` | Repair a library sound whose sample folder moved (#17) |
 | [#226](https://github.com/WorshipWarehouse/StageKeys/pull/226) | `a48aa2ac202c` | Keep an already-installed MainStage channel reported as a duplicate (#5) |
-| [#227](https://github.com/WorshipWarehouse/StageKeys/pull/227) | `5facf976b743` | Name the saved-session schema and refuse a newer one (#20) |
-| [#228](https://github.com/WorshipWarehouse/StageKeys/pull/228) | `027f9d31d63e` | Add single-transaction bulk sound import with content-duplicate skipping (#8) |
+| [#227](https://github.com/WorshipWarehouse/StageKeys/pull/227) | `a0edec7a92e5` | Name the saved-session schema and refuse a newer one (#20) |
+| [#228](https://github.com/WorshipWarehouse/StageKeys/pull/228) | `64d54acd880b` | Add single-transaction bulk sound import with content-duplicate skipping (#8) |
 
 ## Review findings resolved
 
-The review cutoff includes PRs through #228. Later arrivals require their own review.
+The review cutoff includes PRs through #228. Later arrivals require their own review. Concurrent final updates to #227 and #228 were also reviewed: the integration enforces version-before-payload directly in `Setlist.init(from:)` on every decoder path rather than introducing a separate envelope, and its tested final cancellation yield already covers the last-source cancellation update. Their original base commits remain in branch history; these equivalent final fixes are integrated independently.
 
 - Preserve every CoreMIDI packet timestamp through a new timed callback; retain the untimed C ABI. Direct C lists and a virtual CoreMIDI source test two distinct clock packets in one list. Zero/invalid-stamp receipt fallback remains.
 - Retain the exact named removal/Undo state after a failed Undo or a subsequent failed removal. The same tested feedback model drives the browser.
