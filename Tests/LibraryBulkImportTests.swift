@@ -99,7 +99,12 @@ struct LongImportFailure: LocalizedError {
         assert((try! Data(contentsOf:catalog))==saved && Set(try! FileManager.default.contentsOfDirectory(atPath:managedDirectory.path))==files)
         store.importLibrarySounds([c]);try await wait();assert(store.librarySounds.count==3,"A cancelled source must be retryable")
         assert((try! Data(contentsOf:root.appendingPathComponent("setlist.json")))==session,"Batch import must not edit the active session")
-        let restart=PerformanceStore();assert(restart.librarySounds.count==3)
+        let invalidName=root.appendingPathComponent(String(repeating:"A",count:210)+".wav")
+        let retry=root.appendingPathComponent("Valid retry.wav")
+        try wave(13).write(to:invalidName);try wave(13).write(to:retry)
+        store.importLibrarySounds([invalidName,retry]);try await wait()
+        assert(store.librarySounds.count==4 && store.libraryImportProgress?.contains("Failed 1")==true,store.libraryImportProgress ?? "")
+        let restart=PerformanceStore();assert(restart.librarySounds.count==4)
         assert((try! Data(contentsOf:a))==wave(40))
         print("PASS: bulk import selection order, sampler-instrument boundary, duplicate identity, bounded summary and failure text")
     }

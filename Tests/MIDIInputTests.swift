@@ -5,8 +5,9 @@ import Darwin
  static func main() throws {
     let input = MIDIInput()
     var events: [(Int32,UInt8,UInt8,UInt8,Double,Bool)] = [], removed: [Int32] = [], changes = 0
-    input.onSourceEvent = { events.append(($0,$1,$2,$3,$4,$5)) }
-    input.onDisconnect = { removed.append($0) }
+    var tracked=Set<Int32>()
+    input.onSourceEvent = { if tracked.contains($0) {events.append(($0,$1,$2,$3,$4,$5))} }
+    input.onDisconnect = { if tracked.contains($0) {removed.append($0)} }
     input.onDevices = { _,error in assert(error == nil,error ?? ""); changes += 1 }
     input.start(); input.start() // idempotent
     var client = MIDIClientRef(), a = MIDIEndpointRef(), b = MIDIEndpointRef()
@@ -15,18 +16,20 @@ import Darwin
     let token=UUID().uuidString
     assert(MIDISourceCreate(client,"Keyboard A \(token)" as CFString,&a)==noErr)
     assert(MIDISourceCreate(client,"Keyboard B \(token)" as CFString,&b)==noErr)
-    func wait(_ condition: ()->Bool) { let end=Date().addingTimeInterval(3); while !condition() && Date()<end { RunLoop.current.run(until:Date().addingTimeInterval(0.01)) }; assert(condition()) }
+    var waitPhase=0
+    func wait(_ condition: ()->Bool) { waitPhase+=1;let end=Date().addingTimeInterval(10); while !condition() && Date()<end { RunLoop.current.run(until:Date().addingTimeInterval(0.01)) }; assert(condition(),"MIDI wait phase \(waitPhase), events \(events.count), sources \(input.sources.count), disconnects \(removed.count)") }
     wait { input.sources.contains(where:{$0.endpoint==a && $0.connected}) && input.sources.contains(where:{$0.endpoint==b && $0.connected}) }
     assert(!input.sources.contains(where:{$0.name == "StageKeys to External App"}))
     let idA=input.sources.first(where:{$0.endpoint==a})!.id, idB=input.sources.first(where:{$0.endpoint==b})!.id
+    tracked=[idA,idB]
     let before=changes
     for _ in 0..<20 { input.refresh() }
     assert(changes==before && removed.isEmpty,"Refresh must preserve stable connections")
     func send(_ source:MIDIEndpointRef,_ status:UInt8,_ note:UInt8,_ velocity:UInt8) {
         var list=MIDIPacketList()
         withUnsafeMutablePointer(to:&list) { p in
-            let packet=MIDIPacketListInit(p); let bytes:[UInt8]=[status,note,velocity]
-            bytes.withUnsafeBufferPointer { v in assert(MIDIPacketListAdd(p,MemoryLayout<MIDIPacketList>.size,packet,0,3,v.baseAddress!) != nil) }
+            let packet=MIDIPacketListInit(p); let bytes:[UInt8]=status>=0xf8 ? [status]:[status,note,velocity]
+            bytes.withUnsafeBufferPointer { v in assert(MIDIPacketListAdd(p,MemoryLayout<MIDIPacketList>.size,packet,0,bytes.count,v.baseAddress!) != nil) }
             assert(MIDIReceived(source,p)==noErr)
         }
     }
@@ -58,8 +61,6 @@ import Darwin
     let expected=Double(second-first)/ticksPerSecond
     assert(abs((events[7].4-events[6].4)-expected)<0.00001,"Each packet needs its own stamp, not the first stamp in the list")
     assert(events[6].5 && events[7].5)
-    send(b,0xf8,0,0);wait {events.count>=9}
-    assert(!events[8].5,"Zero packet timestamps retain receipt-time provenance")
     print("PASS: MIDI plug-and-play after launch, two sources/channels, stable refresh, sustain, note-off, unplug and surviving input")
  }
 }

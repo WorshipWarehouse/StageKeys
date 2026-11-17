@@ -316,7 +316,7 @@ struct SoundBrowser: View {
                                 Divider()
                                 Button(role:.destructive) {
                                     if let removed=store.removeLibrarySound(entry.id) {
-                                        removalFeedback.removal(removed,message:"Removed \(removed.name) from My Sounds. Its file stays in the library folder so saved patches keep playing.")
+                                        removalFeedback.removal(removed,message:store.message ?? "Removed \(removed.name) from My Sounds. Its file stays in the library folder so saved patches keep playing. Use Undo to restore it.")
                                     }
                                     else {removalFeedback.removal(nil,message:store.message ?? "Could not remove this sound.")}
                                     store.message=nil

@@ -64,3 +64,27 @@ Only #211 has complete reviewed acceptance evidence from the Nord merge. Decoder
 Broader #4/#7/#15/#17/#19/#20/#107/#108/#111 gates also remain open. Offline tools do not establish hardware performance; library features do not complete physical layouts/optional-library versioning; transpose fixes do not establish every EXS/instrument variant; recovery software does not prove clean-device restore. PR descriptions #205/#207 were corrected so GitHub cannot accidentally interpret their negated closure wording as completion of #4/#20.
 
 Effects remain independent StageKeys implementations and bounded calibration profiles. No complete Sunday Keys, Nord, MainStage or proprietary DSP parity is asserted.
+
+## Follow-up review reconciliation
+
+Concurrent fixes on the integration branch through `7cdba572907f` were retained.
+The final review also preserves bounded partial discovery with an explicit
+incomplete-search notice, keeps Audio Music Apps instrument search under Sampler
+Instruments while retaining its broader sample-resolution root, and validates
+big-endian EXS dependency records without claiming native translation support.
+Generated little/big-endian fixtures resolve the same sample manifest; the
+native translator still rejects big-endian synthesis conversion explicitly.
+
+Additional regressions cover a refused stale catalog repair and asset rollback,
+a damaged active library document surviving autosave, explicit folder selection
+resolving cached ambiguity, repeated forced AU configuration, calibrated room
+control editing, MIDI macro propagation through the Store, bounded notes
+migration, and virtual-source isolation from unrelated physical MIDI traffic.
+The comparison tools retain channel metrics, full tails and joint modulation
+fits; final-quiet-region decay avoids mistaking an early gap for the end.
+
+Later original-PR refinements were reviewed for equivalent coverage: per-entry
+bulk admission, same-batch prepared outcomes, refreshed catalogs after repair
+conflicts, persistent pending forced AU reloads, removal warning/Undo notices,
+and bounded snapshot-settle waits. Their final heads are recorded in the PR
+cleanup notes rather than assuming a squash merge includes later branch tips.

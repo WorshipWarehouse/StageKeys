@@ -35,8 +35,14 @@ import AVFoundation
         store.start()
         assert(store.started && store.audio.running)
         let snapshot = target(0.08)
-        store.recall(snapshot); wait(0.16)
-        assert(store.activeSnapshot == snapshot.id && abs(store.patch.layers[0].gain - 0.1) < 0.001)
+        store.recall(snapshot)
+        // A fixed sleep races the fade on a loaded runner and made this assertion
+        // fail with nothing in the log to explain which half broke. Wait for the
+        // settled state within a bound, then assert with the observed values.
+        let settleDeadline = Date().addingTimeInterval(3)
+        while Date() < settleDeadline && (store.activeSnapshot != snapshot.id || abs(store.patch.layers[0].gain - 0.1) >= 0.001) {wait(0.01)}
+        assert(store.activeSnapshot == snapshot.id && abs(store.patch.layers[0].gain - 0.1) < 0.001,
+               "a completed snapshot selection must settle on its target: active=\(String(describing:store.activeSnapshot)) gain=\(store.patch.layers[0].gain)")
         let completed = bytes()
         store.stopAudio(); wait(0.12)
         assert(bytes() == completed && store.activeSnapshot == snapshot.id, "A completed snapshot selection survives Stop")

@@ -78,7 +78,7 @@ def click_then_tone(frequency):
     samples=[0.0]*24000
     samples[0]=1.0
     for i in range(1,24000):
-        samples[i]=0.02*math.sin(2*math.pi*frequency*i/rate)
+        samples[i]=0.002*math.sin(2*math.pi*frequency*i/rate)
     return samples
 low=comparison.spectral_centroid(click_then_tone(3000),rate)
 high=comparison.spectral_centroid(click_then_tone(10000),rate)

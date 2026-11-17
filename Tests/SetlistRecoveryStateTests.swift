@@ -60,6 +60,16 @@ import AVFoundation
         assert(abs((rack.unit(channel:0) as! AVAudioUnitSampler).masterGain+7)<0.01,"Recovered authored state must replace editor-mutated state")
         store.save()
         assert(abs((rack.unit(channel:0) as! AVAudioUnitSampler).masterGain+7)<0.01)
+        // Repeating an equal-state configuration must retain the forced load
+        // until a current request installs, not consume it at request creation.
+        (rack.unit(channel:0) as! AVAudioUnitSampler).masterGain = -29
+        store.audio.configure(0,store.patch.layers[0],forceReload:true)
+        let supersededReply=replies.removeFirst()
+        store.audio.configure(0,store.patch.layers[0])
+        supersededReply(AVAudioUnitSampler(),nil)
+        RunLoop.current.run(until:Date().addingTimeInterval(0.05))
+        completeLoad()
+        assert(abs((rack.unit(channel:0) as! AVAudioUnitSampler).masterGain+7)<0.01)
         // Nil state means a fresh default instance, including on a second recall
         // when both the document and installed-state cache already contain nil.
         var defaults=authored;defaults.patches[0].layers[0].pluginState=nil

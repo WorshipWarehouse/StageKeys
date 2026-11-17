@@ -76,16 +76,16 @@ import Foundation
         let selectedReload=try JSONDecoder().decode(Layer.self,from:JSONEncoder().encode(selected.layer))
         assert(selectedReload.mainStageSource==selected.layer.mainStageSource && selectedReload.effects[0].values[0]==0)
         let store=PerformanceStore()
-        var live=try translated.applying(to:Layer(name:"Loaded macro",instrument:0,gain:1),selection:.init(audio:[0,1])).layer
-        live.effects[1].parameters=live.effects[1].values
-        live.effects[1].parameters![0]=1234
+        var live=try translated.applying(to:Layer(name:"Loaded macro",instrument:0,gain:1),selection:.init(audio:[0])).layer
+        var unrelated=AudioEffect();unrelated.kind=3;unrelated.parameters=unrelated.values;unrelated.parameters![0]=0.41
+        live.effects[1]=unrelated
         store.setlist.patches[store.selected].layers[0]=live
         store.applyImportedController(71,value:127,channel:2)
         let updated=store.patch.layers[0]
         assert(updated.effects[0].values[0]==0 && updated.mainStageSource!.effects[0].values[0]==0)
-        assert(updated.effects[1].values[0]==1234,"A macro must retain an unrelated visible edit")
+        assert(updated.effects[1].values[0]==0.41,"A macro must retain an unrelated visible edit")
         let savedMacro=try JSONDecoder().decode(Layer.self,from:JSONEncoder().encode(updated))
-        assert(savedMacro.effects[0].values[0]==0 && savedMacro.effects[1].values[0]==1234)
+        assert(savedMacro.effects[0].values[0]==0 && savedMacro.effects[1].values[0]==0.41)
         var channelDraft=translated
         channelDraft.low=36;channelDraft.high=96;channelDraft.transpose=12
         MainStageProcessing.channelSettings(["volume":1509949440,"Channel_pan":-0.25,"Channel_isMuted":false,"Channel_filterSustainPedal":true],to:&channelDraft)

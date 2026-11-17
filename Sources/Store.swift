@@ -2236,6 +2236,7 @@ final class PerformanceStore: ObservableObject {
                 // Another process changed the catalog since this repair read it. Publish
                 // nothing rather than replacing that edit with a stale snapshot, and let
                 // the caller retry against the refreshed catalog.
+                if let current=try? SoundLibrary(url:libraryDirectory.appendingPathComponent("sound-library.json")).read() {librarySounds=current}
                 refreshLibraryContent()
                 message="Could not save the repaired sound because the library changed while it was being repaired: \(error.localizedDescription)";return
             }
@@ -2330,6 +2331,7 @@ final class PerformanceStore: ObservableObject {
                             let actual=try AssetDigest.sha256(managed)
                             guard actual==digest else{throw MainStagePatch.Failure.invalid("The source changed during import. Select the original file and retry.")}
                             entry.managedFileSHA256=actual
+                            try SoundLibrary.validate([entry])
                             owned.insert(managed);preparedFile=nil
                             entries.append(entry)
                             outcomes.append(.added(name:sound.name))
@@ -2529,6 +2531,7 @@ final class PerformanceStore: ObservableObject {
                 let library=SoundLibrary(url:saveURL.deletingLastPathComponent().appendingPathComponent("sound-library.json"))
                 let original=try library.read()
                 var entries=original,imported=0,skipped=0,failures:[String]=[]
+                let committedIDs=Set(original.map(\.id))
                 for (channelIndex,channel) in report.channels.enumerated() where selection.contains(channelIndex) && !channel.instruments.isEmpty {
                     guard channel.unsupportedInstrumentFamily == nil else {outcome(channelIndex,.unsupported,channel.nativeInstrumentStatus);failures.append(channel.name+": "+channel.nativeInstrumentStatus);continue}
                     guard channel.instruments.count==1,let name=channel.instruments.first else{outcome(channelIndex,.unsupported,"Multiple sampler instruments require channel topology translation; none were silently flattened.");failures.append(channel.name+": layered sampler selection requires translation");continue}
@@ -2561,7 +2564,7 @@ final class PerformanceStore: ObservableObject {
                         let id=try MainStagePatch.conversionID(report,channel:channel,variant:identity)
                         if let existing=entries.firstIndex(where:{$0.id==id}) {
                             entries[existing].sourceArchiveID=report.sourceArchiveID
-                            outcome(channelIndex,.duplicate,"Already installed; personal edits retained.",id)
+                            outcome(channelIndex,committedIDs.contains(id) ? .duplicate:.prepared,committedIDs.contains(id) ? "Already installed; personal edits retained.":"Shares a conversion with an earlier channel in this import.",id)
                             skipped+=1;continue
                         }
                         var prepared:(ExternalSound,[String]?,Layer?)?
@@ -2619,7 +2622,7 @@ final class PerformanceStore: ObservableObject {
                             let id=try MainStagePatch.conversionID(report,channel:channel,variant:"audio-unit")
                             if let existing=entries.firstIndex(where:{$0.id==id}) {
                                 entries[existing].sourceArchiveID=archiveID
-                                outcome(channelIndex,.duplicate,"Already installed; personal edits retained.",id)
+                                outcome(channelIndex,committedIDs.contains(id) ? .duplicate:.prepared,committedIDs.contains(id) ? "Already installed; personal edits retained.":"Shares a conversion with an earlier channel in this import.",id)
                                 skipped+=1;continue
                             }
                             let applied=try processing.applying(to:hosted.layer,selection:mainStageSelection(channelIndex))
