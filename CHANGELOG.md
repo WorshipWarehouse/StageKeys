@@ -2,6 +2,10 @@
 
 - Date received MIDI clock pulses with the CoreMIDI packet timestamp, falling back to the main-queue receipt time when the driver sends no usable stamp, so queued main-thread work no longer stretches the interval the tempo is measured from (#108).
 
+- Add experimental, bounded Nord `.npno` attack-only conversion into the native sampler with feature/size preview, exact integer decoding, key/velocity/loop/tuning maps, background preparation, cancellation rollback, duplicate source identities and personal-pack portability. Resonance/release banks and Nord-specific dynamics are disclosed as unsupported; physical Mac/iPad live qualification remains open (#212–#216). Retain the adapted decoder’s BSD notice and exclude Nord assets from distribution.
+
+- Add a bounded, read-only Nord piano-library (`.npno`) preflight that validates the documented CBIN container, CNSP prefix, key map, stroke directory and audio-grid alignment, reports its checksum verdict and refuses truncated, oversized, misaligned or unsupported-version input without decoding or copying the body; the versioned support contract, field provenance and unresolved licensing/content questions are recorded in `Docs/NORD-NPNO-SCOPE.md` (#211).
+
 - Stop completed AU loader callbacks from retaining the replaced sampler, and refuse forward, rollback and manual audio restart while a purged/truncated sampler is still retained; preserve the stopped recovery guard until release, with generated failure/retry coverage and a 96-switch live-output verification for #192.
 
 - Release a truncated or purged hosted sampler through one ownership registry and disposal order while the engine is stopped, commit the truncation into the rollback so a restored graph never references released nodes, and record the verified pre-restart release in the local support report (#192). The live macOS crash remains unreproduced and this is not a general rollback of released audio.
