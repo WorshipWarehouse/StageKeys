@@ -126,7 +126,7 @@ import AVFoundation
    sampler.stopNote(key,onChannel:0)
    assert(x.allSatisfy(\.isFinite));return Array(x[4096..<16384])
   }
-  func peakFrequency(_ x:[Float])->Double {(200...900).map{Double($0)}.max{magnitude(x,$0)<magnitude(x,$1)}!}
+  func peakFrequency(_ x:[Float],range:ClosedRange<Int>=200...900)->Double {range.map{Double($0)}.max{magnitude(x,$0)<magnitude(x,$1)}!}
   // EXS Transpose moves the zones as well as the pitch. Translating it as a
   // cents offset would keep the authored zone answering a boundary key.
   let plainRoot=root.appendingPathComponent("plain-source",isDirectory:true)
@@ -159,8 +159,9 @@ import AVFoundation
   let flat=outputRoot.appendingPathComponent("Flat.aupreset")
   let flatProgram=try EXSNative.convert(flatSource,sampleRoot:flatRoot,to:flat)
   assert(flatProgram.voiceControls?.transpose==(-7) && flatProgram.groups[0].low==7 && flatProgram.groups[0].high==127)
-  let flatPeak=peakFrequency(try renderPreset(flat,key:60))
-  assert(abs(flatPeak-261.63*pow(2,-7.0/1200))<2,"Negative transpose must lower the played key: \(flatPeak)")
+  // Seven semitones down puts the tone below the default scan floor.
+  let flatPeak=peakFrequency(try renderPreset(flat,key:60),range:120...400)
+  assert(abs(flatPeak-261.63*pow(2,-7.0/12))<2,"Negative transpose must lower the played key: \(flatPeak)")
   var overNotes=Set<String>()
   do{_ = try EXSNative.voiceControls([.init(kind:4,modern:true,index:0,name:"Out of range",body:Array(parameterChunk([(0x2d,100)])[84...]))],notes:&overNotes);fatalError("Out-of-range transpose accepted")}catch{}
   print("PASS: generic EXS parameter decoding, active gain/tuning and velocity-sensitive filter; soft/hard HF balance",softBalance,hardBalance)
