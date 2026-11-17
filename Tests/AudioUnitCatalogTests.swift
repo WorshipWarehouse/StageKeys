@@ -39,13 +39,19 @@ import Foundation
         assert(roundTrip == enriched)
         assert(roundTrip.displayName == "Legacy Synth — Example Audio")
 
-        // A different component or display name is a different plug-in.
+        // A different component is a different plug-in; a renamed one is not. Core
+        // Audio identifies a component by type, subtype and manufacturer, so the
+        // display name cannot decide whether its saved state still applies.
         var otherSubtype = enriched
         otherSubtype.subtype += 1
         assert(otherSubtype != enriched)
-        var otherName = enriched
-        otherName.name = "Legacy Synth 2"
-        assert(otherName != enriched)
+        var otherManufacturer = enriched
+        otherManufacturer.manufacturer += 1
+        assert(otherManufacturer != enriched)
+        var renamed = enriched
+        renamed.name = "Legacy Synth 2"
+        assert(renamed == enriched, "A renamed component must keep its plug-in identity")
+        assert(renamed.hashValue == enriched.hashValue)
 
         // Vendor first, then display name. Unavailable components stay listed so
         // the browser can explain why they cannot be hosted.
