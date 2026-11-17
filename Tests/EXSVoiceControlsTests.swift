@@ -135,9 +135,12 @@ import AVFoundation
   assert(plainProgram.voiceControls?.transpose==nil && plainProgram.groups[0].low==0 && plainProgram.groups[0].high==127)
   let plainPeak=peakFrequency(try renderPreset(plain,key:60))
   assert(abs(plainPeak-261.63)<2,"Untransposed playback must stay at the authored pitch: \(plainPeak)")
+  // A parameters chunk must carry a supported amplitude envelope, otherwise the
+  // converter correctly refuses the whole layout before any transpose applies.
+  let envelopeParameters:[(UInt8,Int16)]=[(0x52,0),(0x53,0),(0x54,0),(0x51,127),(0x55,0),(0x6b,2)]
   let upRoot=root.appendingPathComponent("transpose-up-source",isDirectory:true)
   let upSource=try TestFixtures.exs(in:upRoot)
-  var upBytes=try Data(contentsOf:upSource);upBytes.append(parameterChunk([(0x2d,12)]));try upBytes.write(to:upSource)
+  var upBytes=try Data(contentsOf:upSource);upBytes.append(parameterChunk(envelopeParameters+[(0x2d,12)]));try upBytes.write(to:upSource)
   let up=outputRoot.appendingPathComponent("Transposed.aupreset")
   let upProgram=try EXSNative.convert(upSource,sampleRoot:upRoot,to:up)
   assert(upProgram.voiceControls?.transpose==12 && upProgram.voiceControls?.tuning==0,
@@ -152,7 +155,7 @@ import AVFoundation
   assert(abs(upPeak-523.25)<4,"Source transpose must move the pitch with the zone map: \(upPeak)")
   let flatRoot=root.appendingPathComponent("transpose-flat-source",isDirectory:true)
   let flatSource=try TestFixtures.exs(in:flatRoot)
-  var flatBytes=try Data(contentsOf:flatSource);flatBytes.append(parameterChunk([(0x2d,-7)]));try flatBytes.write(to:flatSource)
+  var flatBytes=try Data(contentsOf:flatSource);flatBytes.append(parameterChunk(envelopeParameters+[(0x2d,-7)]));try flatBytes.write(to:flatSource)
   let flat=outputRoot.appendingPathComponent("Flat.aupreset")
   let flatProgram=try EXSNative.convert(flatSource,sampleRoot:flatRoot,to:flat)
   assert(flatProgram.voiceControls?.transpose==(-7) && flatProgram.groups[0].low==7 && flatProgram.groups[0].high==127)
