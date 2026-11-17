@@ -2120,6 +2120,9 @@ final class PerformanceStore: ObservableObject {
                     } catch {outcomes.append(.failed(name:LibraryBulkImport.displayName(url),reason:LibraryBulkImport.failureReason(error)))}
                     if access {url.stopAccessingSecurityScopedResource()}
                 }
+                // Let a Cancel click queued during the last source be delivered
+                // before the commit, so the guard below can still honor it.
+                await Task.yield()
                 guard !libraryImportCancelRequested else {
                     libraryImportProgress="Import cancelled. No prepared catalog entries were committed.";return
                 }
