@@ -2230,10 +2230,14 @@ final class PerformanceStore: ObservableObject {
             updated[index].sound=restored
             updated[index].managedFileSHA256=repairedDigest
             if updated[index].layer?.external != nil {updated[index].layer?.external=restored}
-            do {try SoundLibrary(url:libraryDirectory.appendingPathComponent("sound-library.json")).write(updated)}
+            do {try SoundLibrary(url:libraryDirectory.appendingPathComponent("sound-library.json")).commitImport(updated,replacing:librarySounds)}
             catch {
                 discardManaged(repairedPreset)
-                message="Could not save the repaired sound: \(error.localizedDescription)";return
+                // Another process changed the catalog since this repair read it. Publish
+                // nothing rather than replacing that edit with a stale snapshot, and let
+                // the caller retry against the refreshed catalog.
+                refreshLibraryContent()
+                message="Could not save the repaired sound because the library changed while it was being repaired: \(error.localizedDescription)";return
             }
             librarySounds=updated;refreshLibraryContent()
             message=libraryContentIssues[id]==nil ? "Reconnected \(restored.name). The sound is ready to add again.":"Copied \(restored.name), but this sound still reports missing content."
@@ -2529,12 +2533,23 @@ final class PerformanceStore: ObservableObject {
                     guard channel.unsupportedInstrumentFamily == nil else {outcome(channelIndex,.unsupported,channel.nativeInstrumentStatus);failures.append(channel.name+": "+channel.nativeInstrumentStatus);continue}
                     guard channel.instruments.count==1,let name=channel.instruments.first else{outcome(channelIndex,.unsupported,"Multiple sampler instruments require channel topology translation; none were silently flattened.");failures.append(channel.name+": layered sampler selection requires translation");continue}
                     var candidates=discovered?[name] ?? []
-                    candidates += files.filter{$0.lastPathComponent==name}.compactMap{try? MainStageDiscovery.candidate(file:$0,samples:folder)}
+                    let folderCandidates=files.filter{$0.lastPathComponent==name}.compactMap{try? MainStageDiscovery.candidate(file:$0,samples:folder)}
+                    candidates += folderCandidates
                     var candidateKeys=Set<String>()
                     candidates=candidates.filter{candidateKeys.insert($0.file.standardizedFileURL.path+"\n"+$0.samples.standardizedFileURL.path).inserted}
                     let playable=candidates.filter{$0.sampleIssue==nil && $0.identity != nil}
-                    guard !playable.isEmpty,Set(playable.compactMap(\.identity)).count==1 else{let reason=playable.isEmpty ? (candidates.compactMap(\.sampleIssue).first ?? "Instrument not found in searched locations; choose its sample folder."):"Different EXS maps or sample contents share this filename; choose the intended source folder.";outcome(channelIndex,.needsSamples,reason);failures.append(name+": "+reason);continue}
-                    let file=playable[0].file
+                    // The folder the user just chose settles a conflict between cached
+                    // candidates when it supplies exactly one playable identity; a folder
+                    // that itself holds several identities is still ambiguous.
+                    let folderPaths=Set(folderCandidates.map{$0.file.standardizedFileURL.path})
+                    let chosen=playable.filter{folderPaths.contains($0.file.standardizedFileURL.path)}
+                    let chosenIdentities=Set(chosen.compactMap(\.identity))
+                    let selected:MainStageDiscovery.Candidate?
+                    if chosenIdentities.count==1 {selected=chosen.first}
+                    else if chosenIdentities.isEmpty && Set(playable.compactMap(\.identity)).count==1 {selected=playable[0]}
+                    else {selected=nil}
+                    guard let selected else{let reason=playable.isEmpty ? (candidates.compactMap(\.sampleIssue).first ?? "Instrument not found in searched locations; choose its sample folder."):chosenIdentities.count>1 ? "The chosen folder holds more than one playable version of this sampler instrument; choose the folder holding the intended one.":"Different EXS maps or sample contents share this filename; choose the intended source folder.";outcome(channelIndex,.needsSamples,reason);failures.append(name+": "+reason);continue}
+                    let file=selected.file
                     libraryImportProgress="Importing MainStage channel: "+channel.name
                     await Task.yield();try checkLibraryImportCancellation()
                     let assetsBefore=managedImportAssets()
