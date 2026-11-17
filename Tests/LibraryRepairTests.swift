@@ -100,6 +100,27 @@ import Foundation
         assert((try! Data(contentsOf:root.appendingPathComponent("setlist.json"))) == session)
         let reloaded=try SoundLibrary(url:root.appendingPathComponent("sound-library.json")).read()
         assert(reloaded.first{$0.id == entry.id}?.managedFileSHA256 == expected)
-        print("PASS: library repair assertions")
+        // The shipped browser can also remove an imported sound from My Sounds. The
+        // managed file stays for the patch that already references it, other sounds
+        // are untouched, and the saved session bytes do not change.
+        assert(store.librarySounds.contains { $0.id == entry.id })
+        let removal = store.removeLibrarySound(entry.id)
+        assert(removal?.id == entry.id,"Removal must report the entry it removed")
+        assert(!store.librarySounds.contains { $0.id == entry.id })
+        assert(store.libraryContentIssues[entry.id] == nil)
+        assert(FileManager.default.fileExists(atPath:managed.path),"The managed file must survive removal")
+        assert((try! Data(contentsOf:root.appendingPathComponent("setlist.json"))) == session)
+        let catalogAfterRemoval = try SoundLibrary(url:root.appendingPathComponent("sound-library.json")).read()
+        assert(!catalogAfterRemoval.contains { $0.id == entry.id })
+        assert(store.removeLibrarySound(entry.id) == nil,"A second removal must not report success")
+        // Bundled and optional-library entries are installed content, not user
+        // imports, so the same action must refuse them rather than empty the catalog.
+        let catalog = SoundLibrary(url:root.appendingPathComponent("sound-library.json"))
+        try catalog.write(try catalog.read()+[LibrarySound(id:"catalog-only",name:"Catalog Pad",collection:"Sunday Free · Volume 1",hostPath:"/private/example.patch")])
+        store.librarySounds = try catalog.read()
+        assert(store.removeLibrarySound("catalog-only") == nil,"Only My Sounds entries are removable here")
+        assert(store.librarySounds.contains { $0.id == "catalog-only" })
+        store.message = nil
+        print("PASS: library repair assertions and remove-from-My-Sounds behaviour")
     }
 }

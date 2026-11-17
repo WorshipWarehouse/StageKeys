@@ -202,6 +202,28 @@ struct SoundLibrary {
             try writeUnlocked(entries)
         }
     }
+    enum EditFailure: LocalizedError, Equatable {
+        case unknownSound
+        var errorDescription: String? {
+            switch self {
+            case .unknownSound: return "That sound is no longer in the library. Refresh and try again."
+            }
+        }
+    }
+    /// Remove one catalog entry and return it. The managed preset/sample bytes are
+    /// deliberately kept: saved patches, setlists and snapshots reference them by
+    /// file name, so removing the entry must never make saved work unplayable.
+    /// The write keeps the same validated previous copy as every other catalog save.
+    @discardableResult
+    func delete(id: String) throws -> LibrarySound {
+        try withExclusiveWrite {
+            var entries = try read()
+            guard let index = entries.firstIndex(where: { $0.id == id }) else { throw EditFailure.unknownSound }
+            let removed = entries.remove(at: index)
+            try writeUnlocked(entries)
+            return removed
+        }
+    }
     func recoverPrevious()throws->[LibrarySound] {
         try withExclusiveWrite {
             let data=try RecoverableSessionFile.restore(url,limit:16_000_000) { _ = try decoded($0) }

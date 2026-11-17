@@ -2002,6 +2002,23 @@ final class PerformanceStore: ObservableObject {
             message=libraryContentIssues[id]==nil ? "Restored \(name). The sound is ready to add again.":"Copied \(name), but this sound still reports missing content."
         } catch { message="Could not restore \(name): \(error.localizedDescription)" }
     }
+    /// Remove one user-imported sound from My Sounds. The managed preset/sample bytes
+    /// are left in place because saved patches, setlists and snapshots reference them
+    /// by file name; removing the catalog entry must never make saved work unplayable.
+    /// Bundled and optional-library entries are not user imports and stay listed.
+    @discardableResult
+    func removeLibrarySound(_ id:String) -> LibrarySound? {
+        guard !libraryImportBusy else{message="Wait for the running library import to finish before removing a sound.";return nil}
+        guard let entry=librarySounds.first(where:{$0.id==id}) else{message="That sound is no longer in the library. Refresh and try again.";return nil}
+        guard entry.collection=="My Sounds" else{message="Only sounds you imported into My Sounds can be removed here. \(entry.name) belongs to \(entry.collection).";return nil}
+        do {
+            let library=SoundLibrary(url:saveURL.deletingLastPathComponent().appendingPathComponent("sound-library.json"))
+            let removed=try library.delete(id:id)
+            librarySounds=try library.read();refreshLibraryContent()
+            message="Removed \(removed.name) from My Sounds. Its file stays in the library folder so saved patches keep playing; importing it again restores the entry."
+            return removed
+        } catch {message="Could not remove \(entry.name): \(error.localizedDescription)";return nil}
+    }
     @discardableResult
     func importLibrarySound(_ url:URL,sampleRoot:URL?=nil)->ExternalSound? {
         guard !libraryImportBusy else{message="A sound library import is already running.";return nil}

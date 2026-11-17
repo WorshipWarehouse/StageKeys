@@ -71,6 +71,32 @@ import Foundation
         do { _ = try exportLibrary.exportSound(sourceLayer, name: "   "); assertionFailure("Blank export name accepted") } catch {}
         let countAfterRefusal = try exportLibrary.read().count
         assert(countAfterRefusal == countBeforeRefusal, "A refused export must not add an entry")
-        print("PASS: native and host sound library round-trip; corrupt library preserved; independent sound export")
+        // A user-imported sound can be removed from the catalog, and the managed
+        // bytes that saved patches and setlists reference by name are kept.
+        let removalLibrary = SoundLibrary(url: root.appendingPathComponent("removals/library.json"))
+        let removable = LibrarySound(id:"removable",name:"Removable",collection:"My Sounds",
+                                     sound:ExternalSound(kind:.sample,name:"Removable",fileName:"removable.wav"))
+        let kept = LibrarySound(id:"kept",name:"Kept",collection:"My Sounds",
+                                sound:ExternalSound(kind:.sample,name:"Kept",fileName:"kept.wav"))
+        let installed = LibrarySound(id:"installed",name:"Catalog Pad",collection:"Sunday Free · Volume 1",hostPath:"/private/example.patch")
+        let managed = root.appendingPathComponent("Imported Sounds/removable.wav")
+        try FileManager.default.createDirectory(at:managed.deletingLastPathComponent(),withIntermediateDirectories:true)
+        try Data("managed preset bytes".utf8).write(to:managed)
+        try removalLibrary.write([removable,kept,installed])
+        let removedEntry = try removalLibrary.delete(id:"removable")
+        assert(removedEntry == removable,"The removed entry must be returned unchanged")
+        let afterRemoval = try removalLibrary.read()
+        assert(afterRemoval == [kept,installed],"Only the requested entry may be removed")
+        assert((try Data(contentsOf:managed)) == Data("managed preset bytes".utf8),
+               "Removing an entry must not delete the managed file saved patches use")
+        do { _ = try removalLibrary.delete(id:"removable"); assertionFailure("Removing a missing sound reported success") }
+        catch SoundLibrary.EditFailure.unknownSound {}
+        assert(try removalLibrary.read() == afterRemoval,"A refused removal must not change the catalog")
+        // The catalog write keeps its validated previous copy, so the existing
+        // catalog recovery action can bring an accidental removal back.
+        let recoveredRemoval = try removalLibrary.recoverPrevious()
+        assert(recoveredRemoval.contains { $0.id == "removable" },"The previous catalog must still hold the removed sound")
+        assert(try removalLibrary.read().contains { $0.id == "removable" })
+        print("PASS: native and host sound library round-trip; corrupt library preserved; independent sound export; recoverable sound removal")
     }
 }
