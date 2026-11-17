@@ -47,6 +47,28 @@ import AudioToolbox
         for length in 0..<complete.count {
             rejected { _ = try AudioDeviceInventoryData.outputChannels(Data(complete.prefix(length))) }
         }
-        print("PASS device inventory: mono/stereo/multi-stream, truncated headers/entries, invalid counts/pointers, overflow, byte budgets and unique device IDs")
+        // Output-pair enumeration (#107 stage 1): pairs come from the device's
+        // real channel count, a leftover odd channel is not a stereo pair, and a
+        // stale index is named instead of being substituted.
+        assert(FlexRouting.pairs(channels: 0).isEmpty && FlexRouting.pairs(channels: 1).isEmpty)
+        assert(FlexRouting.pairs(channels: 2) == [FlexOutputPair(index: 0)])
+        assert(FlexRouting.pairs(channels: 2)[0].title == "Output 1–2")
+        assert(FlexRouting.pairs(channels: 4).map(\.index) == [0, 1])
+        assert(FlexRouting.pairs(channels: 4)[1].title == "Output 3–4")
+        assert(FlexRouting.pairs(channels: 7).map(\.index) == [0, 1, 2])
+        assert(FlexRouting.unpairedChannels(7) == 1 && FlexRouting.unpairedChannels(8) == 0)
+        assert(FlexRouting.pairs(channels: 4_096).count == FlexOutputPair.maximumPairs)
+        assert(FlexRouting.pairs(channels: .max).count == FlexOutputPair.maximumPairs)
+        assert(FlexRouting.state(pair: 0, channels: 2) == .available(FlexOutputPair(index: 0)))
+        assert(FlexRouting.state(pair: 1, channels: 2) == .pairUnavailable(1))
+        assert(FlexRouting.state(pair: -1, channels: 4) == .pairUnavailable(0))
+        assert(FlexRouting.state(pair: 0, channels: 1) == .monoDevice)
+        assert(FlexRouting.state(pair: 0, channels: 0) == .noOutputs)
+        assert(FlexRouting.state(pair: 0, channels: nil) == .deviceUnavailable)
+        assert(FlexRouting.state(pair: 0, channels: 2).isAvailable && !FlexRouting.state(pair: 1, channels: 2).isAvailable)
+        assert(FlexRouting.state(pair: 1, channels: 2).message.contains("Output 3–4"), "A stale pair must be named, not substituted")
+        assert(FlexRouting.summary(channels: 6).contains("3 stereo pairs") && FlexRouting.summary(channels: 3).contains("unpaired channel"))
+        assert(FlexRouting.summary(channels: 0).contains("No output channels") && FlexRouting.summary(channels: 1).contains("no stereo pair"))
+        print("PASS device inventory: mono/stereo/multi-stream, truncated headers/entries, invalid counts/pointers, overflow, byte budgets, unique device IDs and reported stereo output pairs")
     }
 }

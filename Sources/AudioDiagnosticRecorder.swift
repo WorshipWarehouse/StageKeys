@@ -31,12 +31,16 @@ struct SupportDiagnostics: Codable {
     let underrunCount: Int? // nil until measured; never report unmeasured zero.
     let latencyScope: String
     let lastAudioChangeFailure: AudioChangeDiagnostic?
+    /// Stereo output pairs the selected device reports, or nil when its channel
+    /// count is unknown. A count, never a device identifier or route name.
+    let usableOutputPairs: Int?
+
     /// Present only in DEBUG builds; nil is omitted from the local report.
     let samplerTeardown: [SamplerTeardownRecord]?
 
     init(version: String, build: String, running: Bool, status: AudioDeviceStatus?, latency: AudioLatencyChain?,
          midiSources: Int, loadedSlots: Int, limiterBypassed: Bool, recording: Bool,
-         lastAudioChangeFailure: AudioChangeDiagnostic? = nil,
+         lastAudioChangeFailure: AudioChangeDiagnostic? = nil, usableOutputPairs: Int? = nil,
          samplerTeardown: [SamplerTeardownRecord]? = nil) {
         schemaVersion = 1
         appVersion = String(version.prefix(64)); appBuild = String(build.prefix(64))
@@ -49,6 +53,7 @@ struct SupportDiagnostics: Codable {
         underrunCount = nil
         latencyScope = "Core Audio reported output chain; physical MIDI-to-speaker latency not measured"
         self.lastAudioChangeFailure = lastAudioChangeFailure
+        self.usableOutputPairs = usableOutputPairs.map { max(0, min(FlexOutputPair.maximumPairs, $0)) }
         self.samplerTeardown = samplerTeardown?.isEmpty == true ? nil : samplerTeardown
     }
     func json() throws -> String {

@@ -140,6 +140,7 @@ final class PerformanceStore: ObservableObject {
                 midiSources: midiSources.filter(\.connected).count, loadedSlots: patch.layers.filter(\.loaded).count,
                 limiterBypassed: masterLimiterBypassed, recording: audioCheckRecording,
                 lastAudioChangeFailure: audio.lastChangeFailure,
+                usableOutputPairs: usableOutputPairCount,
                 samplerTeardown: audio.samplerTeardownEvidence)
             let text = try report.json()
             #if os(macOS)
@@ -1022,6 +1023,29 @@ final class PerformanceStore: ObservableObject {
         // apply it again once the saved device returns; one attempt per route.
         try? audio.deviceController.buffer(frameCount: frames)
         refreshAudioDevices()
+    }
+    /// Output channels of the selected device, or nil when the capability is not
+    /// known. Read from the enumerated device rather than queried again, so the
+    /// report cannot disagree with the device the user selected.
+    var selectedOutputChannels: UInt32? {
+        if let id = audioStatus?.deviceID, let device = audioOutputs.first(where: { $0.id == id }) {
+            return device.channels
+        }
+        if let name = audioStatus?.name, let device = audioOutputs.first(where: { $0.name == name }) {
+            return device.channels
+        }
+        return audioOutputs.count == 1 ? audioOutputs[0].channels : nil
+    }
+    /// Stereo pairs the selected device reports. Pair 0 is the only one that is
+    /// mixed to today; the rest are reported, not routed.
+    var availableOutputPairs: [FlexOutputPair] {
+        FlexRouting.pairs(channels: selectedOutputChannels ?? 0)
+    }
+    var outputRoutingState: FlexRouteState {
+        FlexRouting.state(pair: 0, channels: selectedOutputChannels)
+    }
+    var usableOutputPairCount: Int? {
+        selectedOutputChannels.map { FlexRouting.pairs(channels: $0).count }
     }
     func refreshAudioDevices() {
         guard !audio.offline else { return }

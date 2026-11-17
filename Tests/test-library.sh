@@ -16,6 +16,7 @@ sources=(
     "$repo/Sources/SessionSettings.swift"
     "$repo/Sources/AudioEffectParameters.swift"
     "$repo/Sources/AudioDevices.swift"
+    "$repo/Sources/FlexRouting.swift"
     "$repo/Sources/MIDIPrograms.swift"
     "$repo/Sources/MIDIFXProcessor.swift"
     "$repo/Sources/MIDIAudioTimeline.swift"
