@@ -23,7 +23,7 @@ def trajectory(dry, processed, minimum_ms, maximum_ms, step_frames=2048, downsam
     dry_onset, wet_onset = module.onset(dry_mono), module.onset(wet_mono)
     if dry_onset is None or wet_onset is None:
         raise ValueError("both captures need a detectable onset")
-    dry_mono=dry_mono[dry_onset:];wet_mono=wet_mono[wet_onset:]
+    # Captures must share a frame origin; independent onset trimming erases delay.
     low=max(0,round(minimum_ms*dry.rate/1000/downsample))
     high=max(low+1,round(maximum_ms*dry.rate/1000/downsample))
     window=512
@@ -60,18 +60,29 @@ def trajectory(dry, processed, minimum_ms, maximum_ms, step_frames=2048, downsam
 
 
 def fit(points):
+    if len(points)<3:
+        raise ValueError("at least three distinct timing points are required")
     times=[p[0] for p in points];values=[p[1] for p in points]
     best=None
     for index in range(50,5001):
         hz=index/1000
         s=[math.sin(2*math.pi*hz*t) for t in times];c=[math.cos(2*math.pi*hz*t) for t in times]
-        # Offset plus sine/cosine least squares; centered approximation is
-        # sufficient across multi-cycle captures and avoids external packages.
-        mean=sum(values)/len(values);center=[v-mean for v in values]
-        a=sum(v*x for v,x in zip(center,s))/max(1e-12,sum(x*x for x in s))
-        b=sum(v*x for v,x in zip(center,c))/max(1e-12,sum(x*x for x in c))
-        error=sum((v-mean-a*x-b*y)**2 for v,x,y in zip(values,s,c))/len(values)
-        if best is None or error<best[0]:best=(error,hz,mean,math.hypot(a,b))
+        # Joint offset/sine/cosine least squares; centered regressors retain
+        # cross-correlation and recover the offset even for partial cycles.
+        mean=sum(values)/len(values)
+        ms=sum(s)/len(s);mc=sum(c)/len(c)
+        ss=[x-ms for x in s];cc=[x-mc for x in c]
+        xx=sum(x*x for x in ss);yy=sum(y*y for y in cc);xy=sum(x*y for x,y in zip(ss,cc))
+        determinant=xx*yy-xy*xy
+        if determinant <= 1e-12 * max(1.0,xx*yy):
+            continue
+        xs=sum((v-mean)*x for v,x in zip(values,ss));ys=sum((v-mean)*y for v,y in zip(values,cc))
+        a=(xs*yy-ys*xy)/determinant;b=(ys*xx-xs*xy)/determinant
+        offset=mean-a*ms-b*mc
+        error=sum((v-offset-a*x-b*y)**2 for v,x,y in zip(values,s,c))/len(values)
+        if best is None or error<best[0]:best=(error,hz,offset,math.hypot(a,b))
+    if best is None:
+        raise ValueError("capture cannot support an offset/sine/cosine fit")
     error,hz,mean,amplitude=best
     return {"frequencyHz":hz,"centerDelayMilliseconds":mean,"delayDepthMilliseconds":amplitude,
             "fitErrorMillisecondsRMS":math.sqrt(error),"points":len(points),

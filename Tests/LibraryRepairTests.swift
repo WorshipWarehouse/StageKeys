@@ -144,6 +144,16 @@ import Foundation
         assert(store.libraryContentIssues[samplerEntry.id] == .missingSamples)
         assert((try! AssetDigest.sha256(root.appendingPathComponent("sound-library.json")))==catalogBefore)
         assert(Set(try! FileManager.default.contentsOfDirectory(atPath:rack.libraryURL.path))==assetsBeforeCorruption,"Invalid audio repair must remove only its newly prepared assets")
+        let catalogURL=root.appendingPathComponent("sound-library.json")
+        let repairCatalog=SoundLibrary(url:catalogURL)
+        var newer=try repairCatalog.read();newer.append(LibrarySound(id:"concurrent-addition",name:"Concurrent addition",collection:"My Sounds",sound:entry.sound))
+        try repairCatalog.write(newer)
+        let concurrentBytes=try Data(contentsOf:catalogURL)
+        let assetsBeforeRace=Set(try FileManager.default.contentsOfDirectory(atPath:rack.libraryURL.path))
+        store.relinkLibrarySamples(samplerEntry.id,from:movedSamples)
+        assert((try! Data(contentsOf:catalogURL))==concurrentBytes,"Stale repair must not overwrite a concurrent catalog edit")
+        assert(Set(try! FileManager.default.contentsOfDirectory(atPath:rack.libraryURL.path))==assetsBeforeRace)
+        store.librarySounds=try repairCatalog.read()
         // The folder that holds the samples repairs the entry to playable.
         store.relinkLibrarySamples(samplerEntry.id,from:movedSamples)
         assert(store.libraryContentIssues[samplerEntry.id] == nil,store.message ?? "")
@@ -185,6 +195,8 @@ import Foundation
         assert(!blockedUndo)
         feedback.restoration(succeeded:blockedUndo,message:store.message ?? "Undo failed")
         assert(feedback.removed==removal && feedback.text!.contains(removal!.name),"Failed Undo must keep the named entry for retry")
+        feedback.notice("Repair refused: missing sample")
+        assert(feedback.removed==removal && feedback.text!.contains("Repair refused"))
         feedback.removal(nil,message:"Could not remove another sound")
         assert(feedback.removed==removal && feedback.text!.contains(removal!.name),"A later failed removal cannot erase the earlier Undo")
         store.libraryImportBusy=false
@@ -208,6 +220,8 @@ import Foundation
         assert(store.removeLibrarySound("catalog-only") == nil,"Only My Sounds entries are removable here")
         assert(store.librarySounds.contains { $0.id == "catalog-only" })
         store.message = nil
+        feedback.notice("Repair refused: missing sample")
+        assert(feedback.text?.contains("Repair refused")==true)
         print("PASS: library repair assertions and remove-from-My-Sounds behaviour")
     }
 }

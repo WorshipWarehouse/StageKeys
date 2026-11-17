@@ -89,7 +89,7 @@ struct SoundBrowser: View {
             // One recovery control at a time: with no result rows the empty state
             // carries the action, and the bar covers a catalog that still lists rows.
             if store.libraryRecoveryRequired && !results.isEmpty {libraryErrorBar}
-            if !query.activeFilters.isEmpty {filterBar}
+            filterBar
             if let notice=removalFeedback.text {libraryNoticeBar(notice,showsUndo:removalFeedback.removed != nil)}
             GeometryReader {geometry in
                 ScrollView(.horizontal) {
@@ -108,11 +108,13 @@ struct SoundBrowser: View {
             defer {locateTarget=nil}
             guard case .success(let url)=result,let id=locateTarget else{return}
             store.relinkLibrarySound(id,from:url)
+            removalFeedback.notice(store.message ?? "Repair finished.");store.message=nil
         }
         .fileImporter(isPresented:$locatingSamples,allowedContentTypes:[.folder]) { result in
             defer {samplesTarget=nil}
             guard case .success(let url)=result,let id=samplesTarget else{return}
             store.relinkLibrarySamples(id,from:url)
+            removalFeedback.notice(store.message ?? "Repair finished.");store.message=nil
         }
         .onAppear {
             store.refreshLibraryContent()
@@ -319,7 +321,7 @@ struct SoundBrowser: View {
                             // A live search or filter can strand the results even
                             // while the catalog is unreadable, so clearing it must
                             // not depend on whether importing is offered.
-                            if !query.search.isEmpty || !query.filters.isEmpty {Button("Clear Filters"){query.filters=[:];query.search=""}}
+                            if !query.search.isEmpty || !query.filters.isEmpty || query.favoritesOnly {Button("Clear Filters"){query.filters=[:];query.favoritesOnly=false;query.search=""}}
                             if emptyState.offersImport {
                                 Button("Import Samples"){importHub=true}.buttonStyle(StageButtonStyle())
                                 Button("Add Audio Unit"){collection="Audio Units";query=LibraryQuery()}.buttonStyle(StageButtonStyle())

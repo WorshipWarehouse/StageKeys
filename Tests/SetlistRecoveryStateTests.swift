@@ -52,6 +52,9 @@ import AVFoundation
         current!.masterGain = -25
         try encoder.encode(authored).write(to:previous,options:.atomic)
         try Data("damaged primary".utf8).write(to:primary,options:.atomic)
+        store.save()
+        assert((try! Data(contentsOf:primary))==Data("damaged primary".utf8),"Opening/closing the browser must not autosave over a damaged active document")
+        assert(store.setlistLibraryIssues.contains{$0.fileID==id && $0.recoverable})
         store.recoverPreviousSetlist(id)
         completeLoad()
         assert(abs((rack.unit(channel:0) as! AVAudioUnitSampler).masterGain+7)<0.01,"Recovered authored state must replace editor-mutated state")

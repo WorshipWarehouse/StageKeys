@@ -114,7 +114,8 @@ struct SoundLibrary {
                     existing.effects[1].reverbCore=measured.effects[1].reverbCore
                     entries[index].layer=existing
                     if let note=voiced.conversionNotes?.last,
-                       !(entries[index].conversionNotes ?? []).contains(note) {
+                       !(entries[index].conversionNotes ?? []).contains(note),
+                       (entries[index].conversionNotes ?? []).count<128 {
                         entries[index].conversionNotes=(entries[index].conversionNotes ?? [])+[note]
                     }
                 }

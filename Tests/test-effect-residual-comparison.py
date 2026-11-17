@@ -44,3 +44,10 @@ with tempfile.TemporaryDirectory() as folder:
     assert abs(clean_fit["calibrationMilliseconds"] - 8) < 0.01
 
 print("PASS: wet-residual calibration distinguishes deterministic direct-path cancellation from changed source audio")
+
+d = [0.4*math.sin(i*0.17) for i in range(4096)]
+_, bad = residuals.residual(comparison,comparison.Audio(48000,[[0.5*v for v in d],[1.5*v for v in d]]),comparison.Audio(48000,[d,d]))
+assert bad["dryCancellationDB"]<60, "Mono averaging must not hide direct-path channel errors"
+wet = d+[0.0]*1000+[0.3]+[0.0]*1000
+remaining, info = residuals.residual(comparison,comparison.Audio(48000,[wet]),comparison.Audio(48000,[d]))
+assert len(remaining.channels[0])>len(d) and max(remaining.channels[0][-2001:])>=0.3

@@ -133,6 +133,13 @@ struct AudioEffect: Codable, Equatable {
         guard kind==3,delayPingPong==true else{return nil}
         return ImportedDelay(left:Double(values[1]),right:Double(values[1]),leftSynced:true,rightSynced:true,pingPong:true,highCut:values[2])
     }
+    var primaVerbEditableValues:[Float] {
+        reverbCore == "prima-felt-room-v1" ? Array(renderValues.prefix(10)):values
+    }
+    mutating func editPrimaVerbValues(_ edited:[Float]) {
+        if reverbCore == "prima-felt-room-v1" {reverbCore="dense-v1"}
+        parameters=edited
+    }
     var renderValues:[Float] {
         if kind == 3 {return values+[effectCore == "stage-delay-v1" ? 1:0]}
         if kind == 5 {return values+[effectCore == "stage-chorus-v1" ? 1:0]}

@@ -406,7 +406,7 @@ struct EffectEditor: View {
                                 } else {
                                     HStack {Text("Legacy reverb algorithm").font(.caption).foregroundStyle(.secondary);Spacer();Button("Use Stage Reverb"){draft.reverbCore=StageReverbMode.hall.coreID}.buttonStyle(StageButtonStyle())}.padding(.horizontal,20)
                                 }
-                                ScrollView(.horizontal,showsIndicators:false){PrimaVerbControls(sourceCore:draft.usesCreamCoat,denseCore:draft.reverbCore == "dense-v1" || draft.stageReverbMode != nil,values:Binding(get:{draft.values},set:{draft.parameters=$0})).frame(minWidth:600).padding(.horizontal,16).padding(.vertical,8)}
+                                ScrollView(.horizontal,showsIndicators:false){PrimaVerbControls(sourceCore:draft.usesCreamCoat,denseCore:draft.reverbCore == "dense-v1" || draft.reverbCore == "prima-felt-room-v1" || draft.stageReverbMode != nil,values:Binding(get:{draft.primaVerbEditableValues},set:{draft.editPrimaVerbValues($0)})).frame(minWidth:600).padding(.horizontal,16).padding(.vertical,8)}
                             }
                         } else if draft.kind == 5 {
                             VStack(spacing:8) {

@@ -46,3 +46,18 @@ with tempfile.TemporaryDirectory() as directory:
     decoded = comparison.read_pcm(extended)
     assert decoded.rate == 48000 and decoded.channels == [[0.0, 0.25, -0.5, 1.0]]
 print("PASS: matched capture metrics report gain, onset, correlation and aligned error")
+
+# Swapped channels cannot disappear in the mono summary.
+signal = [0.4 * math.sin(i * 0.2) for i in range(4096)]
+swapped = comparison.describe(comparison.Audio(48000, [signal, [0.0]*4096]), comparison.Audio(48000, [[0.0]*4096, signal]))
+assert swapped["channelMetrics"][0]["errorRMS"] > 0.2
+assert swapped["channelMetrics"][1]["errorRMS"] > 0.2
+# High-frequency energy belongs to the full-band centroid.
+assert abs(comparison.spectral_centroid([math.sin(2*math.pi*10000*i/48000) for i in range(4096)],48000)-10000)<25
+# An early silent gap is not decay when a later strong echo remains.
+echo = [1.0]+[0.0]*9599+[0.5]+[0.0]*2000
+assert comparison.decay_seconds(echo,48000)>0.2
+assert comparison.decay_seconds([1.0]*2000,48000) is None
+longer = comparison.describe(comparison.Audio(48000,[[1.0]+[0.0]*47999]),comparison.Audio(48000,[[1.0]+[0.0]*95999+[0.5]+[0.0]*2000]))
+assert longer["candidateFrames"]>longer["referenceFrames"]
+assert longer["candidateDecay60Seconds"]>longer["referenceDecay60Seconds"]

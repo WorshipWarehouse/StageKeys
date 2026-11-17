@@ -263,8 +263,8 @@ enum EXSNative {
         layer["Connections"]=connections
     }
 
-    struct Chunk {var kind:Int;var modern:Bool;var index:Int;var name:String;var body:[UInt8]}
-    static func chunks(_ data:Data)throws->[Chunk] {
+    struct Chunk {var kind:Int;var modern:Bool;var index:Int;var name:String;var body:[UInt8];var bigEndian:Bool=false}
+    static func chunks(_ data:Data,allowBigEndianDependencies:Bool=false)throws->[Chunk] {
         guard data.count>=84,data.count<=16_000_000 else{throw MainStagePatch.Failure.invalid("Invalid EXS document size.")}
         let bytes=[UInt8](data)
         let big=Array(bytes[16..<20])==Array("SOBT".utf8) || Array(bytes[16..<20])==Array("SOBJ".utf8)
@@ -278,9 +278,9 @@ enum EXSNative {
             let size=signature & 0x80000000 != 0 && storedSize<0x10000 ? storedSize & 0x7fff:storedSize
             let tag=String(bytes:bytes[offset+16..<offset+20],encoding:.ascii)
             guard ["TBOS","JBOS","SOBT","SOBJ"].contains(tag ?? ""),signature & 0x00ffffff == 0x101,size<=bytes.count-offset-84,result.count<16384 else{throw MainStagePatch.Failure.invalid("Unsupported EXS chunk layout.")}
-            guard !big else{throw MainStagePatch.Failure.invalid("Native EXS translation currently requires little-endian documents.")}
+            guard !big || allowBigEndianDependencies else{throw MainStagePatch.Failure.invalid("Native EXS translation currently requires little-endian documents.")}
             let name=String(bytes:bytes[offset+20..<offset+84].prefix(while:{$0 != 0}),encoding:.utf8) ?? "EXS Object"
-            result.append(Chunk(kind:(signature >> 24) & 0x3f,modern:signature & 0x40000000 != 0,index:u32(offset+8),name:name,body:Array(bytes[offset+84..<offset+84+size])))
+            result.append(Chunk(kind:(signature >> 24) & 0x3f,modern:signature & 0x40000000 != 0,index:u32(offset+8),name:name,body:Array(bytes[offset+84..<offset+84+size]),bigEndian:big))
             offset+=84+size
         }
         return result
@@ -296,7 +296,7 @@ enum EXSNative {
             let field=kind==2 ? 88:92
             for zone in result where zone.kind==1 {
                 guard zone.body.count>=field+4 else{throw MainStagePatch.Failure.invalid("Truncated EXS zone reference.")}
-                let value=(0..<4).reduce(0){$0 | Int(zone.body[field+$1]) << ($1*8)}
+                let value=(0..<4).reduce(0){$0 | Int(zone.body[field+$1]) << ((zone.bigEndian ? 3-$1:$1)*8)}
                 guard (kind==2 && value==0xffffffff) || positions.indices.contains(value) else{throw MainStagePatch.Failure.invalid("Legacy EXS reference is outside its record table.")}
             }
             for (ordinal,position) in positions.enumerated(){result[position].index=ordinal}
@@ -330,7 +330,7 @@ enum EXSNative {
     static func validateSampleReferences(_ source:URL,sampleRoot:URL)throws->SampleDependencyManifest {
         let attributes=try source.resourceValues(forKeys:[.isRegularFileKey,.fileSizeKey])
         guard attributes.isRegularFile==true,(attributes.fileSize ?? Int.max)<=16_000_000 else{throw MainStagePatch.Failure.invalid("Invalid EXS document size.")}
-        let parts=try referenceIdentities(chunks(Data(contentsOf:source)))
+        let parts=try referenceIdentities(chunks(Data(contentsOf:source),allowBigEndianDependencies:true))
         let files=try resolvedSamples(parts.filter{$0.kind==3},sampleRoot:sampleRoot).files
         var fileDigests:[URL:String]=[:],identity=""
         for (index,file) in files.sorted(by:{$0.key<$1.key}) {

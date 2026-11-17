@@ -5,6 +5,14 @@ import Foundation
   defer{try? FileManager.default.removeItem(at:dir)}
   let url=dir.appendingPathComponent("effect-presets.json")
   var fx=AudioEffect();fx.kind=13;fx.parameters=[0,18,0.33,776,2884,0,0,1,0.23,1];fx.reverbCore="creamcoat"
+  var calibrated=fx;calibrated.reverbCore="prima-felt-room-v1"
+  let initialRender=calibrated.renderValues
+  var editable=calibrated.primaVerbEditableValues
+  assert(editable[2]==0.37 && editable[4]==10000)
+  editable[2]=0.6;editable[4]=6000
+  calibrated.editPrimaVerbValues(editable)
+  assert(calibrated.reverbCore=="dense-v1" && calibrated.renderValues[2]==0.6 && calibrated.renderValues[4]==6000)
+  assert(calibrated.renderValues != initialRender)
   let preset=EffectPreset(name:"Piano Room",effect:fx)
   try EffectPresetArchive.save([preset],to:url);assert(EffectPresetArchive.load(url)==[preset])
   var bad=preset;bad.name=" ";do{try EffectPresetArchive.save([bad],to:url);fatalError("Invalid preset saved")}catch{}

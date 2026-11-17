@@ -113,6 +113,12 @@ import Foundation
             assert(restored.layer!.effects[1].reverbCore == (edited ? "creamcoat":"prima-felt-room-v1"))
             assert(restored.layer!.effects[1].enabled == !edited)
         }
+        var atLimit=measured;atLimit.layer!.effects[1].reverbCore="creamcoat"
+        atLimit.conversionNotes=(0..<128).map{"Authored note \($0)"}
+        try voicingLibrary.write([generated,atLimit])
+        let migrated=try voicingLibrary.read().first{$0.id==atLimit.id}!
+        assert(migrated.conversionNotes==atLimit.conversionNotes)
+        assert(migrated.layer!.effects[1].reverbCore=="prima-felt-room-v1")
         print("PASS: native and host sound library round-trip; corrupt library preserved; independent sound export; recoverable sound removal")
     }
 }

@@ -47,6 +47,8 @@ final class MIDIInput {
     var onDevices: ((Int, String?) -> Void)?
     var onInventory: (([MIDIInputSource], [MIDIKnownDevice]) -> Void)?
     var onDisconnect: ((Int32) -> Void)?
+    var onClockTimingChange: ((Int32) -> Void)?
+    private var clockTimingModes: [Int32:Bool] = [:]
     private static func string(_ object: MIDIObjectRef, _ property: CFString) -> String {
         var value: Unmanaged<CFString>?
         guard MIDIObjectGetStringProperty(object, property, &value) == noErr else { return "" }
@@ -158,13 +160,22 @@ final class MIDIInput {
     }()
     fileprivate func deliver(endpoint: MIDIEndpointRef, status: UInt8, a: UInt8, b: UInt8, packetTicks: UInt64) {
         guard let identity = connected[endpoint] else { return }
+        let receipt = ProcessInfo.processInfo.systemUptime
         let time = MIDIClockTimestamp.at(packetTicks: packetTicks, numer: Self.timebase.numer,
                                          denom: Self.timebase.denom,
-                                         receipt: ProcessInfo.processInfo.systemUptime)
+                                         receipt: receipt)
+        if status == 0xFA || status == 0xFB || status == 0xFC {clockTimingModes[identity]=nil}
+        if status == 0xF8 {
+            let packet = MIDIClockTimestamp.seconds(hostTicks:packetTicks,numer:Self.timebase.numer,denom:Self.timebase.denom)
+            let usesPacket = packet.map{abs($0-receipt)<=MIDIClockTimestamp.maximumLatency} ?? false
+            if let previous=clockTimingModes[identity],previous != usesPacket {onClockTimingChange?(identity)}
+            clockTimingModes[identity]=usesPacket
+        }
         onSourceEvent?(identity,status,a,b,time); onEvent?(status,a,b)
     }
     func stop() {
         precondition(Thread.isMainThread)
+        clockTimingModes=[:]
         refreshWork?.cancel(); poll?.invalidate(); poll=nil
         for (endpoint,id) in connected { MIDIPortDisconnectSource(port,endpoint); onDisconnect?(id) }
         connected.removeAll(); sources=[]

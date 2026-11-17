@@ -435,5 +435,8 @@ struct LibraryRemovalFeedback {
         if succeeded {removed=nil;self.message=message;failure=nil}
         else {failure=message}
     }
+    mutating func notice(_ text:String) {
+        if removed != nil {failure=text} else {message=text;failure=nil}
+    }
     mutating func dismiss() {removed=nil;message=nil;failure=nil}
 }

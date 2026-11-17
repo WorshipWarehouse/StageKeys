@@ -6,7 +6,7 @@ import Foundation
 /// the running application's patch.
 @main struct RenderEffectCapture {
     static func main() throws {
-        guard CommandLine.arguments.count >= 7 else {
+        guard CommandLine.arguments.count >= 6 else {
             throw NSError(domain: "RenderEffectCapture", code: 64, userInfo: [NSLocalizedDescriptionKey:
                 "usage: RenderEffectCapture INPUT.wav OUTPUT.wav KIND TAIL_SECONDS PARAMETER..."])
         }

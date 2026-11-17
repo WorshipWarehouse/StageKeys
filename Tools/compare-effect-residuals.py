@@ -38,25 +38,29 @@ def residual(module, processed, dry, calibration_milliseconds=8.0):
         processed_start = processed_onset + max(lag, 0)
         dry_start = dry_onset + max(-lag, 0)
         count = min(calibration_frames, len(processed_mono) - processed_start, len(dry_mono) - dry_start)
-        processed_slice = processed_mono[processed_start:processed_start + count]
-        dry_slice = dry_mono[dry_start:dry_start + count]
+        if count <= 0:
+            continue
+        processed_slice = [v for channel in processed.channels for v in channel[processed_start:processed_start + count]]
+        dry_slice = [v for channel in dry.channels for v in channel[dry_start:dry_start + count]]
         dry_energy = sum(value * value for value in dry_slice)
         gain = sum(a * b for a, b in zip(processed_slice, dry_slice)) / dry_energy if dry_energy else 1.0
-        error = sum((a - gain * b) ** 2 for a, b in zip(processed_slice, dry_slice)) / max(1, count)
+        error = sum((a - gain * b) ** 2 for a, b in zip(processed_slice, dry_slice)) / len(processed_slice)
         if best is None or error < best[0]:
             best = error, lag, gain, count
+    if best is None:
+        raise ValueError("no shared direct-path calibration window")
     calibration_error, lag, dry_gain, calibration_count = best
     processed_start = processed_onset + max(lag, 0)
     dry_start = dry_onset + max(-lag, 0)
-    length = min(len(processed.channels[0]) - processed_start, len(dry.channels[0]) - dry_start)
+    length = len(processed.channels[0]) - processed_start
     channels = []
     for processed_channel, dry_channel in zip(processed.channels, dry.channels):
         channels.append([
-            processed_channel[processed_start + index] - dry_gain * dry_channel[dry_start + index]
+            processed_channel[processed_start + index] - dry_gain * (dry_channel[dry_start + index] if dry_start + index < len(dry_channel) else 0.0)
             for index in range(length)
         ])
     processed_start = processed_onset + max(lag, 0)
-    processed_slice = processed_mono[processed_start:processed_start + calibration_count]
+    processed_slice = [v for channel in processed.channels for v in channel[processed_start:processed_start + calibration_count]]
     processed_rms = math.sqrt(sum(value * value for value in processed_slice) / max(1, len(processed_slice)))
     error_rms = math.sqrt(calibration_error)
     cancellation_db = 20 * math.log10(processed_rms / max(error_rms, 1e-15)) if processed_rms else 0.0

@@ -89,27 +89,34 @@ def correlation(left: list[float], right: list[float]) -> float:
 
 
 def spectral_centroid(samples: list[float], rate: int) -> float:
-    # A bounded direct DFT is sufficient for a stable comparison metric and
-    # avoids adding a runtime dependency to the repository.
-    count = min(len(samples), 4096)
+    # Radix-2 FFT over the complete Nyquist band, bounded to 4096 frames.
+    count = 1 << (min(len(samples), 4096).bit_length() - 1) if samples else 0
     if count < 32:
         return 0.0
     start = (len(samples) - count) // 2
-    block = samples[start : start + count]
-    bins = min(512, count // 2)
-    weighted = total = 0.0
-    for k in range(1, bins):
-        real = imag = 0.0
-        step = -2.0 * math.pi * k / count
-        for n, value in enumerate(block):
-            windowed = value * (0.5 - 0.5 * math.cos(2.0 * math.pi * n / (count - 1)))
-            real += windowed * math.cos(step * n)
-            imag += windowed * math.sin(step * n)
-        magnitude = math.hypot(real, imag)
-        frequency = k * rate / count
-        weighted += frequency * magnitude
-        total += magnitude
-    return weighted / total if total else 0.0
+    block = [complex(v * (0.5 - 0.5 * math.cos(2 * math.pi * n / (count - 1))))
+             for n, v in enumerate(samples[start:start + count])]
+    j = 0
+    for i in range(1, count):
+        bit = count >> 1
+        while j & bit:
+            j ^= bit
+            bit >>= 1
+        j ^= bit
+        if i < j:
+            block[i], block[j] = block[j], block[i]
+    size = 2
+    while size <= count:
+        for base in range(0, count, size):
+            for k in range(size // 2):
+                angle = -2 * math.pi * k / size
+                v = block[base + k + size // 2] * complex(math.cos(angle), math.sin(angle))
+                u = block[base + k]
+                block[base + k], block[base + k + size // 2] = u + v, u - v
+        size *= 2
+    magnitudes = [abs(v) for v in block[1:count // 2 + 1]]
+    total = sum(magnitudes)
+    return sum((k + 1) * rate / count * v for k, v in enumerate(magnitudes)) / total if total else 0.0
 
 
 def decay_seconds(samples: list[float], rate: int) -> float | None:
@@ -121,10 +128,12 @@ def decay_seconds(samples: list[float], rate: int) -> float | None:
         return None
     target = peak * 0.001  # -60 dB amplitude
     window = max(1, rate // 100)
-    for index in range(peak_index, len(samples) - window, window):
-        if rms(samples[index : index + window]) <= target:
-            return (index - peak_index) / rate
-    return None
+    # Only a final quiet region establishes decay; a gap before an echo does not.
+    last_loud_end = peak_index
+    for index in range(peak_index, len(samples), window):
+        if rms(samples[index:index + window]) > target:
+            last_loud_end = min(len(samples), index + window)
+    return (last_loud_end - peak_index) / rate if len(samples) - last_loud_end >= window else None
 
 
 def describe(reference: Audio, candidate: Audio, align_onsets: bool = False) -> dict[str, object]:
@@ -139,8 +148,9 @@ def describe(reference: Audio, candidate: Audio, align_onsets: bool = False) -> 
         reference = Audio(reference.rate, [channel[raw_reference_onset:] for channel in reference.channels])
         candidate = Audio(candidate.rate, [channel[raw_candidate_onset:] for channel in candidate.channels])
     length = min(len(reference.channels[0]), len(candidate.channels[0]))
-    ref = mono(Audio(reference.rate, [c[:length] for c in reference.channels]))
-    cand = mono(Audio(candidate.rate, [c[:length] for c in candidate.channels]))
+    full_ref, full_cand = mono(reference), mono(candidate)
+    ref = full_ref[:length]
+    cand = full_cand[:length]
     ref_energy = sum(v * v for v in ref)
     gain = sum(a * b for a, b in zip(ref, cand)) / ref_energy if ref_energy else 1.0
     aligned = [gain * value for value in ref]
@@ -150,6 +160,8 @@ def describe(reference: Audio, candidate: Audio, align_onsets: bool = False) -> 
         "sampleRate": reference.rate,
         "channels": len(reference.channels),
         "framesCompared": length,
+        "referenceFrames": len(full_ref),
+        "candidateFrames": len(full_cand),
         "captureStartOffsetMilliseconds": capture_offset,
         "referencePeak": max((abs(v) for v in ref), default=0.0),
         "candidatePeak": max((abs(v) for v in cand), default=0.0),
@@ -163,11 +175,20 @@ def describe(reference: Audio, candidate: Audio, align_onsets: bool = False) -> 
         "referenceOnsetFrame": ref_onset,
         "candidateOnsetFrame": cand_onset,
         "onsetDeltaMilliseconds": None if ref_onset is None or cand_onset is None else (cand_onset - ref_onset) * 1000 / reference.rate,
-        "referenceDecay60Seconds": decay_seconds(ref, reference.rate),
-        "candidateDecay60Seconds": decay_seconds(cand, candidate.rate),
-        "referenceCentroidHz": spectral_centroid(ref, reference.rate),
-        "candidateCentroidHz": spectral_centroid(cand, candidate.rate),
+        "referenceDecay60Seconds": decay_seconds(full_ref, reference.rate),
+        "candidateDecay60Seconds": decay_seconds(full_cand, candidate.rate),
+        "referenceCentroidHz": spectral_centroid(full_ref, reference.rate),
+        "candidateCentroidHz": spectral_centroid(full_cand, candidate.rate),
     }
+    channel_metrics = []
+    for left, right in zip(reference.channels, candidate.channels):
+        left, right = left[:length], right[:length]
+        energy = sum(v * v for v in left)
+        scale = sum(a * b for a, b in zip(left, right)) / energy if energy else 1.0
+        channel_metrics.append({"referenceRMS": rms(left), "candidateRMS": rms(right),
+                                "errorRMS": rms([a - b for a, b in zip(left, right)]),
+                                "gainAlignedErrorRMS": rms([scale * a - b for a, b in zip(left, right)])})
+    result["channelMetrics"] = channel_metrics
     if len(reference.channels) == 2:
         result["referenceStereoCorrelation"] = correlation(reference.channels[0][:length], reference.channels[1][:length])
         result["candidateStereoCorrelation"] = correlation(candidate.channels[0][:length], candidate.channels[1][:length])

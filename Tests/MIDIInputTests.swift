@@ -5,6 +5,8 @@ import Darwin
  static func main() throws {
     let input = MIDIInput()
     var events: [(Int32,UInt8,UInt8,UInt8,Double)] = [], removed: [Int32] = [], changes = 0
+    var timingChanges:[Int32]=[]
+    input.onClockTimingChange={timingChanges.append($0)}
     input.onSourceEvent = { events.append(($0,$1,$2,$3,$4)) }
     input.onDisconnect = { removed.append($0) }
     input.onDevices = { _,error in assert(error == nil,error ?? ""); changes += 1 }
@@ -57,6 +59,10 @@ import Darwin
     assert(events[6].1==0xf8 && events[7].1==0xf8)
     let expected=Double(second-first)/ticksPerSecond
     assert(abs((events[7].4-events[6].4)-expected)<0.00001,"Each packet needs its own stamp, not the first stamp in the list")
+    send(b,0xf8,0,0);wait {events.count>=9}
+    assert(timingChanges==[idB],"Switching from stamped to receipt timing must reset the measurement window")
+    send(b,0xf8,0,0);wait {events.count>=10}
+    assert(timingChanges==[idB],"Receipt-only runs must remain measurable")
     print("PASS: MIDI plug-and-play after launch, two sources/channels, stable refresh, sustain, note-off, unplug and surviving input")
  }
 }

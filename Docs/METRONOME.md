@@ -178,9 +178,10 @@ measurements still need the intended controller, interface and a sustained run
 - Physical-device listening and latency remain part of the broader hardware
   gates and are not claimed here.
 
-External-clock tempo uses timestamps taken when the main thread handles MIDI
-events. It does not retain packet timestamps or continuously correct beat phase
-against incoming ticks. Main-thread jitter and accumulated phase drift remain
-unqualified; this is tempo following with Start/Continue alignment.
+External-clock tempo uses valid packet timestamps, falling back to receipt time
+for zero/invalid stamps. Changing timing modes resets the tempo measurement
+window. It does not continuously correct beat phase against incoming ticks.
+Jitter and accumulated phase drift remain unqualified; this is tempo following
+with Start/Continue alignment.
 
 Packet timestamps are forwarded per event from each CoreMIDI packet, including when one list carries multiple clock pulses. The legacy untimed C callback remains available; input uses the timed callback and retains the zero/invalid-stamp receipt fallback. Generated virtual-source and C-list regressions cover distinct packet stamps.

@@ -920,6 +920,10 @@ final class PerformanceStore: ObservableObject {
             let connected = sources.filter(\.connected)
             self.midiStatus = connected.isEmpty ? "Plug in a USB MIDI keyboard to connect automatically" : connected.map(\.name).joined(separator: " · ")
         }
+        midi.onClockTimingChange = { [weak self] source in
+            guard let self,self.midiClockSource==source else{return}
+            self.midiClockTempo.reset();self.clockTempo=nil
+        }
         midi.onDisconnect = { [weak self] in self?.disconnectMIDI($0) }
         midi.onDevices = { [weak self] count, error in
             self?.deviceCount = count
@@ -2219,7 +2223,7 @@ final class PerformanceStore: ObservableObject {
             updated[index].sound=restored
             updated[index].managedFileSHA256=repairedDigest
             if updated[index].layer?.external != nil {updated[index].layer?.external=restored}
-            do {try SoundLibrary(url:libraryDirectory.appendingPathComponent("sound-library.json")).write(updated)}
+            do {try SoundLibrary(url:libraryDirectory.appendingPathComponent("sound-library.json")).commitImport(updated,replacing:librarySounds)}
             catch {
                 discardManaged(repairedPreset)
                 message="Could not save the repaired sound: \(error.localizedDescription)";return
@@ -2518,7 +2522,9 @@ final class PerformanceStore: ObservableObject {
                     guard channel.unsupportedInstrumentFamily == nil else {outcome(channelIndex,.unsupported,channel.nativeInstrumentStatus);failures.append(channel.name+": "+channel.nativeInstrumentStatus);continue}
                     guard channel.instruments.count==1,let name=channel.instruments.first else{outcome(channelIndex,.unsupported,"Multiple sampler instruments require channel topology translation; none were silently flattened.");failures.append(channel.name+": layered sampler selection requires translation");continue}
                     var candidates=discovered?[name] ?? []
-                    candidates += files.filter{$0.lastPathComponent==name}.compactMap{try? MainStageDiscovery.candidate(file:$0,samples:folder)}
+                    let chosen=files.filter{$0.lastPathComponent==name}.compactMap{try? MainStageDiscovery.candidate(file:$0,samples:folder)}
+                    let chosenPlayable=chosen.filter{$0.sampleIssue==nil && $0.identity != nil}
+                    if !chosenPlayable.isEmpty {candidates=chosenPlayable} else {candidates += chosen}
                     var candidateKeys=Set<String>()
                     candidates=candidates.filter{candidateKeys.insert($0.file.standardizedFileURL.path+"\n"+$0.samples.standardizedFileURL.path).inserted}
                     let playable=candidates.filter{$0.sampleIssue==nil && $0.identity != nil}
@@ -2758,6 +2764,12 @@ final class PerformanceStore: ObservableObject {
         l.id = patch.layers[index].id; l.midiDestinationID = destination.id; commitLayer(index, l)
     }
     func save() {
+        // Inspect the active library document before autosave can hide a damaged
+        // or future-version primary and its explicit recovery action.
+        if let id=currentSetlistID {
+            do {_ = try localSetlistLibrary().load(id:id)}
+            catch {message="The active saved setlist could not be read. Restore its previous copy or explicitly replace it before saving. "+error.localizedDescription;refreshSetlists();return}
+        }
         guard !sessionRecoveryRequired, !settingsRecoveryRequired else {
             message = "Automatic saves are blocked because saved session data could not be loaded. Recover the previous session in Settings; the original files remain untouched."
             return
