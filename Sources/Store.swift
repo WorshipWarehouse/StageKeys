@@ -863,7 +863,7 @@ final class PerformanceStore: ObservableObject {
                 self.sendMIDI(destination, 0x80 | UInt8(l.midiOutputChannel), UInt8(pitch), 0)
             } else { self.audio.noteOff(key: key, channel: channel, force: force, at: at) }
         }
-        midi.onSourceEvent = { [weak self] source, status, a, b in self?.handleMIDI(status, a, b, source: source) }
+        midi.onSourceEvent = { [weak self] source, status, a, b, time in self?.handleMIDI(status, a, b, source: source, at: time) }
         midi.onInventory = { [weak self] sources, devices in
             guard let self else { return }
             self.midiSources = sources; self.midiDevices = devices
@@ -1741,8 +1741,10 @@ final class PerformanceStore: ObservableObject {
     #endif
 
     /// Routes an incoming event only to its accepted controller slot and target type.
-    private func handleMIDI(_ status: UInt8, _ a: UInt8, _ b: UInt8, source: Int32) {
-        if status >= 0xF8 { handleMIDIClock(status, source: source, at: ProcessInfo.processInfo.systemUptime); return }
+    private func handleMIDI(_ status: UInt8, _ a: UInt8, _ b: UInt8, source: Int32, at time: Double) {
+        // `time` is the driver's packet stamp for clock messages, so a delayed main-queue
+        // delivery cannot stretch the interval the tempo is measured from.
+        if status >= 0xF8 { handleMIDIClock(status, source: source, at: time); return }
         if status >= 0xF0 { return }
         midiActivity.toggle()
         midiLog.insert((midiSources.first(where: { $0.id == source })?.name ?? "MIDI") + String(format: " · Ch %02d · %02X · %d · %d", Int(status & 15) + 1, status & 0xf0, a, b), at: 0)
