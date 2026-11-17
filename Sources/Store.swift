@@ -2092,7 +2092,7 @@ final class PerformanceStore: ObservableObject {
                 let original=try library.read()
                 var entries=original
                 var outcomes:[LibraryBulkImport.Outcome]=[]
-                var digests:Set<String>=[]
+                var digests=Set<String>()
                 for url in sources {
                     if libraryImportCancelRequested {break}
                     libraryImportProgress="Preparing "+LibraryBulkImport.displayName(url)
