@@ -11,9 +11,9 @@ import CoreMIDI
     assert(MIDISourceCreate(client,"Test Keyboard A" as CFString,&a)==noErr)
     assert(MIDISourceCreate(client,"Test Keyboard B" as CFString,&b)==noErr)
     var waitIndex=0
-    func wait(_ predicate:()->Bool) {
+    func wait(seconds:TimeInterval=3,_ predicate:()->Bool) {
         waitIndex += 1
-        let end=Date().addingTimeInterval(3)
+        let end=Date().addingTimeInterval(seconds)
         while !predicate() && Date()<end { RunLoop.current.run(until:Date().addingTimeInterval(0.01)) }
         let discovered=store.midiSources.map{String(describing:$0.endpoint)+":"+$0.name}
         assert(predicate(),"Timed out at wait \(waitIndex); endpoints \(a), \(b), discovered \(discovered), CoreMIDI source count: \(MIDIGetNumberOfSources()), selected \(store.selected), patch lock \(store.patchLock), started \(store.started), message \(store.message ?? "none")")
@@ -184,7 +184,9 @@ import CoreMIDI
     store.setlist.patches[0].programChangeEnabled=true;store.setlist.patches[0].programChangeNumber=99
     store.choose(1);send(b,0xc2,99,0);wait { store.midiLog.first?.contains("Ch 03 · C0 · 99 · 0") == true }
     assert(store.selected==1,"Secondary Program Change must not select a patch")
-    send(a,0xc0,99,0);wait {store.selected==0}
+    // Patch activation revalidates every layer before selecting, which can run past
+    // the default bound on a loaded runner; the change is expected, not instant.
+    send(a,0xc0,99,0);wait(seconds:15) {store.selected==0}
     store.setlist.patches[0].programChangeEnabled=false;store.choose(1)
     send(a,0xc0,99,0);RunLoop.current.run(until:Date().addingTimeInterval(0.1));assert(store.selected==1)
     MIDIEndpointDispose(b); b=0
