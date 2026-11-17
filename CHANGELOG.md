@@ -22,6 +22,8 @@
 
 - Release a truncated or purged hosted sampler through one ownership registry and disposal order while the engine is stopped, commit the truncation into the rollback so a restored graph never references released nodes, and record the verified pre-restart release in the local support report (#192). The live macOS crash remains unreproduced and this is not a general rollback of released audio.
 
+- Add **Remove from My Sounds** to the library row menu for sounds you imported, backed by a catalog delete that keeps the managed preset/sample bytes so saved patches and setlists keep playing; the removal notice offers **Undo**, which restores the same entry with its tags and stored digest, while bundled and optional-library entries stay installed.
+
 - Report each retained MainStage channel shaping value individually with its archived-value representation, store it in the layer's source record so it survives persistence, backup and setlist sharing, and stop telling users to set an envelope that Sound Settings hides for a converted sampler or hosted plug-in (#112). Containers are recorded as counts and strings are truncated to 120 characters, so this is a bounded representation, not the complete source value; keep the original MainStage document when you need the full setting. Shaping keys longer than the record limit are reported and skipped instead of stored, and sharing redacts absolute and home-relative paths in keys and values, so one oversized or path-like field cannot block an import or leak a local location.
 - Add optional per-sound sample-peak/RMS meters after each sound's fader and pan, with no taps while disabled and persisted legacy-safe settings; document the signal point and its true-peak/loudness limits.
 

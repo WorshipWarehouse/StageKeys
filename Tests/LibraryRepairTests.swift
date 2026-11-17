@@ -153,6 +153,40 @@ import Foundation
         let repairedCatalog=try SoundLibrary(url:root.appendingPathComponent("sound-library.json")).read()
         assert(repairedCatalog.first{$0.id == samplerEntry.id}?.sound?.fileName == repairedEntry.sound?.fileName)
         assert(store.message?.contains("Reconnected") == true,store.message ?? "")
-        print("PASS: library repair assertions, remove-from-My-Sounds and missing-samples repair")
+        // The shipped browser can also remove an imported sound from My Sounds. The
+        // managed file stays for the patch that already references it, other sounds
+        // are untouched, and the saved session bytes do not change.
+        assert(store.librarySounds.contains { $0.id == entry.id })
+        let removal = store.removeLibrarySound(entry.id)
+        assert(removal?.id == entry.id,"Removal must report the entry it removed")
+        assert(!store.librarySounds.contains { $0.id == entry.id })
+        assert(store.libraryContentIssues[entry.id] == nil)
+        assert(FileManager.default.fileExists(atPath:managed.path),"The managed file must survive removal")
+        assert((try! Data(contentsOf:root.appendingPathComponent("setlist.json"))) == session)
+        let catalogAfterRemoval = try SoundLibrary(url:root.appendingPathComponent("sound-library.json")).read()
+        assert(!catalogAfterRemoval.contains { $0.id == entry.id })
+        assert(store.removeLibrarySound(entry.id) == nil,"A second removal must not report success")
+        // The removal notice can be undone: the removed entry is appended back with
+        // its identity, personal tags and stored digest, so recovery does not depend
+        // on an unreadable catalog or on re-importing the file.
+        let restoredTags:SoundTags? = removal?.tags
+        assert(store.restoreLibrarySound(removal!),"Undo must restore the removed entry")
+        let undone=store.librarySounds.first{$0.id==entry.id}
+        assert(undone?.managedFileSHA256 == expected && undone?.tags == restoredTags && undone?.name == entry.name)
+        assert(store.message?.contains("Restored") == true,store.message ?? "")
+        let catalogAfterUndo = try SoundLibrary(url:root.appendingPathComponent("sound-library.json")).read()
+        assert(catalogAfterUndo.contains{$0.id==entry.id},"Undo republishes the catalog")
+        assert(!store.restoreLibrarySound(removal!),"A repeated undo must not duplicate the entry")
+        assert(store.librarySounds.filter{$0.id==entry.id}.count == 1)
+        assert(store.removeLibrarySound(entry.id) != nil,"the undone entry can be removed again")
+        // Bundled and optional-library entries are installed content, not user
+        // imports, so the same action must refuse them rather than empty the catalog.
+        let catalog = SoundLibrary(url:root.appendingPathComponent("sound-library.json"))
+        try catalog.write(try catalog.read()+[LibrarySound(id:"catalog-only",name:"Catalog Pad",collection:"Sunday Free · Volume 1",hostPath:"/private/example.patch")])
+        store.librarySounds = try catalog.read()
+        assert(store.removeLibrarySound("catalog-only") == nil,"Only My Sounds entries are removable here")
+        assert(store.librarySounds.contains { $0.id == "catalog-only" })
+        store.message = nil
+        print("PASS: library repair assertions and remove-from-My-Sounds behaviour")
     }
 }

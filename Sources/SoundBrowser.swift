@@ -16,6 +16,11 @@ struct SoundBrowser: View {
     @State private var locateTarget:String?
     @State private var locatingSamples=false
     @State private var samplesTarget:String?
+    /// Result of the last library edit. The sheet is modal, so the store's own
+    /// message would otherwise be shown behind it.
+    @State private var notice:String?
+    /// The entry the last successful removal reported, so its notice can offer Undo.
+    @State private var removedSound:LibrarySound?
     @State private var auditionToken:UUID?
     @State private var instruments=ExternalInstrumentRack.instruments()
     private var targetLayer:Layer {store.patch.layers[index]}
@@ -86,6 +91,7 @@ struct SoundBrowser: View {
             // carries the action, and the bar covers a catalog that still lists rows.
             if store.libraryRecoveryRequired && !results.isEmpty {libraryErrorBar}
             if !query.activeFilters.isEmpty {filterBar}
+            if let notice {libraryNoticeBar(notice,showsUndo:removedSound != nil)}
             GeometryReader {geometry in
                 ScrollView(.horizontal) {
                     HStack(spacing:0) {
@@ -117,7 +123,7 @@ struct SoundBrowser: View {
         .onChange(of:facets){savedFacets=$0.map(\.rawValue).joined(separator:"|")}
         .onDisappear {endPreview()}
         .onChange(of:selectedID){_ in previewRange();if auditionToken != nil {auditionSelection()}}
-        .onChange(of:collection){_ in selectedID=nil;query.filters=[:]}
+        .onChange(of:collection){_ in selectedID=nil;query.filters=[:];notice=nil;removedSound=nil}
         .onChange(of:query.search){_ in clearHiddenSelection()}
         .onChange(of:query.filters){_ in clearHiddenSelection()}
         .onChange(of:store.librarySounds){_ in clearHiddenSelection();store.refreshLibraryContent()}
@@ -174,6 +180,34 @@ struct SoundBrowser: View {
                 .help("Restore the last validated catalog. The damaged file is retained; samples and current patches are unchanged.")
         }.padding(.horizontal,16).frame(minHeight:46).background(StageTheme.raised.opacity(0.3))
         .accessibilityElement(children:.contain)
+    }
+    /// Removal keeps the managed file, so the outcome is stated here with its own
+    /// dismiss control instead of disappearing into a modal-obscured message.
+    private func libraryNoticeBar(_ text:String,showsUndo:Bool=false)->some View {
+        HStack(spacing:12) {
+            Image(systemName:"checkmark.circle.fill").foregroundStyle(StageTheme.selected)
+            Text(text).font(StageTheme.font(12)).fixedSize(horizontal:false,vertical:true)
+            Spacer(minLength:0)
+            if showsUndo {
+                Button("Undo"){undoRemoval()}.buttonStyle(StageButtonStyle())
+                    .accessibilityLabel("Undo the removal")
+                    .help("Put the removed sound back in My Sounds with its tags and saved settings.")
+            }
+            Button("Dismiss"){notice=nil;removedSound=nil}.buttonStyle(StageButtonStyle())
+                .accessibilityLabel("Dismiss the library message")
+        }.padding(.horizontal,16).frame(minHeight:46).background(StageTheme.raised.opacity(0.3))
+        .accessibilityElement(children:.contain)
+    }
+    /// Undo needs no catalog recovery: removal keeps the managed file, so the
+    /// removed entry is appended back and keeps its identity, tags and settings.
+    private func undoRemoval() {
+        guard let removed=removedSound else{return}
+        removedSound=nil
+        if store.restoreLibrarySound(removed) {
+            notice=store.message ?? "Restored \(removed.name) to My Sounds."
+            selectedID=removed.id
+        } else { notice=store.message ?? "Could not restore \(removed.name)." }
+        store.message=nil
     }
     private var filterBar:some View {
         ScrollView(.horizontal,showsIndicators:false) {
@@ -236,6 +270,21 @@ struct SoundBrowser: View {
                                 Divider();Button("Clear Note Range Tags"){store.setSoundNoteRanges(entry.id,[])}
                             }
                             Menu("Complexity"){ForEach(["Simple","Moderate","Complex"],id:\.self){value in Button(value){store.setSoundComplexity(entry.id,value)}};Divider();Button("Clear Complexity"){store.setSoundComplexity(entry.id,nil)}}
+                            // Only user imports are removable here: bundled and
+                            // optional-library entries are installed content, and the
+                            // catalog should not offer to delete them by accident.
+                            if entry.collection == "My Sounds" {
+                                Divider()
+                                Button(role:.destructive) {
+                                    if let removed=store.removeLibrarySound(entry.id) {
+                                        removedSound=removed
+                                        notice="Removed \(removed.name) from My Sounds. Its file stays in the library folder so saved patches keep playing."
+                                    }
+                                    else {removedSound=nil;notice=store.message ?? "Could not remove this sound."}
+                                    store.message=nil
+                                    selectedID=nil
+                                } label:{Label("Remove from My Sounds",systemImage:"trash")}
+                            }
                         }}
 
                     }
