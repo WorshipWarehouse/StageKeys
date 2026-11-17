@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Name the saved-session schema a build reads (1–4) and refuse a session saved by a newer StageKeys version with its own message instead of "unsupported or invalid settings"; autosave and Recover Previous Session no longer replace that session with an older copy, and a damaged session keeps the existing recovery path (#20).
+
 - Stop completed AU loader callbacks from retaining the replaced sampler, and refuse forward, rollback and manual audio restart while a purged/truncated sampler is still retained; preserve the stopped recovery guard until release, with generated failure/retry coverage and a 96-switch live-output verification for #192.
 
 - Release a truncated or purged hosted sampler through one ownership registry and disposal order while the engine is stopped, commit the truncation into the rollback so a restored graph never references released nodes, and record the verified pre-restart release in the local support report (#192). The live macOS crash remains unreproduced and this is not a general rollback of released audio.
