@@ -73,6 +73,8 @@ struct BrowserSound: Identifiable {
     var external:ExternalSound?
     var destination:ExternalMIDIDestination?
     var rating=0
+    /// Personal favorite, independent of the 0-5 rating.
+    var favorite=false
     var addedOrder=0
     /// Set for installed Audio Units that cannot be hosted on this machine, and
     /// for reporting that a component has not passed auval.
@@ -188,6 +190,9 @@ struct LibraryQuery {
         }
     }
     var filters:[LibraryFacet:String]=[:]
+    /// Favorites are a personal filter, not a facet: a sound without tags can
+    /// still be a favorite, and clearing tags never clears it.
+    var favoritesOnly=false
     var sort:LibraryFacet?=nil
     var ascending=true
     var ordering:LibrarySort = .name
@@ -209,6 +214,7 @@ struct LibraryQuery {
         let terms=search.split(whereSeparator:{$0.isWhitespace})
         let haystack=([sound.name,sound.collection]+LibraryFacet.allCases.flatMap{sound.values($0)}).joined(separator:" ")
         guard terms.allSatisfy({haystack.localizedCaseInsensitiveContains(String($0))}) else{return false}
+        if favoritesOnly && !sound.favorite {return false}
         return filters.allSatisfy{facet,value in facet == ignoring || value == "All" || sound.values(facet).contains(value)}
     }
     func results(_ sounds:[BrowserSound])->[BrowserSound] {
@@ -361,6 +367,41 @@ enum SoundRatingArchive {
         guard valid(ratings) else{throw CocoaError(.fileWriteInvalidFileName)}
         _ = try read(url)
         let data=try JSONEncoder().encode(ratings)
+        guard data.count<=4_000_000 else{throw CocoaError(.fileWriteOutOfSpace)}
+        try FileManager.default.createDirectory(at:url.deletingLastPathComponent(),withIntermediateDirectories:true)
+        try RecoverableSessionFile.write(data,to:url,limit:4_000_000){_ = try decoded($0)}
+    }
+}
+
+/// Personal favorites are independent of ratings, samples and snapshots. The
+/// file only holds entries that are favorites, so clearing one removes it rather
+/// than storing a second meaning for "not a favorite".
+enum SoundFavoriteArchive {
+    static func valid(_ favorites:[String:Bool])->Bool {favorites.count<=8192 && favorites.allSatisfy{!$0.key.isEmpty && $0.key.count<=512 && $0.value}}
+    static func load(_ url:URL)->[String:Bool] {(try? read(url)) ?? [:]}
+    private static func decoded(_ data:Data)throws->[String:Bool] {
+        guard data.count<=4_000_000 else{throw SetlistLibraryError.oversized}
+        let favorites=try JSONDecoder().decode([String:Bool].self,from:data)
+        guard valid(favorites) else{throw SetlistError.invalid}
+        return favorites
+    }
+    static func read(_ url:URL)throws->[String:Bool] {
+        guard FileManager.default.fileExists(atPath:url.path) || (try? url.resourceValues(forKeys:[.isSymbolicLinkKey]).isSymbolicLink)==true else{return [:]}
+        return try decoded(RecoverableSessionFile.read(url,limit:4_000_000))
+    }
+    static func recover(_ url:URL)throws->[String:Bool] {
+        try decoded(RecoverableSessionFile.restore(url,limit:4_000_000){_ = try decoded($0)})
+    }
+    static func toggling(_ id:String,in favorites:[String:Bool])->[String:Bool]? {
+        guard !id.isEmpty,id.count<=512 else{return nil}
+        var updated=favorites
+        if updated.removeValue(forKey:id)==nil {updated[id]=true}
+        return valid(updated) ? updated:nil
+    }
+    static func save(_ favorites:[String:Bool],to url:URL)throws {
+        guard valid(favorites) else{throw CocoaError(.fileWriteInvalidFileName)}
+        _ = try read(url)
+        let data=try JSONEncoder().encode(favorites)
         guard data.count<=4_000_000 else{throw CocoaError(.fileWriteOutOfSpace)}
         try FileManager.default.createDirectory(at:url.deletingLastPathComponent(),withIntermediateDirectories:true)
         try RecoverableSessionFile.write(data,to:url,limit:4_000_000){_ = try decoded($0)}
