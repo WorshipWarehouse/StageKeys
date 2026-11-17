@@ -1,5 +1,6 @@
 import Foundation
 import CoreMIDI
+import Darwin
 @main struct MIDIInputTests {
  static func main() throws {
     let input = MIDIInput()
@@ -40,6 +41,22 @@ import CoreMIDI
     assert(!removed.contains(idB))
     assert(input.sources.contains(where:{$0.id==idB && $0.connected}))
     send(b,0x92,67,127); wait { events.count==6 }
+    // Distinct clock packets in one list must retain distinct driver times.
+    var timebase=mach_timebase_info_data_t();mach_timebase_info(&timebase)
+    let ticksPerSecond=Double(timebase.denom)*1_000_000_000/Double(timebase.numer)
+    let first=mach_absolute_time()-UInt64(ticksPerSecond*0.1),second=first+UInt64(ticksPerSecond*0.02)
+    var clocks=MIDIEventList()
+    withUnsafeMutablePointer(to:&clocks) { list in
+        var packet=MIDIEventListInit(list,._1_0),word:UInt32=0x10F80000
+        packet=MIDIEventListAdd(list,MemoryLayout<MIDIEventList>.size,packet,first,1,&word)
+        _ = MIDIEventListAdd(list,MemoryLayout<MIDIEventList>.size,packet,second,1,&word)
+        assert(list.pointee.numPackets==2)
+        assert(MIDIReceivedEventList(b,list)==noErr)
+    }
+    wait { events.count==8 }
+    assert(events[6].1==0xf8 && events[7].1==0xf8)
+    let expected=Double(second-first)/ticksPerSecond
+    assert(abs((events[7].4-events[6].4)-expected)<0.00001,"Each packet needs its own stamp, not the first stamp in the list")
     print("PASS: MIDI plug-and-play after launch, two sources/channels, stable refresh, sustain, note-off, unplug and surviving input")
  }
 }

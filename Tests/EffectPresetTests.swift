@@ -28,6 +28,10 @@ import Foundation
   assert(delay.validate() && delay.playbackDelay?.pingPong==true && delay.playbackDelay?.leftSynced==true)
   let dp=EffectPreset(name:"Stereo eighth",effect:delay);try EffectPresetArchive.save([dp],to:qualityURL);assert(EffectPresetArchive.load(qualityURL)==[dp])
   var legacyDelay=delay;legacyDelay.effectCore=nil;assert(legacyDelay.validate() && legacyDelay.renderValues.last==0)
+  var oldChorus=AudioEffect();oldChorus.kind=5
+  assert(oldChorus.values == [0.68,0.4,0.2,1,1],"Legacy omitted Chorus parameters must retain their authored default sound")
+  let legacyBytes=try JSONEncoder().encode(oldChorus)
+  assert(try! JSONDecoder().decode(AudioEffect.self,from:legacyBytes).values == oldChorus.values)
   let chorus=AudioEffect.factoryDefault(kind:5);assert(chorus.effectCore=="stage-chorus-v1" && chorus.renderValues.last==1 && chorus.validate())
   let cp=EffectPreset(name:"Stage Stereo",effect:chorus);try EffectPresetArchive.save([cp],to:qualityURL);assert(EffectPresetArchive.load(qualityURL)==[cp])
   var legacyChorus=chorus;legacyChorus.effectCore=nil;assert(legacyChorus.validate() && legacyChorus.renderValues.last==0)

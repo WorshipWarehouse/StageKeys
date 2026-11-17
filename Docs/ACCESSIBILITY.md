@@ -146,14 +146,16 @@ The library rating row was the one measured control below even the pointer minim
 in 17 × 28 pt boxes, so a rating tap (and the hover preview) targeted a 17 pt-wide strip. Each star's
 box now comes from `StageA11y.ratingStarTarget` — **28 × 28 pt** with the pointer, **44 × 44 pt** on
 touch — while the drawn glyph stays 12 pt, because an icon is not a target. On macOS the row height is
-unchanged and the five boxes grow from 85 to 140 pt wide; on iPhone/iPad the row becomes 44 pt high and
-220 pt wide, and **that reflow has not been seen running**. The rating stars and the dense mixer
+unchanged and the five boxes grow from 85 to 140 pt wide; on iPhone/iPad the 220 pt-wide rating control and favorite action sit on their own
+line below the full-width name, avoiding a 40 pt name column. The touch reflow
+still requires a rendered device check. The rating stars and the dense mixer
 buttons are the two open items for the device pass.
 
 The workspace strip's three icon buttons (sustain, edit layer ranges, show keyboard ranges) were the
 smallest interactive controls at a literal 30 × 28 box — exactly the pointer minimum and 14 pt short
 of the touch minimum. They are now sized from `StageA11y.workspaceButtonTarget`: 44 × 44 on
-iPhone/iPad and 30 × 30 with the pointer, with the glyph, selected fill and spacing unchanged. The
+iPhone/iPad and 30 × 30 with the pointer, including the entire selected fill.
+The style adds no padding to these already-sized labels; glyph and strip spacing remain unchanged. The
 strip sits beside a horizontally scrolling snapshot strip, so on a compact width the extra 42 pt
 narrows that scroll area instead of pushing the rack wider. Hosted `builds (simulator)` compiles it;
 the rendered result on a device is **not** viewed here.

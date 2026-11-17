@@ -47,10 +47,13 @@ int main(void){
   // delay taps cannot produce a one-sample dropout.
   SKSynth*fade=sk_create_effects(rate);assert(fade);
   configure(fade,1,.5f,.5f,.5f,1);
-  fill(wet,N,rate,440,.2f);
-  float first=wet[0];
-  sk_process_effects(fade,wet,N);
-  assert(fabsf(wet[0]-first)<1e-6f);
+  int fadeFrames=rate/4;
+  for(int i=0;i<fadeFrames;i++)wet[i]=.2f;
+  process(fade,wet,fadeFrames);
+  for(int i=0;i<rate/2000;i++)assert(fabsf(wet[i]-.2f)<.01f);
+  double engagedDifference=0;
+  for(int i=rate/20;i<rate/10;i++){double d=wet[i]-.2f;engagedDifference+=d*d;}
+  assert(engagedDifference>1e-4);
   sk_destroy(fade);
   printf("PASS Stage Flanger %d Hz: starts disengaged after reset\n",rate);
 

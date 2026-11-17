@@ -654,17 +654,17 @@ final class AudioController {
     /// accepted, including pending asynchronous AU loads. Later state/effect or
     /// graph-finalization failures are not covered by this acceptance result.
     @discardableResult
-    func configure(_ index: Int, _ layer: Layer, shouldInstall: (() -> Bool)? = nil, completion: ((Bool) -> Void)? = nil) -> Bool {
-        withInstrumentCatalog { configurePrepared(index, layer, shouldInstall: shouldInstall, completion: completion) }
+    func configure(_ index: Int, _ layer: Layer, forceReload: Bool = false, shouldInstall: (() -> Bool)? = nil, completion: ((Bool) -> Void)? = nil) -> Bool {
+        withInstrumentCatalog { configurePrepared(index, layer, forceReload: forceReload, shouldInstall: shouldInstall, completion: completion) }
     }
-    private func configurePrepared(_ index: Int, _ layer: Layer, shouldInstall: (() -> Bool)?, completion: ((Bool) -> Void)?) -> Bool {
+    private func configurePrepared(_ index: Int, _ layer: Layer, forceReload: Bool, shouldInstall: (() -> Bool)?, completion: ((Bool) -> Void)?) -> Bool {
         do { try prepareSoundChange(index, layer) }
         catch { onError?(error.localizedDescription); completion?(false); return false }
         let request = UUID()
         configurationRequests[index] = request
         externalRack?.cancelPendingLoad(index)
         let hostCurve = layer.importedRack?.mainStageAmplitudeVelocityCurve ?? layer.external?.nativeSampler?.rack.mainStageAmplitudeVelocityCurve
-        let changed = samplerHostCurves[index] != hostCurve || externalSounds[index] != layer.external ||
+        let changed = forceReload || samplerHostCurves[index] != hostCurve || externalSounds[index] != layer.external ||
             externalStates[index] != layer.pluginState || samplerAttacks[index] != layer.samplerAttackMinimum
         if changed, let sound = layer.external {
             guard let rack = externalRack else {

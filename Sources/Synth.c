@@ -160,7 +160,7 @@ static const float effectDefault[18][32]={
 {0.8,3,1,0},
 {0.3,1,1000,0.5,0},
 {10,5000,1},
-{0.65,0.25,0.2,1,1,0},
+{0.68,0.4,0.2,1,1,0},
 {0,20,60,2,-40,0,0},
 {20,0,0.707,70,0,0.707,100,0,0.707,250,0,0.707,1000,0,0.707,2500,0,0.707,7500,0,0.707,20000,0,0.707},
 {0.2,0.5,0.8,0.5},
@@ -313,6 +313,8 @@ static float shimmer_stage_process(SKSynth*s,int l,int k,float x){
   e->shimmerStageControl[3]=p[3];e->shimmerStageControl[4]=p[4];e->shimmerStageReady=1;
  }
  float smooth=e->coef[6];
+ e->shimmerControl[2]+=smooth*(e->coef[0]-e->shimmerControl[2]);
+ e->shimmerControl[3]+=smooth*(e->coef[1]-e->shimmerControl[3]);
  e->shimmerStageControl[0]+=smooth*(p[0]-e->shimmerStageControl[0]);
  e->shimmerStageControl[1]+=smooth*(p[1]-e->shimmerStageControl[1]);
  e->shimmerStageControl[2]+=smooth*(p[2]-e->shimmerStageControl[2]);
@@ -931,26 +933,30 @@ void sk_render(SKSynth *s,float *left,float *right,uint32_t frames){
   left[n]=tanhf(sumL);if(right)right[n]=tanhf(sumR);
  }
 }
-// The receive block dates clock pulses with the driver's stamp, not the time the
-// callback reached the main queue. A zero stamp means "as soon as possible".
-uint64_t sk_read_midi_first_timestamp(const MIDIEventList *list){
- return list&&list->numPackets?list->packet[0].timeStamp:0;
-}
-// Decode MIDI 1 UMP, including system realtime transport, and MIDI 2
-// channel-voice note/CC messages. Packet traversal is C-native.
-void sk_read_midi(const MIDIEventList *list,SKMIDIEvent callback,void *context){
+// Decode each packet synchronously with its own driver stamp. Retain the
+// untimed entrypoint for existing C consumers without changing their ABI.
+void sk_read_midi_timed(const MIDIEventList *list,SKMIDITimedEvent callback,void *context){
+ if(!list||!callback)return;
  const MIDIEventPacket *p=&list->packet[0];
  for(uint32_t i=0;i<list->numPackets;i++,p=MIDIEventPacketNext(p)){
   for(uint32_t j=0;j<p->wordCount;){uint32_t w=p->words[j];unsigned type=w>>28;
    unsigned size=(type<=2||type==6||type==7)?1:(type==3||type==4||type==8||type==9||type==10)?2:4;
    if(j+size>p->wordCount)break;
    uint8_t status=(w>>16)&255,d1=(w>>8)&127,d2=w&127;
-   if(type==2)callback(context,status,d1,d2);
-   else if(type==1&&status>=0xF8)callback(context,status,0,0);
-   else if(type==4){unsigned kind=status&0xf0;uint32_t data=p->words[j+1];if(kind==0x90||kind==0x80)d2=(data>>25)&127;else if(kind==0xb0)d2=data>>25;else if(kind==0xc0){d1=(data>>24)&127;d2=0;}if(kind==0x90||kind==0x80||kind==0xb0||kind==0xc0)callback(context,status,d1,d2);}
+   if(type==2)callback(context,status,d1,d2,p->timeStamp);
+   else if(type==1&&status>=0xF8)callback(context,status,0,0,p->timeStamp);
+   else if(type==4){unsigned kind=status&0xf0;uint32_t data=p->words[j+1];if(kind==0x90||kind==0x80)d2=(data>>25)&127;else if(kind==0xb0)d2=data>>25;else if(kind==0xc0){d1=(data>>24)&127;d2=0;}if(kind==0x90||kind==0x80||kind==0xb0||kind==0xc0)callback(context,status,d1,d2,p->timeStamp);}
    j+=size;
   }
  }
+}
+typedef struct { SKMIDIEvent callback; void *context; } SKLegacyMIDIContext;
+static void sk_legacy_midi_event(void *opaque,uint8_t status,uint8_t a,uint8_t b,uint64_t ticks){
+ (void)ticks;SKLegacyMIDIContext *legacy=opaque;legacy->callback(legacy->context,status,a,b);
+}
+void sk_read_midi(const MIDIEventList *list,SKMIDIEvent callback,void *context){
+ if(!callback)return;SKLegacyMIDIContext legacy={callback,context};
+ sk_read_midi_timed(list,sk_legacy_midi_event,&legacy);
 }
 // Independent metronome. It has no signal path through the synth above, so the
 // host can mix it after the shared reverb and set its level predictably.

@@ -139,6 +139,9 @@ struct SettingsEditor: View {
                                     }
                                 }
                             }
+                            if let count=store.selectedOutputChannels,FlexRouting.unpairedChannels(count)>0 {
+                                Text("1 unpaired channel").foregroundStyle(Color.secondary)
+                            }
                             Text("Derived from the device's reported output channel count. A leftover unpaired channel is not a stereo destination, and a device that reports no channels shows none.").font(.caption).foregroundStyle(Color.secondary)
                         }
                         Section("Routing") {

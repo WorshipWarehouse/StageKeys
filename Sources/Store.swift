@@ -1064,13 +1064,7 @@ final class PerformanceStore: ObservableObject {
     /// known. Read from the enumerated device rather than queried again, so the
     /// report cannot disagree with the device the user selected.
     var selectedOutputChannels: UInt32? {
-        if let id = audioStatus?.deviceID, let device = audioOutputs.first(where: { $0.id == id }) {
-            return device.channels
-        }
-        if let name = audioStatus?.name, let device = audioOutputs.first(where: { $0.name == name }) {
-            return device.channels
-        }
-        return audioOutputs.count == 1 ? audioOutputs[0].channels : nil
+        AudioOutputDevice.selectedChannels(in:audioOutputs,id:audioStatus?.deviceID,name:audioStatus?.name)
     }
     /// Stereo pairs the selected device reports. Pair 0 is the only one that is
     /// mixed to today; the rest are reported, not routed.
@@ -1225,10 +1219,10 @@ final class PerformanceStore: ObservableObject {
         if !started && !audio.running { audio.prepareOfflineEditing(); return }
         applyPatch(); recallTonicPatch(); audio.clock(performedTempo, metronome)
     }
-    private func applyPatch() {
-        audio.withInstrumentCatalog { applyPreparedPatch() }
+    private func applyPatch(forceAudioUnitReload:Bool=false) {
+        audio.withInstrumentCatalog { applyPreparedPatch(forceAudioUnitReload:forceAudioUnitReload) }
     }
-    private func applyPreparedPatch() {
+    private func applyPreparedPatch(forceAudioUnitReload:Bool=false) {
         do { try audio.preparePatchResources(patch.layers) }
         catch { audio.rejectPatchChange(error); message = error.localizedDescription; return }
         cancelTransition()
@@ -1279,7 +1273,7 @@ final class PerformanceStore: ObservableObject {
             try audio.withGraphChanges {
                 for (i, l) in patch.layers.enumerated() {
                     configureMIDI(i, l)
-                    let accepted = audio.configure(i, l, shouldInstall: { [weak self] in
+                    let accepted = audio.configure(i, l, forceReload:forceAudioUnitReload && l.external?.kind == .audioUnit, shouldInstall: { [weak self] in
                         guard let self else { return false }
                         return self.patchLoadGeneration == generation && self.patch.id == patchID &&
                             self.patch.layers.indices.contains(i) && self.patch.layers[i] == l
@@ -2194,6 +2188,8 @@ final class PerformanceStore: ObservableObject {
                 message="Those samples do not complete \(name). Choose the folder that holds all of its samples; nothing was changed."
                 return
             }
+            do {try ExternalInstrumentRack.validateRepairedPreset(repairedPreset,library:rack.libraryURL)}
+            catch {discardManaged(repairedPreset);message=error.localizedDescription;return}
             var updated=librarySounds
             guard let index=updated.firstIndex(where:{$0.id==id}) else{discardManaged(repairedPreset);return}
             // The repaired preset has new bytes, so the stored managed-file digest
@@ -3022,7 +3018,11 @@ final class PerformanceStore: ObservableObject {
             message = nil
             panic(); cancelTransition()
             setlist = candidate; selected = 0; activeSnapshot = nil
-            applyPatch(); recallTonicPatch(); audio.clock(performedTempo, metronome)
+            if started || audio.running {
+                // Even a matching cached state must replace editor-mutated live
+                // state. A nil source state gets a fresh default AU instance.
+                applyPatch(forceAudioUnitReload:true); recallTonicPatch(); audio.clock(performedTempo, metronome)
+            } else {audio.prepareOfflineEditing()}
             save()
             if message == nil { message = "Previous copy of \(descriptor.name) restored and opened. The damaged file was retained." }
         } catch {

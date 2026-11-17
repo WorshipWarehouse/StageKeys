@@ -34,9 +34,9 @@ void sk_release_voices(SKSynth *s,int layer);
 void sk_render(SKSynth *s, float *left, float *right, uint32_t frames);
 typedef void (*SKMIDIEvent)(void *context, uint8_t status, uint8_t data1, uint8_t data2);
 void sk_read_midi(const MIDIEventList *list, SKMIDIEvent callback, void *context);
-// Driver stamp of the first packet in the list, in mach host ticks; 0 when the
-// list is empty or the driver means "as soon as possible".
-uint64_t sk_read_midi_first_timestamp(const MIDIEventList *list);
+// Every event carries its own packet's host ticks; zero means ASAP.
+typedef void (*SKMIDITimedEvent)(void *context, uint8_t status, uint8_t data1, uint8_t data2, uint64_t packetTicks);
+void sk_read_midi_timed(const MIDIEventList *list, SKMIDITimedEvent callback, void *context);
 
 // Per-channel synthesis/DSP. Times in seconds, gain linear, filter resonance Q.
 void sk_envelope(SKSynth *s,int layer,float attack,float decay,float sustain,float release);

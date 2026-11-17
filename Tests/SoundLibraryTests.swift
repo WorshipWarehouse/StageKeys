@@ -100,6 +100,19 @@ import Foundation
         assert(recoveredRemoval.contains { $0.id == "removable" },"The previous catalog must still hold the removed sound")
         let restoredRemoval = try removalLibrary.read()
         assert(restoredRemoval.contains { $0.id == "removable" },"Recovering the previous catalog must restore the removed sound")
+        // Only the exact generated legacy effect may receive a measured profile.
+        // A disabled or otherwise edited reverb must retain its selected core.
+        let voicingLibrary=SoundLibrary(url:root.appendingPathComponent("voicings.json"))
+        var generated=native;generated.id="generated-felt";generated.name="SK App Felt Piano · Generated Test";generated.collection="Sunday App · Test"
+        let measured=SundayFactoryVoicing.feltRoom(from:generated)!
+        for edited in [false,true] {
+            var legacy=measured;legacy.layer!.effects[1].reverbCore="creamcoat"
+            if edited {legacy.layer!.effects[1].enabled=false}
+            try voicingLibrary.write([generated,legacy])
+            let restored=try voicingLibrary.read().first{$0.id==legacy.id}!
+            assert(restored.layer!.effects[1].reverbCore == (edited ? "creamcoat":"prima-felt-room-v1"))
+            assert(restored.layer!.effects[1].enabled == !edited)
+        }
         print("PASS: native and host sound library round-trip; corrupt library preserved; independent sound export; recoverable sound removal")
     }
 }

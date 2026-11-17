@@ -9,6 +9,14 @@ struct AudioOutputDevice: Identifiable, Equatable {
     var id: UInt32
     var name: String
     var channels: UInt32
+    var channelCountKnown = true
+    var reportedChannels: UInt32? { channelCountKnown ? channels:nil }
+    static func selectedChannels(in devices:[AudioOutputDevice],id:UInt32?,name:String?) -> UInt32? {
+        // An identified but absent device is stale, never another route.
+        if let id {return devices.first(where:{$0.id==id})?.reportedChannels}
+        if let name,!name.isEmpty {return devices.first(where:{$0.name==name})?.reportedChannels}
+        return devices.count==1 ? devices[0].reportedChannels:nil
+    }
 }
 struct AudioDeviceStatus: Equatable {
     var deviceID: UInt32?
@@ -226,7 +234,7 @@ final class AudioDeviceController {
     static func availableOutputs() throws -> [AudioOutputDevice] {
         let session = AVAudioSession.sharedInstance()
         return session.currentRoute.outputs.enumerated().map {
-            AudioOutputDevice(id: UInt32($0.offset), name: $0.element.portName, channels: UInt32($0.element.channels?.count ?? 2))
+            AudioOutputDevice(id: UInt32($0.offset), name: $0.element.portName, channels: UInt32($0.element.channels?.count ?? 0), channelCountKnown: $0.element.channels != nil)
         }
     }
     func status() throws -> AudioDeviceStatus {

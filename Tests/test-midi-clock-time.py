@@ -31,18 +31,17 @@ def main(root: Path) -> int:
                       'outside the latency window')
 
     header = (root / 'Sources/Synth.h').read_text()
-    if 'uint64_t sk_read_midi_first_timestamp(const MIDIEventList *list);' not in header:
-        errors.append('Sources/Synth.h does not declare sk_read_midi_first_timestamp')
+    if 'SKMIDITimedEvent' not in header or 'sk_read_midi_timed' not in header:
+        errors.append('The native reader has no packet-timed callback')
     native = (root / 'Sources/Synth.c').read_text()
-    if not re.search(r'uint64_t sk_read_midi_first_timestamp\(const MIDIEventList \*list\)\s*\{', native):
-        errors.append('Sources/Synth.c does not define sk_read_midi_first_timestamp')
-
+    if 'callback(context,status,0,0,p->timeStamp)' not in native:
+        errors.append('System realtime messages lost their current packet stamp')
     input_source = (root / 'Sources/MIDIInput.swift').read_text()
-    for required in ('sk_read_midi_first_timestamp(list)', 'MIDIClockTimestamp.at(', 'mach_timebase_info('):
+    for required in ('sk_read_midi_timed(list, receiveInput,', 'MIDIClockTimestamp.at(', 'mach_timebase_info('):
         if required not in input_source:
             errors.append(f'Sources/MIDIInput.swift no longer uses {required}')
-    if 'let packetTicks = receiver.packetTicks' not in input_source:
-        errors.append('the CoreMIDI receive block does not carry its packet stamp to the main queue')
+    if 'receiver.packetTicks' in input_source or 'sk_read_midi_first_timestamp' in input_source:
+        errors.append('MIDI input reuses the first packet stamp for the list')
 
     store = (root / 'Sources/Store.swift').read_text()
     if not re.search(r'private func handleMIDI\(_ status: UInt8, _ a: UInt8, _ b: UInt8, source: Int32, at time: Double\)',

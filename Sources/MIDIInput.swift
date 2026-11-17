@@ -16,16 +16,14 @@ struct MIDIKnownDevice: Identifiable, Equatable {
 private final class MIDIReadContext {
     weak var input: MIDIInput?
     let endpoint: MIDIEndpointRef
-    let packetTicks: UInt64
-    init(_ input: MIDIInput, _ endpoint: MIDIEndpointRef, _ packetTicks: UInt64) {
-        self.input = input; self.endpoint = endpoint; self.packetTicks = packetTicks
+    init(_ input: MIDIInput, _ endpoint: MIDIEndpointRef) {
+        self.input = input; self.endpoint = endpoint
     }
 }
-private let receiveInput: @convention(c) (UnsafeMutableRawPointer?, UInt8, UInt8, UInt8) -> Void = { context, status, a, b in
+private let receiveInput: @convention(c) (UnsafeMutableRawPointer?, UInt8, UInt8, UInt8, UInt64) -> Void = { context, status, a, b, packetTicks in
     guard let context else { return }
     let receiver = Unmanaged<MIDIReadContext>.fromOpaque(context).takeUnretainedValue()
     let endpoint = receiver.endpoint
-    let packetTicks = receiver.packetTicks
     DispatchQueue.main.async { [weak input = receiver.input] in input?.deliver(endpoint: endpoint, status: status, a: a, b: b, packetTicks: packetTicks) }
 }
 /// CoreMIDI owns the receive thread. Device state and every public callback belong
@@ -71,8 +69,8 @@ final class MIDIInput {
         result = MIDIInputPortCreateWithProtocol(client, "StageKeys Keyboard Input" as CFString, ._1_0, &port) { [weak self] list, refCon in
             guard let self, let refCon else { return }
             let endpoint = MIDIEndpointRef(UInt(bitPattern: refCon))
-            let receiver = MIDIReadContext(self, endpoint, sk_read_midi_first_timestamp(list))
-            sk_read_midi(list, receiveInput, Unmanaged.passUnretained(receiver).toOpaque())
+            let receiver = MIDIReadContext(self, endpoint)
+            sk_read_midi_timed(list, receiveInput, Unmanaged.passUnretained(receiver).toOpaque())
         }
         guard result == noErr else {
             MIDIClientDispose(client); client = 0

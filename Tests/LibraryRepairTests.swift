@@ -109,10 +109,11 @@ import Foundation
         }
         let movedSamples=root.appendingPathComponent("Moved Samples")
         try FileManager.default.createDirectory(at:movedSamples,withIntermediateDirectories:true)
-        try Data("RIFF moved sample bytes".utf8).write(to:movedSamples.appendingPathComponent("Missing Pad.wav"))
+        try NordNative.wav((0..<1024).map{Int16($0%40*200-4000)},channels:1).write(to:movedSamples.appendingPathComponent("Missing Pad.wav"))
         let presetSource=root.appendingPathComponent("Missing Pad.aupreset")
-        let presetState:[String:Any]=["type":fourCC("aumu"),"subtype":fourCC("samp"),"manufacturer":fourCC("appl"),
-                                      "file-references":["sample-1":"/previous/library/Missing Pad.wav"]]
+        var presetState=try NordNative.template()
+        let referenceKeys=Array((presetState["file-references"] as! [String:String]).keys)
+        presetState["file-references"]=Dictionary(uniqueKeysWithValues:referenceKeys.map{($0,"/previous/library/Missing Pad.wav")})
         try PropertyListSerialization.data(fromPropertyList:presetState,format:.xml,options:0).write(to:presetSource)
         let samplerSound=store.importLibrarySound(presetSource,sampleRoot:movedSamples)!
         let samplerEntry=store.librarySounds.first{$0.sound == samplerSound}!
@@ -135,6 +136,14 @@ import Foundation
         assert((try! AssetDigest.sha256(root.appendingPathComponent("sound-library.json"))) == catalogBefore,"a refused repair must not rewrite the catalog")
         assert(!FileManager.default.fileExists(atPath:managedSamples.path),"a refused repair publishes no sample copy")
         assert((try! Data(contentsOf:root.appendingPathComponent("setlist.json"))) == session)
+        let corruptFolder=root.appendingPathComponent("Corrupt Samples")
+        try FileManager.default.createDirectory(at:corruptFolder,withIntermediateDirectories:true)
+        try Data("RIFF not valid audio".utf8).write(to:corruptFolder.appendingPathComponent("Missing Pad.wav"))
+        let assetsBeforeCorruption=Set(try FileManager.default.contentsOfDirectory(atPath:rack.libraryURL.path))
+        store.relinkLibrarySamples(samplerEntry.id,from:corruptFolder)
+        assert(store.libraryContentIssues[samplerEntry.id] == .missingSamples)
+        assert((try! AssetDigest.sha256(root.appendingPathComponent("sound-library.json")))==catalogBefore)
+        assert(Set(try! FileManager.default.contentsOfDirectory(atPath:rack.libraryURL.path))==assetsBeforeCorruption,"Invalid audio repair must remove only its newly prepared assets")
         // The folder that holds the samples repairs the entry to playable.
         store.relinkLibrarySamples(samplerEntry.id,from:movedSamples)
         assert(store.libraryContentIssues[samplerEntry.id] == nil,store.message ?? "")
@@ -169,8 +178,20 @@ import Foundation
         // The removal notice can be undone: the removed entry is appended back with
         // its identity, personal tags and stored digest, so recovery does not depend
         // on an unreadable catalog or on re-importing the file.
+        var feedback=LibraryRemovalFeedback()
+        feedback.removal(removal!,message:"Removed \(removal!.name)")
+        store.libraryImportBusy=true
+        let blockedUndo=store.restoreLibrarySound(removal!)
+        assert(!blockedUndo)
+        feedback.restoration(succeeded:blockedUndo,message:store.message ?? "Undo failed")
+        assert(feedback.removed==removal && feedback.text!.contains(removal!.name),"Failed Undo must keep the named entry for retry")
+        feedback.removal(nil,message:"Could not remove another sound")
+        assert(feedback.removed==removal && feedback.text!.contains(removal!.name),"A later failed removal cannot erase the earlier Undo")
+        store.libraryImportBusy=false
         let restoredTags:SoundTags? = removal?.tags
         assert(store.restoreLibrarySound(removal!),"Undo must restore the removed entry")
+        feedback.restoration(succeeded:true,message:"Restored")
+        assert(feedback.removed==nil && feedback.failure==nil)
         let undone=store.librarySounds.first{$0.id==entry.id}
         assert(undone?.managedFileSHA256 == expected && undone?.tags == restoredTags && undone?.name == entry.name)
         assert(store.message?.contains("Restored") == true,store.message ?? "")

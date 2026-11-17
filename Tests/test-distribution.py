@@ -4,7 +4,7 @@ import subprocess
 import tempfile
 
 tool = Path(__file__).resolve().parents[1] / 'Tools/check-distribution.py'
-notices = ('StageKeys-MIT.txt','Airwindows-MIT.txt', 'EXS-Parser-MIT.md', 'Drawbar-BSD-3-Clause.txt', 'StageKeys-Dense-Reverb-MIT.txt', 'OFL.txt')
+notices = ('StageKeys-MIT.txt','Airwindows-MIT.txt', 'EXS-Parser-MIT.md', 'Drawbar-BSD-3-Clause.txt','DaisySP-MIT.txt','Signalsmith-DSP-MIT.txt', 'StageKeys-Dense-Reverb-MIT.txt', 'OFL.txt')
 
 repo = tool.parent.parent
 assert (repo / 'LICENSE').read_bytes() == (repo / 'Licenses/StageKeys-MIT.txt').read_bytes(), 'Bundled MIT text drifted from root license'
@@ -89,6 +89,7 @@ def repo_check(files, expected):
         message = ','.join(files) + result.stdout.decode() + result.stderr.decode()
         assert (result.returncode == 0) == expected, message
 
+repo_check({'sound-favorites.json': b'personal favorites'}, False)
 repo_check({'Sources/Model.swift': b'fixture source'}, True)
 repo_check({'Sources/Browser.swift': b'let id = "builtin-0"'}, False)
 repo_check({'Sources/Models.swift': b'let names = ["Soft Keys", "Warm Pad", "Glass Bells"]'}, False)

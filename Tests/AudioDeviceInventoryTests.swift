@@ -3,6 +3,13 @@ import AudioToolbox
 
 @main struct AudioDeviceInventoryTests {
     static func main() throws {
+        let other=AudioOutputDevice(id:2,name:"Other Device",channels:8)
+        assert(AudioOutputDevice.selectedChannels(in:[other],id:1,name:"Old Device")==nil,"A stale selected ID must not adopt another device's pairs")
+        assert(AudioOutputDevice.selectedChannels(in:[other],id:2,name:"Other Device")==8)
+        assert(AudioOutputDevice.selectedChannels(in:[other],id:nil,name:"Old Device")==nil,"A stale named route cannot borrow another port’s channels")
+        let unknown=AudioOutputDevice(id:0,name:"iOS route",channels:0,channelCountKnown:false)
+        assert(AudioOutputDevice.selectedChannels(in:[unknown],id:nil,name:"iOS route")==nil,"A missing channel list is unknown, not stereo")
+
         func word(_ value: UInt32) -> Data { var value = value; return withUnsafeBytes(of: &value) { Data($0) } }
         let offset = MemoryLayout<AudioBufferList>.offset(of: \.mBuffers)!
         func list(_ channels: [UInt32]) -> Data {

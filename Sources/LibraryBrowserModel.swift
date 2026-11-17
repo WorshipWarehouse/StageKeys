@@ -416,3 +416,24 @@ enum SoundFavoriteArchive {
         try RecoverableSessionFile.write(data,to:url,limit:4_000_000){_ = try decoded($0)}
     }
 }
+
+/// One recoverable removal owns its notice until Undo succeeds or it is dismissed.
+/// Later failed operations retain that entry, its tags and its named Undo action.
+struct LibraryRemovalFeedback {
+    private(set) var removed:LibrarySound?
+    private(set) var message:String?
+    private(set) var failure:String?
+    var text:String? {
+        let parts=[message,failure].compactMap{$0}
+        return parts.isEmpty ? nil:parts.joined(separator:" ")
+    }
+    mutating func removal(_ entry:LibrarySound?,message:String) {
+        if let entry {removed=entry;self.message=message;failure=nil}
+        else {failure=message}
+    }
+    mutating func restoration(succeeded:Bool,message:String) {
+        if succeeded {removed=nil;self.message=message;failure=nil}
+        else {failure=message}
+    }
+    mutating func dismiss() {removed=nil;message=nil;failure=nil}
+}

@@ -173,6 +173,9 @@ struct AudioEffect: Codable, Equatable {
     }
     var values: [Float] {
         if let parameters { if kind == 15 && parameters.count == 10 {return parameters+[1]}; return (kind == 13 || kind == 10) && parameters.count == 9 ? parameters+[1]:parameters }
+        // Missing selectors/parameters belong to the pre-versioned Chorus.
+        // New factory instances carry explicit Stage values instead.
+        if kind == 5 && effectCore == nil {return [0.68,0.4,0.2,1,1]}
         var values = AudioEffectCatalog.defaults(for: kind)
         if kind == 1 { values[0] = min(20000,max(20,-48000 * log(1 - (0.004 + amount*amount*0.8)) / (2 * .pi))) }
         if kind == 2 { values[0] = amount }

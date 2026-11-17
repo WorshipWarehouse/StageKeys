@@ -103,3 +103,5 @@ python3 Tests/run-local-library.py . /private/tmp/stagekeys-setlist-recovery Set
   is unverified; it renders inside the existing issue list.
 - Recovery of physically damaged files with filesystem-level failures (permissions, full disk,
   read-only volume) is limited by the same factors already documented for session recovery.
+
+Active-document recovery admits the decoded previous copy before publishing it. A rejected resource leaves both primary and previous bytes plus live intent intact. Successful active recovery forces staged AU re-instantiation even for matching cached state; nil state receives a fresh default unit. Offline recovery invalidates caches without instantiation. `SetlistRecoveryStateTests` covers admission rejection, edited live state with matching cache, and repeated nil-state recalls using a generated unit. These checks do not qualify a particular third-party AU.

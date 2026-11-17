@@ -673,6 +673,23 @@ final class ExternalInstrumentRack {
         guard let name = sound.fileName, LibraryRepair.safeName(name) else { return .missingFile }
         return Self.contentIssue(in: libraryURL.appendingPathComponent(name), kind: sound.kind)
     }
+    /// Explicit repair preflight; browser refresh remains a cheap existence check.
+    /// Reconnected names alone do not establish a usable sampler/audio file.
+    static func validateRepairedPreset(_ file:URL,library:URL)throws {
+        func invalid()->NSError {NSError(domain:"StageKeysRepair",code:1,userInfo:[NSLocalizedDescriptionKey:"The repaired sampler or sample audio is invalid. Choose the original intact sample files."])}
+        let bytes=try RecoverableSessionFile.read(file,limit:16_000_000)
+        guard let state=try PropertyListSerialization.propertyList(from:bytes,options:[],format:nil) as? [String:Any],
+              let references=state["file-references"] as? [String:String],!references.isEmpty,references.count<=4096,
+              let instrument=state["Instrument"] as? [String:Any],let layers=instrument["Layers"] as? [[String:Any]],!layers.isEmpty,layers.count<=4096,
+              layers.contains(where:{!($0["Zones"] as? [[String:Any]] ?? []).isEmpty}) else{throw invalid()}
+        let root=library.resolvingSymlinksInPath().standardizedFileURL.path+"/"
+        for path in Set(references.values) {
+            let url=URL(fileURLWithPath:path).resolvingSymlinksInPath().standardizedFileURL
+            guard path.hasPrefix("/"),url.path.hasPrefix(root) else{throw invalid()}
+            do {let audio=try AVAudioFile(forReading:url);guard audio.length>0,audio.length<=Int64(Int32.max),audio.processingFormat.channelCount>0 else{throw invalid()}}
+            catch{throw invalid()}
+        }
+    }
     static func contentIssue(in file: URL, kind: ExternalSound.Kind) -> LibraryContentIssue? {
         guard kind != .audioUnit else { return nil }
         guard Self.readableFile(file) else { return .missingFile }

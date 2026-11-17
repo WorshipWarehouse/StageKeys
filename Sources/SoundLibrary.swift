@@ -109,7 +109,8 @@ struct SoundLibrary {
                 if var existing=entries[index].layer,let measured=voiced.layer,
                    existing.effects.indices.contains(1),measured.effects.indices.contains(1),
                    existing.effects[1].kind==13,existing.effects[1].reverbCore=="creamcoat",
-                   existing.effects[1].parameters==measured.effects[1].parameters {
+                   existing.effects[1].parameters==measured.effects[1].parameters,
+                   { var legacy=measured.effects[1];legacy.reverbCore="creamcoat";return existing.effects[1]==legacy }() {
                     existing.effects[1].reverbCore=measured.effects[1].reverbCore
                     entries[index].layer=existing
                     if let note=voiced.conversionNotes?.last,

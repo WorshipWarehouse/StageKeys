@@ -72,6 +72,8 @@
 		5FEA052420C2CE54C897C87D /* EQBandwidth.swift in Sources */ = {isa = PBXBuildFile; fileRef = EDB66D62EF57AEA9A6308A9B /* EQBandwidth.swift */; };
 		62E6379C6EF8630C450EFBCB /* EXS-Parser-MIT.md in Resources */ = {isa = PBXBuildFile; fileRef = CFB410416D53204E71F7C3D6 /* EXS-Parser-MIT.md */; };
 		62E6379C6EF8630C450EFBCC /* Drawbar-BSD-3-Clause.txt in Resources */ = {isa = PBXBuildFile; fileRef = CFB410416D53204E71F7C3D7 /* Drawbar-BSD-3-Clause.txt */; };
+		62E6379C6EF8630C450EFBC8 /* DaisySP-MIT.txt in Resources */ = {isa = PBXBuildFile; fileRef = CFB410416D53204E71F7C3D8 /* DaisySP-MIT.txt */; };
+		62E6379C6EF8630C450EFBC9 /* Signalsmith-DSP-MIT.txt in Resources */ = {isa = PBXBuildFile; fileRef = CFB410416D53204E71F7C3D9 /* Signalsmith-DSP-MIT.txt */; };
 		63A8C34816236B73E74A5E6A /* ExternalInstruments.swift in Sources */ = {isa = PBXBuildFile; fileRef = 08168477F8D489D51C2417D1 /* ExternalInstruments.swift */; };
 		6B50034CD5A5AA38F981D2D2 /* StageKeysApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7829D37C585858D39206C231 /* StageKeysApp.swift */; };
 		6C6F06EC02A7401D2B821922 /* ImportedAudioGraph.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D0BBC46040EB3A625B8C95C /* ImportedAudioGraph.swift */; };
@@ -135,6 +137,8 @@
 		FA2418D1812AE56E768C4CB3 /* EqualizerEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED265E8EFF001037EAF7DA64 /* EqualizerEditor.swift */; };
 		FACD85820BEFDE0E65386E3A /* EXS-Parser-MIT.md in Resources */ = {isa = PBXBuildFile; fileRef = CFB410416D53204E71F7C3D6 /* EXS-Parser-MIT.md */; };
 		FACD85820BEFDE0E65386E3B /* Drawbar-BSD-3-Clause.txt in Resources */ = {isa = PBXBuildFile; fileRef = CFB410416D53204E71F7C3D7 /* Drawbar-BSD-3-Clause.txt */; };
+		FACD85820BEFDE0E65386E38 /* DaisySP-MIT.txt in Resources */ = {isa = PBXBuildFile; fileRef = CFB410416D53204E71F7C3D8 /* DaisySP-MIT.txt */; };
+		FACD85820BEFDE0E65386E39 /* Signalsmith-DSP-MIT.txt in Resources */ = {isa = PBXBuildFile; fileRef = CFB410416D53204E71F7C3D9 /* Signalsmith-DSP-MIT.txt */; };
 		87699E3BB2C33B9B07A0DFCE /* StageKeys-Dense-Reverb-MIT.txt in Resources */ = {isa = PBXBuildFile; fileRef = 8533AD9834ADBBCA548AE766 /* StageKeys-Dense-Reverb-MIT.txt */; };
 		E896DBFDA10D53C590280E7F /* StageKeys-Dense-Reverb-MIT.txt in Resources */ = {isa = PBXBuildFile; fileRef = 8533AD9834ADBBCA548AE766 /* StageKeys-Dense-Reverb-MIT.txt */; };
 		221E3016254520D752B9E8BD /* PluginParameterModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50A8CF0235954C0E1765726C /* PluginParameterModel.swift */; };
@@ -200,6 +204,8 @@
 		CA27432EBE775B734A1C07E5 /* SetlistLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetlistLibrary.swift; sourceTree = "<group>"; };
 		CFB410416D53204E71F7C3D6 /* EXS-Parser-MIT.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = "EXS-Parser-MIT.md"; sourceTree = "<group>"; };
 		CFB410416D53204E71F7C3D7 /* Drawbar-BSD-3-Clause.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = "Drawbar-BSD-3-Clause.txt"; sourceTree = "<group>"; };
+		CFB410416D53204E71F7C3D8 /* DaisySP-MIT.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = "DaisySP-MIT.txt"; sourceTree = "<group>"; };
+		CFB410416D53204E71F7C3D9 /* Signalsmith-DSP-MIT.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = "Signalsmith-DSP-MIT.txt"; sourceTree = "<group>"; };
 		D4B91BEF3486CE615B3CCBF7 /* Airwindows-MIT.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = "Airwindows-MIT.txt"; sourceTree = "<group>"; };
 		D4F3A33EDFC20447010E3E7E /* Editors.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Editors.swift; sourceTree = "<group>"; };
 		D518EAD59E323D92284C88FE /* SoundBrowser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SoundBrowser.swift; sourceTree = "<group>"; };
@@ -257,6 +263,8 @@
 				8533AD9834ADBBCA548AE766 /* StageKeys-Dense-Reverb-MIT.txt */,
 				CFB410416D53204E71F7C3D6 /* EXS-Parser-MIT.md */,
 				CFB410416D53204E71F7C3D7 /* Drawbar-BSD-3-Clause.txt */,
+				CFB410416D53204E71F7C3D8 /* DaisySP-MIT.txt */,
+				CFB410416D53204E71F7C3D9 /* Signalsmith-DSP-MIT.txt */,
 			);
 			path = Licenses;
 			sourceTree = "<group>";
@@ -449,6 +457,8 @@
 				87699E3BB2C33B9B07A0DFCE /* StageKeys-Dense-Reverb-MIT.txt in Resources */,
 				FACD85820BEFDE0E65386E3A /* EXS-Parser-MIT.md in Resources */,
 				FACD85820BEFDE0E65386E3B /* Drawbar-BSD-3-Clause.txt in Resources */,
+				FACD85820BEFDE0E65386E38 /* DaisySP-MIT.txt in Resources */,
+				FACD85820BEFDE0E65386E39 /* Signalsmith-DSP-MIT.txt in Resources */,
 				43BEEAD5F32858CBE1D15390 /* IBMPlexSans-Bold.ttf in Resources */,
 				9390F437E14C43D331CE990B /* IBMPlexSans-Regular.ttf in Resources */,
 				29A0434794956478ED9DF52F /* IBMPlexSans-SemiBold.ttf in Resources */,
@@ -467,6 +477,8 @@
 				E896DBFDA10D53C590280E7F /* StageKeys-Dense-Reverb-MIT.txt in Resources */,
 				62E6379C6EF8630C450EFBCB /* EXS-Parser-MIT.md in Resources */,
 				62E6379C6EF8630C450EFBCC /* Drawbar-BSD-3-Clause.txt in Resources */,
+				62E6379C6EF8630C450EFBC8 /* DaisySP-MIT.txt in Resources */,
+				62E6379C6EF8630C450EFBC9 /* Signalsmith-DSP-MIT.txt in Resources */,
 				B1D2C0303B3EBD357A3237FD /* IBMPlexSans-Bold.ttf in Resources */,
 				5FC121D86AE7721D0C6436FF /* IBMPlexSans-Regular.ttf in Resources */,
 				5880ACCB6A3F70B1F11D9C6F /* IBMPlexSans-SemiBold.ttf in Resources */,
