@@ -1,5 +1,6 @@
 import Foundation
 import CoreMIDI
+import Darwin
 
 struct MIDIInputSource: Identifiable, Equatable {
     var id: Int32
@@ -15,13 +16,15 @@ struct MIDIKnownDevice: Identifiable, Equatable {
 private final class MIDIReadContext {
     weak var input: MIDIInput?
     let endpoint: MIDIEndpointRef
-    init(_ input: MIDIInput, _ endpoint: MIDIEndpointRef) { self.input = input; self.endpoint = endpoint }
+    init(_ input: MIDIInput, _ endpoint: MIDIEndpointRef) {
+        self.input = input; self.endpoint = endpoint
+    }
 }
-private let receiveInput: @convention(c) (UnsafeMutableRawPointer?, UInt8, UInt8, UInt8) -> Void = { context, status, a, b in
+private let receiveInput: @convention(c) (UnsafeMutableRawPointer?, UInt8, UInt8, UInt8, UInt64) -> Void = { context, status, a, b, packetTicks in
     guard let context else { return }
     let receiver = Unmanaged<MIDIReadContext>.fromOpaque(context).takeUnretainedValue()
     let endpoint = receiver.endpoint
-    DispatchQueue.main.async { [weak input = receiver.input] in input?.deliver(endpoint: endpoint, status: status, a: a, b: b) }
+    DispatchQueue.main.async { [weak input = receiver.input] in input?.deliver(endpoint: endpoint, status: status, a: a, b: b, packetTicks: packetTicks) }
 }
 /// CoreMIDI owns the receive thread. Device state and every public callback belong
 /// to main. Connections are diffed, so an unrelated notification cannot drop notes.
@@ -38,7 +41,11 @@ final class MIDIInput {
     private(set) var sources: [MIDIInputSource] = []
     private(set) var devices: [MIDIKnownDevice] = []
     var onEvent: ((UInt8, UInt8, UInt8) -> Void)?
-    var onSourceEvent: ((Int32, UInt8, UInt8, UInt8) -> Void)?
+    /// The last value is the event's timestamp: the driver's packet stamp for clock
+    /// pulses when CoreMIDI supplied one, otherwise the main-queue receipt time.
+    /// The last two values are the event's timestamp and whether that timestamp came
+    /// from the driver's packet stamp rather than the receipt time.
+    var onSourceEvent: ((Int32, UInt8, UInt8, UInt8, Double, Bool) -> Void)?
     var onDevices: ((Int, String?) -> Void)?
     var onInventory: (([MIDIInputSource], [MIDIKnownDevice]) -> Void)?
     var onDisconnect: ((Int32) -> Void)?
@@ -65,7 +72,9 @@ final class MIDIInput {
             guard let self, let refCon else { return }
             let endpoint = MIDIEndpointRef(UInt(bitPattern: refCon))
             let receiver = MIDIReadContext(self, endpoint)
-            sk_read_midi(list, receiveInput, Unmanaged.passUnretained(receiver).toOpaque())
+            withExtendedLifetime(receiver) {
+                sk_read_midi_timed(list, receiveInput, Unmanaged.passUnretained(receiver).toOpaque())
+            }
         }
         guard result == noErr else {
             MIDIClientDispose(client); client = 0
@@ -142,9 +151,22 @@ final class MIDIInput {
         if changed { onInventory?(sources, devices); onDevices?(connected.count,failure); lastError = failure }
         else { report(failure) }
     }
-    fileprivate func deliver(endpoint: MIDIEndpointRef, status: UInt8, a: UInt8, b: UInt8) {
+    /// Mach ticks per second for CoreMIDI stamps; the timebase
+    /// `ProcessInfo.systemUptime` reads, so a stamp and a receipt are comparable.
+    private static let timebase: (numer: UInt32, denom: UInt32) = {
+        var info = mach_timebase_info_data_t()
+        mach_timebase_info(&info)
+        return (info.numer, info.denom)
+    }()
+    fileprivate func deliver(endpoint: MIDIEndpointRef, status: UInt8, a: UInt8, b: UInt8, packetTicks: UInt64) {
         guard let identity = connected[endpoint] else { return }
-        onSourceEvent?(identity,status,a,b); onEvent?(status,a,b)
+        let receipt = ProcessInfo.processInfo.systemUptime
+        let time = MIDIClockTimestamp.at(packetTicks: packetTicks, numer: Self.timebase.numer,
+                                         denom: Self.timebase.denom,
+                                         receipt: receipt)
+        let fromPacket = MIDIClockTimestamp.isPacketBacked(packetTicks: packetTicks, numer: Self.timebase.numer,
+                                                           denom: Self.timebase.denom, receipt: receipt)
+        onSourceEvent?(identity,status,a,b,time,fromPacket); onEvent?(status,a,b)
     }
     func stop() {
         precondition(Thread.isMainThread)

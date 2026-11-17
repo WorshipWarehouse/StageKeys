@@ -220,6 +220,11 @@ enum StageKeysSampler {
         let chunks=try EXSNative.chunks(source),envelope=try EXSNative.envelope(chunks)
         var notes=Set(program.notes.filter{!$0.contains("global filter/modulation remain unmapped") && !$0.contains("global filter/modulation remain approximate/unmapped") && !$0.contains("Velocity-dependent attack, envelope shape and global filter/modulation")})
         let controls=try EXSNative.voiceControls(chunks,notes:&notes)
+        // Moving an existing zone map cannot be done safely after a user may have
+        // edited it, so a transposed source is not partially upgraded here.
+        if let transpose=controls?.transpose,transpose != 0 {
+            throw MainStagePatch.Failure.invalid("This instrument uses EXS transpose, which moves its zone map. Re-import the original EXS to apply it; the existing playback map and settings were not changed.")
+        }
         let preset=library.appendingPathComponent("Imported Sounds/"+name),bytes=try Data(contentsOf:preset)
         guard bytes.count<=16_000_000,var state=try PropertyListSerialization.propertyList(from:bytes,options:[],format:nil) as? [String:Any],
               let metadata=state["StageKeys.NativeSampler"] as? Data,try JSONDecoder().decode(NativeSamplerProgram.self,from:metadata)==program,

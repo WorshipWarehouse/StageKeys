@@ -109,11 +109,16 @@ struct SoundLibrary {
                 if var existing=entries[index].layer,let measured=voiced.layer,
                    existing.effects.indices.contains(1),measured.effects.indices.contains(1),
                    existing.effects[1].kind==13,existing.effects[1].reverbCore=="creamcoat",
-                   existing.effects[1].parameters==measured.effects[1].parameters {
+                   existing.effects[1].parameters==measured.effects[1].parameters,
+                   { var legacy=measured.effects[1];legacy.reverbCore="creamcoat";return existing.effects[1]==legacy }() {
                     existing.effects[1].reverbCore=measured.effects[1].reverbCore
                     entries[index].layer=existing
+                    // The catalog rejects more than 128 notes per entry, so a full
+                    // note list keeps its existing notes and still migrates the
+                    // reverb core rather than making the whole catalog unreadable.
                     if let note=voiced.conversionNotes?.last,
-                       !(entries[index].conversionNotes ?? []).contains(note) {
+                       !(entries[index].conversionNotes ?? []).contains(note),
+                       (entries[index].conversionNotes ?? []).count < 128 {
                         entries[index].conversionNotes=(entries[index].conversionNotes ?? [])+[note]
                     }
                 }
@@ -214,6 +219,28 @@ struct SoundLibrary {
             var entries = try read()
             entries.append(entry)
             try writeUnlocked(entries)
+        }
+    }
+    enum EditFailure: LocalizedError, Equatable {
+        case unknownSound
+        var errorDescription: String? {
+            switch self {
+            case .unknownSound: return "That sound is no longer in the library. Refresh and try again."
+            }
+        }
+    }
+    /// Remove one catalog entry and return it. The managed preset/sample bytes are
+    /// deliberately kept: saved patches, setlists and snapshots reference them by
+    /// file name, so removing the entry must never make saved work unplayable.
+    /// The write keeps the same validated previous copy as every other catalog save.
+    @discardableResult
+    func delete(id: String) throws -> LibrarySound {
+        try withExclusiveWrite {
+            var entries = try read()
+            guard let index = entries.firstIndex(where: { $0.id == id }) else { throw EditFailure.unknownSound }
+            let removed = entries.remove(at: index)
+            try writeUnlocked(entries)
+            return removed
         }
     }
     func recoverPrevious()throws->[LibrarySound] {

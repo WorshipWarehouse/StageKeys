@@ -5,6 +5,14 @@ import Foundation
   defer{try? FileManager.default.removeItem(at:dir)}
   let url=dir.appendingPathComponent("effect-presets.json")
   var fx=AudioEffect();fx.kind=13;fx.parameters=[0,18,0.33,776,2884,0,0,1,0.23,1];fx.reverbCore="creamcoat"
+  var calibrated=fx;calibrated.reverbCore="prima-felt-room-v1"
+  let initialRender=calibrated.renderValues
+  var editable=calibrated.primaVerbEditableValues
+  assert(editable[2]==0.37 && editable[4]==10000)
+  editable[2]=0.6;editable[4]=6000
+  calibrated.editPrimaVerbValues(editable)
+  assert(calibrated.reverbCore=="dense-v1" && calibrated.renderValues[2]==0.6 && calibrated.renderValues[4]==6000)
+  assert(calibrated.renderValues != initialRender)
   let preset=EffectPreset(name:"Piano Room",effect:fx)
   try EffectPresetArchive.save([preset],to:url);assert(EffectPresetArchive.load(url)==[preset])
   var bad=preset;bad.name=" ";do{try EffectPresetArchive.save([bad],to:url);fatalError("Invalid preset saved")}catch{}
@@ -28,6 +36,10 @@ import Foundation
   assert(delay.validate() && delay.playbackDelay?.pingPong==true && delay.playbackDelay?.leftSynced==true)
   let dp=EffectPreset(name:"Stereo eighth",effect:delay);try EffectPresetArchive.save([dp],to:qualityURL);assert(EffectPresetArchive.load(qualityURL)==[dp])
   var legacyDelay=delay;legacyDelay.effectCore=nil;assert(legacyDelay.validate() && legacyDelay.renderValues.last==0)
+  var oldChorus=AudioEffect();oldChorus.kind=5
+  assert(oldChorus.values == [0.68,0.4,0.2,1,1],"Legacy omitted Chorus parameters must retain their authored default sound")
+  let legacyBytes=try JSONEncoder().encode(oldChorus)
+  assert(try! JSONDecoder().decode(AudioEffect.self,from:legacyBytes).values == oldChorus.values)
   let chorus=AudioEffect.factoryDefault(kind:5);assert(chorus.effectCore=="stage-chorus-v1" && chorus.renderValues.last==1 && chorus.validate())
   let cp=EffectPreset(name:"Stage Stereo",effect:chorus);try EffectPresetArchive.save([cp],to:qualityURL);assert(EffectPresetArchive.load(qualityURL)==[cp])
   var legacyChorus=chorus;legacyChorus.effectCore=nil;assert(legacyChorus.validate() && legacyChorus.renderValues.last==0)

@@ -108,17 +108,25 @@ enum MainStagePatch {
         let token=variant.count<=64 ? variant:digest(Data(variant.utf8))
         return "mainstage-channel-"+channel.sha256+"-v2-"+context+"-"+token
     }
-    static func assembledChannels(_ report:Report,entries:[LibrarySound],selected:Set<Int>?=nil)throws->Patch {
-        let channels=report.channels.enumerated().filter{(selected?.contains($0.offset) ?? true) && $0.element.isConvertible}.map(\.element)
+    static func assembledChannels(_ report:Report,entries:[LibrarySound],selected:Set<Int>?=nil,confirmedEntries:[Int:String]=[:])throws->Patch {
+        let channels=report.channels.enumerated().filter{(selected?.contains($0.offset) ?? true) && $0.element.isConvertible}
         guard let archive=report.sourceArchiveID,!channels.isEmpty,channels.count<=15 else {
             throw Failure.invalid("Choose a source patch with 1–15 converted instrument channels. More complex patch routing requires manual setup.")
         }
         var layers:[Layer]=[],notes=["Converted channel strips only. Patch-level buses/sends, tempo, scripts and routing require review; this is not full MainStage topology parity."]
-        for channel in channels {
+        for (channelIndex,channel) in channels {
             let modernPrefix=try? conversionID(report,channel:channel,variant:"")
             let matches=entries.filter{entry in
-                guard entry.sourceArchiveID==archive,entry.id.hasPrefix("mainstage-channel-"+channel.sha256+"-") else{return false}
-                return !entry.id.contains("-v2-") || modernPrefix.map{entry.id.hasPrefix($0)} == true
+                guard entry.id.hasPrefix("mainstage-channel-"+channel.sha256+"-") else{return false}
+                let modernMatch=modernPrefix.map{entry.id.hasPrefix($0)} == true
+                if let confirmed=confirmedEntries[channelIndex] {
+                    // A refused commit cannot rewrite an installed duplicate's
+                    // archive ID. Its exact outcome ID plus the current source
+                    // metadata/channel prefix provide the required identity.
+                    return modernMatch && entry.id==confirmed
+                }
+                guard entry.sourceArchiveID==archive else{return false}
+                return !entry.id.contains("-v2-") || modernMatch
             }
             guard matches.count==1,let entry=matches.first,var layer=entry.layer,
                   let kind=layer.external?.kind,kind == .samplerPreset || kind == .audioUnit else {
@@ -232,12 +240,17 @@ enum MainStagePatch {
         guard curves.count<=1 else{throw Failure.invalid("Conflicting sampler amplitude velocity curves; select a single instrument channel.")}
         return curves.first
     }
-    static func findSamplerInstruments(_ names:Set<String>,in folder:URL)throws->[URL] {
+    static func findSamplerInstruments(_ names:Set<String>,in folder:URL,limit:Int=100_000,onLimit:((String)->Void)?=nil)throws->[URL] {
         guard !names.isEmpty,names.count<=64 else{throw Failure.invalid("Invalid instrument reference list.")}
         guard let files=FileManager.default.enumerator(at:folder,includingPropertiesForKeys:[.isRegularFileKey,.isSymbolicLinkKey]) else{throw Failure.invalid("Could not read the selected instrument folder.")}
         var result:[URL]=[],visited=0
         for case let file as URL in files {
-            visited+=1;guard visited<=100_000 else{throw Failure.invalid("The selected folder contains too many files; choose a narrower instrument/sample folder.")}
+            visited+=1
+            if visited>limit {
+                let reason="Search incomplete: the selected folder contains too many files; choose a narrower instrument/sample folder."
+                if let onLimit {onLimit(reason);break}
+                throw Failure.invalid(reason)
+            }
             if files.level>24{files.skipDescendants();continue}
             let attributes=try file.resourceValues(forKeys:[.isRegularFileKey,.isSymbolicLinkKey])
             if attributes.isSymbolicLink==true{files.skipDescendants();continue}
@@ -545,7 +558,7 @@ enum MainStageDiscovery {
         values += [
             Location(instruments:home.appendingPathComponent("Music/MainStage"),samples:home.appendingPathComponent("Music/MainStage"),label:"User MainStage content"),
             Location(instruments:home.appendingPathComponent("Music/Logic Pro Library.bundle"),samples:home.appendingPathComponent("Music/Logic Pro Library.bundle"),label:"User Logic library"),
-            Location(instruments:home.appendingPathComponent("Music/Audio Music Apps"),samples:home.appendingPathComponent("Music/Audio Music Apps"),label:"User Audio Music Apps"),
+            Location(instruments:home.appendingPathComponent("Music/Audio Music Apps/Sampler Instruments"),samples:home.appendingPathComponent("Music/Audio Music Apps"),label:"User Audio Music Apps"),
             Location(instruments:URL(fileURLWithPath:"/Library/Application Support/Logic"),samples:URL(fileURLWithPath:"/Library/Application Support/Logic"),label:"System Logic content")
         ]
         #endif
@@ -560,7 +573,8 @@ enum MainStageDiscovery {
             do {
                 var directory:ObjCBool=false
                 guard FileManager.default.fileExists(atPath:location.instruments.path,isDirectory:&directory),directory.boolValue else{throw MainStagePatch.Failure.invalid("Location unavailable")}
-                let files=try MainStagePatch.findSamplerInstruments(names,in:location.instruments).sorted{$0.path<$1.path}
+                var incomplete:String?
+                let files=try MainStagePatch.findSamplerInstruments(names,in:location.instruments,onLimit:{incomplete=$0}).sorted{$0.path<$1.path}
                 var unreadable=0
                 for file in files {
                     guard let candidate=try? candidate(file:file,samples:location.samples) else {unreadable+=1;continue}
@@ -568,7 +582,7 @@ enum MainStageDiscovery {
                         result.candidates[file.lastPathComponent,default:[]].append(candidate)
                     }
                 }
-                let skipped=unreadable == 0 ? "":"; \(unreadable) unreadable candidate(s) skipped"
+                let skipped=(unreadable == 0 ? "":"; \(unreadable) unreadable candidate(s) skipped")+(incomplete.map{"; "+$0} ?? "")
                 result.searches.append(Search(id:String(index),location:location.label,detail:"\(location.instruments.path): \(files.count-unreadable) matching instrument(s)\(skipped)"))
             } catch {result.searches.append(Search(id:String(index),location:location.label,detail:"\(location.instruments.path): \(error.localizedDescription)"))}
         }
@@ -576,7 +590,12 @@ enum MainStageDiscovery {
     }
 }
 struct MainStageChannelOutcome:Identifiable,Codable {
-    enum State:String,Codable {case pending,prepared,converted,duplicate,needsSamples,unsupported,failed,cancelled}
+    enum State:String,Codable {case pending,prepared,converted,duplicate,needsSamples,unsupported,failed,cancelled
+        /// True while the outcome still depends on this batch committing.
+        /// A duplicate is already in the catalog and a converted channel is
+        /// published, so neither is rewritten by a later failure.
+        var awaitingCommit:Bool {self == .pending || self == .prepared}
+    }
     var id:Int
     var name:String
     var state:State

@@ -68,10 +68,26 @@ static double dampingRatio(int rate, float tone) {
     return late / early;
 }
 
+// Automation must change the running tank without a reset/core switch.
+static void filterAutomation(int rate,int control,float target){
+ SKSynth *changed=sk_create_effects(rate),*fixed=sk_create_effects(rate);assert(changed&&fixed);
+ configure(changed,1,0,.66f,.75f,0,1,1);configure(fixed,1,0,.66f,.75f,0,1,1);
+ float a[256],b[256];double difference=0;
+ for(int frame=0;frame<rate*3;frame+=256){
+  int n=rate*3-frame<256?rate*3-frame:256;
+  if(frame>=rate)sk_effect_parameter(changed,0,0,control,target);
+  for(int i=0;i<n;i++)a[i]=b[i]=.08f*(sinf(TAU_F*330*(frame+i)/rate)+sinf(TAU_F*4000*(frame+i)/rate));
+  sk_process_effects(changed,a,n);sk_process_effects(fixed,b,n);
+  for(int i=0;i<n;i++){assert(isfinite(a[i])&&isfinite(b[i]));if(frame>=rate+rate/5){double d=a[i]-b[i];difference+=d*d;}}
+ }
+ assert(difference>1e-8);sk_destroy(changed);sk_destroy(fixed);
+}
+
 int main(void) {
     const int rates[] = {44100, 48000, 96000};
     for (int r = 0; r < 3; r++) {
         int rate = rates[r], n = rate * 2;
+        filterAutomation(rate,5,2000);filterAutomation(rate,6,500);
         float *a = calloc((size_t)n, sizeof(float));
         float *b = calloc((size_t)n, sizeof(float));
         float *input = calloc((size_t)n, sizeof(float));

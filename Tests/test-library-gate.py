@@ -73,6 +73,21 @@ def main(source: Path) -> int:
         if name not in documentation:
             errors.append(f'{name} is not classified in Docs/LOCAL-VERIFICATION.md')
 
+    browser = (source / 'Sources/SoundBrowser.swift').read_text()
+    model = (source / 'Sources/LibraryBrowserModel.swift').read_text()
+    # Every reported content issue must be repairable from the browser. The shipped
+    # footer offered only the .missingFile locate action, so a preset whose managed
+    # sample folder moved stayed unavailable with no way back to playable.
+    for marker in ('var repairTitle:String', 'var repairsWithFolder:Bool'):
+        if marker not in model:
+            errors.append(f'LibraryContentIssue is missing "{marker}"; a content issue has no repair action')
+    if 'issue.repairTitle' not in browser:
+        errors.append('SoundBrowser does not offer the content issue\'s repair action')
+    if 'repairsWithFolder' not in browser:
+        errors.append('SoundBrowser does not route a moved sample folder to the folder picker')
+    if 'relinkLibrarySamples' not in browser:
+        errors.append('SoundBrowser does not call the sample-folder repair')
+
     if errors:
         for error in errors:
             print('FAIL:', error)

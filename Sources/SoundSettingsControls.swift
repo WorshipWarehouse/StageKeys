@@ -11,11 +11,11 @@ struct SoundSettingsControls: View {
     }
     private func numberControl(_ title:String,value:Binding<Int>,range:ClosedRange<Int>)->some View {
         HStack(spacing:0) {
-            Button {value.wrappedValue=max(range.lowerBound,value.wrappedValue-1)} label:{Image(systemName:"minus").frame(width:36,height:42)}.disabled(value.wrappedValue<=range.lowerBound).accessibilityLabel("Decrease \(title)")
+            Button {value.wrappedValue=max(range.lowerBound,value.wrappedValue-1)} label:{Image(systemName:"minus").frame(width: CGFloat(StageA11y.denseWidth(.numberStepper)), height: CGFloat(StageA11y.denseHeight(.numberStepper)))}.disabled(value.wrappedValue<=range.lowerBound).accessibilityLabel("Decrease \(title)")
             Divider().frame(height:28)
             TextField(title,value:Binding(get:{value.wrappedValue},set:{value.wrappedValue=min(range.upperBound,max(range.lowerBound,$0))}),format:.number).multilineTextAlignment(.center).textFieldStyle(.plain).monospacedDigit().frame(width:62).accessibilityLabel(title)
             Divider().frame(height:28)
-            Button {value.wrappedValue=min(range.upperBound,value.wrappedValue+1)} label:{Image(systemName:"plus").frame(width:36,height:42)}.disabled(value.wrappedValue>=range.upperBound).accessibilityLabel("Increase \(title)")
+            Button {value.wrappedValue=min(range.upperBound,value.wrappedValue+1)} label:{Image(systemName:"plus").frame(width: CGFloat(StageA11y.denseWidth(.numberStepper)), height: CGFloat(StageA11y.denseHeight(.numberStepper)))}.disabled(value.wrappedValue>=range.upperBound).accessibilityLabel("Increase \(title)")
         }.buttonStyle(.plain).background(StageTheme.raised,in:RoundedRectangle(cornerRadius:7))
     }
     private var canEditEnvelope: Bool { layer.external == nil && layer.midiDestinationID == nil }

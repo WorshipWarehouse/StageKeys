@@ -142,6 +142,26 @@ clock sync is on, because the external clock owns the timing. Turning external
 clock sync on or off cancels a pending Count In, so a later normal click cannot
 inherit its remaining bars.
 
+## Clock pulse timing
+
+A received clock pulse is dated by the driver, not by the moment the main queue
+delivered it. CoreMIDI stamps each received packet in mach absolute host ticks, and
+`MIDIClockTimestamp` converts that stamp to the monotonic seconds the clock path
+already uses (the timebase `ProcessInfo.systemUptime` reads). The pulse time then
+feeds the same 24-PPQN smoother described above, so the smoothing and the tempo
+bounds are unchanged.
+
+Two cases fall back to the receipt time instead of trusting the stamp: a zero
+timestamp, which CoreMIDI documents as "as soon as possible", and a stamp more than
+`MIDIClockTimestamp.maximumLatency` (5 s) away from the receipt, which is how a
+driver on another timebase is refused rather than turned into an impossible tempo.
+
+This removes main-queue delivery delay from every measured interval, which is the
+gap recorded in #109/#108 ("main-thread receipt times, not packet timestamps"). It is
+a wiring change, not a claim of measured jitter: the jitter and phase-drift
+measurements still need the intended controller, interface and a sustained run
+(#108), and the CPU/memory soak remains #4.
+
 ## Limits
 
 - The performance time signature is fixed at 4/4. Beats per bar changes the
@@ -158,7 +178,10 @@ inherit its remaining bars.
 - Physical-device listening and latency remain part of the broader hardware
   gates and are not claimed here.
 
-External-clock tempo uses timestamps taken when the main thread handles MIDI
-events. It does not retain packet timestamps or continuously correct beat phase
-against incoming ticks. Main-thread jitter and accumulated phase drift remain
-unqualified; this is tempo following with Start/Continue alignment.
+External-clock tempo uses valid packet timestamps, falling back to receipt time
+for zero/invalid stamps. Changing timing modes resets the tempo measurement
+window. It does not continuously correct beat phase against incoming ticks.
+Jitter and accumulated phase drift remain unqualified; this is tempo following
+with Start/Continue alignment.
+
+Packet timestamps are forwarded per event from each CoreMIDI packet, including when one list carries multiple clock pulses. The legacy untimed C callback remains available; input uses the timed callback and retains the zero/invalid-stamp receipt fallback. Generated virtual-source and C-list regressions cover distinct packet stamps.

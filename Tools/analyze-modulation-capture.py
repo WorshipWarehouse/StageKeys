@@ -23,7 +23,12 @@ def trajectory(dry, processed, minimum_ms, maximum_ms, step_frames=2048, downsam
     dry_onset, wet_onset = module.onset(dry_mono), module.onset(wet_mono)
     if dry_onset is None or wet_onset is None:
         raise ValueError("both captures need a detectable onset")
-    dry_mono=dry_mono[dry_onset:];wet_mono=wet_mono[wet_onset:]
+    # Trim both captures at one shared frame, not at their own onsets: aligning
+    # each onset independently would erase exactly the processing delay this
+    # tracker is asked to measure.
+    origin = min(dry_onset, wet_onset)
+    dry_mono = dry_mono[origin:]
+    wet_mono = wet_mono[origin:]
     low=max(0,round(minimum_ms*dry.rate/1000/downsample))
     high=max(low+1,round(maximum_ms*dry.rate/1000/downsample))
     window=512
@@ -59,21 +64,55 @@ def trajectory(dry, processed, minimum_ms, maximum_ms, step_frames=2048, downsam
     return points
 
 
+def _solve3(matrix, rhs):
+    """Solve a 3x3 linear system with Cramer's rule; None when it is singular."""
+    (a, b, c), (d, e, f), (g, h, i) = matrix
+
+    def determinant(m):
+        (a, b, c), (d, e, f), (g, h, i) = m
+        return a * (e * i - f * h) - b * (d * i - f * g) + c * (d * h - e * g)
+
+    det = determinant(matrix)
+    if abs(det) < 1e-12:
+        return None
+    return (determinant([(rhs[0], b, c), (rhs[1], e, f), (rhs[2], h, i)]) / det,
+            determinant([(a, rhs[0], c), (d, rhs[1], f), (g, rhs[2], i)]) / det,
+            determinant([(a, b, rhs[0]), (d, e, rhs[1]), (g, h, rhs[2])]) / det)
+
+
 def fit(points):
-    times=[p[0] for p in points];values=[p[1] for p in points]
-    best=None
-    for index in range(50,5001):
-        hz=index/1000
-        s=[math.sin(2*math.pi*hz*t) for t in times];c=[math.cos(2*math.pi*hz*t) for t in times]
-        # Offset plus sine/cosine least squares; centered approximation is
-        # sufficient across multi-cycle captures and avoids external packages.
-        mean=sum(values)/len(values);center=[v-mean for v in values]
-        a=sum(v*x for v,x in zip(center,s))/max(1e-12,sum(x*x for x in s))
-        b=sum(v*x for v,x in zip(center,c))/max(1e-12,sum(x*x for x in c))
-        error=sum((v-mean-a*x-b*y)**2 for v,x,y in zip(values,s,c))/len(values)
-        if best is None or error<best[0]:best=(error,hz,mean,math.hypot(a,b))
-    error,hz,mean,amplitude=best
-    return {"frequencyHz":hz,"centerDelayMilliseconds":mean,"delayDepthMilliseconds":amplitude,
+    times = [p[0] for p in points]
+    values = [p[1] for p in points]
+    if len(points) < 12:
+        raise ValueError("capture has too few trajectory points for a fit")
+    count = len(values)
+    best = None
+    for index in range(50, 5001):
+        hz = index / 1000
+        s = [math.sin(2 * math.pi * hz * t) for t in times]
+        c = [math.cos(2 * math.pi * hz * t) for t in times]
+        # Offset and the sine/cosine pair are fitted jointly. Centring the values
+        # first fixes the offset to the sample mean, which is not the fitted
+        # centre whenever the capture covers only part of a modulation cycle.
+        sum_s, sum_c = sum(s), sum(c)
+        sum_ss = sum(v * v for v in s)
+        sum_cc = sum(v * v for v in c)
+        sum_sc = sum(x * y for x, y in zip(s, c))
+        matrix = [[count, sum_s, sum_c], [sum_s, sum_ss, sum_sc], [sum_c, sum_sc, sum_cc]]
+        rhs = [sum(values),
+               sum(v * x for v, x in zip(values, s)),
+               sum(v * x for v, x in zip(values, c))]
+        solved = _solve3(matrix, rhs)
+        if solved is None:
+            continue
+        offset, a, b = solved
+        error = sum((v - offset - a * x - b * y) ** 2 for v, x, y in zip(values, s, c)) / count
+        if best is None or error < best[0]:
+            best = (error, hz, offset, math.hypot(a, b))
+    if best is None:
+        raise ValueError("trajectory cannot support a fitted modulation centre and depth")
+    error, hz, offset, amplitude = best
+    return {"frequencyHz":hz,"centerDelayMilliseconds":offset,"delayDepthMilliseconds":amplitude,
             "fitErrorMillisecondsRMS":math.sqrt(error),"points":len(points),
             "medianAbsoluteCorrelation":sorted(abs(p[2]) for p in points)[len(points)//2]}
 

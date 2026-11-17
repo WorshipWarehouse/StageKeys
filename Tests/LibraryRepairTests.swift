@@ -100,6 +100,124 @@ import Foundation
         assert((try! Data(contentsOf:root.appendingPathComponent("setlist.json"))) == session)
         let reloaded=try SoundLibrary(url:root.appendingPathComponent("sound-library.json")).read()
         assert(reloaded.first{$0.id == entry.id}?.managedFileSHA256 == expected)
-        print("PASS: library repair assertions")
+        // A sampler preset whose managed sample folder was moved can be repaired by
+        // pointing at the folder that now holds the samples: the retained original
+        // is re-resolved, the samples are copied back into managed storage and the
+        // catalog is republished only when the repaired preset is complete.
+        func fourCC(_ text:String)->NSNumber {
+            NSNumber(value:text.unicodeScalars.reduce(UInt32(0)) {($0 << 8) | UInt32($1.value)})
+        }
+        let movedSamples=root.appendingPathComponent("Moved Samples")
+        try FileManager.default.createDirectory(at:movedSamples,withIntermediateDirectories:true)
+        try NordNative.wav((0..<1024).map{Int16($0%40*200-4000)},channels:1).write(to:movedSamples.appendingPathComponent("Missing Pad.wav"))
+        let presetSource=root.appendingPathComponent("Missing Pad.aupreset")
+        var presetState=try NordNative.template()
+        let referenceKeys=Array((presetState["file-references"] as! [String:String]).keys)
+        presetState["file-references"]=Dictionary(uniqueKeysWithValues:referenceKeys.map{($0,"/previous/library/Missing Pad.wav")})
+        try PropertyListSerialization.data(fromPropertyList:presetState,format:.xml,options:0).write(to:presetSource)
+        let samplerSound=store.importLibrarySound(presetSource,sampleRoot:movedSamples)!
+        let samplerEntry=store.librarySounds.first{$0.sound == samplerSound}!
+        assert(samplerEntry.originalInstrument != nil,"the unmodified preset is retained for repair")
+        let rack=store.audio.externalRack!
+        let managedPreset=rack.libraryURL.appendingPathComponent(samplerSound.fileName!)
+        let managedSamples=URL(fileURLWithPath:managedPreset.deletingPathExtension().path+"-samples")
+        assert(FileManager.default.fileExists(atPath:managedSamples.path),"the import copies the samples into managed storage")
+        try FileManager.default.removeItem(at:managedSamples)
+        store.refreshLibraryContent()
+        assert(store.libraryContentIssues[samplerEntry.id] == .missingSamples,"a lost sample folder is reported as missing samples")
+        assert(store.libraryContentIssues[samplerEntry.id]?.repairsWithFolder == true,"missing samples need a folder, not a file")
+        // A wrong folder refuses the repair and leaves every published byte alone.
+        let emptyFolder=root.appendingPathComponent("Empty Folder")
+        try FileManager.default.createDirectory(at:emptyFolder,withIntermediateDirectories:true)
+        let catalogBefore=try AssetDigest.sha256(root.appendingPathComponent("sound-library.json"))
+        store.relinkLibrarySamples(samplerEntry.id,from:emptyFolder)
+        assert(store.libraryContentIssues[samplerEntry.id] == .missingSamples,"a refused repair must not claim success")
+        assert(store.message?.contains("Missing sample") == true,"the refusal names the missing sample: \(store.message ?? "")")
+        assert((try! AssetDigest.sha256(root.appendingPathComponent("sound-library.json"))) == catalogBefore,"a refused repair must not rewrite the catalog")
+        assert(!FileManager.default.fileExists(atPath:managedSamples.path),"a refused repair publishes no sample copy")
+        assert((try! Data(contentsOf:root.appendingPathComponent("setlist.json"))) == session)
+        let corruptFolder=root.appendingPathComponent("Corrupt Samples")
+        try FileManager.default.createDirectory(at:corruptFolder,withIntermediateDirectories:true)
+        try Data("RIFF not valid audio".utf8).write(to:corruptFolder.appendingPathComponent("Missing Pad.wav"))
+        let assetsBeforeCorruption=Set(try FileManager.default.contentsOfDirectory(atPath:rack.libraryURL.path))
+        store.relinkLibrarySamples(samplerEntry.id,from:corruptFolder)
+        assert(store.libraryContentIssues[samplerEntry.id] == .missingSamples)
+        assert((try! AssetDigest.sha256(root.appendingPathComponent("sound-library.json")))==catalogBefore)
+        assert(Set(try! FileManager.default.contentsOfDirectory(atPath:rack.libraryURL.path))==assetsBeforeCorruption,"Invalid audio repair must remove only its newly prepared assets")
+        let catalogURL=root.appendingPathComponent("sound-library.json")
+        let repairCatalog=SoundLibrary(url:catalogURL)
+        var newer=try repairCatalog.read();newer.append(LibrarySound(id:"concurrent-addition",name:"Concurrent addition",collection:"My Sounds",sound:entry.sound))
+        try repairCatalog.write(newer)
+        let concurrentBytes=try Data(contentsOf:catalogURL)
+        let assetsBeforeRace=Set(try FileManager.default.contentsOfDirectory(atPath:rack.libraryURL.path))
+        store.relinkLibrarySamples(samplerEntry.id,from:movedSamples)
+        assert((try! Data(contentsOf:catalogURL))==concurrentBytes,"Stale repair must not overwrite a concurrent catalog edit")
+        assert(Set(try! FileManager.default.contentsOfDirectory(atPath:rack.libraryURL.path))==assetsBeforeRace)
+        store.librarySounds=try repairCatalog.read()
+        // The folder that holds the samples repairs the entry to playable.
+        store.relinkLibrarySamples(samplerEntry.id,from:movedSamples)
+        assert(store.libraryContentIssues[samplerEntry.id] == nil,store.message ?? "")
+        let repairedEntry=store.librarySounds.first{$0.id == samplerEntry.id}!
+        assert(repairedEntry.sound?.fileName != samplerSound.fileName,"repair publishes a new managed preset")
+        assert(repairedEntry.sound?.kind == .samplerPreset && repairedEntry.name == samplerEntry.name)
+        assert(repairedEntry.tags == samplerEntry.tags,"repair keeps the entry's personal metadata")
+        assert(repairedEntry.originalInstrument == samplerEntry.originalInstrument,"the retained original is unchanged")
+        assert(repairedEntry.sound?.name == samplerSound.name,"repair keeps the sound name the user sees, not a content digest")
+        let publishedPreset=rack.libraryURL.appendingPathComponent(repairedEntry.sound!.fileName!)
+        assert(repairedEntry.managedFileSHA256 == (try! AssetDigest.sha256(publishedPreset)),"the stored digest describes the repaired preset")
+        assert(repairedEntry.managedFileSHA256 != samplerEntry.managedFileSHA256,"repair changes the preset bytes, so the digest changes")
+        assert(FileManager.default.fileExists(atPath:rack.libraryURL.appendingPathComponent(repairedEntry.sound!.fileName!).path))
+        assert(FileManager.default.fileExists(atPath:managedPreset.path),"the previous managed preset is kept for saved patches")
+        assert((try! Data(contentsOf:root.appendingPathComponent("setlist.json"))) == session)
+        let repairedCatalog=try SoundLibrary(url:root.appendingPathComponent("sound-library.json")).read()
+        assert(repairedCatalog.first{$0.id == samplerEntry.id}?.sound?.fileName == repairedEntry.sound?.fileName)
+        assert(store.message?.contains("Reconnected") == true,store.message ?? "")
+        // The shipped browser can also remove an imported sound from My Sounds. The
+        // managed file stays for the patch that already references it, other sounds
+        // are untouched, and the saved session bytes do not change.
+        assert(store.librarySounds.contains { $0.id == entry.id })
+        let removal = store.removeLibrarySound(entry.id)
+        assert(removal?.id == entry.id,"Removal must report the entry it removed")
+        assert(!store.librarySounds.contains { $0.id == entry.id })
+        assert(store.libraryContentIssues[entry.id] == nil)
+        assert(FileManager.default.fileExists(atPath:managed.path),"The managed file must survive removal")
+        assert((try! Data(contentsOf:root.appendingPathComponent("setlist.json"))) == session)
+        let catalogAfterRemoval = try SoundLibrary(url:root.appendingPathComponent("sound-library.json")).read()
+        assert(!catalogAfterRemoval.contains { $0.id == entry.id })
+        assert(store.removeLibrarySound(entry.id) == nil,"A second removal must not report success")
+        // The removal notice can be undone: the removed entry is appended back with
+        // its identity, personal tags and stored digest, so recovery does not depend
+        // on an unreadable catalog or on re-importing the file.
+        var feedback=LibraryRemovalFeedback()
+        feedback.removal(removal!,message:"Removed \(removal!.name)")
+        store.libraryImportBusy=true
+        let blockedUndo=store.restoreLibrarySound(removal!)
+        assert(!blockedUndo)
+        feedback.restoration(succeeded:blockedUndo,message:store.message ?? "Undo failed")
+        assert(feedback.removed==removal && feedback.text!.contains(removal!.name),"Failed Undo must keep the named entry for retry")
+        feedback.removal(nil,message:"Could not remove another sound")
+        assert(feedback.removed==removal && feedback.text!.contains(removal!.name),"A later failed removal cannot erase the earlier Undo")
+        store.libraryImportBusy=false
+        let restoredTags:SoundTags? = removal?.tags
+        assert(store.restoreLibrarySound(removal!),"Undo must restore the removed entry")
+        feedback.restoration(succeeded:true,message:"Restored")
+        assert(feedback.removed==nil && feedback.failure==nil)
+        let undone=store.librarySounds.first{$0.id==entry.id}
+        assert(undone?.managedFileSHA256 == expected && undone?.tags == restoredTags && undone?.name == entry.name)
+        assert(store.message?.contains("Restored") == true,store.message ?? "")
+        let catalogAfterUndo = try SoundLibrary(url:root.appendingPathComponent("sound-library.json")).read()
+        assert(catalogAfterUndo.contains{$0.id==entry.id},"Undo republishes the catalog")
+        assert(!store.restoreLibrarySound(removal!),"A repeated undo must not duplicate the entry")
+        assert(store.librarySounds.filter{$0.id==entry.id}.count == 1)
+        assert(store.removeLibrarySound(entry.id) != nil,"the undone entry can be removed again")
+        // Bundled and optional-library entries are installed content, not user
+        // imports, so the same action must refuse them rather than empty the catalog.
+        let catalog = SoundLibrary(url:root.appendingPathComponent("sound-library.json"))
+        try catalog.write(try catalog.read()+[LibrarySound(id:"catalog-only",name:"Catalog Pad",collection:"Sunday Free · Volume 1",hostPath:"/private/example.patch")])
+        store.librarySounds = try catalog.read()
+        assert(store.removeLibrarySound("catalog-only") == nil,"Only My Sounds entries are removable here")
+        assert(store.librarySounds.contains { $0.id == "catalog-only" })
+        store.message = nil
+        print("PASS: library repair assertions and remove-from-My-Sounds behaviour")
     }
 }
