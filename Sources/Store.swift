@@ -738,7 +738,11 @@ final class PerformanceStore: ObservableObject {
     }
     @Published var libraryImportBusy=false
     private var libraryImportCancelRequested=false
-    func cancelLibraryImport(){libraryImportCancelRequested=true}
+    func cancelLibraryImport(){libraryImportCancelRequested=true;nordImportCancellation?.cancel()}
+    @Published var nordImportPreview:NordNative.Preview?
+    private var nordInspecting=false
+    private var nordImportBytes:Data?
+    private var nordImportCancellation:NordNative.Cancellation?
     private func checkLibraryImportCancellation()throws {
         if libraryImportCancelRequested {throw MainStagePatch.Failure.invalid("Import cancelled. No prepared catalog entries were committed.")}
     }
@@ -1951,6 +1955,68 @@ final class PerformanceStore: ObservableObject {
             // the state the layer already carries instead of erasing it to nothing.
             do { if let state = try audio.pluginStateData(channel:i,sound:l.external) {setlist.patches[selected].layers[i].pluginState = state} }
             catch { message = "Could not capture plug-in state: \(error.localizedDescription)" }
+        }
+    }
+    func discardNordImport() {
+        if nordInspecting {nordImportCancellation?.cancel();libraryImportCancelRequested=true}
+        guard !libraryImportBusy else{return}
+        nordImportPreview=nil;nordImportBytes=nil
+    }
+    func inspectNordSound(_ url:URL) {
+        guard !libraryImportBusy else{return}
+        discardNordImport()
+        libraryImportBusy=true;libraryImportCancelRequested=false
+        let cancellation=NordNative.Cancellation();nordImportCancellation=cancellation
+        nordInspecting=true
+        libraryImportProgress="Inspecting Nord piano…"
+        Task { @MainActor in
+            let access=url.startAccessingSecurityScopedResource()
+            defer {if access{url.stopAccessingSecurityScopedResource()};libraryImportBusy=false;nordImportCancellation=nil;nordInspecting=false}
+            do {
+                let candidate=try await Task.detached { () throws -> (Data,NordNative.Preview) in
+                    let bytes=try NordPiano.read(url)
+                    if cancellation.requested {throw CancellationError()}
+                    return (bytes,try NordNative.preview(bytes))
+                }.value
+                try checkLibraryImportCancellation()
+                nordImportBytes=candidate.0;nordImportPreview=candidate.1
+                libraryImportProgress="Review the supported features and differences before converting."
+            }catch{libraryImportProgress="Nord inspection failed: "+error.localizedDescription}
+        }
+    }
+    func importNordSound() {
+        guard !libraryImportBusy,let bytes=nordImportBytes,let preview=nordImportPreview,let rack=audio.externalRack else{return}
+        libraryImportBusy=true;libraryImportCancelRequested=false
+        let cancellation=NordNative.Cancellation();nordImportCancellation=cancellation
+        nordImportBytes=nil;nordImportPreview=nil
+        libraryImportProgress="Decoding Nord attack recordings…"
+        Task { @MainActor in
+            var prepared:NordNative.Prepared?,committed=false
+            defer {
+                if !committed,let prepared {for asset in prepared.assets {try? FileManager.default.removeItem(at:asset)}}
+                libraryImportBusy=false;nordImportCancellation=nil
+            }
+            do {
+                let library=SoundLibrary(url:saveURL.deletingLastPathComponent().appendingPathComponent("sound-library.json"))
+                let original=try library.read()
+                guard !original.contains(where:{$0.id==preview.identity}) else {
+                    libraryImportProgress="This source is already in My Sounds. Existing edits were kept.";return
+                }
+                let template=try NordNative.template(),destination=rack.libraryURL
+                let candidate=try await Task.detached {
+                    try NordNative.prepare(bytes,preview:preview,library:destination,template:template,cancelled:{cancellation.requested})
+                }.value
+                prepared=candidate
+                try checkLibraryImportCancellation()
+                var layer=Layer(name:candidate.sound.name,instrument:-1,gain:0.65)
+                layer.external=candidate.sound;layer.importedRack=candidate.sound.nativeSampler?.rack
+                var entry=LibrarySound(id:candidate.identity,name:candidate.sound.name,collection:"My Sounds",sound:candidate.sound,layer:layer,conversionNotes:preview.notes)
+                if let file=candidate.sound.fileName {entry.managedFileSHA256=try AssetDigest.sha256(destination.appendingPathComponent(file))}
+                let entries=original+[entry]
+                try library.commitImport(entries,replacing:original)
+                committed=true;librarySounds=entries;refreshLibraryContent()
+                libraryImportProgress="Added "+preview.name+" to My Sounds as an experimental attack-only instrument. Review Conversion Notes before performing."
+            }catch{libraryImportProgress="Nord import not committed: "+error.localizedDescription}
         }
     }
     private func prepareLibrarySound(_ url:URL,sampleRoot:URL?)throws->(ExternalSound,[String]?,Layer?) {
