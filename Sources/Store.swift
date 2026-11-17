@@ -2719,10 +2719,10 @@ final class PerformanceStore: ObservableObject {
     func restoreLocalSetlist(_ token: UUID) {
         do { _ = try localSetlistLibrary().restore(token:token); refreshSetlists() } catch { message = error.localizedDescription }
     }
-    /// Restore one saved document's validated previous copy. The damaged file is
-    /// retained by the library, and the current performance is only replaced when
-    /// the recovered document is the setlist being performed; otherwise the next
-    /// autosave would immediately write the damaged state back over it.
+    /// Restore one saved document's validated previous copy. The copy is decoded
+    /// and admitted before it replaces the damaged file, and the current performance
+    /// is only replaced when the recovered document is the setlist being performed;
+    /// otherwise the next autosave would write the damaged state back over it.
     func recoverPreviousSetlist(_ id: UUID) {
         // Restoring a document is a setlist change, so it follows the same lock as
         // opening one: the live performance must not be replaced while it is locked.
