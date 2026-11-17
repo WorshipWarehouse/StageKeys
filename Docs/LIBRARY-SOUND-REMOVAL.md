@@ -28,16 +28,23 @@ existing setlists".
   its single validated previous copy through `RecoverableSessionFile.write`.
 - **Managed bytes are kept.** The preset/sample files in `Imported Sounds/` stay on disk. Saved
   patches, setlists, snapshots and setlist shares reference a sound by its managed file name, so
-  deleting the bytes on removal would silently break saved work — exactly what #17 forbids. The
-  removed entry can be restored by importing the sound again.
+  deleting the bytes on removal would silently break saved work — exactly what #17 forbids.
+- **Undo restores the entry, not a new import.** `PerformanceStore.restoreLibrarySound(_:)` appends
+  the exact entry removal reported through the existing locked `SoundLibrary.append`, so the catalog
+  id, personal tags, ratings key, original-instrument reference and stored managed-file digest all
+  survive. It refuses a duplicate id and reports a failed write without changing the catalog. A
+  re-import would create a second identity and lose the tags, so it is not the recovery route.
 - **`PerformanceStore.removeLibrarySound(_:)`.** Refuses while an import is running, refuses ids
   that are not in the catalog, and refuses entries whose collection is not `My Sounds` (bundled
-  Sunday content and optional-library installs are installed content, not user imports). On success
-  it re-reads the catalog, refreshes missing-content state and reports what happened.
+  Sunday content and optional-library installs are installed content, not user imports). The delete
+  is committed under the library's exclusive write lock before local state changes, so the removed
+  row leaves `librarySounds` even if the follow-up read fails; that case is reported as a refresh
+  failure instead of a failed removal.
 - **Browser action.** `SoundBrowser`'s row context menu gains **Remove from My Sounds** for
   `My Sounds` entries only, with `role: .destructive`. Because the browser is a modal sheet, the
   outcome is shown in a dismissible notice bar above the footer instead of relying on the store's
-  message, which would appear behind the sheet.
+  message, which would appear behind the sheet. That notice carries **Undo** while the removed entry
+  is known, and Undo reports its own success or failure in the same bar.
 
 No file-format, tag, rating, patch, setlist, snapshot or audio change. No migration.
 
@@ -45,9 +52,10 @@ No file-format, tag, rating, patch, setlist, snapshot or audio change. No migrat
 
 - Removal is catalog-only. Reclaiming disk space is not part of this action; an orphaned managed
   file is still there for any saved patch that uses it.
-- The catalog's previous copy means an accidental removal is recoverable with the existing
-  **Recover Previous Sound Catalog** action in Settings or the browser's catalog error state — until
-  the next catalog write rotates it.
+- Accidental removal is recoverable from the notice's **Undo** directly, without a catalog recovery
+  and without waiting on the previous copy. The catalog's previous copy also still contains the
+  removed sound (until the next catalog write rotates it), but that control stays reserved for an
+  unreadable catalog; a healthy catalog is never marked damaged to expose it.
 - Personal ratings keyed by the entry id are not deleted; re-importing a folder sound reuses its
   digest id and therefore shows its previous rating. This is deliberate: the rating belongs to the
   sound, not to the catalog row.
@@ -64,7 +72,9 @@ No file-format, tag, rating, patch, setlist, snapshot or audio change. No migrat
 - `Tests/LibraryRepairTests` (default library gate): through `PerformanceStore` with a generated WAV,
   removal drops the entry from `librarySounds` and the on-disk catalog, clears its missing-content
   state, keeps the managed file and the saved session bytes identical, refuses a second removal and
-  refuses an entry that is not in `My Sounds`.
+  refuses an entry that is not in `My Sounds`. Undo then restores the same id, name, tags and stored
+  digest, republishes the catalog, refuses a repeated undo instead of duplicating the row, and the
+  restored entry can be removed again.
 
 Both programs fail to compile without the new API, which is the pre-fix state: no removal path
 existed, so the regression is necessarily new-behaviour coverage rather than a reproduction of a

@@ -2012,13 +2012,35 @@ final class PerformanceStore: ObservableObject {
         guard !libraryImportBusy else{message="Wait for the running library import to finish before removing a sound.";return nil}
         guard let entry=librarySounds.first(where:{$0.id==id}) else{message="That sound is no longer in the library. Refresh and try again.";return nil}
         guard entry.collection=="My Sounds" else{message="Only sounds you imported into My Sounds can be removed here. \(entry.name) belongs to \(entry.collection).";return nil}
-        do {
-            let library=SoundLibrary(url:saveURL.deletingLastPathComponent().appendingPathComponent("sound-library.json"))
-            let removed=try library.delete(id:id)
-            librarySounds=try library.read();refreshLibraryContent()
-            message="Removed \(removed.name) from My Sounds. Its file stays in the library folder so saved patches keep playing; importing it again restores the entry."
-            return removed
-        } catch {message="Could not remove \(entry.name): \(error.localizedDescription)";return nil}
+        let library=SoundLibrary(url:saveURL.deletingLastPathComponent().appendingPathComponent("sound-library.json"))
+        let removed:LibrarySound
+        do { removed=try library.delete(id:id) }
+        catch {message="Could not remove \(entry.name): \(error.localizedDescription)";return nil}
+        // The removal is committed, so the row leaves the published catalog even
+        // when the follow-up read fails; that is a refresh problem, not a failed
+        // removal. The managed file stays so saved patches keep playing.
+        librarySounds.removeAll{$0.id==id};refreshLibraryContent()
+        do { librarySounds=try library.read();refreshLibraryContent() }
+        catch {message="Removed \(removed.name) from My Sounds, but the catalog could not be re-read: \(error.localizedDescription). Its file stays in the library folder so saved patches keep playing.";return removed}
+        message="Removed \(removed.name) from My Sounds. Its file stays in the library folder so saved patches keep playing; importing it again restores the entry."
+        return removed
+    }
+    /// Undo one removal by appending the exact entry that removal reported. The
+    /// managed file was never deleted, so this restores the entry's tags, saved
+    /// settings and identity instead of re-importing a file and losing them.
+    @discardableResult
+    func restoreLibrarySound(_ entry: LibrarySound) -> Bool {
+        guard !libraryImportBusy else{message="Wait for the running library import to finish before restoring a sound.";return false}
+        guard !librarySounds.contains(where:{$0.id==entry.id}) else{message="\(entry.name) is already in My Sounds.";return false}
+        let library=SoundLibrary(url:saveURL.deletingLastPathComponent().appendingPathComponent("sound-library.json"))
+        do { try library.append(entry) }
+        catch {message="Could not restore \(entry.name): \(error.localizedDescription)";return false}
+        librarySounds.append(entry);refreshLibraryContent()
+        // A read after the committed append only replaces the local copy; the
+        // restored entry is already published and is not rolled back on failure.
+        if let refreshed=try? library.read() {librarySounds=refreshed;refreshLibraryContent()}
+        message="Restored \(entry.name) to My Sounds."
+        return true
     }
     @discardableResult
     func importLibrarySound(_ url:URL,sampleRoot:URL?=nil)->ExternalSound? {

@@ -113,6 +113,19 @@ import Foundation
         let catalogAfterRemoval = try SoundLibrary(url:root.appendingPathComponent("sound-library.json")).read()
         assert(!catalogAfterRemoval.contains { $0.id == entry.id })
         assert(store.removeLibrarySound(entry.id) == nil,"A second removal must not report success")
+        // The removal notice can be undone: the removed entry is appended back with
+        // its identity, personal tags and stored digest, so recovery does not depend
+        // on an unreadable catalog or on re-importing the file.
+        let restoredTags:SoundTags? = removal?.tags
+        assert(store.restoreLibrarySound(removal!),"Undo must restore the removed entry")
+        let undone=store.librarySounds.first{$0.id==entry.id}
+        assert(undone?.managedFileSHA256 == expected && undone?.tags == restoredTags && undone?.name == entry.name)
+        assert(store.message?.contains("Restored") == true,store.message ?? "")
+        let catalogAfterUndo = try SoundLibrary(url:root.appendingPathComponent("sound-library.json")).read()
+        assert(catalogAfterUndo.contains{$0.id==entry.id},"Undo republishes the catalog")
+        assert(!store.restoreLibrarySound(removal!),"A repeated undo must not duplicate the entry")
+        assert(store.librarySounds.filter{$0.id==entry.id}.count == 1)
+        assert(store.removeLibrarySound(entry.id) != nil,"the undone entry can be removed again")
         // Bundled and optional-library entries are installed content, not user
         // imports, so the same action must refuse them rather than empty the catalog.
         let catalog = SoundLibrary(url:root.appendingPathComponent("sound-library.json"))
