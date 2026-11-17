@@ -150,7 +150,7 @@ import AVFoundation
         captured.eqEnabled = false; captured.compressorEnabled = true; captured.threshold = -12
         shape(captured)
         var shapedTarget = Snapshot(name: "Generated shaping ownership", gains: store.patch.layers.map(\.gain))
-        shapedTarget.seconds = 0
+        shapedTarget.seconds = 0.02
         shapedTarget.sounds = store.patch.layers.map(SnapshotSoundState.init)
         shapedTarget.sounds![editorChannel].pan = -0.45
         // The performer edits the sound after the scene was captured.
@@ -158,10 +158,15 @@ import AVFoundation
         edited.attack = 0.4; edited.filterMax = 12_000; edited.threshold = -6
         shape(edited)
         store.recall(shapedTarget)
-        assert(store.setlist.patches[store.selected].layers[editorChannel].channelSettings == edited,
-               "Recalling a snapshot must not overwrite the sound editor's shaping values")
+        // The captured pan is written by the snapshot transition, not synchronously.
+        let shapedDeadline = Date().addingTimeInterval(2)
+        while abs(store.patch.layers[editorChannel].pan + 0.45) > 0.0001 && Date() < shapedDeadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.01))
+        }
         assert(abs(store.patch.layers[editorChannel].pan + 0.45) < 0.0001,
                "The snapshot's own pan must still be recalled")
+        assert(store.setlist.patches[store.selected].layers[editorChannel].channelSettings == edited,
+               "Recalling a snapshot must not overwrite the sound editor's shaping values")
         store.save()
         let reloaded = try! JSONDecoder().decode(Setlist.self, from: Data(contentsOf: path))
         let savedPatch = reloaded.patches.first { $0.id == store.patch.id }!
