@@ -103,6 +103,14 @@ enum MIDIClockTimestamp {
               receipt.isFinite, abs(packet - receipt) <= maximumLatency else { return receipt }
         return packet
     }
+    /// Whether `at(...)` used the driver's stamp rather than the receipt time. Packet
+    /// and receipt timing measure different intervals, so a tempo window may not mix
+    /// the two; the caller resets its window when this flips.
+    static func isPacketBacked(packetTicks: UInt64, numer: UInt32, denom: UInt32, receipt: Double) -> Bool {
+        guard let packet = seconds(hostTicks: packetTicks, numer: numer, denom: denom),
+              receipt.isFinite, abs(packet - receipt) <= maximumLatency else { return false }
+        return true
+    }
 }
 struct SessionSettings: Codable {
     var selectedPatchID: UUID?

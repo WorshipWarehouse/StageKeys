@@ -89,34 +89,60 @@ def correlation(left: list[float], right: list[float]) -> float:
 
 
 def spectral_centroid(samples: list[float], rate: int) -> float:
-    # Radix-2 FFT over the complete Nyquist band, bounded to 4096 frames.
-    count = 1 << (min(len(samples), 4096).bit_length() - 1) if samples else 0
+    # A bounded direct DFT is sufficient for a stable comparison metric and
+    # avoids adding a runtime dependency to the repository.
+    count = min(len(samples), 4096)
     if count < 32:
         return 0.0
-    start = (len(samples) - count) // 2
-    block = [complex(v * (0.5 - 0.5 * math.cos(2 * math.pi * n / (count - 1))))
-             for n, v in enumerate(samples[start:start + count])]
-    j = 0
-    for i in range(1, count):
-        bit = count >> 1
-        while j & bit:
-            j ^= bit
-            bit >>= 1
-        j ^= bit
-        if i < j:
-            block[i], block[j] = block[j], block[i]
-    size = 2
-    while size <= count:
-        for base in range(0, count, size):
-            for k in range(size // 2):
-                angle = -2 * math.pi * k / size
-                v = block[base + k + size // 2] * complex(math.cos(angle), math.sin(angle))
-                u = block[base + k]
-                block[base + k], block[base + k + size // 2] = u + v, u - v
-        size *= 2
-    magnitudes = [abs(v) for v in block[1:count // 2 + 1]]
-    total = sum(magnitudes)
-    return sum((k + 1) * rate / count * v for k, v in enumerate(magnitudes)) / total if total else 0.0
+    # Take the window from the non-silent span instead of the capture middle: the
+    # same tone followed by trailing silence has to report the same centroid, and a
+    # silent frame must carry no weight. Finding the span is one linear scan, and
+    # the transform still runs once over a bounded window.
+    peak = max((abs(value) for value in samples), default=0.0)
+    if peak <= 1e-12:
+        return 0.0
+    threshold = peak * 0.01
+    first = next((index for index, value in enumerate(samples) if abs(value) >= threshold), 0)
+    last = next((index for index in range(len(samples) - 1, first - 1, -1)
+                 if abs(samples[index]) >= threshold), first)
+    span = last - first + 1
+    if span < 32:
+        # A single transient can be the only sample above the threshold while a
+        # quiet tone follows it. Centre the smallest analysis window on that spot
+        # instead of reporting no centroid, so the tone's spectral difference
+        # still shows up; the transform stays bounded by the usual window.
+        size = min(len(samples), 4096)
+        start = max(0, min(len(samples) - size, first - (size - span) // 2))
+        block = samples[start : start + size]
+        count = len(block)
+        if count < 32:
+            return 0.0
+    elif span <= count:
+        block = samples[first : first + span]
+        count = len(block)
+    else:
+        start = first + (span - count) // 2
+        block = samples[start : start + count]
+    # Spread a bounded number of bins across the whole Nyquist range. Stopping at
+    # 512 low bins excluded everything at and above 6 kHz for a 4096-sample block
+    # at 48 kHz, so a high tone contributed only leakage to the centroid.
+    limit = count // 2
+    bin_count = min(256, max(1, limit - 1))
+    bins = sorted({max(1, min(limit - 1, round(index * (limit - 1) / bin_count)))
+                   for index in range(1, bin_count + 1)})
+    weighted = total = 0.0
+    for k in bins:
+        real = imag = 0.0
+        step = -2.0 * math.pi * k / count
+        for n, value in enumerate(block):
+            windowed = value * (0.5 - 0.5 * math.cos(2.0 * math.pi * n / (count - 1)))
+            real += windowed * math.cos(step * n)
+            imag += windowed * math.sin(step * n)
+        magnitude = math.hypot(real, imag)
+        frequency = k * rate / count
+        weighted += frequency * magnitude
+        total += magnitude
+    return weighted / total if total else 0.0
 
 
 def decay_seconds(samples: list[float], rate: int) -> float | None:
@@ -148,20 +174,22 @@ def describe(reference: Audio, candidate: Audio, align_onsets: bool = False) -> 
         reference = Audio(reference.rate, [channel[raw_reference_onset:] for channel in reference.channels])
         candidate = Audio(candidate.rate, [channel[raw_candidate_onset:] for channel in candidate.channels])
     length = min(len(reference.channels[0]), len(candidate.channels[0]))
-    full_ref, full_cand = mono(reference), mono(candidate)
-    ref = full_ref[:length]
-    cand = full_cand[:length]
+    ref = mono(Audio(reference.rate, [c[:length] for c in reference.channels]))
+    cand = mono(Audio(candidate.rate, [c[:length] for c in candidate.channels]))
     ref_energy = sum(v * v for v in ref)
     gain = sum(a * b for a, b in zip(ref, cand)) / ref_energy if ref_energy else 1.0
     aligned = [gain * value for value in ref]
     error = [a - b for a, b in zip(aligned, cand)]
+    # Tail metrics use each capture's own aligned samples: truncating to the
+    # shorter capture would hide an echo only the longer one carries.
+    ref_tail = mono(reference)
+    cand_tail = mono(candidate)
     ref_onset, cand_onset = onset(ref), onset(cand)
     result: dict[str, object] = {
         "sampleRate": reference.rate,
         "channels": len(reference.channels),
         "framesCompared": length,
-        "referenceFrames": len(full_ref),
-        "candidateFrames": len(full_cand),
+        "captureFrames": {"reference": len(reference.channels[0]), "candidate": len(candidate.channels[0])},
         "captureStartOffsetMilliseconds": capture_offset,
         "referencePeak": max((abs(v) for v in ref), default=0.0),
         "candidatePeak": max((abs(v) for v in cand), default=0.0),
@@ -175,19 +203,29 @@ def describe(reference: Audio, candidate: Audio, align_onsets: bool = False) -> 
         "referenceOnsetFrame": ref_onset,
         "candidateOnsetFrame": cand_onset,
         "onsetDeltaMilliseconds": None if ref_onset is None or cand_onset is None else (cand_onset - ref_onset) * 1000 / reference.rate,
-        "referenceDecay60Seconds": decay_seconds(full_ref, reference.rate),
-        "candidateDecay60Seconds": decay_seconds(full_cand, candidate.rate),
-        "referenceCentroidHz": spectral_centroid(full_ref, reference.rate),
-        "candidateCentroidHz": spectral_centroid(full_cand, candidate.rate),
+        "referenceDecay60Seconds": decay_seconds(ref_tail, reference.rate),
+        "candidateDecay60Seconds": decay_seconds(cand_tail, candidate.rate),
+        "referenceCentroidHz": spectral_centroid(ref_tail, reference.rate),
+        "candidateCentroidHz": spectral_centroid(cand_tail, candidate.rate),
     }
+    # A swapped stereo pair downmixes to the same mono signal, so each channel is
+    # measured on its own; the mono metrics stay as summaries.
     channel_metrics = []
-    for left, right in zip(reference.channels, candidate.channels):
-        left, right = left[:length], right[:length]
-        energy = sum(v * v for v in left)
-        scale = sum(a * b for a, b in zip(left, right)) / energy if energy else 1.0
-        channel_metrics.append({"referenceRMS": rms(left), "candidateRMS": rms(right),
-                                "errorRMS": rms([a - b for a, b in zip(left, right)]),
-                                "gainAlignedErrorRMS": rms([scale * a - b for a, b in zip(left, right)])})
+    for index, (reference_channel, candidate_channel) in enumerate(zip(reference.channels, candidate.channels)):
+        pair_reference = reference_channel[:length]
+        pair_candidate = candidate_channel[:length]
+        pair_energy = sum(v * v for v in pair_reference)
+        pair_gain = sum(a * b for a, b in zip(pair_reference, pair_candidate)) / pair_energy if pair_energy else 1.0
+        pair_error = [pair_gain * a - b for a, b in zip(pair_reference, pair_candidate)]
+        channel_metrics.append({
+            "channel": index,
+            "referenceRMS": rms(pair_reference),
+            "candidateRMS": rms(pair_candidate),
+            "correlation": correlation(pair_reference, pair_candidate),
+            "leastSquaresReferenceGain": pair_gain,
+            "gainAlignedErrorRMS": rms(pair_error),
+            "gainAlignedErrorDBFS": 20 * math.log10(max(rms(pair_error), 1e-12)),
+        })
     result["channelMetrics"] = channel_metrics
     if len(reference.channels) == 2:
         result["referenceStereoCorrelation"] = correlation(reference.channels[0][:length], reference.channels[1][:length])

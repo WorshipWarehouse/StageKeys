@@ -393,6 +393,9 @@ final class PerformanceStore: ObservableObject {
     /// off or stopped, so the patch/live tempo policy resumes immediately.
     @Published private(set) var clockTempo: Double?
     private var midiClockTempo = MIDIClockTempo()
+    /// Which timing the current tempo window is built from. Mixing packet stamps with
+    /// receipt times inside one 24-pulse window reports a tempo that never happened.
+    private var midiClockPacketTiming: Bool?
     private var midiClockRunning = false
     private var midiClockSource: Int32?
     /// Drop every piece of external-clock state so the stored patch/live tempo
@@ -912,17 +915,13 @@ final class PerformanceStore: ObservableObject {
                 self.sendMIDI(destination, 0x80 | UInt8(l.midiOutputChannel), UInt8(pitch), 0)
             } else { self.audio.noteOff(key: key, channel: channel, force: force, at: at) }
         }
-        midi.onSourceEvent = { [weak self] source, status, a, b, time in self?.handleMIDI(status, a, b, source: source, at: time) }
+        midi.onSourceEvent = { [weak self] source, status, a, b, time, fromPacket in self?.handleMIDI(status, a, b, source: source, at: time, fromPacket: fromPacket) }
         midi.onInventory = { [weak self] sources, devices in
             guard let self else { return }
             self.midiSources = sources; self.midiDevices = devices
             for source in sources { self.midiSourceNames[source.id] = source.name }
             let connected = sources.filter(\.connected)
             self.midiStatus = connected.isEmpty ? "Plug in a USB MIDI keyboard to connect automatically" : connected.map(\.name).joined(separator: " · ")
-        }
-        midi.onClockTimingChange = { [weak self] source in
-            guard let self,self.midiClockSource==source else{return}
-            self.midiClockTempo.reset();self.clockTempo=nil
         }
         midi.onDisconnect = { [weak self] in self?.disconnectMIDI($0) }
         midi.onDevices = { [weak self] count, error in
@@ -1771,10 +1770,18 @@ final class PerformanceStore: ObservableObject {
     /// Route 24-PPQN clock and transport from the configured controller. Tempo
     /// is measured only after Start/Continue and only until Stop or disconnect,
     /// so ticks from a stopped source cannot replace the stored tempo.
-    private func handleMIDIClock(_ status: UInt8, source: Int32, at now: Double) {
+    private func handleMIDIClock(_ status: UInt8, source: Int32, at now: Double, fromPacket: Bool = false) {
         guard metronomeSettings.followsMIDIClock, acceptsMIDIClock(source: source) else { return }
         switch status {
         case 0xF8:
+            // Packet stamps and receipt times measure different intervals, so a
+            // window that changed timing mid-run mixes them and biases the tempo.
+            // Start a fresh window on the change; a source that always sends zero
+            // stamps simply stays on receipt-only timing.
+            if midiClockPacketTiming != fromPacket {
+                midiClockPacketTiming = fromPacket
+                midiClockTempo.reset(); clockTempo = nil
+            }
             // A tick may only advance the run selected by its Start/Continue.
             // The other configured source may be sending clock concurrently;
             // ignoring it avoids double-advancing the click or stealing tempo.
@@ -1792,7 +1799,7 @@ final class PerformanceStore: ObservableObject {
             guard !midiClockRunning || midiClockSource == nil || midiClockSource == source else { return }
             midiClockRunning = true
             midiClockSource = source
-            midiClockTempo.reset(); clockTempo = nil
+            midiClockTempo.reset(); midiClockPacketTiming = nil; clockTempo = nil
             if status == 0xFA { audio.midiClockStart(at: now) }
             else { audio.midiClockContinue(at: now) }
         case 0xFC:
@@ -1809,10 +1816,10 @@ final class PerformanceStore: ObservableObject {
     #endif
 
     /// Routes an incoming event only to its accepted controller slot and target type.
-    private func handleMIDI(_ status: UInt8, _ a: UInt8, _ b: UInt8, source: Int32, at time: Double) {
+    private func handleMIDI(_ status: UInt8, _ a: UInt8, _ b: UInt8, source: Int32, at time: Double, fromPacket: Bool = false) {
         // `time` is the driver's packet stamp for clock messages, so a delayed main-queue
         // delivery cannot stretch the interval the tempo is measured from.
-        if status >= 0xF8 { handleMIDIClock(status, source: source, at: time); return }
+        if status >= 0xF8 { handleMIDIClock(status, source: source, at: time, fromPacket: fromPacket); return }
         if status >= 0xF0 { return }
         midiActivity.toggle()
         midiLog.insert((midiSources.first(where: { $0.id == source })?.name ?? "MIDI") + String(format: " · Ch %02d · %02X · %d · %d", Int(status & 15) + 1, status & 0xf0, a, b), at: 0)
@@ -2226,7 +2233,11 @@ final class PerformanceStore: ObservableObject {
             do {try SoundLibrary(url:libraryDirectory.appendingPathComponent("sound-library.json")).commitImport(updated,replacing:librarySounds)}
             catch {
                 discardManaged(repairedPreset)
-                message="Could not save the repaired sound: \(error.localizedDescription)";return
+                // Another process changed the catalog since this repair read it. Publish
+                // nothing rather than replacing that edit with a stale snapshot, and let
+                // the caller retry against the refreshed catalog.
+                refreshLibraryContent()
+                message="Could not save the repaired sound because the library changed while it was being repaired: \(error.localizedDescription)";return
             }
             librarySounds=updated;refreshLibraryContent()
             message=libraryContentIssues[id]==nil ? "Reconnected \(restored.name). The sound is ready to add again.":"Copied \(restored.name), but this sound still reports missing content."
@@ -2522,21 +2533,32 @@ final class PerformanceStore: ObservableObject {
                     guard channel.unsupportedInstrumentFamily == nil else {outcome(channelIndex,.unsupported,channel.nativeInstrumentStatus);failures.append(channel.name+": "+channel.nativeInstrumentStatus);continue}
                     guard channel.instruments.count==1,let name=channel.instruments.first else{outcome(channelIndex,.unsupported,"Multiple sampler instruments require channel topology translation; none were silently flattened.");failures.append(channel.name+": layered sampler selection requires translation");continue}
                     var candidates=discovered?[name] ?? []
-                    let chosen=files.filter{$0.lastPathComponent==name}.compactMap{try? MainStageDiscovery.candidate(file:$0,samples:folder)}
-                    let chosenPlayable=chosen.filter{$0.sampleIssue==nil && $0.identity != nil}
-                    if !chosenPlayable.isEmpty {candidates=chosenPlayable} else {candidates += chosen}
+                    let folderCandidates=files.filter{$0.lastPathComponent==name}.compactMap{try? MainStageDiscovery.candidate(file:$0,samples:folder)}
+                    candidates += folderCandidates
                     var candidateKeys=Set<String>()
                     candidates=candidates.filter{candidateKeys.insert($0.file.standardizedFileURL.path+"\n"+$0.samples.standardizedFileURL.path).inserted}
                     let playable=candidates.filter{$0.sampleIssue==nil && $0.identity != nil}
-                    guard !playable.isEmpty,Set(playable.compactMap(\.identity)).count==1 else{let reason=playable.isEmpty ? (candidates.compactMap(\.sampleIssue).first ?? "Instrument not found in searched locations; choose its sample folder."):"Different EXS maps or sample contents share this filename; choose the intended source folder.";outcome(channelIndex,.needsSamples,reason);failures.append(name+": "+reason);continue}
-                    let file=playable[0].file
+                    // The folder the user just chose settles a conflict between cached
+                    // candidates when it supplies exactly one playable identity; a folder
+                    // that itself holds several identities is still ambiguous.
+                    let folderPaths=Set(folderCandidates.map{$0.file.standardizedFileURL.path})
+                    let chosen=playable.filter{folderPaths.contains($0.file.standardizedFileURL.path)}
+                    let chosenIdentities=Set(chosen.compactMap(\.identity))
+                    let selected:MainStageDiscovery.Candidate?
+                    if chosenIdentities.count==1 {selected=chosen.first}
+                    else if chosenIdentities.isEmpty && Set(playable.compactMap(\.identity)).count==1 {selected=playable[0]}
+                    else {selected=nil}
+                    guard let selected else{let reason=playable.isEmpty ? (candidates.compactMap(\.sampleIssue).first ?? "Instrument not found in searched locations; choose its sample folder."):chosenIdentities.count>1 ? "The chosen folder holds more than one playable version of this sampler instrument; choose the folder holding the intended one.":"Different EXS maps or sample contents share this filename; choose the intended source folder.";outcome(channelIndex,.needsSamples,reason);failures.append(name+": "+reason);continue}
                     libraryImportProgress="Importing MainStage channel: "+channel.name
                     await Task.yield();try checkLibraryImportCancellation()
                     let assetsBefore=managedImportAssets()
                     var createdSound:ExternalSound?,createdOriginal:StageKeysSampler.Original?
                     do {
                         let processing=try mainStageProcessing(channelIndex)
-                        let id=try MainStagePatch.conversionID(report,channel:channel,variant:playable[0].identity!)
+                        // The conversion ID and the retained original must describe the
+                        // identity that was actually selected, not the first cached one.
+                        let identity=selected.identity!
+                        let id=try MainStagePatch.conversionID(report,channel:channel,variant:identity)
                         if let existing=entries.firstIndex(where:{$0.id==id}) {
                             entries[existing].sourceArchiveID=report.sourceArchiveID
                             outcome(channelIndex,.duplicate,"Already installed; personal edits retained.",id)
@@ -2544,9 +2566,12 @@ final class PerformanceStore: ObservableObject {
                         }
                         var prepared:(ExternalSound,[String]?,Layer?)?
                         var preparationError:Error?
-                        for candidate in playable {
+                        var importedCandidate=selected
+                        // Only the selected identity may be imported; equivalent candidates
+                        // (same EXS map and samples) stay available as fallbacks.
+                        for candidate in playable where candidate.identity == identity {
                             let access=candidate.samples.startAccessingSecurityScopedResource();defer{if access{candidate.samples.stopAccessingSecurityScopedResource()}}
-                            do {prepared=try prepareLibrarySound(candidate.file,sampleRoot:candidate.samples);break}
+                            do {prepared=try prepareLibrarySound(candidate.file,sampleRoot:candidate.samples);importedCandidate=candidate;break}
                             catch{preparationError=error}
                         }
                         guard let (sound,notes,template)=prepared else {
@@ -2564,7 +2589,7 @@ final class PerformanceStore: ObservableObject {
                         layer.name=channel.name;layer.external=sound
                         let applied=try processing.applying(to:layer,selection:mainStageSelection(channelIndex))
                         layer=applied.layer
-                        let original=try StageKeysSampler.retainOriginal(file,library:saveURL.deletingLastPathComponent())
+                        let original=try StageKeysSampler.retainOriginal(importedCandidate.file,library:saveURL.deletingLastPathComponent())
                         createdOriginal=original
                         // One layer hosts one instrument: a channel that also saved an Audio
                         // Unit keeps that state in the archive instead of losing it silently.
@@ -2764,8 +2789,7 @@ final class PerformanceStore: ObservableObject {
         l.id = patch.layers[index].id; l.midiDestinationID = destination.id; commitLayer(index, l)
     }
     func save() {
-        // Inspect the active library document before autosave can hide a damaged
-        // or future-version primary and its explicit recovery action.
+        // Do not hide a damaged/future active library document by autosaving it.
         if let id=currentSetlistID {
             do {_ = try localSetlistLibrary().load(id:id)}
             catch {message="The active saved setlist could not be read. Restore its previous copy or explicitly replace it before saving. "+error.localizedDescription;refreshSetlists();return}
@@ -3109,6 +3133,11 @@ final class PerformanceStore: ObservableObject {
             // failure stays visible instead of being replaced by the success text.
             message = nil
             panic(); cancelTransition()
+            // An audition captured from the outgoing document must end before the
+            // recovered layers replace it: restoring it afterwards would treat the
+            // recovered layer as the audition's original and write the live state
+            // over the recovered plug-in state.
+            cancelAudition()
             setlist = candidate; selected = 0; activeSnapshot = nil
             if started || audio.running {
                 // Even a matching cached state must replace editor-mutated live

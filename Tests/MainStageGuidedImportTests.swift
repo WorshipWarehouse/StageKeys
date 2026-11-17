@@ -77,8 +77,10 @@ import Darwin
         assert(store.mainStageOutcomes.prefix(2).allSatisfy{$0.detail.contains("Already installed")},store.mainStageOutcomes.map(\.detail).joined(separator:"; "))
         assert(store.libraryImportProgress?.contains("Another library operation")==true,store.libraryImportProgress ?? "No failure message")
         assert((try! Data(contentsOf:catalog))==before,"A refused commit must not rewrite the catalog")
+        let patchesBefore=store.setlist.patches.count
         store.assembleConvertedMainStagePatch(readyOnly:true)
-        assert(store.patch.layers[0].name=="First" && store.patch.layers[1].name=="Second","Preserved duplicates must still assemble after a refused commit")
+        assert(store.setlist.patches.count==patchesBefore+1,"Ready-only assembly must add a patch")
+        assert(store.setlist.patches.last?.layers[0].name=="First" && store.setlist.patches.last?.layers[1].name=="Second","Preserved duplicates must still assemble after a refused commit")
         assert((try! Data(contentsOf:catalog))==before,"Ready-only assembly must not publish a refused archive-ID rewrite")
         store.importMainStageAutomatically(patch,locations:[.init(instruments:patch,samples:patch,label:"Synthetic source")]);store.cancelLibraryImport();try await wait()
         assert((try! Data(contentsOf:catalog))==before)

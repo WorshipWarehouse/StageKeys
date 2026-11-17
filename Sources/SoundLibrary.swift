@@ -113,9 +113,12 @@ struct SoundLibrary {
                    { var legacy=measured.effects[1];legacy.reverbCore="creamcoat";return existing.effects[1]==legacy }() {
                     existing.effects[1].reverbCore=measured.effects[1].reverbCore
                     entries[index].layer=existing
+                    // The catalog rejects more than 128 notes per entry, so a full
+                    // note list keeps its existing notes and still migrates the
+                    // reverb core rather than making the whole catalog unreadable.
                     if let note=voiced.conversionNotes?.last,
                        !(entries[index].conversionNotes ?? []).contains(note),
-                       (entries[index].conversionNotes ?? []).count<128 {
+                       (entries[index].conversionNotes ?? []).count < 128 {
                         entries[index].conversionNotes=(entries[index].conversionNotes ?? [])+[note]
                     }
                 }

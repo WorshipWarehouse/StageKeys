@@ -195,8 +195,6 @@ import Foundation
         assert(!blockedUndo)
         feedback.restoration(succeeded:blockedUndo,message:store.message ?? "Undo failed")
         assert(feedback.removed==removal && feedback.text!.contains(removal!.name),"Failed Undo must keep the named entry for retry")
-        feedback.notice("Repair refused: missing sample")
-        assert(feedback.removed==removal && feedback.text!.contains("Repair refused"))
         feedback.removal(nil,message:"Could not remove another sound")
         assert(feedback.removed==removal && feedback.text!.contains(removal!.name),"A later failed removal cannot erase the earlier Undo")
         store.libraryImportBusy=false
@@ -220,8 +218,6 @@ import Foundation
         assert(store.removeLibrarySound("catalog-only") == nil,"Only My Sounds entries are removable here")
         assert(store.librarySounds.contains { $0.id == "catalog-only" })
         store.message = nil
-        feedback.notice("Repair refused: missing sample")
-        assert(feedback.text?.contains("Repair refused")==true)
         print("PASS: library repair assertions and remove-from-My-Sounds behaviour")
     }
 }

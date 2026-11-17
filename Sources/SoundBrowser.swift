@@ -19,6 +19,9 @@ struct SoundBrowser: View {
     /// Result of the last library edit. The sheet is modal, so the store's own
     /// message would otherwise be shown behind it.
     @State private var removalFeedback=LibraryRemovalFeedback()
+    /// A repair result from `store.message`, shown here because this modal does not
+    /// otherwise display the store's message and must not consume removal feedback.
+    @State private var repairNotice:String?
     /// The entry the last successful removal reported, so its notice can offer Undo.
     @State private var auditionToken:UUID?
     @State private var instruments=ExternalInstrumentRack.instruments()
@@ -91,6 +94,7 @@ struct SoundBrowser: View {
             if store.libraryRecoveryRequired && !results.isEmpty {libraryErrorBar}
             filterBar
             if let notice=removalFeedback.text {libraryNoticeBar(notice,showsUndo:removalFeedback.removed != nil)}
+            if let notice=repairNotice {libraryNoticeBar(notice,onDismiss:{repairNotice=nil})}
             GeometryReader {geometry in
                 ScrollView(.horizontal) {
                     HStack(spacing:0) {
@@ -108,13 +112,16 @@ struct SoundBrowser: View {
             defer {locateTarget=nil}
             guard case .success(let url)=result,let id=locateTarget else{return}
             store.relinkLibrarySound(id,from:url)
-            removalFeedback.notice(store.message ?? "Repair finished.");store.message=nil
+            if let message=store.message {repairNotice=message;store.message=nil}
         }
         .fileImporter(isPresented:$locatingSamples,allowedContentTypes:[.folder]) { result in
             defer {samplesTarget=nil}
             guard case .success(let url)=result,let id=samplesTarget else{return}
             store.relinkLibrarySamples(id,from:url)
-            removalFeedback.notice(store.message ?? "Repair finished.");store.message=nil
+            // The repair reports through `store.message`; carry it into the browser's
+            // own notice so a rejected folder explains itself, without touching any
+            // pending removal Undo.
+            if let message=store.message {repairNotice=message;store.message=nil}
         }
         .onAppear {
             store.refreshLibraryContent()
@@ -184,7 +191,7 @@ struct SoundBrowser: View {
     }
     /// Removal keeps the managed file, so the outcome is stated here with its own
     /// dismiss control instead of disappearing into a modal-obscured message.
-    private func libraryNoticeBar(_ text:String,showsUndo:Bool=false)->some View {
+    private func libraryNoticeBar(_ text:String,showsUndo:Bool=false,onDismiss:(()->Void)?=nil)->some View {
         HStack(spacing:12) {
             Image(systemName:"checkmark.circle.fill").foregroundStyle(StageTheme.selected)
             Text(text).font(StageTheme.font(12)).fixedSize(horizontal:false,vertical:true)
@@ -194,7 +201,7 @@ struct SoundBrowser: View {
                     .accessibilityLabel("Undo the removal")
                     .help("Put the removed sound back in My Sounds with its tags and saved settings.")
             }
-            Button("Dismiss"){removalFeedback.dismiss()}.buttonStyle(StageButtonStyle())
+            Button("Dismiss"){if let onDismiss {onDismiss()} else {removalFeedback.dismiss()}}.buttonStyle(StageButtonStyle())
                 .accessibilityLabel("Dismiss the library message")
         }.padding(.horizontal,16).frame(minHeight:46).background(StageTheme.raised.opacity(0.3))
         .accessibilityElement(children:.contain)
@@ -237,9 +244,11 @@ struct SoundBrowser: View {
                 }.buttonStyle(.plain)
                  .accessibilityLabel(query.favoritesOnly ? "Show all sounds":"Show favorite sounds only")
                  .help("Show favorites only")
-                Button("Clear Filters") {query.filters=[:];query.favoritesOnly=false;clearHiddenSelection()}
-                    .font(StageTheme.font(12,weight:.semibold)).buttonStyle(.plain)
-                    .accessibilityLabel("Clear all library filters")
+                if !query.activeFilters.isEmpty || query.favoritesOnly {
+                    Button("Clear Filters") {query.filters=[:];query.favoritesOnly=false;clearHiddenSelection()}
+                        .font(StageTheme.font(12,weight:.semibold)).buttonStyle(.plain)
+                        .accessibilityLabel("Clear all library filters")
+                }
             }.padding(.horizontal,16).frame(height:38)
         }.background(StageTheme.base)
     }
@@ -254,7 +263,11 @@ struct SoundBrowser: View {
         Button{selectedID=sound.id}label:{VStack(alignment:.leading,spacing:5){Text(sound.name).font(StageTheme.font(16)).multilineTextAlignment(.leading);if collection == "MainStage Archive" {Text(sound.playable ? "Playable":"Needs Conversion").font(StageTheme.font(11)).foregroundStyle(.secondary)};if sound.unavailableReason != nil || sound.contentIssue != nil {Text("Unavailable").font(StageTheme.font(11)).foregroundStyle(.orange)};if sound.collection == "Audio Units" {Text(sound.tags.sourceModel).font(StageTheme.font(11)).foregroundStyle(.secondary)}}.frame(maxWidth:.infinity,alignment:.leading).padding(.leading,14).padding(.vertical,13)}.buttonStyle(.plain).accessibilityLabel("\(sound.name), \((sound.unavailableReason != nil || sound.contentIssue != nil) ? "Unavailable" : sound.playable ? "Playable":"Needs Conversion")")
     }
     private func favoriteButton(_ sound:BrowserSound)->some View {
-        Button{store.toggleFavorite(sound.ratingID)}label:{Image(systemName:sound.favorite ? "star.fill":"star").font(.system(size:13,weight:.semibold)).frame(width:favoriteTarget,height:favoriteTarget).contentShape(Rectangle())}.buttonStyle(.plain).padding(.trailing,4)
+        Button{store.toggleFavorite(sound.ratingID)
+            // A failed save leaves the favorite unchanged and says why in `store.message`,
+            // which this modal does not otherwise show; keep any pending removal Undo.
+            if let message=store.message {repairNotice=message;store.message=nil}
+        }label:{Image(systemName:sound.favorite ? "star.fill":"star").font(.system(size:13,weight:.semibold)).frame(width:favoriteTarget,height:favoriteTarget).contentShape(Rectangle())}.buttonStyle(.plain).padding(.trailing,4)
                                 .accessibilityLabel(sound.favorite ? "Remove \(sound.name) from favorites":"Add \(sound.name) to favorites")
                                 .help(sound.favorite ? "Remove from favorites":"Add to favorites")
     }
@@ -321,7 +334,7 @@ struct SoundBrowser: View {
                             // A live search or filter can strand the results even
                             // while the catalog is unreadable, so clearing it must
                             // not depend on whether importing is offered.
-                            if !query.search.isEmpty || !query.filters.isEmpty || query.favoritesOnly {Button("Clear Filters"){query.filters=[:];query.favoritesOnly=false;query.search=""}}
+                            if !query.search.isEmpty || !query.filters.isEmpty {Button("Clear Filters"){query.filters=[:];query.search=""}}
                             if emptyState.offersImport {
                                 Button("Import Samples"){importHub=true}.buttonStyle(StageButtonStyle())
                                 Button("Add Audio Unit"){collection="Audio Units";query=LibraryQuery()}.buttonStyle(StageButtonStyle())

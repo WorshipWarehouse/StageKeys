@@ -37,18 +37,23 @@ def main(root: Path) -> int:
     if 'callback(context,status,0,0,p->timeStamp)' not in native:
         errors.append('System realtime messages lost their current packet stamp')
     input_source = (root / 'Sources/MIDIInput.swift').read_text()
-    for required in ('sk_read_midi_timed(list, receiveInput,', 'MIDIClockTimestamp.at(', 'mach_timebase_info('):
+    for required in ('sk_read_midi_timed(list, receiveInput,', 'MIDIClockTimestamp.at(', 'mach_timebase_info(',
+                     'MIDIClockTimestamp.isPacketBacked('):
         if required not in input_source:
             errors.append(f'Sources/MIDIInput.swift no longer uses {required}')
     if 'receiver.packetTicks' in input_source or 'sk_read_midi_first_timestamp' in input_source:
         errors.append('MIDI input reuses the first packet stamp for the list')
 
     store = (root / 'Sources/Store.swift').read_text()
-    if not re.search(r'private func handleMIDI\(_ status: UInt8, _ a: UInt8, _ b: UInt8, source: Int32, at time: Double\)',
-                     store):
+    if not re.search(r'private func handleMIDI\(_ status: UInt8, _ a: UInt8, _ b: UInt8, source: Int32, at time: Double'
+                     r'(?:, fromPacket: Bool(?: = false)?)?\)', store):
         errors.append('PerformanceStore.handleMIDI does not take the event timestamp')
-    if 'handleMIDIClock(status, source: source, at: time)' not in store:
-        errors.append('the clock dispatch does not use the event timestamp')
+    if 'handleMIDIClock(status, source: source, at: time, fromPacket: fromPacket)' not in store:
+        errors.append('the clock dispatch does not use the event timestamp and its provenance')
+    # A tempo window that changes timing source mid-run mixes packet stamps with
+    # receipt times, so the store must reset its window when the provenance flips.
+    if 'midiClockPacketTiming != fromPacket' not in store or 'midiClockTempo.reset(); clockTempo = nil' not in store:
+        errors.append('the tempo window does not reset when packet timing changes')
     if RECEIPT_DIRECTLY in store:
         errors.append('PerformanceStore still dates clock pulses at main-queue receipt '
                       f'({RECEIPT_DIRECTLY})')

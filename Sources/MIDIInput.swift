@@ -43,12 +43,12 @@ final class MIDIInput {
     var onEvent: ((UInt8, UInt8, UInt8) -> Void)?
     /// The last value is the event's timestamp: the driver's packet stamp for clock
     /// pulses when CoreMIDI supplied one, otherwise the main-queue receipt time.
-    var onSourceEvent: ((Int32, UInt8, UInt8, UInt8, Double) -> Void)?
+    /// The last two values are the event's timestamp and whether that timestamp came
+    /// from the driver's packet stamp rather than the receipt time.
+    var onSourceEvent: ((Int32, UInt8, UInt8, UInt8, Double, Bool) -> Void)?
     var onDevices: ((Int, String?) -> Void)?
     var onInventory: (([MIDIInputSource], [MIDIKnownDevice]) -> Void)?
     var onDisconnect: ((Int32) -> Void)?
-    var onClockTimingChange: ((Int32) -> Void)?
-    private var clockTimingModes: [Int32:Bool] = [:]
     private static func string(_ object: MIDIObjectRef, _ property: CFString) -> String {
         var value: Unmanaged<CFString>?
         guard MIDIObjectGetStringProperty(object, property, &value) == noErr else { return "" }
@@ -164,18 +164,12 @@ final class MIDIInput {
         let time = MIDIClockTimestamp.at(packetTicks: packetTicks, numer: Self.timebase.numer,
                                          denom: Self.timebase.denom,
                                          receipt: receipt)
-        if status == 0xFA || status == 0xFB || status == 0xFC {clockTimingModes[identity]=nil}
-        if status == 0xF8 {
-            let packet = MIDIClockTimestamp.seconds(hostTicks:packetTicks,numer:Self.timebase.numer,denom:Self.timebase.denom)
-            let usesPacket = packet.map{abs($0-receipt)<=MIDIClockTimestamp.maximumLatency} ?? false
-            if let previous=clockTimingModes[identity],previous != usesPacket {onClockTimingChange?(identity)}
-            clockTimingModes[identity]=usesPacket
-        }
-        onSourceEvent?(identity,status,a,b,time); onEvent?(status,a,b)
+        let fromPacket = MIDIClockTimestamp.isPacketBacked(packetTicks: packetTicks, numer: Self.timebase.numer,
+                                                           denom: Self.timebase.denom, receipt: receipt)
+        onSourceEvent?(identity,status,a,b,time,fromPacket); onEvent?(status,a,b)
     }
     func stop() {
         precondition(Thread.isMainThread)
-        clockTimingModes=[:]
         refreshWork?.cancel(); poll?.invalidate(); poll=nil
         for (endpoint,id) in connected { MIDIPortDisconnectSource(port,endpoint); onDisconnect?(id) }
         connected.removeAll(); sources=[]
