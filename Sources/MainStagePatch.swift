@@ -108,17 +108,25 @@ enum MainStagePatch {
         let token=variant.count<=64 ? variant:digest(Data(variant.utf8))
         return "mainstage-channel-"+channel.sha256+"-v2-"+context+"-"+token
     }
-    static func assembledChannels(_ report:Report,entries:[LibrarySound],selected:Set<Int>?=nil)throws->Patch {
-        let channels=report.channels.enumerated().filter{(selected?.contains($0.offset) ?? true) && $0.element.isConvertible}.map(\.element)
+    static func assembledChannels(_ report:Report,entries:[LibrarySound],selected:Set<Int>?=nil,confirmedEntries:[Int:String]=[:])throws->Patch {
+        let channels=report.channels.enumerated().filter{(selected?.contains($0.offset) ?? true) && $0.element.isConvertible}
         guard let archive=report.sourceArchiveID,!channels.isEmpty,channels.count<=15 else {
             throw Failure.invalid("Choose a source patch with 1–15 converted instrument channels. More complex patch routing requires manual setup.")
         }
         var layers:[Layer]=[],notes=["Converted channel strips only. Patch-level buses/sends, tempo, scripts and routing require review; this is not full MainStage topology parity."]
-        for channel in channels {
+        for (channelIndex,channel) in channels {
             let modernPrefix=try? conversionID(report,channel:channel,variant:"")
             let matches=entries.filter{entry in
-                guard entry.sourceArchiveID==archive,entry.id.hasPrefix("mainstage-channel-"+channel.sha256+"-") else{return false}
-                return !entry.id.contains("-v2-") || modernPrefix.map{entry.id.hasPrefix($0)} == true
+                guard entry.id.hasPrefix("mainstage-channel-"+channel.sha256+"-") else{return false}
+                let modernMatch=modernPrefix.map{entry.id.hasPrefix($0)} == true
+                if let confirmed=confirmedEntries[channelIndex] {
+                    // A refused commit cannot rewrite an installed duplicate's
+                    // archive ID. Its exact outcome ID plus the current source
+                    // metadata/channel prefix provide the required identity.
+                    return modernMatch && entry.id==confirmed
+                }
+                guard entry.sourceArchiveID==archive else{return false}
+                return !entry.id.contains("-v2-") || modernMatch
             }
             guard matches.count==1,let entry=matches.first,var layer=entry.layer,
                   let kind=layer.external?.kind,kind == .samplerPreset || kind == .audioUnit else {

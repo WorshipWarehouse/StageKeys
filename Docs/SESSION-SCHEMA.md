@@ -66,3 +66,5 @@ voices, gains and snapshots it was saved with.
   the gate wiring drifts.
 - `Tests/SessionMigrationTests.swift` keeps the separate end-to-end migration,
   rollback and interrupted-write coverage for a schema-1 session.
+
+The decoder checks the version key before interpreting any current payload fields. A future document may change the shape of patches or names and still receives the newer-schema refusal, preserving both primary and previous bytes. Generated coverage includes a schema-5 object-shaped patches payload.

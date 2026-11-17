@@ -80,6 +80,8 @@ import Darwin
             assert(error.localizedDescription.contains("left unchanged"),
                    "A refused session must state that its files were not changed")
         }
+        let incompatibleFuture=Data("{\"version\":5,\"patches\":{\"futureShape\":true},\"name\":17}".utf8)
+        assert(refusal(incompatibleFuture) == .unsupportedVersion(saved:5,supported:SetlistSchema.supported),"Future version must be refused before interpreting its changed payload")
         // Below the oldest supported schema the message must not claim "newer".
         guard let old = refusal(try fixture(version: 0)), case let .unsupportedVersion(saved, _) = old,
               saved == 0 else { fail("schema 0 was not refused as an unsupported version") }
@@ -97,7 +99,7 @@ import Darwin
         let newerRoot = root.appendingPathComponent("newer-schema", isDirectory: true)
         try FileManager.default.createDirectory(at: newerRoot, withIntermediateDirectories: true)
         let newerPrimary = newerRoot.appendingPathComponent("setlist.json")
-        let newerBytes = try fixture(version: SetlistSchema.current + 1)
+        let newerBytes = incompatibleFuture
         var good = Setlist()
         good.name = "Last good copy"
         let goodBytes = try JSONEncoder().encode(good)

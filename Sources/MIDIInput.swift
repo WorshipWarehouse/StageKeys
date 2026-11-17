@@ -70,7 +70,9 @@ final class MIDIInput {
             guard let self, let refCon else { return }
             let endpoint = MIDIEndpointRef(UInt(bitPattern: refCon))
             let receiver = MIDIReadContext(self, endpoint)
-            sk_read_midi_timed(list, receiveInput, Unmanaged.passUnretained(receiver).toOpaque())
+            withExtendedLifetime(receiver) {
+                sk_read_midi_timed(list, receiveInput, Unmanaged.passUnretained(receiver).toOpaque())
+            }
         }
         guard result == noErr else {
             MIDIClientDispose(client); client = 0

@@ -34,9 +34,13 @@ library document is written once, only after every accepted file is ready.
 
 ## Limits
 
-- Prepared managed copies of a rejected batch are not deleted; the catalog is
-  what stays unchanged. Reusing them would require a cleanup pass that could
-  remove a copy another process is writing.
+- A batch accepts at most 512 self-contained sources. Its uniquely owned managed
+  files are removed on cancellation or a refused catalog commit; existing or
+  other-process assets are never part of that cleanup set. The final prepared
+  phase yields before the cancellation check and catalog compare-and-swap.
+- Hashing, file copy and Apple validation remain synchronous per source on the
+  main actor. Cancellation cannot preempt those calls; it is observed between
+  sources and immediately before commit. Bulk import is not live-use qualified.
 - Content identity is the source file's bytes. A re-exported file with different
   bytes (for example a re-rendered sample) is a new sound, not a duplicate.
 - This is not a claim that a bulk import has been qualified on a clean Mac with

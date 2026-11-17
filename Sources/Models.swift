@@ -620,6 +620,22 @@ struct Setlist: Codable {
         guard assignments.allSatisfy({ (0...127).contains($0.key) && (0...14).contains($0.value) }) else { throw SetlistError.invalid }
     }
 }
+// Decode the version before the current payload shape on every session path,
+// including startup, library documents, portable shares and recovery previews.
+extension Setlist {
+    private enum CodingKeys:String,CodingKey {case version,name,patches,assignments,controlAssignments}
+    init(from decoder:Decoder)throws {
+        let values=try decoder.container(keyedBy:CodingKeys.self)
+        version=try values.decode(Int.self,forKey:.version)
+        guard SetlistSchema.supported.contains(version) else {
+            throw SetlistError.unsupportedVersion(saved: version, supported: SetlistSchema.supported)
+        }
+        name=try values.decode(String.self,forKey:.name)
+        patches=try values.decode([Patch].self,forKey:.patches)
+        assignments=try values.decode([Int:Int].self,forKey:.assignments)
+        controlAssignments=try values.decodeIfPresent([Int:MIDIControlTarget].self,forKey:.controlAssignments)
+    }
+}
 enum SetlistError: LocalizedError, Equatable {
     case invalid
     /// A saved document names a schema this build does not read. It is kept apart

@@ -20,8 +20,9 @@ enum LibraryBulkImport {
     static func uniqueSources(_ urls: [URL]) -> [URL] {
         var seen = Set<String>()
         var result: [URL] = []
-        for url in urls.map({ $0.standardizedFileURL }).sorted(by: { $0.path < $1.path }) {
-            if seen.insert(url.path).inserted { result.append(url) }
+        // Canonicalize identity only; keep the picker's original security-scoped URL.
+        for url in urls.sorted(by: { $0.standardizedFileURL.path < $1.standardizedFileURL.path }) {
+            if seen.insert(url.standardizedFileURL.path).inserted { result.append(url) }
         }
         return result
     }

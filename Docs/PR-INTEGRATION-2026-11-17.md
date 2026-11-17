@@ -23,8 +23,13 @@ reviewed PR commits and reconciles their overlapping changes.
 | [#221](https://github.com/WorshipWarehouse/StageKeys/pull/221) | `d1066425fc1d` | Date MIDI clock pulses with the CoreMIDI packet stamp |
 | [#222](https://github.com/WorshipWarehouse/StageKeys/pull/222) | `a15ed704bad5` | Add personal sound favorites as a library filter (#17) |
 | [#224](https://github.com/WorshipWarehouse/StageKeys/pull/224) | `0abd3f21ecce` | Repair a library sound whose sample folder moved (#17) |
+| [#226](https://github.com/WorshipWarehouse/StageKeys/pull/226) | `a48aa2ac202c` | Keep an already-installed MainStage channel reported as a duplicate (#5) |
+| [#227](https://github.com/WorshipWarehouse/StageKeys/pull/227) | `5facf976b743` | Name the saved-session schema and refuse a newer one (#20) |
+| [#228](https://github.com/WorshipWarehouse/StageKeys/pull/228) | `027f9d31d63e` | Add single-transaction bulk sound import with content-duplicate skipping (#8) |
 
 ## Review findings resolved
+
+The review cutoff includes PRs through #228. Later arrivals require their own review.
 
 - Preserve every CoreMIDI packet timestamp through a new timed callback; retain the untimed C ABI. Direct C lists and a virtual CoreMIDI source test two distinct clock packets in one list. Zero/invalid-stamp receipt fallback remains.
 - Retain the exact named removal/Undo state after a failed Undo or a subsequent failed removal. The same tested feedback model drives the browser.
@@ -36,14 +41,21 @@ reviewed PR commits and reconciles their overlapping changes.
 - Validate repaired sampler structure and audio headers before publishing a successful repair; corrupt matching-name audio is rejected and unique new assets are rolled back. Replace the previous fake-RIFF success fixture with real generated PCM.
 - Bundle and enforce DaisySP/Signalsmith notices on both app targets. Reject personal favorites metadata as a distribution asset. No vendor/user audio, session or plug-in state is committed.
 
+- Keep ready-only MainStage assembly usable after a refused batch by using the exact confirmed duplicate entry ID together with the current metadata/channel identity, without publishing a refused archive-ID rewrite.
+- Decode the saved schema before the current payload shape. Future object-shaped patches are classified as newer sessions, so recovery/autosave cannot overwrite them.
+- Preserve security-scoped picker URLs, bound bulk selection, yield before final cancellation, verify copied source hashes, and roll back only uniquely owned batch files on cancellation or refused commit. Hash/copy/Apple validation remain synchronous per source and are not advertised as preemptible.
+- Keep the Swift callback context alive throughout the synchronous C read; the main-queue hop captures only copied packet values and a weak input reference.
+
 ## Validation
 
-- Complete combined library gate: **136 passed, 12 explicit private-fixture skips, 0 failed**. The optional private PianoHeldNote fixture remains unexercised despite its program passing.
+- Final complete combined library gate: **138 passed, 12 explicit private-fixture skips, 0 failed**. The optional private PianoHeldNote fixture remains unexercised despite its program passing.
 - Final focused checks after the repair-header and named-route refinements: **6 passed, 0 skipped, 0 failed** (`LibraryRepairTests`, `AudioDeviceInventoryTests`, `EffectPresetTests`, `SoundLibraryTests`, `SetlistRecoveryStateTests`, `MIDIInputTests`).
 - Complete 31-program DSP AddressSanitizer/UndefinedBehaviorSanitizer suite passed; the final legacy-Chorus default adjustment also passed `StageChorusTests` under both sanitizers.
 - Universal unsigned Mac and iOS Simulator artifact gates passed on the combined changes; final-commit build/CI outcomes are attached to the integration PR. These are not signing/install or physical-device results.
-- Test registration (138 Swift / 10 C / 31 sanitizer programs), distribution refusal, accessibility-source audit and MIDI packet wiring checks passed.
+- Test registration (140 Swift / 10 C / 31 sanitizer programs), distribution refusal, accessibility-source audit and MIDI packet wiring checks passed.
 - Existing per-PR CI results were inspected together with thread-aware review state and actual source. No branch protection bypass or administrator merge is used.
+
+The additional schema/outcome/bulk checks run in the final combined gate. Audio comparison/residual/modulation tooling tests passed with original generated input; the capture helper compiled and rejected missing arguments without capturing any application audio. DaisySP and Signalsmith notices were independently verified against their pinned upstream revisions.
 
 ## Issue disposition
 

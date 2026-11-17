@@ -2282,9 +2282,11 @@ final class PerformanceStore: ObservableObject {
         guard !libraryImportBusy else{message="A sound library import is already running.";return}
         let sources=LibraryBulkImport.uniqueSources(urls)
         guard !sources.isEmpty else{message="Choose at least one sound file.";return}
+        guard sampleRoot==nil,sources.count<=512,sources.allSatisfy({!LibraryBulkImport.needsSampleFolder($0)}) else{message="Choose up to 512 self-contained audio or sound-bank files. Sampler instruments require their separate sample-folder flow.";return}
         libraryImportCancelRequested=false;libraryImportBusy=true
         Task { @MainActor in
-            defer{libraryImportBusy=false}
+            var owned=Set<URL>(),committed=false
+            defer{if !committed {for file in owned {try? FileManager.default.removeItem(at:file)}};libraryImportBusy=false}
             do {
                 let library=SoundLibrary(url:saveURL.deletingLastPathComponent().appendingPathComponent("sound-library.json"))
                 let original=try library.read()
@@ -2294,7 +2296,9 @@ final class PerformanceStore: ObservableObject {
                     if libraryImportCancelRequested {break}
                     libraryImportProgress="Preparing "+LibraryBulkImport.displayName(url)
                     await Task.yield()
+                    if libraryImportCancelRequested {break}
                     let access=url.startAccessingSecurityScopedResource()
+                    var preparedFile:URL?
                     do {
                         let digest=try AssetDigest.sha256(url)
                         // Check what was actually prepared, not what was attempted:
@@ -2304,20 +2308,22 @@ final class PerformanceStore: ObservableObject {
                         } else if LibraryBulkImport.duplicateName(digest:digest,in:entries) != nil {
                             outcomes.append(.skipped(name:LibraryBulkImport.displayName(url),reason:"Same content as another selected file"))
                         } else {
-                            let (sound,notes,layer)=try prepareLibrarySound(url,sampleRoot:sampleRoot)
+                            let (sound,notes,layer)=try prepareLibrarySound(url,sampleRoot:nil)
                             var entry=LibrarySound(id:UUID().uuidString,name:sound.name,collection:"My Sounds",sound:sound,layer:layer,conversionNotes:notes)
-                            if LibraryBulkImport.needsSampleFolder(url) {
-                                entry.originalInstrument=try StageKeysSampler.retainOriginal(url,library:saveURL.deletingLastPathComponent())
-                            }
-                            if let name=sound.fileName,let rack=audio.externalRack {
-                                entry.managedFileSHA256=try AssetDigest.sha256(rack.libraryURL.appendingPathComponent(name))
-                            }
+                            guard let name=sound.fileName,let rack=audio.externalRack,LibraryRepair.safeName(name) else{throw ExternalInstrumentError.unsupportedFormat}
+                            let managed=rack.libraryURL.appendingPathComponent(name);preparedFile=managed
+                            let actual=try AssetDigest.sha256(managed)
+                            guard actual==digest else{throw MainStagePatch.Failure.invalid("The source changed during import. Select the original file and retry.")}
+                            entry.managedFileSHA256=actual
+                            owned.insert(managed);preparedFile=nil
                             entries.append(entry)
                             outcomes.append(.added(name:sound.name))
                         }
-                    } catch {outcomes.append(.failed(name:LibraryBulkImport.displayName(url),reason:LibraryBulkImport.failureReason(error)))}
+                    } catch {if let preparedFile {try? FileManager.default.removeItem(at:preparedFile)};outcomes.append(.failed(name:LibraryBulkImport.displayName(url),reason:LibraryBulkImport.failureReason(error)))}
                     if access {url.stopAccessingSecurityScopedResource()}
                 }
+                libraryImportProgress="Prepared \(LibraryBulkImport.addedNames(outcomes).count) sounds. Checking library before commit…"
+                await Task.yield()
                 guard !libraryImportCancelRequested else {
                     libraryImportProgress="Import cancelled. No prepared catalog entries were committed.";return
                 }
@@ -2325,7 +2331,7 @@ final class PerformanceStore: ObservableObject {
                     libraryImportProgress=LibraryBulkImport.summary(outcomes);return
                 }
                 try library.commitImport(entries,replacing:original)
-                librarySounds=entries;refreshLibraryContent()
+                committed=true;librarySounds=entries;refreshLibraryContent()
                 libraryImportProgress=LibraryBulkImport.summary(outcomes)
             }catch{libraryImportProgress="Import not committed: "+error.localizedDescription}
         }
@@ -2636,7 +2642,7 @@ final class PerformanceStore: ObservableObject {
         guard !patchLock,let report=mainStageImportReport,setlist.patches.count<128 else{return}
         do {
             let selected=readyOnly ? Set(mainStageOutcomes.filter{[.converted,.duplicate].contains($0.state)}.map(\.id)):nil
-            var assembled=try MainStagePatch.assembledChannels(report,entries:librarySounds,selected:selected)
+            var assembled=try MainStagePatch.assembledChannels(report,entries:librarySounds,selected:selected,confirmedEntries:Dictionary(uniqueKeysWithValues:mainStageOutcomes.filter{[.converted,.duplicate].contains($0.state) && $0.soundIDs.count==1}.map{($0.id,$0.soundIDs[0])}))
             if readyOnly {assembled.conversionNotes=Array(((assembled.conversionNotes ?? [])+mainStageOutcomes.filter{![.converted,.duplicate].contains($0.state)}.map{"Not included: \($0.name) · \($0.detail)"}).prefix(128)).map{String($0.prefix(2000))}}
             setlist.patches.append(assembled);choose(setlist.patches.count-1);save()
             message="Converted channels added as a new patch. Review Conversion Notes in Patch Settings before performing."

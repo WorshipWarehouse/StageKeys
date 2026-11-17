@@ -1,13 +1,15 @@
 import Foundation
+import Darwin
+import Combine
 
 /// Selection, identity and summary rules for multi-file library import (#8).
-/// Pure planning logic: no audio device, plug-in or fixture is opened.
+/// Planning checks plus generated-audio Store transactions, rollback and restart.
 struct LongImportFailure: LocalizedError {
     var errorDescription: String? { String(repeating: "y", count: 400) }
 }
 
 @main struct LibraryBulkImportTests {
-    static func main() throws {
+    @MainActor static func main() async throws {
         let base = URL(fileURLWithPath: "/tmp/stagekeys-bulk")
         let alpha = base.appendingPathComponent("Alpha.wav")
         let beta = base.appendingPathComponent("Beta.aif")
@@ -65,6 +67,40 @@ struct LongImportFailure: LocalizedError {
         assert(LibraryBulkImport.failureReason(CocoaError(.fileReadNoSuchFile)) == CocoaError(.fileReadNoSuchFile).localizedDescription)
         assert(LibraryBulkImport.displayName(base.appendingPathComponent(String(repeating: "n", count: 120) + ".wav")).count == 80)
 
+        let root=URL(fileURLWithPath:ProcessInfo.processInfo.environment["STAGEKEYS_DATA_DIR"]!)
+        try FileManager.default.createDirectory(at:root,withIntermediateDirectories:true)
+        let a=root.appendingPathComponent("A.wav"),duplicate=root.appendingPathComponent("A Copy.wav"),b=root.appendingPathComponent("B.wav"),c=root.appendingPathComponent("C.wav")
+        func wave(_ seed:Int)->Data {NordNative.wav((0..<2048).map{Int16(($0%seed)*100-2000)},channels:1)}
+        try wave(40).write(to:a);try wave(40).write(to:duplicate);try wave(30).write(to:b);try wave(20).write(to:c)
+        let store=PerformanceStore();store.save()
+        let session=try Data(contentsOf:root.appendingPathComponent("setlist.json"))
+        func wait()async throws {for _ in 0..<2000 where store.libraryImportBusy {try await Task.sleep(nanoseconds:10_000_000)};assert(!store.libraryImportBusy)}
+        store.importLibrarySounds([a,duplicate,b]);try await wait()
+        assert(store.librarySounds.count==2,store.libraryImportProgress ?? "")
+        assert(store.libraryImportProgress?.contains("Skipped 1")==true)
+        let catalog=root.appendingPathComponent("sound-library.json"),saved=try Data(contentsOf:catalog)
+        let managedDirectory=store.audio.externalRack!.libraryURL
+        let files=Set(try FileManager.default.contentsOfDirectory(atPath:managedDirectory.path))
+        store.importLibrarySounds([a,b]);try await wait()
+        assert((try! Data(contentsOf:catalog))==saved && Set(try! FileManager.default.contentsOfDirectory(atPath:managedDirectory.path))==files)
+        let descriptor=open(catalog.appendingPathExtension("lock").path,O_RDWR)
+        assert(descriptor>=0 && flock(descriptor,LOCK_EX|LOCK_NB)==0)
+        store.importLibrarySounds([c]);try await wait()
+        flock(descriptor,LOCK_UN);close(descriptor)
+        assert(store.libraryImportProgress?.contains("not committed")==true)
+        assert((try! Data(contentsOf:catalog))==saved && Set(try! FileManager.default.contentsOfDirectory(atPath:managedDirectory.path))==files,"Refused commit must roll back unique batch assets")
+        // The observable prepared phase occurs after the final source was copied.
+        // Cancel there to exercise rollback of already-prepared assets.
+        let observation=store.$libraryImportProgress.sink {progress in
+            if progress?.hasPrefix("Prepared ")==true {store.cancelLibraryImport()}
+        }
+        store.importLibrarySounds([c]);try await wait();observation.cancel()
+        assert(store.libraryImportProgress?.contains("cancelled")==true)
+        assert((try! Data(contentsOf:catalog))==saved && Set(try! FileManager.default.contentsOfDirectory(atPath:managedDirectory.path))==files)
+        store.importLibrarySounds([c]);try await wait();assert(store.librarySounds.count==3,"A cancelled source must be retryable")
+        assert((try! Data(contentsOf:root.appendingPathComponent("setlist.json")))==session,"Batch import must not edit the active session")
+        let restart=PerformanceStore();assert(restart.librarySounds.count==3)
+        assert((try! Data(contentsOf:a))==wave(40))
         print("PASS: bulk import selection order, sampler-instrument boundary, duplicate identity, bounded summary and failure text")
     }
 }

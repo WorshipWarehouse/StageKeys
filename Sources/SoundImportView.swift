@@ -132,7 +132,7 @@ struct SoundImportView:View {
                     // One transaction, so a failure or cancellation leaves the catalog unchanged.
                     // Sampler instruments need their own sample folder, so those stay one at a time.
                     if urls.allSatisfy({!LibraryBulkImport.needsSampleFolder($0)}) {store.importLibrarySounds(urls);status=nil}
-                    else {status="Select one sampler instrument at a time so its sample folder can be chosen, or use Sampler Folder for a folder of instruments."}
+                    else {status="Import Nord pianos, MainStage patches, sound packs, EXS and AUPRESET one at a time. Select audio or sound-bank files together."}
                 case .file:
                     if url.pathExtension.lowercased()=="stagekeyspack" {store.importLibraryBackup(url);status=nil}
                     else if url.pathExtension.lowercased()=="npno" {store.inspectNordSound(url);status=nil}
