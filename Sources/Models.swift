@@ -501,6 +501,24 @@ enum SetlistSchema {
     static var supported: ClosedRange<Int> { oldestSupported...current }
 }
 
+/// Reads a saved session's schema before its payload. A document written by a
+/// newer build may also have changed the shape of fields this build knows, so
+/// decoding the whole document first would report that as damage and let the
+/// previous-copy recovery replace it. The envelope keeps the version refusal
+/// ahead of every payload assumption.
+enum SessionDocument {
+    private struct Envelope: Decodable { var version: Int }
+    static func decode(_ data: Data) throws -> Setlist {
+        let version: Int
+        do { version = try JSONDecoder().decode(Envelope.self, from: data).version }
+        catch { throw SetlistError.invalid }
+        guard SetlistSchema.supported.contains(version) else {
+            throw SetlistError.unsupportedVersion(saved: version, supported: SetlistSchema.supported)
+        }
+        return try JSONDecoder().decode(Setlist.self, from: data)
+    }
+}
+
 struct Setlist: Codable {
     var version = SetlistSchema.current
     var name = "My Setlist"

@@ -22,6 +22,11 @@ is unchanged: each patch keeps fifteen playable slots and each snapshot's gains
 and per-sound states are extended to match, so an old session opens with the same
 voices, gains and snapshots it was saved with.
 
+The saved schema is read from a version envelope before anything else is decoded,
+so a newer document is refused for being newer even when it also changed the shape
+of fields this build knows. Without that, such a document would fail to decode and
+be reported as damage, which would make it look recoverable.
+
 ## What each outcome does
 
 - **Current or older:** the session loads. If it came from an older schema, the
@@ -48,9 +53,12 @@ voices, gains and snapshots it was saved with.
   available again.
 - Nothing in this boundary rewrites the refused file: the primary, the previous
   copy and any versioned archive on disk are byte-identical after a refusal.
-- The boundary covers `setlist.json` and the setlist documents the local library
-  and share packages decode. `settings.json`, the sound catalog, ratings and
-  personal presets have their own validated archives and are out of scope here.
+- The boundary covers every stored setlist document this build reads: the active
+  `setlist.json`, a `.json` setlist imported through Load, a setlist document
+  opened as a file, and the setlists in the local library. Sealed
+  `.stagekeyssetlist` share packages keep their own format and validation, and
+  `settings.json`, the sound catalog, ratings and personal presets have their own
+  validated archives; they are out of scope here.
 
 ## Evidence
 

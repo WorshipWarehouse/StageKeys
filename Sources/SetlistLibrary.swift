@@ -140,7 +140,7 @@ final class SetlistLibrary {
         for url in try candidates(root) {
             do {
                 guard let id = UUID(uuidString: url.deletingPathExtension().lastPathComponent) else { throw SetlistLibraryError.unsafeFile }
-                let setlist = try JSONDecoder().decode(Setlist.self, from: bytes(url, directory: root)).upgraded()
+                let setlist = try SessionDocument.decode(bytes(url, directory: root)).upgraded()
                 result.entries.append(try descriptor(setlist, id: id, url: url))
             } catch { result.issues.append(SetlistLibraryIssue(fileName: url.lastPathComponent, message: error.localizedDescription)) }
         }
@@ -149,7 +149,7 @@ final class SetlistLibrary {
         return result
     }
     func load(id: UUID) throws -> Setlist {
-        try JSONDecoder().decode(Setlist.self, from: bytes(file(id), directory: root)).upgraded()
+        try SessionDocument.decode(bytes(file(id), directory: root)).upgraded()
     }
     @discardableResult
     func save(_ setlist: Setlist, id existingID: UUID? = nil) throws -> SetlistLibraryDescriptor {

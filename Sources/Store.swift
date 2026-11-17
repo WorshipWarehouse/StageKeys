@@ -788,7 +788,7 @@ final class PerformanceStore: ObservableObject {
         do { librarySounds = try SoundLibrary(url: base.appendingPathComponent("sound-library.json")).read() }
         catch { libraryRecoveryRequired=true;message = "Could not read sound library: \(error.localizedDescription). Catalog writes are blocked to preserve it. Open Settings to recover the previous catalog." }
         if FileManager.default.fileExists(atPath: saveURL.path) {
-            do { let data = try RecoverableSessionFile.read(saveURL); let loaded = try JSONDecoder().decode(Setlist.self, from: data); setlist = try loaded.upgraded(); if loaded.version < 4 { legacyData = data; legacyVersion = loaded.version } }
+            do { let data = try RecoverableSessionFile.read(saveURL); let loaded = try SessionDocument.decode(data); setlist = try loaded.upgraded(); if loaded.version < SetlistSchema.current { legacyData = data; legacyVersion = loaded.version } }
             catch {
                 sessionRecoveryRequired = true
                 if let schema = error as? SetlistError,
@@ -2510,7 +2510,7 @@ final class PerformanceStore: ObservableObject {
             let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
             let data = try encoder.encode(setlist)
             guard data.count <= 64_000_000 else { throw SetlistError.invalid }
-            try RecoverableSessionFile.write(data, to: saveURL) { _ = try JSONDecoder().decode(Setlist.self, from: $0).upgraded() }
+            try RecoverableSessionFile.write(data, to: saveURL) { _ = try SessionDocument.decode($0).upgraded() }
             currentSetlistID = try localSetlistLibrary().save(setlist,id:currentSetlistID).id
             refreshSetlists()
             let settings = SessionSettings(selectedPatchID:patch.id,activeSnapshotID:activeSnapshot,notesMode:notesMode,modWheel:modWheel,master: master, reverb: reverb, transition: transition, midiChannel: midiChannel, primarySourceID: primarySourceID, secondarySourceID: secondarySourceID, secondaryChannel: secondaryChannel, velocityMinimum: velocityMinimum, velocityMaximum: velocityMaximum, sourceNames: midiSourceNames, disableSilent: disableSilent, showRanges: showRanges, tonicGain: tonicGain, tonicBrightness: tonicBrightness, tonicShimmer: tonicShimmer, audioOutputUID: preferredAudioOutputUID, activeSetlistID: currentSetlistID,tonicSound:tonicSound,tonicVelocitySelector:tonicVelocitySelector,tonicTimbre:tonicTimbre,tonicLastRoot:tonicLastRoot,metronomeEnabled:metronome,audioBufferFrames:preferredBufferFrames.map{Int($0)},metronomeSettings:metronomeSettings,liveTempo:liveTempo,keyboardPlayable:keyboardPlayable,showPlayedNotes:showPlayedNotes,dynamicMIDIRanges:dynamicMIDIRanges,showSoundMeters:showSoundMeters)
@@ -2547,12 +2547,12 @@ final class PerformanceStore: ObservableObject {
                     return
                 }
                 let data = try RecoverableSessionFile.restore(saveURL) {
-                    let candidate = try JSONDecoder().decode(Setlist.self, from: $0).upgraded()
+                    let candidate = try SessionDocument.decode($0).upgraded()
                     // Validate live admission before publishing recovery bytes or
                     // releasing the currently working performance.
                     try prepareSetlistActivation(candidate)
                 }
-                let recovered = try JSONDecoder().decode(Setlist.self, from: data).upgraded()
+                let recovered = try SessionDocument.decode(data).upgraded()
                 panic(); cancelAudition(); cancelTransition()
                 setlist = recovered; selected = 0; activeSnapshot = nil; currentSetlistID = nil
                 sessionRecoveryRequired = false
@@ -2809,7 +2809,8 @@ final class PerformanceStore: ObservableObject {
         do {
             let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
             guard (attributes[.size] as? NSNumber)?.intValue ?? 0 <= 64_000_000 else { throw SetlistError.invalid }
-            let loaded = try JSONDecoder().decode(Setlist.self, from: Data(contentsOf: url)); let upgraded = try loaded.upgraded()
+            let importedBytes = try Data(contentsOf: url)
+            let loaded = try SessionDocument.decode(importedBytes); let upgraded = try loaded.upgraded()
             try prepareSetlistActivation(upgraded)
             try preserveCurrentSetlist()
             panic(); cancelTransition(); setlist = upgraded; currentSetlistID = nil; selected = 0; activeSnapshot = nil
@@ -2822,7 +2823,7 @@ struct SetlistFile: FileDocument {
     static var readableContentTypes: [UTType] { [.json] }
     var setlist: Setlist
     init(_ setlist: Setlist) { self.setlist = setlist }
-    init(configuration: ReadConfiguration) throws { setlist = try JSONDecoder().decode(Setlist.self, from: configuration.file.regularFileContents ?? Data()).upgraded() }
+    init(configuration: ReadConfiguration) throws { setlist = try SessionDocument.decode(configuration.file.regularFileContents ?? Data()).upgraded() }
     func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper { try setlist.validate(); let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys]; let data = try encoder.encode(setlist); guard data.count <= 64_000_000 else { throw SetlistError.invalid }; return FileWrapper(regularFileWithContents: data) }
 }
 /// The document is already a sealed, checksummed package. Writing revalidates it

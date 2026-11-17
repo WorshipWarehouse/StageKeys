@@ -87,6 +87,15 @@ import Darwin
                "An unreadable old schema must not be described as newer: \(old.localizedDescription)")
         // Real damage still reports as invalid, so the two cases stay distinct.
         let encoded = try fixture(version: 4)
+        // A newer schema that also changed a field's shape must still be refused on
+        // its version, not reported as damaged and made recoverable.
+        var changedShape = try JSONSerialization.jsonObject(with: try fixture(version: SetlistSchema.current + 1)) as! [String: Any]
+        changedShape["patches"] = ["changed": "shape"]
+        let incompatibleNewer = try JSONSerialization.data(withJSONObject: changedShape)
+        guard let shapeError = refusal(incompatibleNewer),
+              case let .unsupportedVersion(saved, _) = shapeError, saved == SetlistSchema.current + 1 else {
+            fail("A newer schema with a changed payload shape was reported as damage instead of a newer version")
+        }
         var emptied = try JSONSerialization.jsonObject(with: encoded) as! [String: Any]
         emptied["patches"] = []
         let damagedDocument = try JSONSerialization.data(withJSONObject: emptied)
@@ -122,6 +131,21 @@ import Darwin
         let primaryAfterSave = try Data(contentsOf: newerPrimary)
         assert(primaryAfterSave == newerBytes,
                "Automatic saves must not overwrite a newer-schema session")
+
+        // Store: a newer session whose payload shape also changed is still newer.
+        let shapeRoot = root.appendingPathComponent("newer-schema-changed-shape", isDirectory: true)
+        try FileManager.default.createDirectory(at: shapeRoot, withIntermediateDirectories: true)
+        let shapePrimary = shapeRoot.appendingPathComponent("setlist.json")
+        try incompatibleNewer.write(to: shapePrimary, options: .atomic)
+        try goodBytes.write(to: RecoverableSessionFile.previous(shapePrimary), options: .atomic)
+        setenv("STAGEKEYS_DATA_DIR", shapeRoot.path, 1)
+        let shapeStore = PerformanceStore()
+        assert(shapeStore.sessionRecoveryRequired && shapeStore.sessionSavedByNewerVersion,
+               "A newer schema with a changed payload shape must not be treated as damage")
+        shapeStore.recoverPreviousSession()
+        let shapeAfterRecovery = try Data(contentsOf: shapePrimary)
+        assert(shapeAfterRecovery == incompatibleNewer,
+               "Recovery must not replace a newer-schema session whose payload shape changed")
 
         // Store: a damaged session keeps the existing recovery path.
         let damagedRoot = root.appendingPathComponent("damaged-session", isDirectory: true)

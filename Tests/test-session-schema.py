@@ -51,6 +51,30 @@ else:
     if 'does not read' not in block:
         fail('an unreadable old schema is no longer described as unreadable')
 
+# The saved version must be read from an envelope before any payload assumption.
+document = re.search(r'enum SessionDocument \{(.*?)\n\}', models, re.S)
+if not document:
+    fail('Sources/Models.swift no longer reads the saved schema through SessionDocument')
+else:
+    body = document.group(1)
+    envelope_at = body.find('Envelope.self')
+    payload_at = body.find('decode(Setlist.self')
+    if envelope_at < 0:
+        fail('SessionDocument no longer decodes a version envelope')
+    if payload_at < 0 or envelope_at > payload_at:
+        fail('SessionDocument decodes the payload before it checks the saved schema')
+    if 'throw SetlistError.unsupportedVersion(saved: version, supported: SetlistSchema.supported)' not in body:
+        fail('SessionDocument no longer refuses a newer schema before the payload')
+if 'try SessionDocument.decode(data)' not in store:
+    fail('the session load bypasses the version envelope')
+if 'JSONDecoder().decode(Setlist.self' in store:
+    fail('a setlist document is still decoded without checking its schema first')
+library = (repo / 'Sources/SetlistLibrary.swift').read_text()
+if 'JSONDecoder().decode(Setlist.self' in library:
+    fail('a library setlist is still decoded without checking its schema first')
+if 'SessionDocument.decode(' not in library:
+    fail('the local library no longer reads setlists through the schema envelope')
+
 if '@Published private(set) var sessionSavedByNewerVersion = false' not in store:
     fail('PerformanceStore no longer records that the saved session came from a newer version')
 if 'saved > supported.upperBound' not in store or 'sessionSavedByNewerVersion = true' not in store:
@@ -80,12 +104,13 @@ if not doc_path.exists():
 else:
     doc = doc_path.read_text()
     for statement in ['SetlistSchema', 'schema 1', 'schema 4', 'newer', 'left unchanged',
-                      'Recover Previous Session', 'autosave']:
+                      'Recover Previous Session', 'autosave', 'envelope']:
         if statement not in doc:
             fail(f'Docs/SESSION-SCHEMA.md no longer states {statement!r}')
 
 for fragment in ['SetlistSchema.supported', '.unsupportedVersion', 'sessionSavedByNewerVersion',
-                 'recoverPreviousSession', 'SetlistSchema.current + 1']:
+                 'recoverPreviousSession', 'SetlistSchema.current + 1', 'incompatibleNewer',
+                 'changedShape']:
     if fragment not in tests:
         fail(f'Tests/SessionSchemaVersionTests.swift no longer exercises {fragment!r}')
 
