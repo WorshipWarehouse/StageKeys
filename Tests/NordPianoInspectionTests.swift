@@ -111,6 +111,8 @@ import Foundation
   // there is reported instead of returning a truncated name; a space is padding.
   var controlPadding=body();controlPadding[0x1c+17]=0x01
   rejects(container(controlPadding),.invalidText(offset:0x1c))
+  var controlName=body();controlName[0x1c+3]=0x07
+  rejects(container(controlName),.invalidText(offset:0x1c))
   var spacePadding=body();spacePadding[0x1c+17]=0x20
   let spacedReport=try NordPiano.inspect(container(spacePadding))
   assert(spacedReport.name.contains("Astoria Grand"))

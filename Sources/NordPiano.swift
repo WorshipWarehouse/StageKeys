@@ -160,15 +160,15 @@ enum NordPiano {
         guard audioBytes > 0 else { throw Problem.missingAudio }
         guard audioBytes % blockBytes == 0 else { throw Problem.audioNotBlockAligned(bytes: audioBytes, block: blockBytes) }
 
-        let rawName = try text(bytes, at: headerBytes + 0x1c, length: 32)
+        let rawName = try text(bytes, at: headerBytes + 0x1c, length: 32, bodyStart: headerBytes)
         guard !rawName.isEmpty else { throw Problem.invalidText(offset: 0x1c) }
         let parts = rawName.split(separator: "#", maxSplits: 1, omittingEmptySubsequences: false)
         var variant: String?
         if parts.count == 2, !parts[1].isEmpty { variant = String(parts[1]) }
-        _ = try text(bytes, at: headerBytes + 0x3c, length: 32)
+        _ = try text(bytes, at: headerBytes + 0x3c, length: 32, bodyStart: headerBytes)
         var voicing: String?
         if streamVersion == 0x464 {
-            let value = try text(bytes, at: headerBytes + 0x5c, length: 32)
+            let value = try text(bytes, at: headerBytes + 0x5c, length: 32, bodyStart: headerBytes)
             if !value.isEmpty { voicing = value }
         }
         var coveredKeys = 0
@@ -255,7 +255,8 @@ enum NordPiano {
     /// Bytes after the terminator are padding, so they must be an empty byte or
     /// a space: anything else means this is not the padded text the container
     /// documents, and the field is reported instead of partially read.
-    private static func text(_ bytes: UnsafeRawBufferPointer, at offset: Int, length: Int) throws -> String {
+    private static func text(_ bytes: UnsafeRawBufferPointer, at offset: Int, length: Int, bodyStart: Int) throws -> String {
+        let reported = offset - bodyStart
         var slice: [UInt8] = []
         var index = offset
         while index < offset + length {
@@ -263,16 +264,16 @@ enum NordPiano {
             if byte == 0 {
                 var padding = index + 1
                 while padding < offset + length {
-                    guard bytes[padding] == 0 || bytes[padding] == 0x20 else { throw Problem.invalidText(offset: offset) }
+                    guard bytes[padding] == 0 || bytes[padding] == 0x20 else { throw Problem.invalidText(offset: reported) }
                     padding += 1
                 }
                 break
             }
-            guard byte >= 0x20, byte != 0x7f else { throw Problem.invalidText(offset: offset) }
+            guard byte >= 0x20, byte != 0x7f else { throw Problem.invalidText(offset: reported) }
             slice.append(byte)
             index += 1
         }
-        guard let value = String(bytes: slice, encoding: .utf8) else { throw Problem.invalidText(offset: offset) }
+        guard let value = String(bytes: slice, encoding: .utf8) else { throw Problem.invalidText(offset: reported) }
         return value.trimmingCharacters(in: .whitespaces)
     }
 
