@@ -71,6 +71,18 @@ assert abs(comparison.spectral_centroid(padded,rate)-comparison.spectral_centroi
     (comparison.spectral_centroid(padded,rate),comparison.spectral_centroid(burst,rate))
 assert abs(comparison.spectral_centroid(padded,rate)-3000)<200,"trailing silence must not erase the tone"
 assert comparison.spectral_centroid([0.0]*5000,rate)==0.0,"a silent capture has no centroid"
+# A lone transient above the threshold must not erase a quiet tone after it: the
+# window is centred on that sample, so the two tails stay distinguishable.
+def click_then_tone(frequency):
+    samples=[0.0]*24000
+    samples[0]=1.0
+    for i in range(1,24000):
+        samples[i]=0.02*math.sin(2*math.pi*frequency*i/rate)
+    return samples
+low=comparison.spectral_centroid(click_then_tone(3000),rate)
+high=comparison.spectral_centroid(click_then_tone(10000),rate)
+assert low>0 and high>0,"a click followed by a quiet tone still has a centroid"
+assert high-low>4000,(low,high)
 print("PASS: the centroid covers the full band and decay waits for a settled tail")
 
 # A swapped stereo pair downmixes to the same mono signal; the per-channel metrics

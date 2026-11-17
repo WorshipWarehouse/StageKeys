@@ -106,10 +106,19 @@ def spectral_centroid(samples: list[float], rate: int) -> float:
     last = next((index for index in range(len(samples) - 1, first - 1, -1)
                  if abs(samples[index]) >= threshold), first)
     span = last - first + 1
-    if span <= count:
-        block = samples[first : first + span]
-        if len(block) < 32:
+    if span < 32:
+        # A single transient can be the only sample above the threshold while a
+        # quiet tone follows it. Centre the smallest analysis window on that spot
+        # instead of reporting no centroid, so the tone's spectral difference
+        # still shows up; the transform stays bounded by the usual window.
+        size = min(len(samples), 4096)
+        start = max(0, min(len(samples) - size, first - (size - span) // 2))
+        block = samples[start : start + size]
+        count = len(block)
+        if count < 32:
             return 0.0
+    elif span <= count:
+        block = samples[first : first + span]
         count = len(block)
     else:
         start = first + (span - count) // 2
