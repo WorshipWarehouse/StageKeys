@@ -1,5 +1,19 @@
 import AVFoundation
 
+/// DEBUG-only hosted-sampler teardown evidence (#192). Enumerated/numeric facts
+/// only: no plug-in state, sample payload, path, device or session data.
+struct SamplerTeardownRecord: Codable, Equatable {
+    enum Phase: String, Codable {
+        case attached, retired, truncated, purged, releasedBeforeRestart, retainedPastStop
+    }
+    let phase: Phase
+    let channel: Int
+    let generation: UInt64
+    let engineRunning: Bool
+    let retainedTail: Bool
+    let attached: Bool
+}
+
 /// Explicit allowlist: never accepts session documents, device names/IDs, file paths,
 /// MIDI messages, plug-in state or audio. Building a report does not transmit it.
 struct SupportDiagnostics: Codable {
@@ -21,9 +35,13 @@ struct SupportDiagnostics: Codable {
     /// count is unknown. A count, never a device identifier or route name.
     let usableOutputPairs: Int?
 
+    /// Present only in DEBUG builds; nil is omitted from the local report.
+    let samplerTeardown: [SamplerTeardownRecord]?
+
     init(version: String, build: String, running: Bool, status: AudioDeviceStatus?, latency: AudioLatencyChain?,
          midiSources: Int, loadedSlots: Int, limiterBypassed: Bool, recording: Bool,
-         lastAudioChangeFailure: AudioChangeDiagnostic? = nil, usableOutputPairs: Int? = nil) {
+         lastAudioChangeFailure: AudioChangeDiagnostic? = nil, usableOutputPairs: Int? = nil,
+         samplerTeardown: [SamplerTeardownRecord]? = nil) {
         schemaVersion = 1
         appVersion = String(version.prefix(64)); appBuild = String(build.prefix(64))
         audioRunning = running
@@ -36,6 +54,7 @@ struct SupportDiagnostics: Codable {
         latencyScope = "Core Audio reported output chain; physical MIDI-to-speaker latency not measured"
         self.lastAudioChangeFailure = lastAudioChangeFailure
         self.usableOutputPairs = usableOutputPairs.map { max(0, min(FlexOutputPair.maximumPairs, $0)) }
+        self.samplerTeardown = samplerTeardown?.isEmpty == true ? nil : samplerTeardown
     }
     func json() throws -> String {
         let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
