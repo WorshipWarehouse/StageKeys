@@ -58,6 +58,7 @@
 		50F554293EBFFB230FE0FA40 /* SettingsViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2BE6DDCBC4000BC7F71BDEE /* SettingsViews.swift */; };
 		512E9B98BC21BDCB6202E78A /* SettingsViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2BE6DDCBC4000BC7F71BDEE /* SettingsViews.swift */; };
 		520101717224F0858CC76DB5 /* AssetDigest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B335FDE6E2C622245507204 /* AssetDigest.swift */; };
+		7C1A5E9B2D3F4A6B8C0D1E02 /* NordPiano.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C1A5E9B2D3F4A6B8C0D1E01 /* NordPiano.swift */; };
 		52C7351E3584EACFF050BBC6 /* StageKeysSampler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 270A555B44B7489CF5811D96 /* StageKeysSampler.swift */; };
 		52D6B219398AA27F5DB5AEAE /* SoundBrowser.swift in Sources */ = {isa = PBXBuildFile; fileRef = D518EAD59E323D92284C88FE /* SoundBrowser.swift */; };
 		587E21182AA6ACCC3DEA93FB /* SoundSettingsControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D547913C4EE45754ABC5FA9 /* SoundSettingsControls.swift */; };
@@ -94,6 +95,7 @@
 		991E4305E1B6D5C513D6885C /* ExternalSound.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96C75668AD30F778CBF195C1 /* ExternalSound.swift */; };
 		A2681279A4C623A78586EF44 /* SamplerInterchange.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3A3010041D10648ABE486A3 /* SamplerInterchange.swift */; };
 		A31EDCDD0A171DAAD05034EE /* AssetDigest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B335FDE6E2C622245507204 /* AssetDigest.swift */; };
+		7C1A5E9B2D3F4A6B8C0D1E03 /* NordPiano.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C1A5E9B2D3F4A6B8C0D1E01 /* NordPiano.swift */; };
 		A6204948C1A623AC25E571A4 /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 63009DD940871D3C58C024DD /* AVFoundation.framework */; };
 		A65CF74F62BA2486A7B514DB /* MainStageProcessing.swift in Sources */ = {isa = PBXBuildFile; fileRef = 962F0837772F2E48134446E8 /* MainStageProcessing.swift */; };
 		A6ED9CB9388F59D4333D10D0 /* ExternalInstruments.swift in Sources */ = {isa = PBXBuildFile; fileRef = 08168477F8D489D51C2417D1 /* ExternalInstruments.swift */; };
@@ -171,6 +173,7 @@
 		962F0837772F2E48134446E8 /* MainStageProcessing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainStageProcessing.swift; sourceTree = "<group>"; };
 		96C75668AD30F778CBF195C1 /* ExternalSound.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExternalSound.swift; sourceTree = "<group>"; };
 		9B335FDE6E2C622245507204 /* AssetDigest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssetDigest.swift; sourceTree = "<group>"; };
+		7C1A5E9B2D3F4A6B8C0D1E01 /* NordPiano.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NordPiano.swift; sourceTree = "<group>"; };
 		9E2E4B0335A0CF004B70F310 /* MIDIFXProcessor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MIDIFXProcessor.swift; sourceTree = "<group>"; };
 		ACD160000000000000000003 /* MIDIAudioTimeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MIDIAudioTimeline.swift; sourceTree = "<group>"; };
 		ACD161000000000000000003 /* MIDIDeliveryPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MIDIDeliveryPolicy.swift; sourceTree = "<group>"; };
@@ -295,6 +298,7 @@
 			isa = PBXGroup;
 			children = (
 				9B335FDE6E2C622245507204 /* AssetDigest.swift */,
+				7C1A5E9B2D3F4A6B8C0D1E01 /* NordPiano.swift */,
 				A5AC6701C177B156C5256CD0 /* AudioController.swift */,
 				64C8CEE30B370832012326CB /* AudioDevices.swift */,
 				2410B131590308A4B9B014B9 /* AudioDiagnosticRecorder.swift */,
@@ -464,6 +468,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				520101717224F0858CC76DB5 /* AssetDigest.swift in Sources */,
+				7C1A5E9B2D3F4A6B8C0D1E02 /* NordPiano.swift in Sources */,
 				3DD320EAD331E89DD06D4C89 /* AudioController.swift in Sources */,
 				02AC3283E911E7E5CA6432ED /* AudioDevices.swift in Sources */,
 				383A7B8E5AD7DCBB7500D4AA /* AudioDiagnosticRecorder.swift in Sources */,
@@ -521,6 +526,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				A31EDCDD0A171DAAD05034EE /* AssetDigest.swift in Sources */,
+				7C1A5E9B2D3F4A6B8C0D1E03 /* NordPiano.swift in Sources */,
 				0A11C9F2C53F78077E3DDDA7 /* AudioController.swift in Sources */,
 				B2173EA5DA51DC9049C03FB7 /* AudioDevices.swift in Sources */,
 				7A9A75B4677C3BCCE1C33555 /* AudioDiagnosticRecorder.swift in Sources */,
