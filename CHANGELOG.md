@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Offer a repair for a library sound whose managed samples moved: the footer's single repair action now covers both content issues, a missing file keeps the existing Locate flow and missing samples open a folder picker that re-resolves the retained original preset against the chosen folder, copying the samples back into managed storage and publishing only a preset that reports no content issue. A wrong or incomplete folder leaves the catalog, the setlist and the entry's message unchanged, and the previous managed preset is kept because saved patches may reference it (#17).
+
 - Stop completed AU loader callbacks from retaining the replaced sampler, and refuse forward, rollback and manual audio restart while a purged/truncated sampler is still retained; preserve the stopped recovery guard until release, with generated failure/retry coverage and a 96-switch live-output verification for #192.
 
 - Release a truncated or purged hosted sampler through one ownership registry and disposal order while the engine is stopped, commit the truncation into the rollback so a restored graph never references released nodes, and record the verified pre-restart release in the local support report (#192). The live macOS crash remains unreproduced and this is not a general rollback of released audio.

@@ -2003,6 +2003,51 @@ final class PerformanceStore: ObservableObject {
             message=libraryContentIssues[id]==nil ? "Restored \(name). The sound is ready to add again.":"Copied \(name), but this sound still reports missing content."
         } catch { message="Could not restore \(name): \(error.localizedDescription)" }
     }
+    /// Repair a sampler preset whose samples were moved: re-resolve the retained
+    /// original (or the managed preset when no original was kept) against the
+    /// folder the user points at, copy the samples back into managed storage and
+    /// publish the rewritten preset. Nothing changes unless the repaired preset
+    /// reports no content issue, and the previous managed files are kept because
+    /// saved patches may still reference them.
+    func relinkLibrarySamples(_ id:String,from folder:URL) {
+        guard let rack=audio.externalRack,let entry=librarySounds.first(where:{$0.id==id}),
+              let sound=entry.sound ?? entry.layer?.external,sound.kind == .samplerPreset,
+              let name=sound.fileName else {
+            message="Choose a sampler sound that reports missing samples to repair.";return
+        }
+        let access=folder.startAccessingSecurityScopedResource()
+        defer {if access{folder.stopAccessingSecurityScopedResource()}}
+        let libraryDirectory=saveURL.deletingLastPathComponent()
+        let source=entry.originalInstrument.map{libraryDirectory.appendingPathComponent($0.file)}
+            ?? rack.libraryURL.appendingPathComponent(name)
+        func discardManaged(_ preset:URL) {
+            try? FileManager.default.removeItem(at:preset)
+            try? FileManager.default.removeItem(at:URL(fileURLWithPath:preset.deletingPathExtension().path+"-samples"))
+        }
+        do {
+            let repaired:ExternalSound
+            if source.pathExtension.lowercased() == "exs" {repaired=try rack.importEXS(source,sampleRoot:folder)}
+            else {repaired=try rack.importPreset(source,sampleRoot:folder)}
+            guard let repairedName=repaired.fileName else {throw ExternalInstrumentError.unsupportedFormat}
+            let repairedPreset=rack.libraryURL.appendingPathComponent(repairedName)
+            guard ExternalInstrumentRack.contentIssue(in:repairedPreset,kind:.samplerPreset)==nil else {
+                discardManaged(repairedPreset)
+                message="Those samples do not complete \(name). Choose the folder that holds all of its samples; nothing was changed."
+                return
+            }
+            var updated=librarySounds
+            guard let index=updated.firstIndex(where:{$0.id==id}) else{discardManaged(repairedPreset);return}
+            updated[index].sound=repaired
+            if updated[index].layer?.external != nil {updated[index].layer?.external=repaired}
+            do {try SoundLibrary(url:libraryDirectory.appendingPathComponent("sound-library.json")).write(updated)}
+            catch {
+                discardManaged(repairedPreset)
+                message="Could not save the repaired sound: \(error.localizedDescription)";return
+            }
+            librarySounds=updated;refreshLibraryContent()
+            message=libraryContentIssues[id]==nil ? "Reconnected \(repaired.name). The sound is ready to add again.":"Copied \(repaired.name), but this sound still reports missing content."
+        } catch {message="Could not repair \(name): \(error.localizedDescription)"}
+    }
     @discardableResult
     func importLibrarySound(_ url:URL,sampleRoot:URL?=nil)->ExternalSound? {
         guard !libraryImportBusy else{message="A sound library import is already running.";return nil}

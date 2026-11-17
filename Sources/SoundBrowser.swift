@@ -14,6 +14,8 @@ struct SoundBrowser: View {
     @State private var showingImportNotes=false
     @State private var locating=false
     @State private var locateTarget:String?
+    @State private var locatingSamples=false
+    @State private var samplesTarget:String?
     @State private var auditionToken:UUID?
     @State private var instruments=ExternalInstrumentRack.instruments()
     private var targetLayer:Layer {store.patch.layers[index]}
@@ -100,6 +102,11 @@ struct SoundBrowser: View {
             defer {locateTarget=nil}
             guard case .success(let url)=result,let id=locateTarget else{return}
             store.relinkLibrarySound(id,from:url)
+        }
+        .fileImporter(isPresented:$locatingSamples,allowedContentTypes:[.folder]) { result in
+            defer {samplesTarget=nil}
+            guard case .success(let url)=result,let id=samplesTarget else{return}
+            store.relinkLibrarySamples(id,from:url)
         }
         .onAppear {
             store.refreshLibraryContent()
@@ -259,7 +266,14 @@ struct SoundBrowser: View {
                     #endif
                 }
             }.font(StageTheme.font(12)).frame(maxWidth:.infinity,alignment:.leading)
-            if let selection,let issue=selection.contentIssue,issue == .missingFile {Button(issue.locateTitle){locateTarget=selection.id;locating=true}.buttonStyle(StageButtonStyle()).accessibilityLabel("Locate the saved file for \(selection.name)").help("Choose the same sound file from its current location. It is copied into the library; a different sound is refused.")}
+            if let selection,let issue=selection.contentIssue {
+                Button(issue.repairTitle) {
+                    if issue.repairsWithFolder {samplesTarget=selection.id;locatingSamples=true}
+                    else {locateTarget=selection.id;locating=true}
+                }.buttonStyle(StageButtonStyle())
+                    .accessibilityLabel(issue.repairsWithFolder ? "Choose the sample folder for \(selection.name)":"Locate the saved file for \(selection.name)")
+                    .help(issue.repairsWithFolder ? "Choose the folder that now holds this preset's samples. They are copied into the library; an incomplete folder is refused and nothing changes.":"Choose the same sound file from its current location. It is copied into the library; a different sound is refused.")
+            }
             if selection?.entry?.conversionNotes?.isEmpty == false {Button("Import Notes"){showingImportNotes=true}.buttonStyle(StageButtonStyle()).popover(isPresented:$showingImportNotes){ScrollView{VStack(alignment:.leading,spacing:12){ForEach(selection?.entry?.conversionNotes ?? [],id:\.self){Text($0)}}.padding(20)}.frame(width:420,height:300)}}
             Button("Refresh Audio Units") { instruments=ExternalInstrumentRack.instruments(); store.refreshUnavailablePatchInstruments(installed: instruments) }.buttonStyle(StageButtonStyle())
             if collection == "External MIDI" {Button("Refresh"){store.refreshMIDIDestinations()}.buttonStyle(StageButtonStyle())}
