@@ -576,7 +576,12 @@ enum MainStageDiscovery {
     }
 }
 struct MainStageChannelOutcome:Identifiable,Codable {
-    enum State:String,Codable {case pending,prepared,converted,duplicate,needsSamples,unsupported,failed,cancelled}
+    enum State:String,Codable {case pending,prepared,converted,duplicate,needsSamples,unsupported,failed,cancelled
+        /// True while the outcome still depends on this batch committing.
+        /// A duplicate is already in the catalog and a converted channel is
+        /// published, so neither is rewritten by a later failure.
+        var awaitingCommit:Bool {self == .pending || self == .prepared}
+    }
     var id:Int
     var name:String
     var state:State

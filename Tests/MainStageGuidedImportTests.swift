@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 
 @main struct MainStageGuidedImportTests {
     @MainActor static func main()async throws {
@@ -46,6 +47,16 @@ import Foundation
         store.importMainStageAutomatically(patch,locations:[.init(instruments:patch,samples:patch,label:"Synthetic source")]);try await wait()
         assert(store.librarySounds.count==count && store.mainStageOutcomes[0].state == .duplicate)
         let catalog=root.appendingPathComponent("sound-library.json"),before=try Data(contentsOf:catalog)
+        // A duplicate is already installed, so a failure in the rest of the batch
+        // must not relabel it. Hold the catalog lock so the commit cannot finish.
+        let lockPath=catalog.appendingPathExtension("lock").path,lockDescriptor=open(lockPath,O_RDWR)
+        assert(lockDescriptor>=0 && flock(lockDescriptor,LOCK_EX|LOCK_NB)==0,"Could not hold the catalog lock")
+        store.importMainStageAutomatically(patch,locations:[.init(instruments:patch,samples:patch,label:"Synthetic source")]);try await wait()
+        flock(lockDescriptor,LOCK_UN);close(lockDescriptor)
+        assert(store.mainStageOutcomes.map(\.state)==[.duplicate,.duplicate,.needsSamples],store.libraryImportProgress ?? "No outcomes")
+        assert(store.mainStageOutcomes.prefix(2).allSatisfy{$0.detail.contains("Already installed")},store.mainStageOutcomes.map(\.detail).joined(separator:"; "))
+        assert(store.libraryImportProgress?.contains("Another library operation")==true,store.libraryImportProgress ?? "No failure message")
+        assert((try! Data(contentsOf:catalog))==before,"A refused commit must not rewrite the catalog")
         store.importMainStageAutomatically(patch,locations:[.init(instruments:patch,samples:patch,label:"Synthetic source")]);store.cancelLibraryImport();try await wait()
         assert((try! Data(contentsOf:catalog))==before)
         let other=root.appendingPathComponent("Conflicting");_ = try TestFixtures.exs(in:other)
