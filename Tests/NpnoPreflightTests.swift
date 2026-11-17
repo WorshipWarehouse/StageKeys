@@ -13,16 +13,21 @@ import Foundation
         return data
     }
 
+    static func fail(_ message: String) -> Never {
+        FileHandle.standardError.write(Data((message + "\n").utf8))
+        fatalError(message)
+    }
+
     static func expect<T>(_ refusal: NpnoPreflight.Refusal, _ label: String, _ body: () throws -> T) {
         do {
             _ = try body()
-            fatalError("FAIL: \(label) was accepted instead of refused as \(refusal.rawValue)")
+            fail("FAIL: \(label) was accepted instead of refused as \(refusal.rawValue)")
         } catch let error as NpnoPreflight.Refusal {
             if error != refusal {
-                fatalError("FAIL: \(label) refused as \(error.rawValue), expected \(refusal.rawValue)")
+                fail("FAIL: \(label) refused as \(error.rawValue), expected \(refusal.rawValue)")
             }
         } catch {
-            fatalError("FAIL: \(label) threw \(error)")
+            fail("FAIL: \(label) threw \(error)")
         }
         checks += 1
     }
@@ -75,8 +80,8 @@ import Foundation
         expect(.unsupportedLayout, "a content tag this build does not recognise") {
             try NpnoPreflight.inspect(fixture(content: "XXXX"))
         }
-        expect(.unsupportedLayout, "a header shorter than the observed content tag") {
-            try NpnoPreflight.inspect(valid, limits: .init(maximumReadBytes: 8))
+        expect(.unsupportedLayout, "a header read shorter than the observed content tag") {
+            try NpnoPreflight.inspect(valid, limits: .init(maximumReadBytes: 40))
         }
         expect(.unclassifiedPayloadTooLarge, "payload beyond the inspection ceiling") {
             try NpnoPreflight.inspect(fixture(byteCount: 4096), limits: .init(maximumUnclassifiedBytes: 1024))
