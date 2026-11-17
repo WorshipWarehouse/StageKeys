@@ -19,6 +19,9 @@ struct SoundBrowser: View {
     /// Result of the last library edit. The sheet is modal, so the store's own
     /// message would otherwise be shown behind it.
     @State private var removalFeedback=LibraryRemovalFeedback()
+    /// A repair result from `store.message`, shown here because this modal does not
+    /// otherwise display the store's message and must not consume removal feedback.
+    @State private var repairNotice:String?
     /// The entry the last successful removal reported, so its notice can offer Undo.
     @State private var auditionToken:UUID?
     @State private var instruments=ExternalInstrumentRack.instruments()
@@ -89,8 +92,9 @@ struct SoundBrowser: View {
             // One recovery control at a time: with no result rows the empty state
             // carries the action, and the bar covers a catalog that still lists rows.
             if store.libraryRecoveryRequired && !results.isEmpty {libraryErrorBar}
-            if !query.activeFilters.isEmpty {filterBar}
+            filterBar
             if let notice=removalFeedback.text {libraryNoticeBar(notice,showsUndo:removalFeedback.removed != nil)}
+            if let notice=repairNotice {libraryNoticeBar(notice,onDismiss:{repairNotice=nil})}
             GeometryReader {geometry in
                 ScrollView(.horizontal) {
                     HStack(spacing:0) {
@@ -113,6 +117,10 @@ struct SoundBrowser: View {
             defer {samplesTarget=nil}
             guard case .success(let url)=result,let id=samplesTarget else{return}
             store.relinkLibrarySamples(id,from:url)
+            // The repair reports through `store.message`; carry it into the browser's
+            // own notice so a rejected folder explains itself, without touching any
+            // pending removal Undo.
+            if let message=store.message {repairNotice=message;store.message=nil}
         }
         .onAppear {
             store.refreshLibraryContent()
@@ -182,7 +190,7 @@ struct SoundBrowser: View {
     }
     /// Removal keeps the managed file, so the outcome is stated here with its own
     /// dismiss control instead of disappearing into a modal-obscured message.
-    private func libraryNoticeBar(_ text:String,showsUndo:Bool=false)->some View {
+    private func libraryNoticeBar(_ text:String,showsUndo:Bool=false,onDismiss:(()->Void)?=nil)->some View {
         HStack(spacing:12) {
             Image(systemName:"checkmark.circle.fill").foregroundStyle(StageTheme.selected)
             Text(text).font(StageTheme.font(12)).fixedSize(horizontal:false,vertical:true)
@@ -192,7 +200,7 @@ struct SoundBrowser: View {
                     .accessibilityLabel("Undo the removal")
                     .help("Put the removed sound back in My Sounds with its tags and saved settings.")
             }
-            Button("Dismiss"){removalFeedback.dismiss()}.buttonStyle(StageButtonStyle())
+            Button("Dismiss"){if let onDismiss {onDismiss()} else {removalFeedback.dismiss()}}.buttonStyle(StageButtonStyle())
                 .accessibilityLabel("Dismiss the library message")
         }.padding(.horizontal,16).frame(minHeight:46).background(StageTheme.raised.opacity(0.3))
         .accessibilityElement(children:.contain)
@@ -235,9 +243,11 @@ struct SoundBrowser: View {
                 }.buttonStyle(.plain)
                  .accessibilityLabel(query.favoritesOnly ? "Show all sounds":"Show favorite sounds only")
                  .help("Show favorites only")
-                Button("Clear Filters") {query.filters=[:];query.favoritesOnly=false;clearHiddenSelection()}
-                    .font(StageTheme.font(12,weight:.semibold)).buttonStyle(.plain)
-                    .accessibilityLabel("Clear all library filters")
+                if !query.activeFilters.isEmpty || query.favoritesOnly {
+                    Button("Clear Filters") {query.filters=[:];query.favoritesOnly=false;clearHiddenSelection()}
+                        .font(StageTheme.font(12,weight:.semibold)).buttonStyle(.plain)
+                        .accessibilityLabel("Clear all library filters")
+                }
             }.padding(.horizontal,16).frame(height:38)
         }.background(StageTheme.base)
     }
