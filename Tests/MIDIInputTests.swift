@@ -4,8 +4,8 @@ import Darwin
 @main struct MIDIInputTests {
  static func main() throws {
     let input = MIDIInput()
-    var events: [(Int32,UInt8,UInt8,UInt8,Double)] = [], removed: [Int32] = [], changes = 0
-    input.onSourceEvent = { events.append(($0,$1,$2,$3,$4)) }
+    var events: [(Int32,UInt8,UInt8,UInt8,Double,Bool)] = [], removed: [Int32] = [], changes = 0
+    input.onSourceEvent = { events.append(($0,$1,$2,$3,$4,$5)) }
     input.onDisconnect = { removed.append($0) }
     input.onDevices = { _,error in assert(error == nil,error ?? ""); changes += 1 }
     input.start(); input.start() // idempotent

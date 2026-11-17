@@ -110,6 +110,10 @@ import Foundation
         assert(abs(MIDIClockTimestamp.at(packetTicks: ticks(41.5), numer: numer, denom: denom, receipt: 42) - 41.5) < 1e-6,
                "a stamp inside the latency window is the pulse time")
         assert(abs(MIDIClockTimestamp.seconds(hostTicks: ticks(2), numer: numer, denom: denom)! - 2) < 1e-6)
+        // Provenance travels with the timestamp so a tempo window never mixes packet
+        // stamps with receipt times.
+        assert(!MIDIClockTimestamp.isPacketBacked(packetTicks: 0, numer: numer, denom: denom, receipt: 42))
+        assert(MIDIClockTimestamp.isPacketBacked(packetTicks: ticks(41.9), numer: numer, denom: denom, receipt: 42))
         let origin = 10_000.0, spacing = 60.0 / 120.0 / 24.0 // 24 pulses per quarter at 120 BPM
         var stamped = MIDIClockTempo(), receiptOnly = MIDIClockTempo()
         var stampedTempo: Double?, receiptTempo: Double?

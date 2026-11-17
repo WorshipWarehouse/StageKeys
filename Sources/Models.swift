@@ -147,8 +147,12 @@ struct AudioEffect: Codable, Equatable {
             // values intact; only its explicitly named render profile receives
             // the independently measured dense-core mapping.
             if reverbCore == "prima-felt-room-v1",rendered.count>=10 {
-                rendered[2]=0.37
-                rendered[4]=10000
+                // The measured mapping replaces the authored Reflectivity (0.33) and
+                // Tone (2884) only while both are untouched. Once a performer edits
+                // either control, the edited value is what the renderer receives, so
+                // the calibrated preset keeps its sound and edits still work.
+                if abs(rendered[2]-0.33)<0.005 { rendered[2]=0.37 }
+                if abs(rendered[4]-2884)<1 { rendered[4]=10000 }
                 return rendered+[2]
             }
             let selector:Float

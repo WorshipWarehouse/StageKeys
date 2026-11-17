@@ -393,6 +393,9 @@ final class PerformanceStore: ObservableObject {
     /// off or stopped, so the patch/live tempo policy resumes immediately.
     @Published private(set) var clockTempo: Double?
     private var midiClockTempo = MIDIClockTempo()
+    /// Which timing the current tempo window is built from. Mixing packet stamps with
+    /// receipt times inside one 24-pulse window reports a tempo that never happened.
+    private var midiClockPacketTiming: Bool?
     private var midiClockRunning = false
     private var midiClockSource: Int32?
     /// Drop every piece of external-clock state so the stored patch/live tempo
@@ -912,7 +915,7 @@ final class PerformanceStore: ObservableObject {
                 self.sendMIDI(destination, 0x80 | UInt8(l.midiOutputChannel), UInt8(pitch), 0)
             } else { self.audio.noteOff(key: key, channel: channel, force: force, at: at) }
         }
-        midi.onSourceEvent = { [weak self] source, status, a, b, time in self?.handleMIDI(status, a, b, source: source, at: time) }
+        midi.onSourceEvent = { [weak self] source, status, a, b, time, fromPacket in self?.handleMIDI(status, a, b, source: source, at: time, fromPacket: fromPacket) }
         midi.onInventory = { [weak self] sources, devices in
             guard let self else { return }
             self.midiSources = sources; self.midiDevices = devices
@@ -1767,10 +1770,18 @@ final class PerformanceStore: ObservableObject {
     /// Route 24-PPQN clock and transport from the configured controller. Tempo
     /// is measured only after Start/Continue and only until Stop or disconnect,
     /// so ticks from a stopped source cannot replace the stored tempo.
-    private func handleMIDIClock(_ status: UInt8, source: Int32, at now: Double) {
+    private func handleMIDIClock(_ status: UInt8, source: Int32, at now: Double, fromPacket: Bool = false) {
         guard metronomeSettings.followsMIDIClock, acceptsMIDIClock(source: source) else { return }
         switch status {
         case 0xF8:
+            // Packet stamps and receipt times measure different intervals, so a
+            // window that changed timing mid-run mixes them and biases the tempo.
+            // Start a fresh window on the change; a source that always sends zero
+            // stamps simply stays on receipt-only timing.
+            if midiClockPacketTiming != fromPacket {
+                midiClockPacketTiming = fromPacket
+                midiClockTempo.reset(); clockTempo = nil
+            }
             // A tick may only advance the run selected by its Start/Continue.
             // The other configured source may be sending clock concurrently;
             // ignoring it avoids double-advancing the click or stealing tempo.
@@ -1788,7 +1799,7 @@ final class PerformanceStore: ObservableObject {
             guard !midiClockRunning || midiClockSource == nil || midiClockSource == source else { return }
             midiClockRunning = true
             midiClockSource = source
-            midiClockTempo.reset(); clockTempo = nil
+            midiClockTempo.reset(); midiClockPacketTiming = nil; clockTempo = nil
             if status == 0xFA { audio.midiClockStart(at: now) }
             else { audio.midiClockContinue(at: now) }
         case 0xFC:
@@ -1805,10 +1816,10 @@ final class PerformanceStore: ObservableObject {
     #endif
 
     /// Routes an incoming event only to its accepted controller slot and target type.
-    private func handleMIDI(_ status: UInt8, _ a: UInt8, _ b: UInt8, source: Int32, at time: Double) {
+    private func handleMIDI(_ status: UInt8, _ a: UInt8, _ b: UInt8, source: Int32, at time: Double, fromPacket: Bool = false) {
         // `time` is the driver's packet stamp for clock messages, so a delayed main-queue
         // delivery cannot stretch the interval the tempo is measured from.
-        if status >= 0xF8 { handleMIDIClock(status, source: source, at: time); return }
+        if status >= 0xF8 { handleMIDIClock(status, source: source, at: time, fromPacket: fromPacket); return }
         if status >= 0xF0 { return }
         midiActivity.toggle()
         midiLog.insert((midiSources.first(where: { $0.id == source })?.name ?? "MIDI") + String(format: " · Ch %02d · %02X · %d · %d", Int(status & 15) + 1, status & 0xf0, a, b), at: 0)
