@@ -2329,7 +2329,7 @@ final class PerformanceStore: ObservableObject {
                 for index in mainStageOutcomes.indices where mainStageOutcomes[index].state == .prepared {mainStageOutcomes[index].state = .converted}
                 libraryImportProgress="Added \(imported) sounds · \(skipped) already installed · \(failures.count) need attention. Review conversion notes for unsupported routing and processing. "+failures.joined(separator:"; ")
             }catch{
-                for index in mainStageOutcomes.indices where [.pending,.prepared,.duplicate].contains(mainStageOutcomes[index].state) {mainStageOutcomes[index].state = libraryImportCancelRequested ? .cancelled:.failed;mainStageOutcomes[index].detail=error.localizedDescription}
+                for index in mainStageOutcomes.indices where mainStageOutcomes[index].state.awaitingCommit {mainStageOutcomes[index].state = libraryImportCancelRequested ? .cancelled:.failed;mainStageOutcomes[index].detail=error.localizedDescription}
                 libraryImportProgress=error.localizedDescription
             }
         }
