@@ -250,6 +250,67 @@ import AVFoundation
         assert(savedSettings["metronomeEnabled"] as? Bool == true)
         assert(store.metronome && store.tonic == 0)
         device.debugSelect = nil; device.debugOutputUID = nil; device.debugBuffer = nil
-        print("PASS: graph cleanup failure is visible and manual retry restores the saved patch")
+        store.stopAudio()
+        try unsafeSamplerReleaseRecovery()
+        print("PASS: graph cleanup and unsafe sampler disposal stop audio; manual retry restores the saved patch")
+    }
+}
+
+extension GraphCompletionFailureTests {
+    /// A second owner deliberately keeps the retired sampler alive. Weak-ledger
+    /// logging alone must not allow either restart or manual retry to run it.
+    private static func unsafeSamplerReleaseRecovery() throws {
+        let parent = ProcessInfo.processInfo.environment["STAGEKEYS_DATA_DIR"]!
+        let root = URL(fileURLWithPath: parent).appendingPathComponent("unsafe-disposal")
+        setenv("STAGEKEYS_DATA_DIR", root.path, 1)
+        defer { setenv("STAGEKEYS_DATA_DIR", parent, 1) }
+        let store = PerformanceStore()
+        store.setlist = TestFixtures.setlist()
+        try store.audio.prepareOffline()
+        defer { store.stopAudio() }
+        store.start()
+        let rack = store.audio.externalRack!
+        var retained: AVAudioUnit? = rack.unit(channel: 0)
+        weak var observed = retained
+        assert(retained is AVAudioUnitSampler)
+        store.commitLayer(0, TestFixtures.layer(1))
+        assert(store.audio.running && rack.debugRetiredTailCount > 0)
+        rack.debugExpireRetiredTails()
+        let encoder = JSONEncoder(); encoder.outputFormatting = .sortedKeys
+        store.save()
+        let authored = try encoder.encode(store.setlist)
+        let saved = try Data(contentsOf: root.appendingPathComponent("setlist.json"))
+        store.commitLayer(0, TestFixtures.layer(2))
+        assert(!store.audio.running && store.audioFailed,
+               "An externally retained disposed sampler must block forward and rollback restart")
+        assert(observed?.engine == nil, "The retained sampler must be detached")
+        assert(store.audio.lastChangeFailure?.lastGraphFailure?.rollbackSucceeded == false)
+        assert(rack.debugSamplerTeardownRecords.contains { $0.phase == .retainedPastStop && !$0.engineRunning })
+        assert(try! encoder.encode(store.setlist) == authored)
+        assert(try! Data(contentsOf: root.appendingPathComponent("setlist.json")) == saved)
+        let support = SupportDiagnostics(version: "test", build: "test", running: false,
+            status: nil, latency: nil, midiSources: 0, loadedSlots: 3,
+            limiterBypassed: false, recording: false, samplerTeardown: store.audio.samplerTeardownEvidence)
+        let decoded = try JSONDecoder().decode(SupportDiagnostics.self, from: Data(support.json().utf8))
+        assert(decoded.samplerTeardown?.contains { $0.phase == .retainedPastStop } == true)
+        store.start()
+        assert(!store.audio.running, "Manual retry must not erase a still-live disposal guard")
+        withExtendedLifetime(retained) {}
+        retained = nil
+        assert(observed == nil, "Release must complete while audio remains stopped")
+        store.start()
+        assert(store.started && store.audio.running, "Explicit retry can recover once disposal is verified")
+        assert(try! encoder.encode(store.setlist) == authored)
+        store.noteOn(64)
+        var peak: Float = 0
+        for _ in 0..<20 {
+            let buffer = try store.audio.offlineBlock()
+            for frame in 0..<Int(buffer.frameLength) {
+                let sample = buffer.floatChannelData![0][frame]
+                assert(sample.isFinite); peak = max(peak, abs(sample))
+            }
+        }
+        store.noteOff(64)
+        assert(peak > 0.001, "The authored patch must play again after safe recovery")
     }
 }
