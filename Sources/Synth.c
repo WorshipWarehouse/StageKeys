@@ -313,6 +313,9 @@ static float shimmer_stage_process(SKSynth*s,int l,int k,float x){
   e->shimmerStageControl[3]=p[3];e->shimmerStageControl[4]=p[4];e->shimmerStageReady=1;
  }
  float smooth=e->coef[6];
+ // Low Cut and Tone shape the tank and the output filters on this path too, so
+ // they follow their parameters here as well; the legacy path smooths the same
+ // two values. The Stage path runs at full rate, so coef[6] is its 20 ms step.
  e->shimmerControl[2]+=smooth*(e->coef[0]-e->shimmerControl[2]);
  e->shimmerControl[3]+=smooth*(e->coef[1]-e->shimmerControl[3]);
  e->shimmerStageControl[0]+=smooth*(p[0]-e->shimmerStageControl[0]);
