@@ -2171,6 +2171,9 @@ final class PerformanceStore: ObservableObject {
                             if let name=sound.fileName,let rack=audio.externalRack {
                                 entry.managedFileSHA256=try AssetDigest.sha256(rack.libraryURL.appendingPathComponent(name))
                             }
+                            // Validate this source on its own: a name the catalog
+                            // rejects must fail only its own file, not the whole batch.
+                            try SoundLibrary.validate([entry])
                             entries.append(entry)
                             outcomes.append(.added(name:sound.name))
                         }
