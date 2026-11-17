@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Translate EXS instrument transpose the way the source sampler applies it: the zone key ranges, group key ranges and root keys move with the pitch, so a boundary key can select a different source zone instead of always retriggering the authored one. Zones moved outside MIDI 0–127 are bounded and a shifted root outside the keyboard is refused; the existing-library synthesis upgrade refuses a transposed source rather than moving an edited map, so re-import is required for already-converted instruments (#7).
+
 - Report each retained MainStage channel shaping value individually with its archived-value representation, store it in the layer's source record so it survives persistence, backup and setlist sharing, and stop telling users to set an envelope that Sound Settings hides for a converted sampler or hosted plug-in (#112). Containers are recorded as counts and strings are truncated to 120 characters, so this is a bounded representation, not the complete source value; keep the original MainStage document when you need the full setting. Shaping keys longer than the record limit are reported and skipped instead of stored, and sharing redacts absolute and home-relative paths in keys and values, so one oversized or path-like field cannot block an import or leak a local location.
 - Add optional per-sound sample-peak/RMS meters after each sound's fader and pan, with no taps while disabled and persisted legacy-safe settings; document the signal point and its true-peak/loudness limits.
 

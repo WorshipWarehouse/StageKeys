@@ -115,6 +115,52 @@ import AVFoundation
   let unsupportedNotes=try EXSNative.convert(unsupportedSource,sampleRoot:unsupportedRoot,to:outputRoot.appendingPathComponent("Unsupported.aupreset"))
   assert(unsupportedNotes.notes.contains{$0.contains("filter circuit") && $0.contains("not translated")},
          "An unsupported source filter circuit must be named instead of using the default filter silently")
+  func renderPreset(_ url:URL,key:UInt8)throws->[Float] {
+   let sampler=AVAudioUnitSampler(),engine=AVAudioEngine();engine.attach(sampler);engine.connect(sampler,to:engine.mainMixerNode,format:format)
+   try engine.enableManualRenderingMode(.offline,format:format,maximumFrameCount:512);try SamplerRendering.configure(sampler,offline:true)
+   try sampler.loadInstrument(at:url);engine.prepare();try engine.start();defer{engine.stop()}
+   let b=AVAudioPCMBuffer(pcmFormat:format,frameCapacity:512)!
+   for _ in 0..<8{_ = try engine.renderOffline(512,to:b)}
+   sampler.startNote(key,withVelocity:100,onChannel:0);var x:[Float]=[]
+   for _ in 0..<40{_ = try engine.renderOffline(512,to:b);x+=Array(UnsafeBufferPointer(start:b.floatChannelData![0],count:Int(b.frameLength)))}
+   sampler.stopNote(key,onChannel:0)
+   assert(x.allSatisfy(\.isFinite));return Array(x[4096..<16384])
+  }
+  func peakFrequency(_ x:[Float])->Double {(200...900).map{Double($0)}.max{magnitude(x,$0)<magnitude(x,$1)}!}
+  // EXS Transpose moves the zones as well as the pitch. Translating it as a
+  // cents offset would keep the authored zone answering a boundary key.
+  let plainRoot=root.appendingPathComponent("plain-source",isDirectory:true)
+  let plainSource=try TestFixtures.exs(in:plainRoot),plain=outputRoot.appendingPathComponent("Plain.aupreset")
+  let plainProgram=try EXSNative.convert(plainSource,sampleRoot:plainRoot,to:plain)
+  assert(plainProgram.voiceControls?.transpose==nil && plainProgram.groups[0].low==0 && plainProgram.groups[0].high==127)
+  let plainPeak=peakFrequency(try renderPreset(plain,key:60))
+  assert(abs(plainPeak-261.63)<2,"Untransposed playback must stay at the authored pitch: \(plainPeak)")
+  let upRoot=root.appendingPathComponent("transpose-up-source",isDirectory:true)
+  let upSource=try TestFixtures.exs(in:upRoot)
+  var upBytes=try Data(contentsOf:upSource);upBytes.append(parameterChunk([(0x2d,12)]));try upBytes.write(to:upSource)
+  let up=outputRoot.appendingPathComponent("Transposed.aupreset")
+  let upProgram=try EXSNative.convert(upSource,sampleRoot:upRoot,to:up)
+  assert(upProgram.voiceControls?.transpose==12 && upProgram.voiceControls?.tuning==0,
+         "Instrument transpose must not be translated as a cents offset")
+  assert(upProgram.groups[0].low==0 && upProgram.groups[0].high==115)
+  let upState=try PropertyListSerialization.propertyList(from:Data(contentsOf:up),options:[],format:nil) as! [String:Any]
+  let upZones=(((upState["Instrument"] as! [String:Any])["Layers"] as! [[String:Any]])[0]["Zones"] as! [[String:Any]])
+  assert(upZones.count==1 && upZones[0]["min key"] as? Int==0 && upZones[0]["max key"] as? Int==115 &&
+         upZones[0]["root key"] as? Int==48 && (upZones[0]["fine tune"] as? NSNumber)?.doubleValue==0,
+         "Transpose must move the zone range and root key without adding a cents offset")
+  let upPeak=peakFrequency(try renderPreset(up,key:60))
+  assert(abs(upPeak-523.25)<4,"Source transpose must move the pitch with the zone map: \(upPeak)")
+  let flatRoot=root.appendingPathComponent("transpose-flat-source",isDirectory:true)
+  let flatSource=try TestFixtures.exs(in:flatRoot)
+  var flatBytes=try Data(contentsOf:flatSource);flatBytes.append(parameterChunk([(0x2d,-7)]));try flatBytes.write(to:flatSource)
+  let flat=outputRoot.appendingPathComponent("Flat.aupreset")
+  let flatProgram=try EXSNative.convert(flatSource,sampleRoot:flatRoot,to:flat)
+  assert(flatProgram.voiceControls?.transpose==(-7) && flatProgram.groups[0].low==7 && flatProgram.groups[0].high==127)
+  let flatPeak=peakFrequency(try renderPreset(flat,key:60))
+  assert(abs(flatPeak-261.63*pow(2,-7.0/1200))<2,"Negative transpose must lower the played key: \(flatPeak)")
+  var overNotes=Set<String>()
+  do{_ = try EXSNative.voiceControls([.init(kind:4,modern:true,index:0,name:"Out of range",body:Array(parameterChunk([(0x2d,100)])[84...]))],notes:&overNotes);fatalError("Out-of-range transpose accepted")}catch{}
   print("PASS: generic EXS parameter decoding, active gain/tuning and velocity-sensitive filter; soft/hard HF balance",softBalance,hardBalance)
+  print("PASS: instrument transpose moves zone selection and pitch",plainPeak,upPeak,flatPeak)
  }
 }
