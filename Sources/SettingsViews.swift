@@ -119,31 +119,30 @@ struct SettingsEditor: View {
                         }
                     case "Flex Routing":
                         Section("Selected Output") {
-                            Text(store.audioStatus.map { "Selected output: \($0.name)" } ?? "No audio output is selected.")
-                            Text(store.selectedOutputChannels.map { "Reported output channels: \($0)" } ?? "Reported output channels: unavailable")
+                            Text(store.audioStatus?.name ?? "No audio output is selected.")
+                            Text(store.selectedOutputChannels.map { String($0) + " reported output channels" } ?? "Output channel count unavailable")
                             Text(store.outputRoutingState.message).font(.caption)
-                                .foregroundStyle(store.outputRoutingState.isAvailable ? .secondary : .orange)
+                                .foregroundStyle(store.outputRoutingState.isAvailable ? Color.secondary : Color.orange)
                         }
                         Section("Detected Pairs") {
-                            let pairs = store.availableOutputPairs
-                            if pairs.isEmpty {
-                                Text("No stereo pair is reported for the selected device.").foregroundStyle(.secondary)
+                            if store.availableOutputPairs.isEmpty {
+                                Text("No stereo pair is reported for the selected device.").foregroundStyle(Color.secondary)
                             } else {
-                                ForEach(pairs) { pair in
+                                ForEach(store.availableOutputPairs) { pair in
                                     HStack {
                                         Image(systemName: pair.index == 0 ? "checkmark.circle.fill" : "circle.dashed")
-                                            .foregroundStyle(pair.index == 0 ? .green : .secondary)
+                                            .foregroundStyle(pair.index == 0 ? Color.green : Color.secondary)
                                         Text(pair.title)
                                         Spacer()
-                                        Text(pair.index == 0 ? "Active" : "Detected").foregroundStyle(.secondary)
+                                        Text(pair.index == 0 ? "Active" : "Detected").foregroundStyle(Color.secondary)
                                     }
                                 }
                             }
-                            Text("Derived from the device's reported output channel count. A leftover unpaired channel is not a stereo destination, and a device that reports no channels shows none.").font(.caption).foregroundStyle(.secondary)
+                            Text("Derived from the device's reported output channel count. A leftover unpaired channel is not a stereo destination, and a device that reports no channels shows none.").font(.caption).foregroundStyle(Color.secondary)
                         }
                         Section("Routing") {
-                            Text("Every sound, the Tonic Pad and the click are mixed to Output 1–2.").foregroundStyle(.secondary)
-                            Text("Per-sound pan and gain remain in Sound Settings. Category defaults, per-sound destinations and mixing to an extra detected pair are not implemented yet (#107), so StageKeys never sends audio to a pair it only reports.").font(.caption).foregroundStyle(.secondary)
+                            Text("Every sound, the Tonic Pad and the click are mixed to Output 1–2.").foregroundStyle(Color.secondary)
+                            Text("Per-sound pan and gain remain in Sound Settings. Category defaults, per-sound destinations and mixing to an extra detected pair are not implemented yet (#107), so StageKeys never sends audio to a pair it only reports.").font(.caption).foregroundStyle(Color.secondary)
                         }
                     case "Metronome":
                         Section("Metronome") {

@@ -73,7 +73,7 @@ import Foundation
         assert(report.usableOutputPairs == nil, "An unmeasured pair count must not be reported as zero")
         let boundedPairs = SupportDiagnostics(version: "test", build: "test", running: true, status: nil, latency: nil,
             midiSources: 0, loadedSlots: 0, limiterBypassed: false, recording: false, usableOutputPairs: 99)
-        assert(boundedPairs.usableOutputPairs == FlexOutputPair.maximumPairs)
+        assert(boundedPairs.usableOutputPairs == Optional(FlexOutputPair.maximumPairs))
         print("PASS: diagnostics omit names/IDs/paths, distinguish unknown metrics and bound numeric data")
     }
 }
