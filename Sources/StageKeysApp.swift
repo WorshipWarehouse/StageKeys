@@ -67,11 +67,21 @@ enum StageTheme {
 struct StageButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var isEnabled
     var selected = false
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label.font(StageTheme.font(12, weight: .semibold))
-            .padding(.horizontal, 12).padding(.vertical, 10)
-            .background(selected ? StageTheme.selected : StageTheme.raised.opacity(configuration.isPressed ? 0.9 : 0.65), in: RoundedRectangle(cornerRadius: 7))
-            .foregroundStyle(selected ? StageTheme.base : Color.white.opacity(0.9)).opacity(isEnabled ? 1 : 0.4)
+    /// When set, the whole styled button — fill and hit area included — is exactly
+    /// this many points square instead of the label plus the default padding. The
+    /// footprint is what a performer taps, so an audited target belongs here.
+    var fixedSize: CGFloat? = nil
+    @ViewBuilder func makeBody(configuration: Configuration) -> some View {
+        let label = configuration.label.font(StageTheme.font(12, weight: .semibold))
+        Group {
+            if let fixedSize {
+                label.frame(width: fixedSize, height: fixedSize).contentShape(Rectangle())
+            } else {
+                label.padding(.horizontal, 12).padding(.vertical, 10)
+            }
+        }
+        .background(selected ? StageTheme.selected : StageTheme.raised.opacity(configuration.isPressed ? 0.9 : 0.65), in: RoundedRectangle(cornerRadius: 7))
+        .foregroundStyle(selected ? StageTheme.base : Color.white.opacity(0.9)).opacity(isEnabled ? 1 : 0.4)
     }
 }
 enum StageSheet: Identifiable {
@@ -262,10 +272,11 @@ struct PerformanceView: View {
             }.foregroundStyle(StageTheme.selected.opacity(0.85)).padding(.vertical, 3)
         }.frame(height: 52)
     }
-    /// Only the interactive box grows: the glyph, the selected fill and the
-    /// strip's spacing are unchanged, so the audited target reaches the performer
-    /// without a new visual style.
-    private var workspaceButtonBox: CGFloat {
+    /// The audited footprint for the workspace buttons: 44 pt on touch, 30 pt with
+    /// the pointer. `StageButtonStyle` applies it to the whole button, fill and hit
+    /// area together, so the style's own padding cannot make the button larger than
+    /// the target the audit records.
+    private var workspaceButtonTarget: CGFloat {
         #if os(iOS)
         return CGFloat(StageA11y.workspaceButtonTarget(touch: true))
         #else
@@ -274,9 +285,9 @@ struct PerformanceView: View {
     }
     private var workspaceButtons: some View {
         HStack(spacing: 6) {
-            Button { store.setSustain(!store.sustain) } label: { Image(systemName: "pedal.accelerator").frame(width: workspaceButtonBox, height: workspaceButtonBox) }.buttonStyle(StageButtonStyle(selected: store.sustain)).accessibilityLabel("Sustain pedal")
-            Button { store.editRanges.toggle() } label: { Image(systemName: "rectangle.split.3x1").frame(width: workspaceButtonBox, height: workspaceButtonBox) }.buttonStyle(StageButtonStyle(selected: store.editRanges)).accessibilityLabel("Edit keyboard layers")
-            Button { store.showRanges.toggle() } label: { Image(systemName: "pianokeys").frame(width: workspaceButtonBox, height: workspaceButtonBox) }.buttonStyle(StageButtonStyle(selected: store.showRanges)).accessibilityLabel("Show keyboard ranges")
+            Button { store.setSustain(!store.sustain) } label: { Image(systemName: "pedal.accelerator") }.buttonStyle(StageButtonStyle(selected: store.sustain, fixedSize: workspaceButtonTarget)).accessibilityLabel("Sustain pedal")
+            Button { store.editRanges.toggle() } label: { Image(systemName: "rectangle.split.3x1") }.buttonStyle(StageButtonStyle(selected: store.editRanges, fixedSize: workspaceButtonTarget)).accessibilityLabel("Edit keyboard layers")
+            Button { store.showRanges.toggle() } label: { Image(systemName: "pianokeys") }.buttonStyle(StageButtonStyle(selected: store.showRanges, fixedSize: workspaceButtonTarget)).accessibilityLabel("Show keyboard ranges")
         }.padding(4).background(StageTheme.panel, in: RoundedRectangle(cornerRadius: 8))
     }
     private var compactNavigation: some View {

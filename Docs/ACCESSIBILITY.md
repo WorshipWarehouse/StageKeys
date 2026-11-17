@@ -107,11 +107,13 @@ guessed at from Linux.
 
 The workspace strip's three icon buttons (sustain, edit layer ranges, show keyboard ranges) were the
 smallest interactive controls at a literal 30 × 28 box — exactly the pointer minimum and 14 pt short
-of the touch minimum. They are now sized from `StageA11y.workspaceButtonTarget`: 44 × 44 on
-iPhone/iPad and 30 × 30 with the pointer, with the glyph, selected fill and spacing unchanged. The
-strip sits beside a horizontally scrolling snapshot strip, so on a compact width the extra 42 pt
-narrows that scroll area instead of pushing the rack wider. Hosted `builds (simulator)` compiles it;
-the rendered result on a device is **not** viewed here.
+of the touch minimum. They are now the whole styled button at `StageA11y.workspaceButtonTarget`:
+44 × 44 on iPhone/iPad and 30 × 30 with the pointer. The style's own padding is replaced by that
+fixed footprint, so the selected fill grows with the target instead of adding 24 × 20 pt on top of
+it; the glyph and strip spacing are unchanged. The strip sits beside a horizontally scrolling
+snapshot strip, so on a compact width the extra 42 pt narrows that scroll area instead of pushing
+the rack wider. Hosted `builds (simulator)` compiles it; the rendered result on a device is
+**not** viewed here.
 
 ## Reproduce
 
