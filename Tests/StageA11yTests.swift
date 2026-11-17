@@ -51,6 +51,16 @@ import Foundation
   assert(StageA11y.meetsHitTarget(width: 34, height: 45, pointer: true))
   assert(!StageA11y.meetsHitTarget(width: 27, height: 28, pointer: true))
   assert(StageA11y.meetsHitTarget(width: 28, height: 28, pointer: true))
+  // A five-star rating row draws 12 pt glyphs, so the icon is not the target. The
+  // shipped control put each star in a 17 × 28 pt box, which missed even the
+  // pointer minimum; that value stays here as the regression witness.
+  assert(!StageA11y.meetsHitTarget(width: 17, height: 28, pointer: true), "the shipped star box fails the pointer minimum")
+  assert(!StageA11y.meetsHitTarget(width: 17, height: 28, pointer: false), "the shipped star box fails the touch minimum")
+  assert(StageA11y.ratingStarTarget(touch: false)==StageA11y.minimumPointerTarget)
+  assert(StageA11y.ratingStarTarget(touch: true)==StageA11y.minimumTouchTarget)
+  assert(StageA11y.meetsHitTarget(width: StageA11y.ratingStarTarget(touch: false), height: StageA11y.ratingStarTarget(touch: false), pointer: true))
+  assert(StageA11y.meetsHitTarget(width: StageA11y.ratingStarTarget(touch: true), height: StageA11y.ratingStarTarget(touch: true), pointer: false))
+  assert(StageA11y.ratingStarTarget(touch: true) > StageA11y.ratingStarTarget(touch: false), "touch needs more room than the pointer")
   // Layer identity hues: two of the five measure 3.03:1 (blue) and 3.41:1 (purple)
   // as text on a panel, so the text colour has to be derived, not reused raw. The
   // fills, borders and icons keep the original hue.
@@ -70,6 +80,6 @@ import Foundation
     if accent.contrast(against: panel) >= StageA11y.bodyTextContrast {assert(raised==accent)} else {assert(raised != accent && raised.relativeLuminance > accent.relativeLuminance)}
     assert(abs(raised.contrast(against: panel)-accentPairs[index].ratio) < 0.000001)
   }
-  print("PASS: contrast math, palette record, \(pairs.count) audited pairs, \(accentPairs.count) legible accents, octave-marker regression, readable-size floor and hit targets")
+  print("PASS: contrast math, palette record, \(pairs.count) audited pairs, \(accentPairs.count) legible accents, octave-marker regression, readable-size floor, hit targets and rating-star targets")
  }
 }

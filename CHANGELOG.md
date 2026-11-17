@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Size each library rating star's tappable box from the audited target (28 pt with the pointer, 44 pt on touch) instead of 17 × 28 pt, so a rating is no longer a 17 pt-wide target; the drawn 12 pt glyph and the rating values are unchanged (#19).
+
 - Stop completed AU loader callbacks from retaining the replaced sampler, and refuse forward, rollback and manual audio restart while a purged/truncated sampler is still retained; preserve the stopped recovery guard until release, with generated failure/retry coverage and a 96-switch live-output verification for #192.
 
 - Release a truncated or purged hosted sampler through one ownership registry and disposal order while the engine is stopped, commit the truncation into the rollback so a restored graph never references released nodes, and record the verified pre-restart release in the local support report (#192). The live macOS crash remains unreproduced and this is not a general rollback of released audio.

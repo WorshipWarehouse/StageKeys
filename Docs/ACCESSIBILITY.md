@@ -15,6 +15,7 @@ physical devices — see [Not verified here](#not-verified-here).
 | Text as small as 8–10 pt in the mixer, transport, editors and import surface | Every themed size is clamped to **11 pt**; the 8–10 pt call sites were raised |
 | Piano octave marker at 40 % black on the 88 % key (**2.74:1**) | 60 % black (**5.26:1**); the failing value stays in the test as a witness |
 | No stated touch/pointer target, no record | 44 pt touch / 28 pt pointer constants, measured against the dense controls |
+| Library rating stars in 17 × 28 pt boxes (**below** the 28 pt pointer minimum) | 28 × 28 pt with the pointer and 44 × 44 pt on touch; the 12 pt glyph is unchanged |
 | Contrast unmeasured | 9 audited text/background pairs asserted in a gated test |
 
 ## Measured contrast
@@ -103,6 +104,14 @@ Measured from the source at the audited surfaces: the dense mixer icon buttons a
 34–38 pt widths are below 44 pt. Widening them reflows the mixer that the issue also requires
 photographic evidence for, so that change is deliberately left to the device pass rather than
 guessed at from Linux.
+
+The library rating row was the one measured control below even the pointer minimum: five 12 pt stars sat
+in 17 × 28 pt boxes, so a rating tap (and the hover preview) targeted a 17 pt-wide strip. Each star's
+box now comes from `StageA11y.ratingStarTarget` — **28 × 28 pt** with the pointer, **44 × 44 pt** on
+touch — while the drawn glyph stays 12 pt, because an icon is not a target. On macOS the row height is
+unchanged and the five boxes grow from 85 to 140 pt wide; on iPhone/iPad the row becomes 44 pt high and
+220 pt wide, and **that reflow has not been seen running**. The rating stars and the dense mixer
+buttons are the two open items for the device pass.
 
 ## Reproduce
 
