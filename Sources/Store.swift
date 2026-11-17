@@ -2923,6 +2923,39 @@ final class PerformanceStore: ObservableObject {
     func restoreLocalSetlist(_ token: UUID) {
         do { _ = try localSetlistLibrary().restore(token:token); refreshSetlists() } catch { message = error.localizedDescription }
     }
+    /// Restore one saved document's validated previous copy. The copy is decoded
+    /// and admitted before it replaces the damaged file, and the current performance
+    /// is only replaced when the recovered document is the setlist being performed;
+    /// otherwise the next autosave would write the damaged state back over it.
+    func recoverPreviousSetlist(_ id: UUID) {
+        // Restoring a document is a setlist change, so it follows the same lock as
+        // opening one: the live performance must not be replaced while it is locked.
+        guard !patchLock else { message = "Unlock patches before changing setlists."; return }
+        do {
+            let library = try localSetlistLibrary()
+            // Decode and admit the candidate before the previous copy replaces the
+            // damaged file. A rejected activation must leave the recoverable bytes
+            // on disk instead of publishing a document the next autosave overwrites.
+            let candidate = try library.previous(id: id)
+            if id == currentSetlistID { try prepareSetlistActivation(candidate) }
+            let descriptor = try library.recoverPrevious(id: id)
+            refreshSetlists()
+            guard id == currentSetlistID else {
+                message = "Previous copy of \(descriptor.name) restored. The damaged file was retained; the current performance was not changed."
+                return
+            }
+            // Clear the message before applying the patch so a synchronous graph
+            // failure stays visible instead of being replaced by the success text.
+            message = nil
+            panic(); cancelTransition()
+            setlist = candidate; selected = 0; activeSnapshot = nil
+            applyPatch(); recallTonicPatch(); audio.clock(performedTempo, metronome)
+            save()
+            if message == nil { message = "Previous copy of \(descriptor.name) restored and opened. The damaged file was retained." }
+        } catch {
+            message = "Could not recover the previous setlist copy: \(error.localizedDescription). Existing files were retained."
+        }
+    }
     func load(_ url: URL) {
         guard !patchLock else { message = "Unlock patches before changing setlists."; return }
         let access = url.startAccessingSecurityScopedResource(); defer { if access { url.stopAccessingSecurityScopedResource() } }
