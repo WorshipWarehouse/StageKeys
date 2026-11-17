@@ -75,6 +75,26 @@ import Foundation
         _ = try library.save(rotationSource, id: rotation.id)
         let secondRecovery = try library.recoverPrevious(id: rotation.id)
         assert(secondRecovery.name == "Recovery Source")
+        // Admission runs before publication: a caller can decode the previous copy
+        // and change its mind without the damaged primary being replaced or retained.
+        let damagedPrefix = rotation.id.uuidString + ".json.damaged-"
+        func damagedCopies() throws -> Int {
+            try FileManager.default.contentsOfDirectory(atPath: root.path).filter { $0.hasPrefix(damagedPrefix) }.count
+        }
+        let damagedBeforePreview = try damagedCopies()
+        let damagedPrimary = Data("broken json".utf8)
+        try damagedPrimary.write(to: root.appendingPathComponent(rotation.id.uuidString + ".json"))
+        let previewed = try library.previous(id: rotation.id)
+        assert(previewed.name == secondRecovery.name,"The preview is the copy recovery would restore")
+        assert((try! Data(contentsOf: root.appendingPathComponent(rotation.id.uuidString + ".json"))) == damagedPrimary,
+               "Decoding the previous copy must not publish it")
+        let damagedAtPreview = try damagedCopies()
+        assert(damagedAtPreview == damagedBeforePreview,"Previewing must not retain a damaged copy yet")
+        do { _ = try library.previous(id: UUID()); assertionFailure("Previewed a missing previous copy") }
+        catch SetlistLibraryError.noPreviousCopy {}
+        _ = try library.recoverPrevious(id: rotation.id)
+        let damagedAfterRecovery = try damagedCopies()
+        assert(damagedAfterRecovery == damagedBeforePreview + 1,"Recovery after the preview still retains the damaged bytes")
         // Capacity counts corrupt UUID entries too; none are silently discarded.
         let listing = try library.list()
         var storedDocuments = listing.entries.count + listing.issues.count

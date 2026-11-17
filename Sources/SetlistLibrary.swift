@@ -209,6 +209,14 @@ final class SetlistLibrary {
               let data = try? RecoverableSessionFile.read(url, limit: byteLimit) else { return false }
         return (try? Self.document(data)) != nil
     }
+    /// Decode this document's validated previous copy without touching either file,
+    /// so a caller can admit the recovered setlist before it is published over the
+    /// damaged primary. Publishing first would let the next autosave overwrite a
+    /// copy that was never accepted.
+    func previous(id: UUID) throws -> Setlist {
+        guard hasPreviousCopy(id: id) else { throw SetlistLibraryError.noPreviousCopy }
+        return try Self.document(RecoverableSessionFile.read(previousFile(id), limit: byteLimit))
+    }
     /// Restore this document's validated previous copy. The unreadable primary is
     /// retained beside it, and the restored document replaces it atomically. This is
     /// a file restore only: callers decide whether the live session changes.

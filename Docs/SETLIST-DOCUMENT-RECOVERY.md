@@ -35,30 +35,35 @@ document was reported but not recoverable, even though every neighbouring archiv
 - **The error row carries the truth.** `SetlistLibraryIssue` now records the document identity and
   whether a validated previous copy exists, so **Settings → Setlists** shows **Restore Previous
   Copy** only where it can succeed.
-- **The live session is not silently replaced.** `PerformanceStore.recoverPreviousSetlist` always
-  restores the file. It replaces the live performance only when the recovered document is the
-  setlist currently being performed; otherwise the next autosave would immediately write the
-  damaged in-memory state back over the recovered file. Recovery of a currently performed setlist
-  reuses the existing key-change path: resource admission (`prepareSetlistActivation`), Panic,
-  `applyPatch`, Tonic recall and the performed tempo/click clock.
+- **The live session is not silently replaced.** `PerformanceStore.recoverPreviousSetlist` decodes
+  the previous copy through `SetlistLibrary.previous(id:)` and, for the setlist currently being
+  performed, runs the existing admission (`prepareSetlistActivation`) before the file is restored.
+  Publishing first would let the next autosave write the old damaged in-memory state over a
+  recovered document that had never been accepted. Recovery then reuses the same key-change path:
+  Panic, `applyPatch`, Tonic recall and the performed tempo/click clock, and Patch Lock refuses the
+  change before any file work. An inactive document is restored without touching the live session.
 
 ## Behaviour and limits
 
 - One previous copy per document, replaced each time the primary changes. It is a rotation copy,
   not a version history. Preserved unreadable copies use a unique file name per save, so repeated
   saves over an unreadable document accumulate files until the user removes them.
-- Recovering the setlist being performed replaces the live document with the recovered one. The
-  superseded library bytes stay on disk, and the separate active-session file is not modified by
-  recovery, but unsaved in-memory edits made after the last save are discarded by that reload —
-  which is the meaning of restoring the previous copy.
+- Recovering the setlist being performed replaces the live document with the recovered one. That
+  save rewrites the active session and settings and rotates their previous copies; recovering a
+  document that is **not** being performed leaves the session files untouched. Unsaved in-memory
+  edits made after the last save are discarded by the reload — which is the meaning of restoring the
+  previous copy.
+- Recovery of any document is refused while Patch Lock is on, matching every other setlist switch;
+  the lock is released in the patch controls, and no bytes change while it is on.
 - Rotation writes at most the same bytes the primary already holds, and both writes stay inside the
   existing 64 MB per-document limit. Recovery needs free disk space for the retained copy.
 - The library was already documented as "access serially on one executor"; rotation does not add
   locking and assumes the same serialized access as every other `SetlistLibrary` call.
-- Recovery restores document bytes only. It does not re-admit missing samples or Audio Units by
-  itself; the usual `prepareSetlistActivation` admission still applies when the recovered document
-  is opened. A rejected activation leaves the recovered file in place and the live performance
-  unchanged.
+- Recovery restores document bytes only, and it does not re-admit missing samples or Audio Units by
+  itself. For the setlist being performed, the previous copy is decoded and admitted
+  (`prepareSetlistActivation`) **before** it is published over the damaged document, so a rejected
+  activation leaves the damaged file and the recoverable copy exactly as they were, and the live
+  performance unchanged.
 - `Store.save` preserves the current setlist on most edits, so the previous copy tracks the last
   changed save rather than a fixed interval. Unchanged saves write nothing.
 - The existing session-level recovery (`Docs/SESSION-RECOVERY-LIMITS.md`) still governs the active
@@ -75,7 +80,9 @@ document was reported but not recoverable, even though every neighbouring archiv
    `<uuid>.json.damaged-<uuid>`, and the restored bytes load through `load(id:)`;
 5. unreadable primary bytes are preserved instead of rotated, so the previous copy still restores;
 6. recovery without a previous copy throws `noPreviousCopy`;
-7. the existing capacity, trash, symlink and invalid-write checks still hold (the capacity fill now
+7. `previous(id:)` decodes the rotation copy without publishing it or retaining a damaged copy, so
+   admission can reject it before any bytes change, and recovery afterwards still works;
+8. the existing capacity, trash, symlink and invalid-write checks still hold (the capacity fill now
    counts whatever documents the test has already created).
 
 Commands:
