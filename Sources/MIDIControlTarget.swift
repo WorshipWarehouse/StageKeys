@@ -18,6 +18,32 @@ struct ModulationWheelDrag {
     mutating func end(){raw=nil;sent=nil;translation=0}
 }
 
+/// 14-bit pitch-bend wheel decoding. The wheel is forwarded unchanged to every
+/// hosted sampler and Audio Unit, so the instrument keeps its own bend range;
+/// StageKeys only translates the wire format and recentres the wheel.
+enum MIDIPitchBend {
+    /// The 14-bit centre. A wheel at rest sends this value.
+    static let centre = 8192
+    /// Wheel position in -1...1 from the two data bytes, where 0 is centre,
+    /// -1 is fully down and 1 is fully up. Bit 7 of each byte is reserved.
+    static func normalized(lsb: UInt8, msb: UInt8) -> Float {
+        let value = Int(msb & 0x7f) << 7 | Int(lsb & 0x7f)
+        let delta = value - centre
+        // The lower half has 8192 steps and the upper half 8191, so each side is
+        // scaled by its own span and both extremes land exactly on ±1.
+        return delta >= 0 ? Float(delta) / 8191 : Float(delta) / 8192
+    }
+    /// Wire bytes for a wheel position. Out-of-range and non-finite input is
+    /// clamped rather than wrapped, so a bad value can never overshoot the wheel.
+    static func bytes(normalized: Float) -> (lsb: UInt8, msb: UInt8) {
+        guard normalized.isFinite else { return (0, UInt8(centre >> 7)) }
+        let position = min(1, max(-1, normalized))
+        let value = Int((position * Float(position < 0 ? 8192 : 8191)).rounded()) + centre
+        let clamped = min(16383, max(0, value))
+        return (UInt8(clamped & 0x7f), UInt8(clamped >> 7))
+    }
+}
+
 /// Persistent, stable identity for a MIDI CC assignment.
 enum MIDIControlTarget: Codable, Hashable, Identifiable {
     case soundLevel(Int)
