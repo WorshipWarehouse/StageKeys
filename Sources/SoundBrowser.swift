@@ -114,6 +114,9 @@ struct SoundBrowser: View {
         .onChange(of:query.search){_ in clearHiddenSelection()}
         .onChange(of:query.filters){_ in clearHiddenSelection()}
         .onChange(of:store.librarySounds){_ in clearHiddenSelection();store.refreshLibraryContent()}
+        // Unfavoriting can remove the selected row from Favorites results; the
+        // selection observer then ends its audition and range preview.
+        .onChange(of:store.soundFavorites){_ in clearHiddenSelection()}
     }
     private var header:some View {
         HStack(spacing:16) {
