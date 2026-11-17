@@ -96,9 +96,15 @@ def spectral_centroid(samples: list[float], rate: int) -> float:
         return 0.0
     start = (len(samples) - count) // 2
     block = samples[start : start + count]
-    bins = min(512, count // 2)
+    # Spread a bounded number of bins across the whole Nyquist range. Stopping at
+    # 512 low bins excluded everything at and above 6 kHz for a 4096-sample block
+    # at 48 kHz, so a high tone contributed only leakage to the centroid.
+    limit = count // 2
+    bin_count = min(256, max(1, limit - 1))
+    bins = sorted({max(1, min(limit - 1, round(index * (limit - 1) / bin_count)))
+                   for index in range(1, bin_count + 1)})
     weighted = total = 0.0
-    for k in range(1, bins):
+    for k in bins:
         real = imag = 0.0
         step = -2.0 * math.pi * k / count
         for n, value in enumerate(block):
@@ -121,10 +127,19 @@ def decay_seconds(samples: list[float], rate: int) -> float | None:
         return None
     target = peak * 0.001  # -60 dB amplitude
     window = max(1, rate // 100)
+    quiet = None
     for index in range(peak_index, len(samples) - window, window):
         if rms(samples[index : index + window]) <= target:
-            return (index - peak_index) / rate
-    return None
+            quiet = index
+            break
+    if quiet is None:
+        return None
+    # A quiet gap can sit between the direct sound and a later echo, so decay is
+    # only established when everything from that gap to the end stays below the
+    # threshold; a capture that ends first reports no decay instead of the gap.
+    if rms(samples[quiet:]) > target:
+        return None
+    return (quiet - peak_index) / rate
 
 
 def describe(reference: Audio, candidate: Audio, align_onsets: bool = False) -> dict[str, object]:

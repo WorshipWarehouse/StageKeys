@@ -46,3 +46,21 @@ with tempfile.TemporaryDirectory() as directory:
     decoded = comparison.read_pcm(extended)
     assert decoded.rate == 48000 and decoded.channels == [[0.0, 0.25, -0.5, 1.0]]
 print("PASS: matched capture metrics report gain, onset, correlation and aligned error")
+
+# A high tone must contribute its main energy to the centroid, not only leakage.
+tone=[math.sin(2*math.pi*10000*i/48000) for i in range(4096)]
+assert abs(comparison.spectral_centroid(tone,48000)-10000)<500, comparison.spectral_centroid(tone,48000)
+
+# A quiet gap before a later echo is not the end of the decay; a capture that
+# never settles reports no decay at all.
+rate=48000
+echo=[0.0]*(rate//2)
+echo[0]=1.0
+echo[rate//5]=0.5
+assert comparison.decay_seconds(echo,rate) is None,"an echo after the first quiet gap must not end the decay"
+settling=[0.0]*(rate//2)
+settling[0]=1.0
+for i in range(1,rate//10):
+    settling[i]=math.exp(-i/2000)
+assert comparison.decay_seconds(settling,rate) is not None,"a settling capture must report a decay"
+print("PASS: the centroid covers the full band and decay waits for a settled tail")
