@@ -16,7 +16,7 @@ import CoreMIDI
         let end=Date().addingTimeInterval(3)
         while !predicate() && Date()<end { RunLoop.current.run(until:Date().addingTimeInterval(0.01)) }
         let discovered=store.midiSources.map{String(describing:$0.endpoint)+":"+$0.name}
-        assert(predicate(),"Timed out at wait \(waitIndex); endpoints \(a), \(b), discovered \(discovered), CoreMIDI source count: \(MIDIGetNumberOfSources())")
+        assert(predicate(),"Timed out at wait \(waitIndex); endpoints \(a), \(b), discovered \(discovered), CoreMIDI source count: \(MIDIGetNumberOfSources()), selected \(store.selected), patch lock \(store.patchLock), started \(store.started), message \(store.message ?? "none")")
     }
     wait { store.midiSources.contains(where:{$0.name=="Test Keyboard A"}) && store.midiSources.contains(where:{$0.name=="Test Keyboard B"}) }
     store.primarySourceID=store.midiSources.first{$0.name=="Test Keyboard A"}!.id;store.midiChannel=0
