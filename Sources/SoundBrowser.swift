@@ -189,6 +189,23 @@ struct SoundBrowser: View {
             }.padding(.horizontal,16).frame(height:38)
         }.background(StageTheme.base)
     }
+    /// The name and status part of a result row. Both platform layouts share it
+    /// so the rating control can move without changing what the row says.
+    private func soundRowLabel(_ sound: BrowserSound) -> some View {
+    Button{selectedID=sound.id}label:{VStack(alignment:.leading,spacing:5){Text(sound.name).font(StageTheme.font(16)).multilineTextAlignment(.leading);if collection == "MainStage Archive" {Text(sound.playable ? "Playable":"Needs Conversion").font(StageTheme.font(11)).foregroundStyle(.secondary)};if sound.unavailableReason != nil || sound.contentIssue != nil {Text("Unavailable").font(StageTheme.font(11)).foregroundStyle(.orange)};if sound.collection == "Audio Units" {Text(sound.tags.sourceModel).font(StageTheme.font(11)).foregroundStyle(.secondary)}}.frame(maxWidth:.infinity,alignment:.leading).padding(.leading,14).padding(.vertical,13)}.buttonStyle(.plain).accessibilityLabel("\(sound.name), \((sound.unavailableReason != nil || sound.contentIssue != nil) ? "Unavailable" : sound.playable ? "Playable":"Needs Conversion")")
+    }
+
+    /// One result row: side by side where the pointer leaves room, stacked on a
+    /// phone where five 44 pt star targets would squeeze the name to a few
+    /// characters per line.
+    private func rowLayout<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        #if os(iOS)
+        VStack(alignment: .leading, spacing: 0, content: content)
+        #else
+        HStack(spacing: 0, content: content)
+        #endif
+    }
+
     private var resultColumn:some View {
         VStack(spacing:0) {
             HStack(spacing:8) {
@@ -199,8 +216,8 @@ struct SoundBrowser: View {
             ScrollView {
                 LazyVStack(spacing:2) {
                     ForEach(results){sound in
-                        HStack(spacing:0){
-                            Button{selectedID=sound.id}label:{VStack(alignment:.leading,spacing:5){Text(sound.name).font(StageTheme.font(16)).multilineTextAlignment(.leading);if collection == "MainStage Archive" {Text(sound.playable ? "Playable":"Needs Conversion").font(StageTheme.font(11)).foregroundStyle(.secondary)};if sound.unavailableReason != nil || sound.contentIssue != nil {Text("Unavailable").font(StageTheme.font(11)).foregroundStyle(.orange)};if sound.collection == "Audio Units" {Text(sound.tags.sourceModel).font(StageTheme.font(11)).foregroundStyle(.secondary)}}.frame(maxWidth:.infinity,alignment:.leading).padding(.leading,14).padding(.vertical,13)}.buttonStyle(.plain).accessibilityLabel("\(sound.name), \((sound.unavailableReason != nil || sound.contentIssue != nil) ? "Unavailable" : sound.playable ? "Playable":"Needs Conversion")")
+                        rowLayout {
+                            soundRowLabel(sound)
                             SoundRatingControl(name:sound.name,rating:sound.rating){store.rateSound(sound.ratingID,$0)}.padding(.horizontal,12)
                         }.background(selectedID == sound.id ? selectionColor:.clear,in:RoundedRectangle(cornerRadius:7)).foregroundStyle(selectedID == sound.id ? .white:.white.opacity(0.85))
                          .contextMenu {if let entry=sound.entry {
