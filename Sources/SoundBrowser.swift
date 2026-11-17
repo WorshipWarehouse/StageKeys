@@ -171,6 +171,15 @@ struct SoundBrowser: View {
         }.padding(.horizontal,16).frame(minHeight:46).background(StageTheme.raised.opacity(0.3))
         .accessibilityElement(children:.contain)
     }
+    /// Leaving the browser empties the search and filters but keeps the ordering,
+    /// direction and Random seed: those observers persist the performer's saved
+    /// preference, so a navigation action must not overwrite it.
+    private func clearTransientQuery() {
+        query.search=""
+        query.filters=[:]
+        query.favoritesOnly=false
+        clearHiddenSelection()
+    }
     private var filterBar:some View {
         ScrollView(.horizontal,showsIndicators:false) {
             HStack(spacing:8) {
@@ -233,8 +242,8 @@ struct SoundBrowser: View {
                             if !query.search.isEmpty || !query.filters.isEmpty {Button("Clear Filters"){query.filters=[:];query.search=""}}
                             if emptyState.offersImport {
                                 Button("Import Samples"){importHub=true}.buttonStyle(StageButtonStyle())
-                                Button("Add Audio Unit"){collection="Audio Units";query=LibraryQuery()}.buttonStyle(StageButtonStyle())
-                                Button("MIDI Routing"){collection="External MIDI";query=LibraryQuery()}.buttonStyle(StageButtonStyle())
+                                Button("Add Audio Unit"){collection="Audio Units";clearTransientQuery()}.buttonStyle(StageButtonStyle())
+                                Button("MIDI Routing"){collection="External MIDI";clearTransientQuery()}.buttonStyle(StageButtonStyle())
                             } else {
                                 Button("Recover Previous Sound Catalog"){store.recoverPreviousLibrary()}.buttonStyle(StageButtonStyle())
                                     .accessibilityLabel("Recover the previous sound catalog")
