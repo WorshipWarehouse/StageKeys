@@ -12,7 +12,10 @@ import CoreMIDI
         // A wheel at rest sends the 14-bit centre. Each half is scaled by its own
         // span, so both extremes land exactly on ±1.
         assert(MIDIPitchBend.normalized(lsb: 0, msb: 64) == 0)
-        assert(MIDIPitchBend.normalized(lsb: 0, msb: 127) == 1)
+        // The upper half has 8191 steps, so a zero fine byte at full coarse
+        // travel sits just under full bend; only 127/127 reaches exactly 1.
+        let upper = MIDIPitchBend.normalized(lsb: 0, msb: 127)
+        assert(upper > 0.98 && upper < 1, "the upper half is scaled by its own span")
         assert(MIDIPitchBend.normalized(lsb: 0, msb: 0) == -1)
         assert(MIDIPitchBend.normalized(lsb: 127, msb: 127) == 1)
         // Bit 7 of each data byte is reserved, so it must not change the reading.
