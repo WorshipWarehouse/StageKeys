@@ -65,6 +65,16 @@ import Foundation
         assert(translated.effects[1].values[0]==79 && translated.effects[1].values[6]==265)
         assert(translated.issues.contains{$0.contains("Unmapped")})
         assert(translated.macros.count==1 && translated.macros[0].midiCC==71 && translated.macros[0].midiChannel==2)
+        var selected=try translated.applying(to:Layer(name:"Selected",instrument:-1,gain:1),selection:.init(audio:[0]))
+        assert(selected.layer.effects[0].values[0] == -6)
+        var selectedSource=selected.layer.mainStageSource!
+        assert(!selectedSource.applyMIDI(controller:71,value:127,channel:1),"A source macro must retain its MIDI channel")
+        assert(selectedSource.applyMIDI(controller:71,value:127,channel:2))
+        selected.layer.mainStageSource=selectedSource
+        for (slot,sourceIndex) in selectedSource.selectedAudio.enumerated(){selected.layer.effects[slot]=selectedSource.effects[sourceIndex]}
+        assert(selected.layer.effects[0].values[0] == 0,"Selected source-effect macros must remain active after conversion")
+        let selectedReload=try JSONDecoder().decode(Layer.self,from:JSONEncoder().encode(selected.layer))
+        assert(selectedReload.mainStageSource==selected.layer.mainStageSource && selectedReload.effects[0].values[0]==0)
         var channelDraft=translated
         channelDraft.low=36;channelDraft.high=96;channelDraft.transpose=12
         MainStageProcessing.channelSettings(["volume":1509949440,"Channel_pan":-0.25,"Channel_isMuted":false,"Channel_filterSustainPedal":true],to:&channelDraft)

@@ -101,7 +101,12 @@ enum MainStagePatch {
             throw Failure.invalid("The source patch has no metadata integrity record. Import it again before converting.")
         }
         let context=digest(Data((metadata+"/"+channel.file).utf8))
-        return "mainstage-channel-"+channel.sha256+"-v2-"+context+"-"+variant
+        // The sample-content identity combines the EXS map and sample manifest
+        // hashes. Hashing that long new token keeps conversion IDs within the
+        // library schema's 256-character bound without changing older IDs that
+        // used a single 64-character EXS digest.
+        let token=variant.count<=64 ? variant:digest(Data(variant.utf8))
+        return "mainstage-channel-"+channel.sha256+"-v2-"+context+"-"+token
     }
     static func assembledChannels(_ report:Report,entries:[LibrarySound],selected:Set<Int>?=nil)throws->Patch {
         let channels=report.channels.enumerated().filter{(selected?.contains($0.offset) ?? true) && $0.element.isConvertible}.map(\.element)
@@ -516,18 +521,36 @@ enum MainStageAudioUnit {
 /// their own sample root without changing the original files.
 enum MainStageDiscovery {
     struct Location {var instruments:URL;var samples:URL;var label:String}
-    struct Candidate {var file:URL;var samples:URL;var sha256:String}
+    struct Candidate {var file:URL;var samples:URL;var sha256:String;var sampleManifestSHA256:String?=nil;var sampleIssue:String?=nil
+        var identity:String? {sampleManifestSHA256.map{sha256+":"+$0}}
+    }
     struct Search:Codable,Identifiable {var id:String;var location:String;var detail:String}
     struct Result {var candidates:[String:[Candidate]];var searches:[Search]}
+    static func candidate(file:URL,samples:URL)throws->Candidate {
+        var result=Candidate(file:file,samples:samples,sha256:try AssetDigest.sha256(file))
+        do {result.sampleManifestSHA256=try EXSNative.validateSampleReferences(file,sampleRoot:samples).sha256}
+        catch {result.sampleIssue=error.localizedDescription}
+        return result
+    }
     static func locations(source:URL,retained:URL)->[Location] {
         var values=[Location(instruments:retained,samples:retained,label:"Retained source"),
                     Location(instruments:source.pathExtension.lowercased()=="cst" ? source.deletingLastPathComponent():source,samples:source.pathExtension.lowercased()=="cst" ? source.deletingLastPathComponent():source,label:"Selected source")]
         #if os(macOS)
-        for root in [URL(fileURLWithPath:"/Library/Application Support/Logic"),FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Music/Audio Music Apps")] {
-            values.append(Location(instruments:root.appendingPathComponent("Sampler Instruments"),samples:root,label:root.lastPathComponent+" / Sampler Instruments"))
-        }
+        let home=FileManager.default.homeDirectoryForCurrentUser
+        // MainStage commonly keeps concert-local Sampler Instruments under
+        // ~/Music/MainStage, while newer Logic installations use a user library
+        // bundle rather than the older Audio Music Apps directory. Search the
+        // roots recursively because an EXS may refer to samples beside its
+        // concert or elsewhere below the same installed-content root.
+        values += [
+            Location(instruments:home.appendingPathComponent("Music/MainStage"),samples:home.appendingPathComponent("Music/MainStage"),label:"User MainStage content"),
+            Location(instruments:home.appendingPathComponent("Music/Logic Pro Library.bundle"),samples:home.appendingPathComponent("Music/Logic Pro Library.bundle"),label:"User Logic library"),
+            Location(instruments:home.appendingPathComponent("Music/Audio Music Apps"),samples:home.appendingPathComponent("Music/Audio Music Apps"),label:"User Audio Music Apps"),
+            Location(instruments:URL(fileURLWithPath:"/Library/Application Support/Logic"),samples:URL(fileURLWithPath:"/Library/Application Support/Logic"),label:"System Logic content")
+        ]
         #endif
-        return values
+        var seen=Set<String>()
+        return values.filter {seen.insert($0.instruments.standardizedFileURL.path+"\n"+$0.samples.standardizedFileURL.path).inserted}
     }
     static func find(_ names:Set<String>,locations:[Location])->Result {
         var result=Result(candidates:[:],searches:[])
@@ -538,13 +561,15 @@ enum MainStageDiscovery {
                 var directory:ObjCBool=false
                 guard FileManager.default.fileExists(atPath:location.instruments.path,isDirectory:&directory),directory.boolValue else{throw MainStagePatch.Failure.invalid("Location unavailable")}
                 let files=try MainStagePatch.findSamplerInstruments(names,in:location.instruments).sorted{$0.path<$1.path}
+                var unreadable=0
                 for file in files {
-                    let candidate=Candidate(file:file,samples:location.samples,sha256:try AssetDigest.sha256(file))
+                    guard let candidate=try? candidate(file:file,samples:location.samples) else {unreadable+=1;continue}
                     if !(result.candidates[file.lastPathComponent] ?? []).contains(where:{$0.file.standardizedFileURL==file.standardizedFileURL && $0.samples.standardizedFileURL==location.samples.standardizedFileURL}) {
                         result.candidates[file.lastPathComponent,default:[]].append(candidate)
                     }
                 }
-                result.searches.append(Search(id:String(index),location:location.label,detail:"\(location.instruments.path): \(files.count) matching instrument(s)"))
+                let skipped=unreadable == 0 ? "":"; \(unreadable) unreadable candidate(s) skipped"
+                result.searches.append(Search(id:String(index),location:location.label,detail:"\(location.instruments.path): \(files.count-unreadable) matching instrument(s)\(skipped)"))
             } catch {result.searches.append(Search(id:String(index),location:location.label,detail:"\(location.instruments.path): \(error.localizedDescription)"))}
         }
         return result
