@@ -804,6 +804,10 @@ final class PerformanceStore: ObservableObject {
     private var legacyVersion = 1
     private var legacyData: Data?
     @Published private(set) var sessionRecoveryRequired = false
+    /// The saved session names a schema newer than this build reads. It stays on
+    /// disk untouched, autosaves stay blocked, and recovery must not replace it
+    /// with an older copy: the user has to update StageKeys instead.
+    @Published private(set) var sessionSavedByNewerVersion = false
     @Published private(set) var settingsRecoveryRequired = false
     @Published private(set) var libraryRecoveryRequired = false
     @Published private(set) var ratingsRecoveryRequired = false
@@ -832,7 +836,16 @@ final class PerformanceStore: ObservableObject {
         catch { libraryRecoveryRequired=true;message = "Could not read sound library: \(error.localizedDescription). Catalog writes are blocked to preserve it. Open Settings to recover the previous catalog." }
         if FileManager.default.fileExists(atPath: saveURL.path) {
             do { let data = try RecoverableSessionFile.read(saveURL); let loaded = try JSONDecoder().decode(Setlist.self, from: data); setlist = try loaded.upgraded(); if loaded.version < 4 { legacyData = data; legacyVersion = loaded.version } }
-            catch { sessionRecoveryRequired = true; message = "Could not load the saved setlist: \(error.localizedDescription). Automatic saves are blocked to preserve it. Open Settings to recover the previous session." }
+            catch {
+                sessionRecoveryRequired = true
+                if let schema = error as? SetlistError,
+                   case let .unsupportedVersion(saved, supported) = schema, saved > supported.upperBound {
+                    sessionSavedByNewerVersion = true
+                    message = "Could not load the saved setlist: \(error.localizedDescription) Automatic saves are blocked to preserve it."
+                } else {
+                    message = "Could not load the saved setlist: \(error.localizedDescription). Automatic saves are blocked to preserve it. Open Settings to recover the previous session."
+                }
+            }
         }
         let settingsURL = base.appendingPathComponent("settings.json")
         if let data = try? RecoverableSessionFile.read(settingsURL), let settings = try? JSONDecoder().decode(SessionSettings.self, from: data), settings.validate() {
@@ -2736,6 +2749,10 @@ final class PerformanceStore: ObservableObject {
     func recoverPreviousSession() {
         do {
             if sessionRecoveryRequired {
+                guard !sessionSavedByNewerVersion else {
+                    message = "Recovering the previous session would replace a session saved by a newer StageKeys version. Update StageKeys to open it; nothing was changed."
+                    return
+                }
                 let data = try RecoverableSessionFile.restore(saveURL) {
                     let candidate = try JSONDecoder().decode(Setlist.self, from: $0).upgraded()
                     // Validate live admission before publishing recovery bytes or
@@ -2746,6 +2763,7 @@ final class PerformanceStore: ObservableObject {
                 panic(); cancelAudition(); cancelTransition()
                 setlist = recovered; selected = 0; activeSnapshot = nil; currentSetlistID = nil
                 sessionRecoveryRequired = false
+                sessionSavedByNewerVersion = false
                 if started { applyPatch(); recallTonicPatch(); audio.clock(performedTempo, metronome) }
             }
             if settingsRecoveryRequired {

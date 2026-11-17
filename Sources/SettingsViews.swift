@@ -38,9 +38,15 @@ struct SettingsEditor: View {
                     }
                     if store.sessionRecoveryRequired || store.settingsRecoveryRequired {
                         Section("Session Recovery") {
-                            Text("Saved data could not be loaded. Automatic saves are blocked to preserve the original files.").foregroundStyle(.orange)
-                            Button("Recover Previous Session") { store.recoverPreviousSession() }
-                            Text("Restores the last known good copy and retains the damaged file. If no recovery copy exists, restore a portable backup or contact support.").font(.caption)
+                            Text(store.sessionSavedByNewerVersion
+                                 ? "This session was saved by a newer StageKeys version. Update StageKeys to open it; automatic saves are blocked and the saved files are left unchanged."
+                                 : "Saved data could not be loaded. Automatic saves are blocked to preserve the original files.").foregroundStyle(.orange)
+                            if store.sessionSavedByNewerVersion {
+                                Text("Recovering an older copy would replace the newer session, so it is not offered until StageKeys is updated.").font(.caption)
+                            } else {
+                                Button("Recover Previous Session") { store.recoverPreviousSession() }
+                                Text("Restores the last known good copy and retains the damaged file. If no recovery copy exists, restore a portable backup or contact support.").font(.caption)
+                            }
                         }
                     }
                     switch section {

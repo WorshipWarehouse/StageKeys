@@ -561,8 +561,17 @@ enum ProgramChangeMapping {
         return values.first { !taken.contains($0) } ?? position
     }
 }
+/// Schema boundary for a saved session. Older documents are migrated on load,
+/// the current one is loaded as saved, and anything newer is refused by name so a
+/// downgrade cannot be mistaken for corruption.
+enum SetlistSchema {
+    static let oldestSupported = 1
+    static let current = 4
+    static var supported: ClosedRange<Int> { oldestSupported...current }
+}
+
 struct Setlist: Codable {
-    var version = 4
+    var version = SetlistSchema.current
     var name = "My Setlist"
     var patches = [Patch.make()]
     var assignments: [Int: Int] = [:]
@@ -578,10 +587,13 @@ struct Setlist: Codable {
                 if s.patches[i].snapshots[j].sounds != nil { s.patches[i].snapshots[j].sounds! += s.patches[i].layers.suffix(15-count).map(SnapshotSoundState.init) }
             }
         }
-        s.version = 4; return s
+        s.version = SetlistSchema.current; return s
     }
     func validate() throws {
-        guard (1...4).contains(version), !patches.isEmpty, patches.count <= 128, name.count <= 200 else { throw SetlistError.invalid }
+        guard SetlistSchema.supported.contains(version) else {
+            throw SetlistError.unsupportedVersion(saved: version, supported: SetlistSchema.supported)
+        }
+        guard !patches.isEmpty, patches.count <= 128, name.count <= 200 else { throw SetlistError.invalid }
         guard Set(patches.map(\.id)).count == patches.count else { throw SetlistError.invalid }
         for p in patches {
             guard p.conversionNotes.map({$0.count<=128 && $0.allSatisfy{$0.count<=2000}}) ?? true else {throw SetlistError.invalid}
@@ -608,9 +620,22 @@ struct Setlist: Codable {
         guard assignments.allSatisfy({ (0...127).contains($0.key) && (0...14).contains($0.value) }) else { throw SetlistError.invalid }
     }
 }
-enum SetlistError: LocalizedError {
+enum SetlistError: LocalizedError, Equatable {
     case invalid
-    var errorDescription: String? { "This setlist has unsupported or invalid settings." }
+    /// A saved document names a schema this build does not read. It is kept apart
+    /// from `invalid` so a session from a newer build is never reported as damage.
+    case unsupportedVersion(saved: Int, supported: ClosedRange<Int>)
+    var errorDescription: String? {
+        switch self {
+        case .invalid:
+            return "This setlist has unsupported or invalid settings."
+        case let .unsupportedVersion(saved, supported):
+            if saved > supported.upperBound {
+                return "This session was saved by a newer StageKeys version (schema \(saved)); this build reads schema \(supported.lowerBound)–\(supported.upperBound). Update StageKeys to open it. The saved files were left unchanged."
+            }
+            return "This session uses schema \(saved), which this build does not read (supported: \(supported.lowerBound)–\(supported.upperBound)). The saved files were left unchanged."
+        }
+    }
 }
 
 struct EffectPreset: Codable, Equatable, Identifiable {
