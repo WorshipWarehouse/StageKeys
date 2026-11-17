@@ -262,7 +262,11 @@ struct SoundBrowser: View {
         Button{selectedID=sound.id}label:{VStack(alignment:.leading,spacing:5){Text(sound.name).font(StageTheme.font(16)).multilineTextAlignment(.leading);if collection == "MainStage Archive" {Text(sound.playable ? "Playable":"Needs Conversion").font(StageTheme.font(11)).foregroundStyle(.secondary)};if sound.unavailableReason != nil || sound.contentIssue != nil {Text("Unavailable").font(StageTheme.font(11)).foregroundStyle(.orange)};if sound.collection == "Audio Units" {Text(sound.tags.sourceModel).font(StageTheme.font(11)).foregroundStyle(.secondary)}}.frame(maxWidth:.infinity,alignment:.leading).padding(.leading,14).padding(.vertical,13)}.buttonStyle(.plain).accessibilityLabel("\(sound.name), \((sound.unavailableReason != nil || sound.contentIssue != nil) ? "Unavailable" : sound.playable ? "Playable":"Needs Conversion")")
     }
     private func favoriteButton(_ sound:BrowserSound)->some View {
-        Button{store.toggleFavorite(sound.ratingID)}label:{Image(systemName:sound.favorite ? "star.fill":"star").font(.system(size:13,weight:.semibold)).frame(width:favoriteTarget,height:favoriteTarget).contentShape(Rectangle())}.buttonStyle(.plain).padding(.trailing,4)
+        Button{store.toggleFavorite(sound.ratingID)
+            // A failed save leaves the favorite unchanged and says why in `store.message`,
+            // which this modal does not otherwise show; keep any pending removal Undo.
+            if let message=store.message {repairNotice=message;store.message=nil}
+        }label:{Image(systemName:sound.favorite ? "star.fill":"star").font(.system(size:13,weight:.semibold)).frame(width:favoriteTarget,height:favoriteTarget).contentShape(Rectangle())}.buttonStyle(.plain).padding(.trailing,4)
                                 .accessibilityLabel(sound.favorite ? "Remove \(sound.name) from favorites":"Add \(sound.name) to favorites")
                                 .help(sound.favorite ? "Remove from favorites":"Add to favorites")
     }

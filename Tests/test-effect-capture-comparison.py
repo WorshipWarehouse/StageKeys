@@ -63,6 +63,14 @@ settling[0]=1.0
 for i in range(1,rate//10):
     settling[i]=math.exp(-i/2000)
 assert comparison.decay_seconds(settling,rate) is not None,"a settling capture must report a decay"
+# Trailing silence must not move the centroid: the window comes from the loud part
+# of the capture, not its middle, so the same tone reports the same frequency.
+burst=[0.5*math.sin(2*math.pi*3000*i/rate) for i in range(4096)]
+padded=burst+[0.0]*20000
+assert abs(comparison.spectral_centroid(padded,rate)-comparison.spectral_centroid(burst,rate))<20,\
+    (comparison.spectral_centroid(padded,rate),comparison.spectral_centroid(burst,rate))
+assert abs(comparison.spectral_centroid(padded,rate)-3000)<200,"trailing silence must not erase the tone"
+assert comparison.spectral_centroid([0.0]*5000,rate)==0.0,"a silent capture has no centroid"
 print("PASS: the centroid covers the full band and decay waits for a settled tail")
 
 # A swapped stereo pair downmixes to the same mono signal; the per-channel metrics

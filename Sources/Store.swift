@@ -2549,14 +2549,16 @@ final class PerformanceStore: ObservableObject {
                     else if chosenIdentities.isEmpty && Set(playable.compactMap(\.identity)).count==1 {selected=playable[0]}
                     else {selected=nil}
                     guard let selected else{let reason=playable.isEmpty ? (candidates.compactMap(\.sampleIssue).first ?? "Instrument not found in searched locations; choose its sample folder."):chosenIdentities.count>1 ? "The chosen folder holds more than one playable version of this sampler instrument; choose the folder holding the intended one.":"Different EXS maps or sample contents share this filename; choose the intended source folder.";outcome(channelIndex,.needsSamples,reason);failures.append(name+": "+reason);continue}
-                    let file=selected.file
                     libraryImportProgress="Importing MainStage channel: "+channel.name
                     await Task.yield();try checkLibraryImportCancellation()
                     let assetsBefore=managedImportAssets()
                     var createdSound:ExternalSound?,createdOriginal:StageKeysSampler.Original?
                     do {
                         let processing=try mainStageProcessing(channelIndex)
-                        let id=try MainStagePatch.conversionID(report,channel:channel,variant:playable[0].identity!)
+                        // The conversion ID and the retained original must describe the
+                        // identity that was actually selected, not the first cached one.
+                        let identity=selected.identity!
+                        let id=try MainStagePatch.conversionID(report,channel:channel,variant:identity)
                         if let existing=entries.firstIndex(where:{$0.id==id}) {
                             entries[existing].sourceArchiveID=report.sourceArchiveID
                             outcome(channelIndex,.duplicate,"Already installed; personal edits retained.",id)
@@ -2564,9 +2566,12 @@ final class PerformanceStore: ObservableObject {
                         }
                         var prepared:(ExternalSound,[String]?,Layer?)?
                         var preparationError:Error?
-                        for candidate in playable {
+                        var importedCandidate=selected
+                        // Only the selected identity may be imported; equivalent candidates
+                        // (same EXS map and samples) stay available as fallbacks.
+                        for candidate in playable where candidate.identity == identity {
                             let access=candidate.samples.startAccessingSecurityScopedResource();defer{if access{candidate.samples.stopAccessingSecurityScopedResource()}}
-                            do {prepared=try prepareLibrarySound(candidate.file,sampleRoot:candidate.samples);break}
+                            do {prepared=try prepareLibrarySound(candidate.file,sampleRoot:candidate.samples);importedCandidate=candidate;break}
                             catch{preparationError=error}
                         }
                         guard let (sound,notes,template)=prepared else {
@@ -2584,7 +2589,7 @@ final class PerformanceStore: ObservableObject {
                         layer.name=channel.name;layer.external=sound
                         let applied=try processing.applying(to:layer,selection:mainStageSelection(channelIndex))
                         layer=applied.layer
-                        let original=try StageKeysSampler.retainOriginal(file,library:saveURL.deletingLastPathComponent())
+                        let original=try StageKeysSampler.retainOriginal(importedCandidate.file,library:saveURL.deletingLastPathComponent())
                         createdOriginal=original
                         // One layer hosts one instrument: a channel that also saved an Audio
                         // Unit keeps that state in the archive instead of losing it silently.
@@ -3123,6 +3128,11 @@ final class PerformanceStore: ObservableObject {
             // failure stays visible instead of being replaced by the success text.
             message = nil
             panic(); cancelTransition()
+            // An audition captured from the outgoing document must end before the
+            // recovered layers replace it: restoring it afterwards would treat the
+            // recovered layer as the audition's original and write the live state
+            // over the recovered plug-in state.
+            cancelAudition()
             setlist = candidate; selected = 0; activeSnapshot = nil
             if started || audio.running {
                 // Even a matching cached state must replace editor-mutated live

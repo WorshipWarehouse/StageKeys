@@ -94,8 +94,26 @@ def spectral_centroid(samples: list[float], rate: int) -> float:
     count = min(len(samples), 4096)
     if count < 32:
         return 0.0
-    start = (len(samples) - count) // 2
-    block = samples[start : start + count]
+    # Take the window from the non-silent span instead of the capture middle: the
+    # same tone followed by trailing silence has to report the same centroid, and a
+    # silent frame must carry no weight. Finding the span is one linear scan, and
+    # the transform still runs once over a bounded window.
+    peak = max((abs(value) for value in samples), default=0.0)
+    if peak <= 1e-12:
+        return 0.0
+    threshold = peak * 0.01
+    first = next((index for index, value in enumerate(samples) if abs(value) >= threshold), 0)
+    last = next((index for index in range(len(samples) - 1, first - 1, -1)
+                 if abs(samples[index]) >= threshold), first)
+    span = last - first + 1
+    if span <= count:
+        block = samples[first : first + span]
+        if len(block) < 32:
+            return 0.0
+        count = len(block)
+    else:
+        start = first + (span - count) // 2
+        block = samples[start : start + count]
     # Spread a bounded number of bins across the whole Nyquist range. Stopping at
     # 512 low bins excluded everything at and above 6 kHz for a 4096-sample block
     # at 48 kHz, so a high tone contributed only leakage to the centroid.
