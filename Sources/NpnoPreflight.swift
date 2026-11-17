@@ -96,6 +96,7 @@ enum NpnoPreflight {
         let prefix = try handle.read(upToCount: min(max(size, 0), limits.maximumReadBytes)) ?? Data()
         let spans = try classify(prefix: prefix, byteCount: size, limits: limits)
         let digest = try digest(handle: handle, expectedBytes: size, limits: limits)
+        try verify(prefix: prefix, handle: handle)
         return report(spans: spans, byteCount: size, digest: digest)
     }
 
@@ -110,6 +111,18 @@ enum NpnoPreflight {
         guard streamed.read == expectedBytes else { throw Refusal.inputChanged }
         guard (try handle.read(upToCount: 1))?.isEmpty != false else { throw Refusal.inputChanged }
         return streamed.digest
+    }
+
+    /// Re-reads the classified prefix from the same opened file and compares it
+    /// byte for byte, so content rewritten in place between classification and
+    /// hashing is refused instead of being reported with the earlier header.
+    /// Bytes past the prefix make no content claim: they are described by length
+    /// only, and the digest covers whatever was read for them.
+    static func verify(prefix: Data, handle: FileHandle) throws {
+        guard !prefix.isEmpty else { return }
+        _ = try handle.seek(toOffset: 0)
+        let again = try handle.read(upToCount: prefix.count) ?? Data()
+        guard again == prefix else { throw Refusal.inputChanged }
     }
 
     /// Classifies the observed header and fills the gaps as unclassified bytes.

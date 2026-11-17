@@ -80,6 +80,19 @@ import Foundation
             return try NpnoPreflight.digest(handle: handle, expectedBytes: valid.count + 4)
         }
 
+        // A same-length rewrite after classification is caught by re-reading the
+        // classified prefix from the same opened handle.
+        try fixture(type: "nsmp").write(to: file)
+        let rewritten = try FileHandle(forReadingFrom: file)
+        defer { try? rewritten.close() }
+        expect(.inputChanged, "a same-length rewrite of the classified prefix") {
+            try NpnoPreflight.verify(prefix: valid.prefix(64), handle: rewritten)
+        }
+        try valid.write(to: file)
+        let restored = try FileHandle(forReadingFrom: file)
+        defer { try? restored.close() }
+        try NpnoPreflight.verify(prefix: valid.prefix(64), handle: restored)
+
         expect(.empty, "an empty input") { try NpnoPreflight.inspect(Data()) }
         expect(.oversizedInput, "an input past the file ceiling") {
             try NpnoPreflight.inspect(valid, limits: .init(maximumFileBytes: 64))

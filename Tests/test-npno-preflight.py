@@ -50,10 +50,12 @@ memory = pieces('inspect(_ data: Data')
 file_entry = pieces('inspect(url:')
 classify = pieces('classify(prefix:')
 digest = pieces('digest(handle:')
-if not memory or not file_entry or not classify or not digest:
+verify = pieces('verify(prefix:')
+if not memory or not file_entry or not classify or not digest or not verify:
     fail('cannot locate the inspection entry points')
 else:
-    memory, file_entry, classify, digest = memory[0], file_entry[0], classify[0], digest[0]
+    memory, file_entry, classify, digest, verify = \
+        memory[0], file_entry[0], classify[0], digest[0], verify[0]
     if 'try classify(' not in memory or 'AssetDigest.sha256' not in memory:
         fail('in-memory inspection no longer classifies and then hashes the input')
     elif memory.find('try classify(') > memory.find('AssetDigest.sha256'):
@@ -68,6 +70,10 @@ else:
         fail('the unclassified-payload ceiling is no longer enforced before hashing')
     if 'throw Refusal.inputChanged' not in digest or 'AssetDigest.sha256(handle,' not in digest:
         fail('the digest no longer streams the opened file and refuses a changed length')
+    if 'try verify(' not in file_entry or file_entry.find('try verify(') < file_entry.find('digest(handle:'):
+        fail('file inspection no longer re-reads the classified prefix after hashing')
+    if 'throw Refusal.inputChanged' not in verify or 'read(upToCount: prefix.count)' not in verify:
+        fail('the prefix check no longer compares the re-read header')
 
 for api in WRITE_APIS:
     if api in source:
