@@ -288,7 +288,16 @@ enum LibraryContentIssue:String,Equatable {
         case .missingSamples:return "A sample this preset needs is missing or unreadable. Reconnect its storage or import the sound again."
         }
     }
-    var locateTitle:String {"Locate Sound File…"}
+    /// The repair the browser offers for this issue. A moved managed file is one
+    /// file to locate; a moved sample folder is a folder to reconnect, so the
+    /// picker differs even though the footer offers a single repair action.
+    var repairTitle:String {
+        switch self {
+        case .missingFile:return "Locate Sound File…"
+        case .missingSamples:return "Reconnect Sample Folder…"
+        }
+    }
+    var repairsWithFolder:Bool {self == .missingSamples}
 }
 
 /// Repair is identity-checked: a merely similar file never replaces a sound.
