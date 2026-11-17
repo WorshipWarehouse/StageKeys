@@ -151,9 +151,14 @@ enum EXSNative {
         var amplitudeVelocity:AmplitudeVelocity?
         var gain:Double
         var tuning:Double
+        /// EXS instrument transpose is not a tuning offset: it moves the zone
+        /// map as well as the pitch, so a boundary key can select a different
+        /// source zone. Kept separate from `tuning` and applied to key ranges.
+        var transpose:Int?=nil
         var filter:Filter?
         var valid:Bool {
             (amplitudeVelocity?.valid ?? true) && gain.isFinite && (-96...24).contains(gain) && tuning.isFinite && (-4800...4800).contains(tuning) &&
+            (transpose.map{(-48...48).contains($0)} ?? true) &&
             (filter.map { f in f.cutoff.isFinite && (0...1).contains(f.cutoff) && f.resonance.isFinite && (0...1).contains(f.resonance) && f.routes.count<=12 && f.routes.allSatisfy { [-4,-3].contains($0.source) || (0...127).contains($0.source) } && f.routes.allSatisfy{$0.amount.isFinite && (-1...1).contains($0.amount)} } ?? true)
         }
     }
@@ -185,7 +190,12 @@ enum EXSNative {
         if values[0x08,default:0] != 0 || values[0x160,default:0] != 0 {notes.insert("EXS global amplitude key scaling/pan requires further translation.")}
         if values[0x05,default:64] != 64 {notes.insert("EXS source polyphony is retained in the original instrument; native playback currently uses 64 voices.")}
         notes.insert("EXS pitch-bend asymmetry and advanced modulation/envelope shapes remain approximate or untranslated.")
-        var result=VoiceControls(gain:Double(values[0x07,default:0]),tuning:Double(values[0x0f,default:0])+100*Double(values[0x0e,default:0]+values[0x2d,default:0]),filter:filter)
+        var result=VoiceControls(gain:Double(values[0x07,default:0]),tuning:Double(values[0x0f,default:0])+100*Double(values[0x0e,default:0]),filter:filter)
+        if let transpose=values[0x2d],transpose != 0 {
+            guard (-48...48).contains(transpose) else{throw MainStagePatch.Failure.invalid("EXS instrument transpose exceeds the supported ±48 semitone range.")}
+            result.transpose=transpose
+            notes.insert("EXS instrument transpose moves the zone key map and pitch together by \(transpose) semitone(s); boundary keys can select a different source zone. Zones moved outside MIDI 0–127 are bounded, and the original source value is retained.")
+        }
         if let sensitivity=values[0x5a],let high=values[0x59] {
             let amplitude=VoiceControls.AmplitudeVelocity(sensitivity:Double(sensitivity),high:Double(high))
             if amplitude.valid {result.amplitudeVelocity=amplitude;notes.insert("EXS amplitude velocity uses half-dB depth and endpoint-corrected MIDI gain. Source high-velocity level is retained.")}
@@ -323,6 +333,11 @@ enum EXSNative {
         var notes=Set<String>()
         let amplitude=try envelope(parts)
         let controls=try voiceControls(parts,notes:&notes)
+        // EXS applies Transpose to the played note before zone selection, which
+        // is equivalent to moving every zone range and root key down by the
+        // transpose while the pitch moves up with it. Translating it as cents
+        // alone would keep the wrong sample answering a boundary key.
+        let transpose=controls?.transpose ?? 0
         if amplitude != nil {
             notes.insert("EXS amplitude attack, decay, sustain and release are translated using the source time curve. Velocity-dependent attack uses the source endpoints. Envelope shape and group offset interaction remain approximate; see the separate filter/modulation notes.")
         } else if parts.contains(where:{$0.kind==4}) {
@@ -344,9 +359,11 @@ enum EXSNative {
             guard kind==0 || kind==3,b[73]==0,b[2]==0,b[4]==0,b[7]==0,b[3]&0xee==0,u32(b,80)==0xffffffff || u32(b,80)==0,
                   [UInt8(0),128].contains(b[32]),[UInt8(0),128].contains(b[35]) else{throw MainStagePatch.Failure.invalid("EXS group \(group.name) uses unsupported round-robin, release-trigger, crossfade or selection behavior. No flattened replacement was created.")}
             guard b[1]==0 else{throw MainStagePatch.Failure.invalid("EXS group pan requires verified native translation.")}
-            let groupLow=b[3]&1 != 0 ? Int(b[88]):0,groupHigh=b[3]&1 != 0 ? Int(b[89]):127
+            let rawGroupLow=b[3]&1 != 0 ? Int(b[88]):0,rawGroupHigh=b[3]&1 != 0 ? Int(b[89]):127
+            let groupLow=max(0,rawGroupLow-transpose),groupHigh=min(127,rawGroupHigh-transpose)
             let groupVelocityLow=Int(b[5]),groupVelocityHigh=group.index==0xffffffff ? 127:Int(b[6])
-            guard (0...127).contains(groupLow),(groupLow...127).contains(groupHigh),(0...127).contains(groupVelocityLow),(groupVelocityLow...127).contains(groupVelocityHigh) else{throw MainStagePatch.Failure.invalid("Invalid EXS group ranges.")}
+            guard (0...127).contains(rawGroupLow),(rawGroupLow...127).contains(rawGroupHigh),(0...127).contains(groupVelocityLow),(groupVelocityLow...127).contains(groupVelocityHigh) else{throw MainStagePatch.Failure.invalid("Invalid EXS group ranges.")}
+            guard groupLow<=groupHigh else{continue}
             var mapped:[[String:Any]]=[]
             for zone in zones {
                 let z=zone.body
@@ -375,10 +392,12 @@ enum EXSNative {
                 guard !looped || (loopStart>=start && loopEnd>loopStart && loopEnd<=end) else{throw MainStagePatch.Failure.invalid("EXS loop leaves its consolidated sample region.")}
                 if z[33] & 4 != 0 {throw MainStagePatch.Failure.invalid("EXS loop release-to-end needs native translation.")}
                 guard z[1]<=127,z[6]<=z[7],z[7]<=127,z[9]<=127,z[10]<=127,(-64...64).contains(signed(z[3])) else{throw MainStagePatch.Failure.invalid("Invalid EXS zone ranges or pan.")}
-                let low=max(Int(z[6]),groupLow),high=min(Int(z[7]),groupHigh)
+                let low=max(Int(z[6])-transpose,groupLow),high=min(Int(z[7])-transpose,groupHigh)
                 let velocityLow=max(z[0]&8 != 0 ? Int(z[9]):0,groupVelocityLow),velocityHigh=min(z[0]&8 != 0 ? Int(z[10]):127,groupVelocityHigh)
                 if low>high || velocityLow>velocityHigh {continue}
-                var item:[String:Any]=["ID":mapped.count,"name":zone.name,"enabled":true,"waveform":0x10000000+sample,"min key":low,"max key":high,"root key":Int(z[1]),"min vel":velocityLow,"max vel":velocityHigh,"gain":signed(z[4]),"fine tune":signed(z[2])+(z.count>80 ? signed(z[80])*100:0),"pan":Double(signed(z[3]))/64,"sample start":start,"sample end":end,"loop enabled":looped]
+                let zoneRoot=Int(z[1])-transpose
+                guard (0...127).contains(zoneRoot) else{throw MainStagePatch.Failure.invalid("EXS instrument transpose moves a zone root key outside MIDI 0–127. Import without transpose or edit the source instrument.")}
+                var item:[String:Any]=["ID":mapped.count,"name":zone.name,"enabled":true,"waveform":0x10000000+sample,"min key":low,"max key":high,"root key":zoneRoot,"min vel":velocityLow,"max vel":velocityHigh,"gain":signed(z[4]),"fine tune":signed(z[2])+(z.count>80 ? signed(z[80])*100:0),"pan":Double(signed(z[3]))/64,"sample start":start,"sample end":end,"loop enabled":looped]
                 if looped {item["loop start"]=loopStart;item["loop end"]=loopEnd}
                 if split {item["StageKeys EXS attack end"]=attackEnd;item["StageKeys EXS tail start"]=tailStart;item["StageKeys EXS tail end"]=tailEnd}
                 mapped.append(item)
@@ -400,8 +419,7 @@ enum EXSNative {
             applyVoiceControls(controls,envelope:amplitude,group:b,to:&layer)
             applyCenterGain(to:&layer)
             if [56,60,64,68].contains(where:{u32(b,$0)>0}) {notes.insert("EXS group release offsets are applied to the native envelope. Their interaction with the original global envelope remains approximate.")}
-            let keyRange=b[3]&1 != 0
-            let rule=NativeSamplerProgram.Group(name:group.name,layer:index,low:keyRange ? Int(b[88]):0,high:keyRange ? Int(b[89]):127,velocityLow:Int(b[5]),velocityHigh:group.index==0xffffffff ? 127:Int(b[6]),controller:kind==3 ? Int(b[85]):nil,controllerLow:Int(b[86]),controllerHigh:Int(b[87]),enabled:b[3]&16==0)
+            let rule=NativeSamplerProgram.Group(name:group.name,layer:index,low:groupLow,high:groupHigh,velocityLow:Int(b[5]),velocityHigh:group.index==0xffffffff ? 127:Int(b[6]),controller:kind==3 ? Int(b[85]):nil,controllerLow:Int(b[86]),controllerHigh:Int(b[87]),enabled:b[3]&16==0)
             guard (0...127).contains(rule.low),(rule.low...127).contains(rule.high),(0...127).contains(rule.velocityLow),(max(1,rule.velocityLow)...127).contains(rule.velocityHigh) else{throw MainStagePatch.Failure.invalid("Invalid EXS group ranges.")}
             native.append(layer);rules.append(rule)
         }
