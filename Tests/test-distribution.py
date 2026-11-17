@@ -4,7 +4,7 @@ import subprocess
 import tempfile
 
 tool = Path(__file__).resolve().parents[1] / 'Tools/check-distribution.py'
-notices = ('StageKeys-MIT.txt','Airwindows-MIT.txt', 'EXS-Parser-MIT.md', 'StageKeys-Dense-Reverb-MIT.txt', 'OFL.txt')
+notices = ('StageKeys-MIT.txt','Airwindows-MIT.txt', 'EXS-Parser-MIT.md', 'Drawbar-BSD-3-Clause.txt', 'StageKeys-Dense-Reverb-MIT.txt', 'OFL.txt')
 
 repo = tool.parent.parent
 assert (repo / 'LICENSE').read_bytes() == (repo / 'Licenses/StageKeys-MIT.txt').read_bytes(), 'Bundled MIT text drifted from root license'
@@ -47,7 +47,7 @@ with tempfile.TemporaryDirectory() as temporary:
     empty.mkdir()
     check(app, False)
     empty.rmdir()
-    for name in ('Personal.stagekeyspack', 'Personal.STAGEKEYSPACK'):
+    for name in ('Personal.stagekeyspack', 'Personal.STAGEKEYSPACK', 'Private.npno', 'Private.NPNO', 'Private.nsmp', 'Private.nsmp3', 'Private.nsmp4'):
         pack=resources / name
         pack.write_bytes(b'synthetic personal pack')
         check(app, False)
@@ -95,6 +95,8 @@ repo_check({'Sources/Models.swift': b'let names = ["Soft Keys", "Warm Pad", "Gla
 repo_check({'Sources/Audio.swift': b'sk_note_on(pointer, 0, 60, 1, 0, 1)'}, False)
 repo_check({'Tests/Fixture.swift': b'let names = ["Soft Keys", "Warm Pad", "Glass Bells"]'}, True)
 repo_check({'Sources/Synth.c': b'void sk_note_on(void) {}'}, True)
+repo_check({'Private.npno': b'synthetic Nord content'}, False)
+repo_check({'Private.NSMP4': b'synthetic Nord content'}, False)
 repo_check({'Personal.stagekeyspack': b'fixture personal pack'}, False)
 repo_check({'Personal.STAGEKEYSPACK': b'fixture personal pack'}, False)
 repo_check({'Personal.stagekeyspack/README.txt': b'fixture nested pack'}, False)

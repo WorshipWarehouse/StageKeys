@@ -1,0 +1,33 @@
+{
+  "architecture": "arm64",
+  "baseCommit": "b2821061d0afe186c435486fce10e35ee1cdb4b0",
+  "bufferFrames": 512,
+  "cycles": 96,
+  "date": "2026-11-16",
+  "elapsedSeconds": 15.513644916703925,
+  "framesObserved": 460800,
+  "hardwareModel": "Mac16,10",
+  "inputSHA256": {
+    "Sources/AudioController.swift": "dd354ed1e0d987738d41041fe6b7f55feb2b91653b9a5fe6b42871a0165fc090",
+    "Sources/ExternalInstruments.swift": "34f3c3af4fe930dfe45cba7f4d0333d93065d6853b86f80a191d89688928c314",
+    "Tests/AudioUnitCommitTests.swift": "734ac7558f9e41a603a94bf01b860fc8a0a0b8b18f7c692205f81f381b19b755",
+    "Tests/ExternalGraphTailTests.swift": "4bc4927a5108b4c3f5df538c2dae695231b0ea8da93ae83aebe6d37d095192a7",
+    "Tests/FixtureSupport.swift": "0c57d25db386571b7844e56345b5d05501b946bf7c1f3680fd02d6af04cc13fe",
+    "Tests/GraphCompletionFailureTests.swift": "6c6a086e8fff50a7c6ff98bcec011ec1447baec6dfa55bca27c850d4ccda0d3f",
+    "Tests/LiveSoundChangeTests.swift": "320598928a7310c08341af33ff2a55ad08cd5e28b61fe254ca09c33fe22c36b8",
+    "Tests/NativeLoadFailureTests.swift": "9ad041a37c2479d84a8fbfed20f910d43c62771bb0ff7373351c97671a23b27a",
+    "Tests/ProgramChangeOptInTests.swift": "96c4714ad820f102cb00d5167dce473f96ade631d8baa60c639b33726a23ab3f",
+    "Tools/VerifySamplerDisposal.swift": "9e8a86570bfcdcb76a233a7d94eba680f8f61e7e78b2569c5f93d52ea6a0ce75"
+  },
+  "invalidOutputSamples": 0,
+  "maximumOwnedNodes": 33,
+  "maximumRetiredTails": 2,
+  "operatingSystem": "Version 27.2 (Build 26B123)",
+  "originalScenario": "Unreproduced: original private patch and CoreAudio assertion text are unknown",
+  "sampleRate": 48000,
+  "schemaVersion": 1,
+  "scope": "Master-muted live output, generated sampler patches, production Store.choose path; not audible quality, latency, soak or vendor-AU qualification",
+  "toolchain": "Xcode 27.2 (27B52)",
+  "unchangedOutputRoute": true,
+  "verifiedReleases": 94
+}

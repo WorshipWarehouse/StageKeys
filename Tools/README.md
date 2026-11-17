@@ -206,3 +206,7 @@ This is a name-based backstop against accidental commits, not proof that no priv
 # Offline render-budget report
 
 Run `Tools/measure-render-budget.sh /private/tmp/stagekeys-render-budget-NEW` to measure the actual stereo C effect path with engaged/bypassed comparisons, warm-up, three repeated trials, median/p95/worst durations and over-deadline counts. The new output directory must be outside the checkout. See [measurement scope and interpretation](../Docs/RENDER-BUDGET-REPORTING.md); this opt-in offline report does not qualify sampler/AU latency or live stability.
+
+# Live sampler disposal verification
+
+`Tools/VerifySamplerDisposal.swift` is an opt-in, master-muted live-output probe for #192. It drives 96 generated sampler patch changes through Store, checks stopped-point releases and output progress, and requires a new isolated data folder and report path. Compile it against the DEBUG core from the library runner as documented in [sampler disposal verification](../Docs/SAMPLER-DISPOSAL-192.md). It changes no system route/buffer or installed user session and records no audio; it is not a latency, listening or soak test.
