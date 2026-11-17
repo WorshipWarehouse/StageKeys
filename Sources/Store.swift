@@ -2076,6 +2076,61 @@ final class PerformanceStore: ObservableObject {
             return try installLibrarySound(url,sampleRoot:sampleRoot)
         }catch{message=error.localizedDescription;return nil}
     }
+    /// Add several user-selected files as one catalog transaction (#8). Every
+    /// accepted file is prepared first; nothing is committed until the batch is
+    /// complete, a repeated or already-installed source is skipped by content
+    /// identity, and a rejected batch leaves the catalog bytes unchanged.
+    func importLibrarySounds(_ urls:[URL],sampleRoot:URL?=nil) {
+        guard !libraryImportBusy else{message="A sound library import is already running.";return}
+        let sources=LibraryBulkImport.uniqueSources(urls)
+        guard !sources.isEmpty else{message="Choose at least one sound file.";return}
+        libraryImportCancelRequested=false;libraryImportBusy=true
+        Task { @MainActor in
+            defer{libraryImportBusy=false}
+            do {
+                let library=SoundLibrary(url:saveURL.deletingLastPathComponent().appendingPathComponent("sound-library.json"))
+                let original=try library.read()
+                var entries=original
+                var outcomes:[LibraryBulkImport.Outcome]=[]
+                var digests:Set<String>=[]
+                for url in sources {
+                    if libraryImportCancelRequested {break}
+                    libraryImportProgress="Preparing "+LibraryBulkImport.displayName(url)
+                    await Task.yield()
+                    let access=url.startAccessingSecurityScopedResource()
+                    do {
+                        let digest=try AssetDigest.sha256(url)
+                        if !digests.insert(digest).inserted {
+                            outcomes.append(.skipped(name:LibraryBulkImport.displayName(url),reason:"Same content as another selected file"))
+                        } else if let name=LibraryBulkImport.duplicateName(digest:digest,in:entries) {
+                            outcomes.append(.skipped(name:LibraryBulkImport.displayName(url),reason:"Already in My Sounds as "+name))
+                        } else {
+                            let (sound,notes,layer)=try prepareLibrarySound(url,sampleRoot:sampleRoot)
+                            var entry=LibrarySound(id:UUID().uuidString,name:sound.name,collection:"My Sounds",sound:sound,layer:layer,conversionNotes:notes)
+                            if LibraryBulkImport.needsSampleFolder(url) {
+                                entry.originalInstrument=try StageKeysSampler.retainOriginal(url,library:saveURL.deletingLastPathComponent())
+                            }
+                            if let name=sound.fileName,let rack=audio.externalRack {
+                                entry.managedFileSHA256=try AssetDigest.sha256(rack.libraryURL.appendingPathComponent(name))
+                            }
+                            entries.append(entry)
+                            outcomes.append(.added(name:sound.name))
+                        }
+                    } catch {outcomes.append(.failed(name:LibraryBulkImport.displayName(url),reason:LibraryBulkImport.failureReason(error)))}
+                    if access {url.stopAccessingSecurityScopedResource()}
+                }
+                guard !libraryImportCancelRequested else {
+                    libraryImportProgress="Import cancelled. No prepared catalog entries were committed.";return
+                }
+                guard !LibraryBulkImport.addedNames(outcomes).isEmpty else {
+                    libraryImportProgress=LibraryBulkImport.summary(outcomes);return
+                }
+                try library.commitImport(entries,replacing:original)
+                librarySounds=entries;refreshLibraryContent()
+                libraryImportProgress=LibraryBulkImport.summary(outcomes)
+            }catch{libraryImportProgress="Import not committed: "+error.localizedDescription}
+        }
+    }
     @Published var portableImportIssues:[String]=[]
     #if os(macOS)
     func exportPersonalSoundLibrary(ids:Set<String>?=nil) {
