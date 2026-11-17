@@ -47,7 +47,14 @@ struct SoundEditor: View {
     @State private var editingName = false
     @State private var processingPreview:MainStageProcessing.Draft?
     @State private var processingIssue:String?
+    @State private var librarySaveMessage:String?
     @State private var auditionToken: UUID?
+    @State private var gainMatchTrimDraft=InstrumentGainMatch.TrimDraft()
+    private var draftForCommit:Layer {
+        var committed=draft
+        committed.channelSettings.outputTrimDB=gainMatchTrimDraft.committedValue(current:draft.channelSettings.outputTrimDB)
+        return committed
+    }
     init(index: Int, initial: Layer) { self.index = index; _draft = State(initialValue: initial); if initial.midiDestinationID != nil { _tab = State(initialValue: "Settings") } }
     private var tabs: [String] { draft.midiDestinationID != nil ? ["Settings"] : ["FX A: Equalizer", "FX B: Compressor", "Settings"] }
     var body: some View {
@@ -71,7 +78,7 @@ struct SoundEditor: View {
                 } else {
                     VStack(spacing:12) {
                         ScrollView(.horizontal,showsIndicators:false) { SoundSettingsControls(layer:$draft).frame(minWidth:700) }
-                        if draft.loaded && draft.midiDestinationID == nil {InstrumentGainMatchControls(layer:$draft,index:index)}
+                        if draft.loaded && draft.midiDestinationID == nil {InstrumentGainMatchControls(layer:$draft,trimDraft:$gainMatchTrimDraft,index:index)}
                         if draft.external?.kind == .samplerPreset {StageKeysSamplerControls(sound:draft.external!)}
                         if let report=store.mainStageImportReport {
                             Menu("Preview MainStage Processing") {
@@ -81,7 +88,7 @@ struct SoundEditor: View {
                             }.buttonStyle(StageButtonStyle()).popover(item:$processingPreview) {preview in
                                 VStack(alignment:.leading,spacing:12) {
                                     Text("Supported MainStage Processing").font(.headline)
-                                    Text("This appends supported effects and macros, and applies the source key range, transpose and sustain filter to the draft. It does not convert the complete patch.").font(.caption)
+                                    Text("This appends supported effects and macros, and applies the source fader, pan, key range, transpose and sustain filter to the draft. It does not convert the complete patch.").font(.caption)
                                     ScrollView {VStack(alignment:.leading,spacing:8) {
                                         ForEach(Array(preview.effects.enumerated()),id:\.offset){index,effect in
                                             VStack(alignment:.leading,spacing:4) {
@@ -101,6 +108,11 @@ struct SoundEditor: View {
                                             }.frame(maxWidth:.infinity,alignment:.leading).padding(10).background(StageTheme.panel,in:RoundedRectangle(cornerRadius:6))
                                         }
                                         if let low=preview.low,let high=preview.high {Text("Note Range: \(low)–\(high)").font(.caption)}
+                                        if let gain=preview.gain {
+                                            if gain==0 {Text("Source Fader: −∞ dB").font(.caption)}
+                                            else {Text("Source Fader: \(20*log10(gain)+(preview.faderBoostDB ?? 0),specifier: "%.2f") dB").font(.caption)}
+                                            if preview.faderBoostDB != nil {Text("Source boost is applied after effects using Output Trim; existing trim is retained.").font(.caption).foregroundStyle(.secondary)}
+                                        }
                                         if let curve=preview.amplitudeVelocityCurve {Text("Source amplitude velocity curve: \(curve)").font(.caption)}
                                         if let transpose=preview.transpose {Text("MIDI Transpose: \(transpose)").font(.caption)}
                                         ForEach(preview.macros){macro in Text(macro.name+(macro.midiCC.map{" · CC\($0)"} ?? "")).font(.caption)}
@@ -154,11 +166,17 @@ struct SoundEditor: View {
             HStack {
                 if tab == "FX A: Equalizer" { Toggle("Effect ON",isOn:$draft.channelSettings.eqEnabled).toggleStyle(.switch) }
                 if tab == "FX B: Compressor" { Toggle("Effect ON",isOn:$draft.channelSettings.compressorEnabled).toggleStyle(.switch) }
+                if draft.loaded {
+                    Button("Save Sound to Library") {
+                        librarySaveMessage = store.saveSoundToLibrary(draftForCommit, index: index) ? "Saved to My Sounds." : (store.message ?? "Could not save this sound.")
+                    }.buttonStyle(StageButtonStyle())
+                }
+                if let librarySaveMessage { Text(librarySaveMessage).font(.caption).foregroundStyle(.secondary) }
                 Spacer()
                 Button("Discard Changes") { dismiss() }.buttonStyle(StageButtonStyle())
                 Button("Confirm") {
                     guard !draft.name.isEmpty, draft.name.count <= 200, draft.channelSettings.validate() else { store.message="Channel values are outside the supported range."; return }
-                    store.confirmAudition(auditionToken,index:index,layer:draft); dismiss()
+                    store.confirmAudition(auditionToken,index:index,layer:draftForCommit); dismiss()
                 }.buttonStyle(StageButtonStyle(selected:true))
             }.padding(16)
         }.sheet(isPresented:$plugin) { PluginInterface(index:index).environmentObject(store) }.onAppear { auditionToken=store.beginAudition(index) }.onDisappear { store.endAudition(auditionToken) }.onChange(of:draft) { layer in if let token=auditionToken { store.previewLayer(index,layer,token:token) } }.alert("Sound Name",isPresented:$editingName) { TextField("Name",text:$draft.name); Button("Done") { editingName=false } }
@@ -202,7 +220,7 @@ struct EffectKnob: View {
     private var valueField:some View {
             HStack(spacing:4) {
                 TextField(descriptor.name,value:Binding(get:{descriptor.unit == "%" ? value*100 : value},set:{ if $0.isFinite { let raw=descriptor.unit == "%" ? $0/100 : $0; value=min(descriptor.maximum,max(descriptor.minimum,raw)) } }),format:.number.precision(.fractionLength(0...2))).textFieldStyle(.plain).multilineTextAlignment(inline ? .leading:.center).frame(width:inline ? 50:65)
-                Text(descriptor.unit).font(StageTheme.font(10)).foregroundStyle(.secondary)
+                Text(descriptor.unit).font(StageTheme.font(11)).foregroundStyle(.secondary)
             }
     }
     var body:some View {
@@ -323,7 +341,7 @@ struct EffectEditor: View {
     var body: some View {
         EditorFrame(title: replacing ? "Select Effect" : "0\(slot+1) \(draft.title)", width:!replacing && [3,10,13,15,16].contains(draft.kind) ? 640:800,height:!replacing && draft.kind==3 ? 590:!replacing && [10,13,15,16].contains(draft.kind) ? 690:600,showsHeader:replacing) {
             if !replacing {
-                HStack(spacing:5){Text(String(format:"%02d",slot+1)).font(StageTheme.font(10,weight:.bold)).padding(3).background(Color.purple,in:RoundedRectangle(cornerRadius:2));Text(draft.title).font(StageTheme.font(16,weight:.bold))}.frame(maxWidth:.infinity).padding(.top,20).padding(.bottom,16)
+                HStack(spacing:5){Text(String(format:"%02d",slot+1)).font(StageTheme.font(11,weight:.bold)).padding(3).background(Color.purple,in:RoundedRectangle(cornerRadius:2));Text(draft.title).font(StageTheme.font(16,weight:.bold))}.frame(maxWidth:.infinity).padding(.top,20).padding(.bottom,16)
             }
             if store.patch.layers[index].midiDestinationID != nil {
                 Text("This channel sends MIDI to an external host. Configure audio effects in that host.").padding(24); Spacer()
@@ -425,11 +443,14 @@ struct PatchEditor: View {
                         HStack { Button("−"){store.setPatchVolume(store.patch.volumeDB-1)}.accessibilityLabel("Decrease patch volume");Text(String(format:"%.0f dB",store.patch.volumeDB)).frame(width:64);Button("+"){store.setPatchVolume(store.patch.volumeDB+1)}.accessibilityLabel("Increase patch volume") }.buttonStyle(StageButtonStyle())
                     }
                     row("Instantly Silence Previous Patch","") { Toggle("Instantly Silence Previous Patch",isOn:$store.setlist.patches[store.selected].silencePrevious).labelsHidden().toggleStyle(.switch) }
-                    row("Respond to Program Change","Set a MIDI Program Change number for this Patch") {
-                        VStack {
-                            Toggle("Respond to Program Change",isOn:Binding(get:{store.patch.programChangeEnabled ?? true},set:{store.setlist.patches[store.selected].programChangeEnabled=$0;if $0 && store.patch.programChangeNumber == nil {store.setlist.patches[store.selected].programChangeNumber=store.selected}})).labelsHidden().toggleStyle(.switch)
-                            if store.patch.programChangeEnabled != false { Stepper("\((store.patch.programChangeNumber ?? store.selected)+1)",value:Binding(get:{store.patch.programChangeNumber ?? store.selected},set:{store.setlist.patches[store.selected].programChangeEnabled=true;store.setlist.patches[store.selected].programChangeNumber=$0}),in:0...127) }
-                        }.frame(width:145)
+                    row("Respond to Program Change","Optional. Only the number set here selects this Patch; connecting or powering on a keyboard selects nothing.") {
+                        VStack(alignment:.trailing,spacing:6) {
+                            Toggle("Respond to Program Change",isOn:Binding(get:{store.patch.programChangeEnabled == true},set:{store.setProgramChangeEnabled($0)})).labelsHidden().toggleStyle(.switch)
+                            if store.patch.programChangeEnabled == true {
+                                Stepper(ProgramChangeMapping.title(store.patch.programChangeNumber ?? store.selected),value:Binding(get:{store.patch.programChangeNumber ?? store.selected},set:{store.setProgramChangeNumber($0)}),in:ProgramChangeMapping.values)
+                                Text(ProgramChangeMapping.explanation(store.patch.programChangeNumber ?? store.selected)).font(StageTheme.font(11)).foregroundStyle(.secondary).multilineTextAlignment(.trailing).fixedSize(horizontal:false,vertical:true)
+                            }
+                        }.frame(width:250)
                     }
                     row("Visual state when Patch is selected","Have this Patch recall a specific visual state when it is selected") {
                         Picker("Visual state",selection:$store.setlist.patches[store.selected].visualMode){Text("Don't change").tag(0);Text("Show Effects").tag(1);Text("Show Notes").tag(2)}.pickerStyle(.segmented).labelsHidden().frame(width:335)
@@ -455,8 +476,9 @@ struct TransposeEditor: View {
             ScrollView {
                 VStack(spacing: 24) {
                     HStack(alignment: .top, spacing: 15) { keyGrid("Play In", play: true); keyGrid("Hear In", play: false) }
-                    Stepper("Total transpose: \(store.patch.transpose) semitones", value: Binding(get: { store.patch.transpose }, set: { store.setTranspose($0) }), in: -24...24)
-                    Text("Play In and Hear In apply to the selected patch. The total transpose control can add or subtract octaves.").font(.caption).foregroundStyle(.secondary)
+                    Picker("Direction", selection: Binding(get: { store.patch.keyDirectionResolved }, set: { store.setKeyDirection($0) })) { ForEach(KeyDirection.allCases, id: \.self) { Text($0.label).tag($0) } }.pickerStyle(.segmented)
+                    Stepper("Octave shift: \(store.patch.octaveShiftResolved > 0 ? "+" : "")\(store.patch.octaveShiftResolved)", value: Binding(get: { store.patch.octaveShiftResolved }, set: { store.setOctaveShift($0) }), in: PatchTransposition.minimumOctave...PatchTransposition.maximumOctave)
+                    Text("\(StageTheme.notes[store.patch.playIn]) → \(StageTheme.notes[store.patch.hearIn]) sounds \(store.patch.transpose >= 0 ? "+" : "")\(store.patch.transpose) semitones. Direction decides whether a key change moves up or down; the octave shift moves the sounding key without changing either key.").font(.caption).foregroundStyle(.secondary)
                 }.padding(20)
             }.onDisappear { store.save() }
         }
@@ -465,7 +487,7 @@ struct TransposeEditor: View {
         VStack(alignment: .leading, spacing: 14) {
             Text(title).font(.headline)
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 4), count: 3), spacing: 4) {
-                ForEach(0..<12) { key in Button(StageTheme.notes[key]) { store.transpose(play: play ? key : store.patch.playIn, hear: play ? store.patch.hearIn : key) }.buttonStyle(StageButtonStyle(selected: (play ? store.patch.playIn : store.patch.hearIn) == key)) }
+                ForEach(0..<12) { key in Button(StageTheme.notes[key]) { play ? store.setPlayKey(key) : store.setHearKey(key) }.buttonStyle(StageButtonStyle(selected: (play ? store.patch.playIn : store.patch.hearIn) == key)) }
             }
         }
     }
@@ -476,9 +498,11 @@ struct TempoEditor: View {
         EditorFrame(title: "Tempo") {
             VStack(spacing: 25) {
                 Button("TAP TEMPO") { store.tapTempo() }.font(.title).frame(maxWidth: .infinity).frame(height: 150).background(StageTheme.raised, in: RoundedRectangle(cornerRadius: 10)).buttonStyle(.plain)
-                Stepper("\(Int(store.patch.tempo)) BPM", value: Binding(get: { store.patch.tempo }, set: { store.updateTempo($0) }), in: 20...300)
+                Stepper("\(Int(store.performedTempo)) BPM", value: Binding(get: { store.performedTempo }, set: { store.updateTempo($0) }), in: 20...300)
+                HStack { Text("Enter BPM"); TextField("\(Int(store.performedTempo))", value: Binding(get: { store.performedTempo }, set: { store.updateTempo($0) }), format: .number).frame(width: 90).textFieldStyle(.roundedBorder) }
+                Toggle("Tempo lock (recall this patch’s tempo)", isOn: Binding(get: { store.patch.recallsPatchTempo }, set: { store.setTempoLocked($0) }))
                 Toggle("Metronome", isOn: $store.metronome)
-                Text("4/4 · The click follows this patch’s tempo.").font(.caption).foregroundStyle(.secondary)
+                Text(store.patch.recallsPatchTempo ? "4/4 · Tempo lock is on: this patch stores and recalls its own tempo. Sound, accents and level are in Settings → Metronome." : "4/4 · Tempo lock is off: one live tempo carries across patches and is restored at launch. The click follows it. Sound, accents and level are in Settings → Metronome.").font(.caption).foregroundStyle(.secondary)
                 Spacer()
             }.padding(25).onDisappear { store.save() }
         }
@@ -658,7 +682,7 @@ struct MIDIEffectEditor: View {
                 Button("\(note+1)") {
                     if chord {var notes=program.chordMappings![mapping].output;if notes.contains(note) {notes.removeAll{$0==note}} else {notes.append(note)};program.chordMappings![mapping].output=notes.sorted()}
                     else if sequenceSteps.indices.contains(step) {program.sequenceMappings![mapping].steps[step].pitch=note}
-                }.font(StageTheme.font(10)).frame(maxWidth:.infinity).frame(height:24).buttonStyle(.plain).background(selected ? StageTheme.selected : StageTheme.raised,in:RoundedRectangle(cornerRadius:3)).foregroundStyle(selected ? StageTheme.base : .white).accessibilityLabel("Output note \(noteName(note))")
+                }.font(StageTheme.font(11)).frame(maxWidth:.infinity).frame(height:24).buttonStyle(.plain).background(selected ? StageTheme.selected : StageTheme.raised,in:RoundedRectangle(cornerRadius:3)).foregroundStyle(selected ? StageTheme.base : .white).accessibilityLabel("Output note \(noteName(note))")
             }
         }
     }

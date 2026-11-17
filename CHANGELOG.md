@@ -2,6 +2,118 @@
 
 - Refuse a MIDI-learn attempt from a reserved controller (CC 1, 64, 120 or 123) before it can remove the listening control's existing assignment, and say which fixed route kept it, so a pedal press while learning no longer silently unlearns the control (#15).
 
+- Add experimental, bounded Nord `.npno` attack-only conversion into the native sampler with feature/size preview, exact integer decoding, key/velocity/loop/tuning maps, background preparation, cancellation rollback, duplicate source identities and personal-pack portability. Resonance/release banks and Nord-specific dynamics are disclosed as unsupported; physical Mac/iPad live qualification remains open (#212–#216). Retain the adapted decoder’s BSD notice and exclude Nord assets from distribution.
+
+- Add a bounded, read-only Nord piano-library (`.npno`) preflight that validates the documented CBIN container, CNSP prefix, key map, stroke directory and audio-grid alignment, reports its checksum verdict and refuses truncated, oversized, misaligned or unsupported-version input without decoding or copying the body; the versioned support contract, field provenance and unresolved licensing/content questions are recorded in `Docs/NORD-NPNO-SCOPE.md` (#211).
+
+- Stop completed AU loader callbacks from retaining the replaced sampler, and refuse forward, rollback and manual audio restart while a purged/truncated sampler is still retained; preserve the stopped recovery guard until release, with generated failure/retry coverage and a 96-switch live-output verification for #192.
+
+- Release a truncated or purged hosted sampler through one ownership registry and disposal order while the engine is stopped, commit the truncation into the rollback so a restored graph never references released nodes, and record the verified pre-restart release in the local support report (#192). The live macOS crash remains unreproduced and this is not a general rollback of released audio.
+
+- Report each retained MainStage channel shaping value individually with its archived-value representation, store it in the layer's source record so it survives persistence, backup and setlist sharing, and stop telling users to set an envelope that Sound Settings hides for a converted sampler or hosted plug-in (#112). Containers are recorded as counts and strings are truncated to 120 characters, so this is a bounded representation, not the complete source value; keep the original MainStage document when you need the full setting. Shaping keys longer than the record limit are reported and skipped instead of stored, and sharing redacts absolute and home-relative paths in keys and values, so one oversized or path-like field cannot block an import or leak a local location.
+
+- Add optional per-sound sample-peak/RMS meters after each sound's fader and pan, with no taps while disabled and persisted legacy-safe settings; document the signal point and its true-peak/loudness limits.
+
+- Clear a channel's MIDI FX lookahead mark when a hosted-AU install is rejected or the instrument is retired, and report a channel as not schedulable while its replacement is pending, so a failed plug-in cannot keep a stale eligibility.
+
+- Recompute the per-channel MIDI FX lookahead set once patch activation installs finish and again when the activation drains, so a channel that gained or lost a sample-timed AU is never left marked from the outgoing instrument.
+
+- Gate the MIDI FX lookahead per channel: only hosted AUs with a schedule block and no immediate parallel branches advance early, so external MIDI, sampler `startNote` and blockless AUs keep deadline dispatch and are never sent notes early.
+
+- Add an opt-in MIDI FX scheduler lookahead (0–50 ms, default off) that generates steps before their deadline while reporting the true musical time; enabling it in the app waits on verified sample-timed AU delivery so immediate consumers are not sent notes early.
+
+- Draft sample-timed AU delivery: schedule hosted-AU note events with `AUEventSampleTime` from the MIDI FX deadline, with immediate fallback inside a safety margin, at the lookahead horizon, for missing render anchors and for AUs without a schedule block; the macOS onset harness is not yet run.
+
+- Carry each MIDI FX event's musical time through `onNoteAt`/`onOffAt`, time gates from the scheduled step rather than a late dispatch, and add a deadline-to-engine-sample clock; audible AU delivery is not wired yet.
+
+- Arm the MIDI FX arpeggiator/sequencer timers at the next musical deadline instead of polling every 5 ms; the simulated dispatch grid's worst-case lateness falls from 5.000 ms to the 1 ns delivery offset over 260 eighth notes at 132 BPM, while audio-block quantization remains.
+
+- Overlap the native tempo-synced delay's old and new taps for 20 ms across tempo and subdivision changes; the measured worst-case sample step falls from 7.6–11.4× steady at 44.1/48/96 kHz to 1.0×, and the new delay time is reached exactly.
+
+- Make the native channel compressor's Dry/Wet Mix a true bypass at 0%: output gain no longer lifts the unprocessed signal, and makeup gain applies to the compressed path only. Switching the effect off or back on clears stored detector reduction instead of ducking the first notes for the release time. Add 44.1/48/96 kHz gain-transfer, attack/release, bypass-state and block-split regressions.
+
+- Add offline, checksummed `.stagekeyssetlist` setlist shares with dependency and collision previews, Save and Load versus Save to Library import, and `stagekeys://setlist-share` links; samples, plug-in state and local source paths are excluded.
+
+- Preflight the successor before removing a live patch, honor Patch Lock in the Store, recall successor pad/tempo/visual mode and keep stopped removal free of instrument loading.
+
+- Validate live resources before publishing previous-session recovery files, retaining the running performance on rejection, and restore the recovered patch’s performed audio tempo.
+
+- Validate patch-locked Tonic Pad resources before live patch/setlist recall, retaining the current pad and performance when the recalled preset is missing or has an unsupported pad map.
+
+- Check known first-patch resources before live setlist open/import so missing samples or unavailable AUs retain the current performance instead of releasing notes and replacing the document.
+
+- Adopt owner-selected MIT licensing for StageKeys-authored code/documentation, retaining existing third-party terms and bundling the project notice on both platforms.
+
+- Honor Patch Lock during setlist file import and recall the imported patch’s Tonic Pad and performed tempo, including the rendered click clock.
+
+- Create independent named local setlists from saved templates without switching the performance; add browser sort/search states and protect preserved library copies when session recovery is required.
+
+- Preserve retired-tail Panic/deadline silence through graph completion and failed-edit rollback, including tails evicted before Panic and later restored from a snapshot.
+
+- Add a saved dynamic MIDI-output range display above the keyboard, with per-sound accessible spans after MIDI effects/transposition and unchanged static input ranges by default.
+
+- Keep level calibration bound to the requested Audio Unit state and the performed tempo; pending/rejected replacements retain their authored state, and probe BPM stays visible when retargeting.
+
+- Bound audio-device inventory property sizes and validate channel-buffer entries before traversal; reject malformed counts and overflow while preserving current routing.
+
+- Add independent saved on-screen keyboard playability and played-note highlighting controls; disabling screen input releases its notes and pedal without silencing hardware MIDI.
+
+- Retain live Tonic Pad root/sound and click intent through unexpected engine configuration/start failures; silence notes while failed, retrigger only after successful recovery, and cancel pending pad recovery on manual Stop.
+
+- Keep the saved click (metronome) choice and the saved output/buffer preferences through an audio-start failure or a device/route change: recovery releases held voices before stopping the engine, restores the click, and re-applies the saved output selection and hardware buffer on the next start instead of erasing them.
+
+- Add a deterministic Store-level startup-recovery matrix (busy output retry, bounded repeated failure, sample-rate/buffer rejection, partial-initialization cleanup, preserved session bytes and injected unplug/sleep-wake route changes) alongside the classifier/retry contract test. Physical AudioBox, competing-app and sleep/wake checks remain outstanding in #110.
+
+- Detect library sounds whose managed file or samples are missing, report them as unavailable while keeping them listed, and offer **Locate Sound File…** to restore the file as an identity-checked managed copy.
+
+- Show one recovery control in the library error state instead of two, and keep **Clear Filters** reachable while the catalog is unreadable.
+
+- Report a saved sound catalog that could not be read as a recoverable error state inside the library modal — with the recovery action beside the results — instead of the sample-free empty state, so the preserved catalog is not mistaken for a missing install. Search and filter empties now state their own case.
+
+- Keep undeclared tag metadata unknown: blank Category, Type, Timbre, Articulation, Source and Complexity values show and filter as Not Tagged instead of leaking an empty facet option or claiming authored provenance, both in the browser and when personal source metadata is loaded.
+
+- Canonicalize facet values (fixed Note Range order, collapsed repeats and blanks) so facet options, matching and ordering stay deterministic.
+
+- Define the release palette, readable type floor and hit-target minimums once in `StageA11y`, render them from `StageTheme`, and raise every 8–10 pt label in the mixer, transport, editors, MIDI Learn, import and snapshot surfaces to the 11 pt minimum.
+
+- Darken the piano octave marker from a measured 2.74:1 to 5.26:1 and move the fader `−∞` label off `.tertiary`, with the contrast pairs recorded in `Docs/ACCESSIBILITY.md` and asserted by a gated test.
+
+- Add patch-level Play In/Hear In direction (nearest, up, down) and an explicit ±2 octave shift; the stored transposition stays the single playback value and older setlists keep theirs without migration.
+
+- Apply patch transposition to authored Easy Chord and Sequencer output as a stateless offset, so repeated key changes cannot drift or rewrite the programming.
+
+- Add a patch tempo lock that shares one live tempo across unlocked patches, with direct BPM entry alongside tap tempo and the stepper; the live tempo is persisted and restored.
+
+- Cover every key pair, octave wrapping, repeated changes, authored mappings, legacy documents and arpeggiator phase across a tempo change.
+
+- Enforce and document the native sound order: source gain → compressor → Mod Filter → EQ → three audio slots → pan → fader. The compressor no longer detects an already EQ-boosted signal.
+
+- Expose Attack/Decay/Sustain/Release and the Mod Filter (min/max cutoff, resonance) in Sound Settings for native sounds, with an explicit explanation instead of inert controls for instrument- or plug-in-owned envelopes.
+
+- Map the mod wheel through one tested exponential filter taper and clamp non-finite or out-of-range modulation.
+
+- Report retained MainStage envelope/filter parameters that are not translated instead of leaving a destination default unexplained; snapshots still exclude sound-editor shaping.
+
+- Show the Program Change opt-in in Patch Settings with an explicit `Program N` label, the raw MIDI 0–127 value and a caption explaining the 1–128 numbering some keyboards use, so the off-by-one is discoverable where the mapping is set.
+
+- Assign one unclaimed explicit number when the opt-in is enabled instead of reusing a value another patch already claims.
+
+- Add a standalone metronome engine with two synthesized click sounds, independent level, beat/downbeat velocities, accent patterns, subdivisions and master-follow; the click now bypasses the shared hall reverb.
+
+- Add a persisted metronome count-in with a toolbar/Settings action and external MIDI Clock sync (24 PPQN Start/Continue/Stop), including clock-derived tempo and a bounded one-shot count-in that stops when the click was off.
+
+- Gate Count In on running audio with an actionable message instead of scheduling into a stopped or failed engine, add macOS Shift-Command-M/I commands and accessibility state/units for the click controls, cancel a pending count-in when external clock mode changes, and document stopped/recovery behavior.
+
+- Persist every metronome control in `settings.json`, keep older files readable and refuse out-of-range saved values at launch.
+
+- Cover click timing at 44.1/48/96 kHz, irregular block splits, mid-beat tempo changes, long runs, presets and settings round trips.
+
+- Let the hosted Audio Unit editor expand an oversized plug-in view beyond the collapsed sheet cap and collapse it again, without offering the control when it would reveal nothing or when the window is already the limit.
+
+- Report a blocked, unavailable or slow Audio Unit inside the editor with that state's own remedy instead of an open-ended loading message; a timeout offers Retry, a block offers Allow and Retry, and an uninstalled plug-in says so immediately.
+
+- Label every generic plug-in control for assistive technologies with its parameter name and formatted value, and stop the visible name/value text from being announced twice.
+
 ## 0.21.0
 
 - Recreate PrimaVerb's observed Settings, Character, Modulation and Output layout with seven named room sizes, inline knobs, output faders and power control.

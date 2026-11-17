@@ -8,22 +8,76 @@ struct SoundImportView:View {
     @State private var choice:ImportChoice = .file
     @State private var pending:URL?
     @State private var status:String?
+    @State private var portableSelection:Set<String>?
+    @State private var effectRequest:MainStageEffectSelectionRequest?
     var body:some View {
-        EditorFrame(title:"Import Sounds",width:650,height:720) {
+        EditorFrame(title:"Import Sounds",width:780,height:760) {
             ScrollView {
-            VStack(alignment:.leading,spacing:20) {
-                Text("Add sounds to your library").font(StageTheme.font(21,weight:.bold))
-                Text("Imported sounds appear in your library and can be added to any patch.").foregroundStyle(.secondary)
-                Button{choice = .file;choosing=true}label:{HStack{Image(systemName:"plus.circle.fill").font(.title);VStack(alignment:.leading,spacing:4){Text("Choose a Sound File").font(.headline);Text("StageKeys Sampler · EXS · AUPRESET · audio · sound banks").font(.caption)};Spacer();Image(systemName:"chevron.right")}.padding(20).frame(maxWidth:.infinity,alignment:.leading)}.buttonStyle(.plain).background(StageTheme.panel,in:RoundedRectangle(cornerRadius:10))
-                Button{choice = .library;choosing=true}label:{HStack{Image(systemName:"folder.badge.plus").font(.title);VStack(alignment:.leading,spacing:4){Text("Import a Sampler Library Folder").font(.headline);Text("Add EXS and AUPRESET instruments with their original samples").font(.caption)};Spacer();Image(systemName:"chevron.right")}.padding(20).frame(maxWidth:.infinity,alignment:.leading)}.buttonStyle(.plain).background(StageTheme.panel,in:RoundedRectangle(cornerRadius:10))
-                Button{choice = .mainStage;choosing=true}label:{HStack{Image(systemName:"pianokeys").font(.title);VStack(alignment:.leading,spacing:4){Text("Convert a MainStage Patch or Channel Strip").font(.headline);Text("Convert included EXS sounds without opening MainStage; preserve source processing").font(.caption)};Spacer();Image(systemName:"chevron.right")}.padding(20).frame(maxWidth:.infinity,alignment:.leading)}.buttonStyle(.plain).background(StageTheme.panel,in:RoundedRectangle(cornerRadius:10))
-                Button("Install a Separate Sound Library") {choice = .backup;choosing=true}.buttonStyle(StageButtonStyle())
-                Text("Choose a downloaded StageKeys-Library pack. Sounds and rack processing install separately; the app ships without sampled content.").font(.caption).foregroundStyle(.secondary)
+            VStack(alignment:.leading,spacing:18) {
+                HStack(spacing:18) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius:12).fill(StageTheme.selected.opacity(0.16))
+                        Image(systemName:"square.and.arrow.down.on.square.fill").font(.system(size:34,weight:.semibold)).foregroundStyle(StageTheme.selected)
+                    }.frame(width:72,height:72)
+                    VStack(alignment:.leading,spacing:5) {
+                        Text("Build your sound library").font(StageTheme.font(23,weight:.bold))
+                        Text("Choose a source below. StageKeys keeps original sample files in place and records conversion notes when a MainStage feature needs attention.").font(StageTheme.font(12)).foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true)
+                    }
+                    Spacer(minLength:0)
+                    VStack(alignment:.trailing,spacing:3) {
+                        Text("\(store.librarySounds.count)").font(StageTheme.font(24,weight:.bold)).monospacedDigit()
+                        Text(store.librarySounds.count == 1 ? "installed sound":"installed sounds").font(.caption).foregroundStyle(.secondary)
+                    }
+                }.padding(20).background(StageTheme.panel,in:RoundedRectangle(cornerRadius:12)).overlay {RoundedRectangle(cornerRadius:12).stroke(.white.opacity(0.06))}
+
+                Text("IMPORT FROM").font(StageTheme.font(11,weight:.bold)).tracking(1.2).foregroundStyle(.secondary)
+                LazyVGrid(columns:[GridItem(.flexible(),spacing:12),GridItem(.flexible(),spacing:12)],spacing:12) {
+                    ImportSourceCard(icon:"pianokeys",title:"MainStage",detail:"Patch or channel strip · choose the effects that fill StageKeys’ visible slots",accent:StageTheme.selected){choice = .mainStage;choosing=true}
+                    ImportSourceCard(icon:"waveform.badge.plus",title:"Instrument File",detail:"StageKeys Sampler, EXS, AUPRESET, experimental Nord NPNO, audio file or supported sound bank",accent:StageTheme.colors[1]){choice = .file;choosing=true}
+                    ImportSourceCard(icon:"folder.badge.plus",title:"Sampler Folder",detail:"Scan a folder for EXS and AUPRESET instruments with their original samples",accent:StageTheme.colors[2]){choice = .library;choosing=true}
+                    ImportSourceCard(icon:"shippingbox.fill",title:"Sound Pack",detail:"Install a personal StageKeys pack or a separately downloaded sound library",accent:StageTheme.colors[3]){choice = .backup;choosing=true}
+                }
+                if let preview=store.nordImportPreview {
+                    VStack(alignment:.leading,spacing:10) {
+                        Text("Nord Piano · "+preview.name).font(.headline)
+                        Text("Experimental attack-only conversion · \(ByteCountFormatter.string(fromByteCount:Int64(preview.pcmBytes),countStyle:.file)) decoded PCM").font(.subheadline)
+                        ForEach(Array(preview.notes.enumerated()),id:\.offset) {_,note in Text(note).font(.caption).foregroundStyle(.secondary)}
+                        HStack {
+                            Button("Convert Attack Recordings") {store.importNordSound()}.buttonStyle(StageButtonStyle())
+                            Button("Discard") {store.discardNordImport()}.buttonStyle(StageButtonStyle())
+                        }
+                    }.padding(18).background(StageTheme.panel,in:RoundedRectangle(cornerRadius:10))
+                }
+                HStack(spacing:10) {
+                    Image(systemName:"arrow.down.doc").foregroundStyle(StageTheme.selected)
+                    Text("Drop a MainStage .patch or .cst file anywhere in this window").font(StageTheme.font(11,weight:.semibold))
+                    Spacer()
+                    Text("Original source stays unchanged").font(.caption).foregroundStyle(.secondary)
+                }.padding(.horizontal,16).frame(height:44).background(StageTheme.raised.opacity(0.28),in:RoundedRectangle(cornerRadius:8)).overlay {RoundedRectangle(cornerRadius:8).stroke(style:StrokeStyle(lineWidth:1,dash:[5,4])).foregroundStyle(.white.opacity(0.12))}
+                #if os(macOS)
+                DisclosureGroup("Personal device transfer") {
+                    ForEach(store.librarySounds) {entry in
+                        if let reason=LibraryBackup.portabilityIssue(entry) {Text("\(entry.name): \(reason)").font(.caption).foregroundStyle(.secondary)}
+                        else {Toggle(entry.name,isOn:Binding(get:{portableSelection?.contains(entry.id) ?? true},set:{value in var selected=portableSelection ?? Set(store.librarySounds.filter{LibraryBackup.portabilityIssue($0)==nil}.map(\.id));if value{selected.insert(entry.id)}else{selected.remove(entry.id)};portableSelection=selected}))}
+                    }
+                    Button("Save Selected Personal Sound Pack…") {store.exportPersonalSoundLibrary(ids:portableSelection)}.buttonStyle(StageButtonStyle())
+                    Text("For personal device transfer. Current sound processing travels; session files, ratings and plug-in snapshots are excluded.").font(.caption)
+                }.padding(16).background(StageTheme.panel.opacity(0.72),in:RoundedRectangle(cornerRadius:9))
+                #endif
                 if store.librarySounds.contains(where:{$0.originalInstrument?.file.hasSuffix(".exs")==true && $0.sound?.nativeSampler != nil && ($0.sound?.nativeSampler?.conversionVersion ?? 1)<6}) {
                     Button("Update Converted Sampler Playback") {store.updateSamplerEnvelopes()}.buttonStyle(StageButtonStyle())
                     Text("Update source filters, velocity response, level and envelope curves. Original samples and effects stay intact; edited settings are protected.").font(.caption).foregroundStyle(.secondary)
                 }
                 if let report=store.mainStageImportReport {
+                    VStack(alignment:.leading,spacing:12) {
+                    HStack {Image(systemName:"checklist").foregroundStyle(StageTheme.selected);Text("MainStage conversion").font(StageTheme.font(16,weight:.bold));Spacer();Text(report.name).font(.caption).foregroundStyle(.secondary)}
+                    if store.mainStageOutcomes.contains(where:{[.converted,.duplicate].contains($0.state)}) {
+                        Button("Create Patch from Ready Channels") {store.assembleConvertedMainStagePatch(readyOnly:true)}.buttonStyle(StageButtonStyle()).disabled(store.patchLock)
+                    }
+                    ForEach(store.mainStageOutcomes) {outcome in
+                        VStack(alignment:.leading,spacing:4) {Text("\(outcome.name) · \(outcome.state.rawValue)").font(.headline);Text(outcome.detail).font(.caption)}.frame(maxWidth:.infinity,alignment:.leading)
+                    }
+                    if !store.mainStageSearches.isEmpty {DisclosureGroup("Searched Locations") {ForEach(store.mainStageSearches){search in Text("\(search.location): \(search.detail)").font(.caption).textSelection(.enabled)}}}
                     Button("Create Patch from All Converted Channels") {store.assembleConvertedMainStagePatch()}.buttonStyle(StageButtonStyle()).disabled(store.patchLock)
                     Text("Requires one converted version of every convertible channel. Preserves channel order, effects, macros and MIDI; patch-level routing limitations remain in Conversion Notes.").font(.caption).foregroundStyle(.secondary)
                     if report.channels.contains(where:\.isConvertible) {
@@ -36,6 +90,12 @@ struct SoundImportView:View {
                             ForEach(Array(report.channels.enumerated()),id:\.offset) {channelIndex,channel in
                                 if channel.isConvertible {
                                     Toggle("Convert \(channel.name)",isOn:Binding(get:{store.selectedMainStageChannels.contains(channelIndex)},set:{store.selectMainStageChannel(channelIndex,$0)}))
+                                    Button("Choose Effects…") {
+                                        do {
+                                            effectRequest=MainStageEffectSelectionRequest(channel:channelIndex,name:channel.name,draft:try store.mainStageProcessing(channelIndex),selection:store.mainStageSelection(channelIndex))
+                                            status=nil
+                                        } catch {status=error.localizedDescription}
+                                    }.buttonStyle(StageButtonStyle())
                                 }
                                 Text(channel.name+": "+channel.devices.map(\.name).joined(separator:", ")).font(.caption)
                                 Text(channel.nativeInstrumentStatus).font(.caption).foregroundStyle(.secondary)
@@ -44,21 +104,33 @@ struct SoundImportView:View {
                             ForEach(Array(report.blockers.enumerated()),id:\.offset){_,message in Text(message).font(.caption).foregroundStyle(.secondary)}
                         }.frame(maxWidth:.infinity,alignment:.leading)}.frame(maxHeight:130)
                     }
+                    }.padding(18).background(StageTheme.panel,in:RoundedRectangle(cornerRadius:10)).overlay {RoundedRectangle(cornerRadius:10).stroke(.white.opacity(0.06))}
                 }
-                if store.libraryImportBusy {ProgressView().progressViewStyle(.linear)}
-                if let progress=store.libraryImportProgress {Text(progress).font(.callout).textSelection(.enabled)}
-                if let status {Text(status).font(.callout).textSelection(.enabled)}
+                if store.libraryImportBusy || store.libraryImportProgress != nil || status != nil {
+                    HStack(alignment:.top,spacing:12) {
+                        if store.libraryImportBusy {ProgressView().controlSize(.small).padding(.top,2)}
+                        else {Image(systemName:status == nil ? "checkmark.circle.fill":"info.circle.fill").foregroundStyle(status == nil ? StageTheme.selected:.orange)}
+                        VStack(alignment:.leading,spacing:4) {
+                            Text(store.libraryImportBusy ? "Importing…":"Import status").font(StageTheme.font(13,weight:.semibold))
+                            if let progress=store.libraryImportProgress {Text(progress).font(.caption).textSelection(.enabled)}
+                            if let status {Text(status).font(.caption).textSelection(.enabled)}
+                            if store.libraryImportBusy {ProgressView().progressViewStyle(.linear).padding(.top,4)}
+                        }
+                    }.padding(16).frame(maxWidth:.infinity,alignment:.leading).background(StageTheme.raised.opacity(0.3),in:RoundedRectangle(cornerRadius:9))
+                }
                 Spacer()
             }.padding(28).disabled(store.libraryImportBusy)
             }.overlay(alignment:.bottom) {
                 if store.libraryImportBusy {Button("Cancel Import Before Commit") {store.cancelLibraryImport()}.buttonStyle(StageButtonStyle()).padding().background(StageTheme.base)}
             }
-        }.fileImporter(isPresented:$choosing,allowedContentTypes:choice == .file ? [.audio,.data] : choice == .mainStage ? [.package,.folder,.data] : [.folder]) {result in
+        }.fileImporter(isPresented:$choosing,allowedContentTypes:choice == .file ? [.audio,.data] : choice == .mainStage ? [.package,.folder,.data] : choice == .backup ? [.folder,.data]:[.folder]) {result in
             switch result {
             case .success(let url):
                 switch choice {
                 case .file:
-                    if ["patch","cst"].contains(url.pathExtension.lowercased()) {store.importMainStagePatch(url);status=nil}
+                    if url.pathExtension.lowercased()=="stagekeyspack" {store.importLibraryBackup(url);status=nil}
+                    else if url.pathExtension.lowercased()=="npno" {store.inspectNordSound(url);status=nil}
+                    else if ["patch","cst"].contains(url.pathExtension.lowercased()) {store.importMainStageAutomatically(url);status=nil}
                     else if ["exs","aupreset"].contains(url.pathExtension.lowercased()) {
                         pending=url;status="Choose the folder containing this instrument’s samples. Imports preserve sample maps and translated rack effects, macros and MIDI settings. Conversion notes describe remaining approximations."
                         // Present the second picker after the first has dismissed.
@@ -70,19 +142,136 @@ struct SoundImportView:View {
                     pending=nil
                 case .backup:store.importLibraryBackup(url)
                 case .mainStageSamples:
-                    store.importMainStageSamplers(url);status=nil
+                    store.rememberMainStageSampleFolder(url);store.importMainStageSamplers(url);status=nil
                 case .mainStage:
-                    store.importMainStagePatch(url);status=nil
+                    store.importMainStageAutomatically(url);status=nil
                 case .library:
                     store.importSamplerLibrary(url);status=store.message;store.message=nil
                 }
             case .failure(let error):status=error.localizedDescription;pending=nil
             }
-        }
+        }.onDrop(of:[UTType.fileURL],isTargeted:nil){providers in
+            guard let provider=providers.first else{return false}
+            _ = provider.loadObject(ofClass:URL.self){url,_ in guard let url,["patch","cst"].contains(url.pathExtension.lowercased()) else{return};DispatchQueue.main.async{store.importMainStageAutomatically(url)}}
+            return true
+        }.onDisappear {store.discardNordImport()}.sheet(item:$effectRequest){request in MainStageEffectSelectionSheet(request:request).environmentObject(store)}
     }
 
     private func importFile(_ url:URL,samples:URL?=nil){
         if let sound=store.importLibrarySound(url,sampleRoot:samples){status="Added \(sound.name) to My Sounds."}
         else {status=store.message ?? "Could not import this sound.";store.message=nil}
+    }
+}
+
+private struct ImportSourceCard:View {
+    let icon:String
+    let title:String
+    let detail:String
+    let accent:Color
+    let action:()->Void
+    var body:some View {
+        Button(action:action) {
+            HStack(alignment:.top,spacing:14) {
+                ZStack {
+                    RoundedRectangle(cornerRadius:8).fill(accent.opacity(0.14))
+                    Image(systemName:icon).font(.system(size:22,weight:.semibold)).foregroundStyle(accent)
+                }.frame(width:48,height:48)
+                VStack(alignment:.leading,spacing:5) {
+                    Text(title).font(StageTheme.font(14,weight:.bold)).foregroundStyle(.primary)
+                    Text(detail).font(StageTheme.font(11)).foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true)
+                }
+                Spacer(minLength:4)
+                Image(systemName:"chevron.right").font(.caption.bold()).foregroundStyle(.tertiary).padding(.top,17)
+            }.padding(16).frame(maxWidth:.infinity,minHeight:92,alignment:.topLeading)
+        }
+        .buttonStyle(.plain)
+        .background(StageTheme.panel,in:RoundedRectangle(cornerRadius:10))
+        .overlay {RoundedRectangle(cornerRadius:10).stroke(.white.opacity(0.07))}
+        .contentShape(RoundedRectangle(cornerRadius:10))
+        .accessibilityElement(children:.combine)
+        .accessibilityAddTraits(.isButton)
+    }
+}
+
+struct MainStageEffectSelectionRequest:Identifiable {
+    let id=UUID()
+    var channel:Int
+    var name:String
+    var draft:MainStageProcessing.Draft
+    var selection:MainStageProcessing.Selection
+}
+
+/// Choose source processing before conversion. EQ/compressor are always mapped
+/// to the instrument controls; only the remaining effects compete for the three
+/// visible audio slots. The complete source record is cached on the converted layer.
+struct MainStageEffectSelectionSheet:View {
+    @EnvironmentObject private var store:PerformanceStore
+    @Environment(\.dismiss) private var dismiss
+    let request:MainStageEffectSelectionRequest
+    @State private var selection:MainStageProcessing.Selection
+    @State private var error:String?
+    init(request:MainStageEffectSelectionRequest) {
+        self.request=request
+        _selection=State(initialValue:request.selection)
+    }
+    private var unselectedCount:Int {request.draft.slotIndices.filter{!selection.audio.contains($0)}.count}
+    var body:some View {
+        EditorFrame(title:"MainStage Effects · \(request.name)",width:680,height:640) {
+            ScrollView {
+                VStack(alignment:.leading,spacing:14) {
+                    Text("Source effects, in source order").font(StageTheme.font(15,weight:.semibold))
+                    Text("EQ and compressor map to the instrument controls. Choose up to three other effects for the visible audio slots. Unselected processing remains in the archived source; no effect rack is appended automatically.").font(.caption).foregroundStyle(.secondary)
+                    ForEach(Array(request.draft.effects.enumerated()),id:\.offset) {index,effect in effectRow(index,effect)}
+                    if request.draft.effects.isEmpty {Text("No translated audio effects were found in this channel.").font(.caption).foregroundStyle(.secondary)}
+                    Divider()
+                    Text("MIDI effect").font(StageTheme.font(15,weight:.semibold))
+                    Text(request.draft.hasMIDITransform ? "The source MIDI transform is retained in the archive but has no verified native translation. A selection here is a manual replacement, not a translated source effect.":"This channel has no source MIDI transform record. A native MIDI effect can still be assigned manually.").font(.caption).foregroundStyle(.secondary)
+                    Picker("MIDI effect",selection:Binding<MIDIFXKind>(get:{selection.midi?.kind ?? .bypass},set:{kind in selection.midi=kind == .bypass ? nil:MIDIProgram(kind:kind)})) {
+                        Text("None").tag(MIDIFXKind.bypass)
+                        ForEach(MIDIFXKind.allCases,id:\.self){kind in Text(kind.rawValue.capitalized).tag(kind)}
+                    }
+                    if selection.midi != nil {Toggle("MIDI effect enabled",isOn:$selection.midiEnabled)}
+                    if unselectedCount>0 {Text("\(unselectedCount) source effect(s) will remain archived and unassigned; the original channel strip and sample bytes are unchanged.").font(.caption).foregroundStyle(.secondary)}
+                    if let error {Text(error).font(.caption).foregroundStyle(.red)}
+                    HStack {
+                        Text("\(selection.audio.count) of 3 audio slots selected. EQ/compressor do not consume an audio slot.").font(.caption).foregroundStyle(.secondary)
+                        Spacer()
+                        Button("Cancel"){dismiss()}.buttonStyle(StageButtonStyle())
+                        Button("Use These Effects"){apply()}.buttonStyle(StageButtonStyle(selected:true)).disabled(selection.audio.count>3)
+                    }
+                }.padding(24)
+            }
+        }
+    }
+    @ViewBuilder private func effectRow(_ index:Int,_ effect:AudioEffect)->some View {
+        if effect.kind==7 || effect.kind==6 {
+            VStack(alignment:.leading,spacing:4) {
+                HStack {Text("\(index+1). \(effect.title)").font(.subheadline.bold());Spacer();Text(effect.kind==7 ? "Instrument EQ":"Instrument Compressor").font(.caption).foregroundStyle(.secondary)}
+                Text(request.draft.sourceNames.indices.contains(index) ? request.draft.sourceNames[index]:effect.title).font(.caption).foregroundStyle(.secondary)
+                Text(effect.enabled ? "Enabled · mapped automatically":"Bypassed · mapped automatically").font(.caption).foregroundStyle(.secondary)
+                notes(index)
+            }.frame(maxWidth:.infinity,alignment:.leading).padding(10).background(StageTheme.panel,in:RoundedRectangle(cornerRadius:6))
+        } else {
+            let selected=selection.audio.contains(index)
+            Toggle(isOn:Binding(get:{selection.audio.contains(index)},set:{on in
+                if on {if selection.audio.count<3 {selection.audio.append(index)}}
+                else {selection.audio.removeAll{$0==index}}
+            })) {
+                VStack(alignment:.leading,spacing:4) {
+                    HStack {Text("\(index+1). \(effect.title)").font(.subheadline.bold());Spacer();Text(effect.enabled ? "Enabled":"Bypassed").font(.caption).foregroundStyle(.secondary)}
+                    Text(request.draft.sourceNames.indices.contains(index) ? request.draft.sourceNames[index]:effect.title).font(.caption).foregroundStyle(.secondary)
+                    notes(index)
+                }
+            }.disabled(!selected && selection.audio.count>=3)
+        }
+    }
+    @ViewBuilder private func notes(_ index:Int)->some View {
+        if request.draft.effectNotes.indices.contains(index) {
+            ForEach(Array(request.draft.effectNotes[index].enumerated()),id:\.offset){_,note in Text(note).font(.caption).foregroundStyle(.secondary)}
+        }
+    }
+    private func apply() {
+        do {try store.setMainStageEffectSelection(selection,for:request.channel);dismiss()}
+        catch {self.error=error.localizedDescription}
     }
 }

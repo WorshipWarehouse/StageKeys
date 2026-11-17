@@ -99,7 +99,7 @@ private struct EQCompactKnob: View {
                     .onChange(of: value) { _ in if !editing { draft = displayValue() } }
                     .onSubmit { commitValue(); editing = false }
                     .textFieldStyle(.plain).multilineTextAlignment(.center).font(StageTheme.font(11, weight: .semibold)).frame(width: 51).accessibilityLabel("\(accessibilityTitle) value")
-                Text(unit).font(StageTheme.font(8)).foregroundStyle(.secondary)
+                Text(unit).font(StageTheme.font(11)).foregroundStyle(.secondary)
             }.padding(.vertical, 4).background(StageTheme.base.opacity(0.5), in: RoundedRectangle(cornerRadius: 4))
         }.frame(height: 96)
     }

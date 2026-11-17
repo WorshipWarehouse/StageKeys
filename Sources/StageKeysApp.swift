@@ -1,5 +1,6 @@
 import SwiftUI
 import CoreText
+import UniformTypeIdentifiers
 
 @main
 struct StageKeysApp: App {
@@ -27,19 +28,38 @@ struct StageKeysApp: App {
                 Button(store.audioCheckRecording ? "Recording Audio Check…":"Record 30-Second Audio Check") {store.startAudioCheck()}.disabled(store.audioCheckRecording)
                 Button("Stop Audio Check") {store.stopAudioCheck()}.disabled(!store.audioCheckRecording)
             }
+            CommandMenu("Performance") {
+                Button(store.metronome ? "Turn Metronome Off" : "Turn Metronome On") { store.metronome.toggle() }
+                    .keyboardShortcut("m", modifiers: [.command, .shift])
+                Button("Metronome Count In") { store.countIn() }
+                    .keyboardShortcut("i", modifiers: [.command, .shift])
+                    .disabled(store.metronomeSettings.countInBars == 0 || store.metronomeSettings.followsMIDIClock)
+            }
         }
         #endif
     }
 }
 enum StageTheme {
-    static let base = Color(red: 0.065, green: 0.071, blue: 0.11)
-    static let panel = Color(red: 0.14, green: 0.15, blue: 0.21)
-    static let raised = Color(red: 0.23, green: 0.26, blue: 0.36)
-    static let selected = Color(red: 0.64, green: 0.76, blue: 0.94)
-    static let colors: [Color] = [Color(red: 0.97, green: 0.66, blue: 0.28), Color(red: 0.2, green: 0.77, blue: 0.47), Color(red: 0.24, green: 0.39, blue: 0.94), Color(red: 0.59, green: 0.34, blue: 0.90), Color(red: 0.88, green: 0.40, blue: 0.75), .cyan, .orange, .brown, .pink, .gray, .red, .yellow, .purple, .green, .pink]
+    /// Colours and type floors come from `StageA11y`, the audited baseline: the
+    /// palette is defined once, and every font size is clamped to the readable
+    /// minimum so a dense control cannot render text smaller than 11 pt.
+    private static func color(_ value: StageRGB) -> Color { Color(red: value.red, green: value.green, blue: value.blue) }
+    static let base = color(StageA11y.Palette.base)
+    static let panel = color(StageA11y.Palette.panel)
+    static let raised = color(StageA11y.Palette.raised)
+    static let selected = color(StageA11y.Palette.selected)
+    static let colors: [Color] = StageA11y.Palette.accents.map(color) + [.cyan, .orange, .brown, .pink, .gray, .red, .yellow, .purple, .green, .pink]
+    /// Layer accent text keeps the identity hue when it already clears 4.5:1 on the
+    /// panel and is raised toward white when it does not. Layers past the five
+    /// custom accents use the audited selection accent, because a system colour's
+    /// components cannot be measured from code.
+    static func accentText(_ index: Int) -> Color {
+        guard index >= 0 && index < StageA11y.Palette.accents.count else { return selected }
+        return color(StageA11y.legibleAccent(StageA11y.Palette.accents[index], on: StageA11y.Palette.panel))
+    }
     static func font(_ size: CGFloat, weight: Font.Weight = .regular) -> Font {
         let name = weight == .bold || weight == .heavy ? "IBMPlexSans-Bold" : weight == .semibold || weight == .medium ? "IBMPlexSans-SemiBold" : "IBMPlexSans-Regular"
-        return .custom(name, size: size)
+        return .custom(name, size: CGFloat(StageA11y.fontSize(Double(size))))
     }
     static let notes = ["C", "D♭", "D", "E♭", "E", "F", "G♭", "G", "A♭", "A", "B♭", "B"]
     static func db(_ gain: Float) -> String { gain < 0.0001 ? "−∞" : String(format: "%.1f dB", 20 * log10(gain)) }
@@ -56,7 +76,7 @@ struct StageButtonStyle: ButtonStyle {
 }
 enum StageSheet: Identifiable {
     case importSounds, settings, patch, newPatch, renamePatch, patchLibrary, transpose, tempo, setlists, learn, tonic
-    case sound(Int), browser(Int), effect(Int,Int), snapshot(Int), midi(Int), note(Int)
+    case sound(Int), plugin(Int), browser(Int), effect(Int,Int), snapshot(Int), midi(Int), note(Int)
     var id: String { String(describing: self) }
 }
 struct PerformanceView: View {
@@ -72,6 +92,31 @@ struct PerformanceView: View {
             let wide = g.size.width >= 850
             VStack(spacing: 8) {
                 toolbar
+                if store.audioOperationInProgress {
+                    HStack(spacing: 8) {
+                        ProgressView().controlSize(.small)
+                        Text(store.audioStatusText).font(.caption).foregroundStyle(.secondary)
+                        Spacer()
+                        Button("Stop Audio") { store.stopAudio() }
+                            .buttonStyle(StageButtonStyle())
+                            .help("Stop audio and cancel pending startup or patch loading")
+                    }.padding(.horizontal, 4)
+                }
+                if store.audioFailed, let failure = store.audioFailureMessage {
+                    HStack(alignment: .top, spacing: 10) {
+                        Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                        Text(failure).font(.caption).fixedSize(horizontal: false, vertical: true)
+                        Spacer(minLength: 8)
+                        Button("Retry") { store.start() }.buttonStyle(StageButtonStyle())
+                        Button("Audio Settings") { sheet = .settings }.buttonStyle(StageButtonStyle())
+                    }.padding(10).background(StageTheme.panel, in: RoundedRectangle(cornerRadius: 8))
+                }
+                if store.patch.layers.allSatisfy({!$0.loaded}) {
+                    HStack {Text("StageKeys ships without sounds. Add your samples, Audio Units or external MIDI.").font(.caption)
+                        Button("Import Samples"){sheet = .importSounds}.buttonStyle(StageButtonStyle())
+                        Button("Add Sound"){sheet = .browser(0)}.buttonStyle(StageButtonStyle())}
+                }
+                if store.hasUnavailableLegacyVoices {Text("This patch contains unavailable legacy voices. Add replacement sounds; saved settings are retained.").font(.caption)}
                 if !wide { compactNavigation }
                 if store.editRanges { LayerRangeEditor() } else { HStack(spacing: 10) {
                     if wide { sidebar.frame(width: 299) }
@@ -103,9 +148,16 @@ struct PerformanceView: View {
                 }
             }
         }
-        .onAppear { store.start() }
+        .onAppear { store.startAutomatically() }
         .tint(StageTheme.selected)
-        .sheet(item: $sheet) { destination in
+        .onChange(of: store.pluginInterfaceReady) { _ in
+            if sheet == nil, let index = store.takePluginInterfaceRequest() { sheet = .plugin(index) }
+        }
+        .sheet(item: $sheet, onDismiss: {
+            DispatchQueue.main.async {
+                if let index=store.takePluginInterfaceRequest() { sheet = .plugin(index) }
+            }
+        }) { destination in
             Group {
                 switch destination {
                 case .importSounds: SoundImportView()
@@ -121,6 +173,7 @@ struct PerformanceView: View {
                 case .tonic: TonicSettingsEditor()
                 case .sound(let index): SoundEditor(index: index, initial: store.patch.layers[index])
                 case .browser(let index): SoundBrowser(index: index)
+                case .plugin(let index): PluginInterface(index:index)
                 case .midi(let index): MIDIEffectEditor(index: index)
                 case .effect(let index, let slot): EffectEditor(index: index, slot: slot, initial: store.patch.layers[index].effects[slot])
                 case .note(let index): SnapshotNoteEditor(index: index, initial: store.patch.snapshots[index])
@@ -129,8 +182,26 @@ struct PerformanceView: View {
             }.environmentObject(store).preferredColorScheme(.dark).font(StageTheme.font(14))
         }
         .alert("StageKeys", isPresented: Binding(get: { store.message != nil }, set: { if !$0 { store.message = nil } })) { Button("OK") { store.message = nil } } message: { Text(store.message ?? "") }
-        .fileImporter(isPresented: $importing, allowedContentTypes: [.json]) { result in
-            switch result { case .success(let url): store.load(url); case .failure(let error): store.message = error.localizedDescription }
+        .onOpenURL {url in
+            if url.scheme?.lowercased()=="stagekeys" {store.previewSetlistShare(link:url);sheet = .setlists}
+            else if url.pathExtension.lowercased()=="stagekeyssetlist" {store.previewSetlistShare(url);sheet = .setlists}
+            else if url.pathExtension.lowercased()=="stagekeyspack" {store.importLibraryBackup(url);sheet = .importSounds}
+            else if ["patch","cst"].contains(url.pathExtension.lowercased()) {store.importMainStageAutomatically(url);sheet = .importSounds}
+        }
+        .onDrop(of:[UTType.fileURL],isTargeted:nil){providers in
+            guard !store.libraryImportBusy,let provider=providers.first else{return false}
+            _ = provider.loadObject(ofClass:URL.self){url,_ in guard let url,["patch","cst"].contains(url.pathExtension.lowercased()) else{return};DispatchQueue.main.async{store.importMainStageAutomatically(url);sheet = .importSounds}}
+            return true
+        }
+        .fileImporter(isPresented: $importing, allowedContentTypes: [.json, .stageKeysSetlistShare]) { result in
+            switch result {
+            case .success(let url):
+                if url.pathExtension.lowercased()=="stagekeyssetlist" {
+                    store.previewSetlistShare(url)
+                    if store.pendingSetlistShare != nil { sheet = .setlists }
+                } else { store.load(url) }
+            case .failure(let error): store.message = error.localizedDescription
+            }
         }
         .fileExporter(isPresented: $exporting, document: SetlistFile(store.setlist), contentType: .json, defaultFilename: store.setlist.name) { result in
             if case .failure(let error) = result { store.message = error.localizedDescription }
@@ -154,17 +225,22 @@ struct PerformanceView: View {
                 Label("stagekeys", systemImage: "waveform").font(StageTheme.font(15, weight: .semibold)).tracking(1.5).frame(width: 160, alignment: .leading)
                 Button { sheet = .transpose } label: {
                     HStack(spacing: 0) {
-                        VStack(spacing: 3) { Text("Play In").font(StageTheme.font(9)); Text(StageTheme.notes[store.patch.playIn]) }.frame(width: 49)
+                        VStack(spacing: 3) { Text("Play In").font(StageTheme.font(11)); Text(StageTheme.notes[store.patch.playIn]) }.frame(width: 49)
                         Divider().frame(height: 38)
-                        VStack(spacing: 3) { Text("Hear In").font(StageTheme.font(9)); Text(StageTheme.notes[store.patch.hearIn]) }.frame(width: 49)
+                        VStack(spacing: 3) { Text("Hear In").font(StageTheme.font(11)); Text(StageTheme.notes[store.patch.hearIn]) }.frame(width: 49)
                     }.frame(height: 44)
                 }.buttonStyle(.plain).background(StageTheme.panel, in: RoundedRectangle(cornerRadius: 6))
                 HStack(spacing: 0) {
-                    Button { sheet = .tempo } label: { Text("\(Int(store.patch.tempo))").frame(width: 57, height: 44) }.buttonStyle(.plain)
+                    Button { sheet = .tempo } label: { Text("\(Int(store.performedTempo))").frame(width: 57, height: 44) }.buttonStyle(.plain)
                     Divider().frame(height: 30)
                     Button { sheet = .tempo } label: { Text("4/4").frame(width: 49, height: 44) }.buttonStyle(.plain)
-                    Divider().frame(height: 30)
-                    Button { store.metronome.toggle() } label: { Image(systemName: "metronome").frame(width: 38, height: 44).foregroundStyle(store.metronome ? StageTheme.selected : .secondary) }.buttonStyle(.plain).accessibilityLabel("Metronome")
+                    if store.metronomeSettings.visible {
+                        Divider().frame(height: 30)
+                        Button { store.metronome.toggle() } label: { Image(systemName: "metronome").frame(width: 38, height: 44).foregroundStyle(store.metronome ? StageTheme.selected : .secondary) }.buttonStyle(.plain).accessibilityLabel("Metronome").accessibilityValue(store.metronome ? "On" : "Off").accessibilityHint(store.metronomeSettings.followsMIDIClock ? "The click waits for the next MIDI Start or Continue when enabled." : "Turns the metronome click on or off.")
+                        if !store.metronomeSettings.followsMIDIClock && store.metronomeSettings.countInBars > 0 {
+                            Button { store.countIn() } label: { Image(systemName: "timer").frame(width: 34, height: 44) }.buttonStyle(.plain).accessibilityLabel("Metronome Count In").accessibilityValue("\(store.metronomeSettings.countInBars) bars").accessibilityHint("Plays the configured count-in bars from a downbeat. Audio must be running.")
+                        }
+                    }
                     Divider().frame(height: 30)
                     Button { store.patchLock.toggle() } label: { Text("Patch\nLock").font(StageTheme.font(12, weight: .semibold)).frame(width: 44, height: 44).foregroundStyle(store.patchLock ? StageTheme.selected : .secondary) }.buttonStyle(.plain).accessibilityLabel("Patch Lock")
                 }.background(StageTheme.panel, in: RoundedRectangle(cornerRadius: 6))
@@ -178,7 +254,9 @@ struct PerformanceView: View {
                     MasterFader(gain: $store.master).frame(width: 180, height: 38)
                 }
                 Button { sheet = .importSounds } label: { Image(systemName:"plus.circle.fill").frame(width:30,height:36) }.buttonStyle(.plain).accessibilityLabel("Import Sounds")
-                Button { if store.started { sheet = .settings } else { store.start() } } label: { Image(systemName: store.started ? "speaker.wave.2" : "power").frame(width: 24, height: 24) }.buttonStyle(StageButtonStyle()).accessibilityLabel(store.started ? "Audio Settings" : "Start Audio")
+                Button { if store.started { sheet = .settings } else { store.start() } } label: {
+                    Group { if store.audioIsStarting { ProgressView().controlSize(.small) } else { Image(systemName: store.started ? "speaker.wave.2" : "power") } }.frame(width: 24, height: 24)
+                }.buttonStyle(StageButtonStyle()).accessibilityLabel(store.started ? "Audio Settings" : store.audioIsStarting ? "Starting Audio" : "Start Audio").disabled(store.audioIsStarting)
                 Button { menuExpanded.toggle() } label: { Image(systemName:"line.3.horizontal").frame(width:40,height:36) }.buttonStyle(.plain).accessibilityLabel("Main Menu")
 
             }.foregroundStyle(StageTheme.selected.opacity(0.85)).padding(.vertical, 3)
@@ -195,6 +273,7 @@ struct PerformanceView: View {
         HStack {
             Button(store.setlist.name) { sheet = .setlists }.buttonStyle(StageButtonStyle())
             Picker("Patch", selection: Binding(get: { store.selected }, set: { store.choose($0) })) { ForEach(store.setlist.patches.indices, id: \.self) { Text(store.setlist.patches[$0].name).tag($0) } }.disabled(store.patchLock)
+            patchMenu
             Button { sheet = .tonic } label: { Image(systemName: "waveform") }.buttonStyle(StageButtonStyle()).accessibilityLabel("Tonic Pad")
         }
     }
@@ -236,6 +315,7 @@ struct PerformanceView: View {
         Menu {
             Button("Patch Settings…") { sheet = .patch }
             Button("Duplicate Patch") { store.duplicate() }.disabled(store.patchLock)
+            Button("Save Patch to Library") { _ = store.exportCurrentPatchToLibrary() }
             Button("Rename Patch…") { sheet = .renamePatch }.disabled(store.patchLock)
             Button("Remove Patch", role: .destructive) { store.removePatch() }.disabled(store.patchLock || store.setlist.patches.count < 2)
             Button("Save Setlist") { store.save() }
@@ -264,8 +344,8 @@ struct PerformanceView: View {
                     } label: {
                         VStack(spacing: 4) {
                             Text(populated ? snapshot!.name : "Snapshot").lineLimit(1)
-                            Text(populated ? (snapshot!.beats.map { String(format: "%.1f beats", $0) } ?? "Default") : "\(i + 1)").font(.system(size: 9)).opacity(0.65)
-                        }.frame(width: 100, height: 28)
+                            Text(populated ? (snapshot!.beats.map { String(format: "%.1f beats", $0) } ?? "Default") : "\(i + 1)").font(.system(size: 11)).opacity(0.65)
+                        }.frame(width: 100, height: 34)
                     }.buttonStyle(StageButtonStyle(selected: populated && store.activeSnapshot == snapshot?.id))
                         .accessibilityLabel(populated ? "Snapshot \(i + 1), \(snapshot!.name)" : "Snapshot \(i + 1), empty")
                         .help(populated ? "Recall snapshot. Use the context menu to edit or clear." : "Empty slot. Use Capture Snapshot to save the current mix here.")

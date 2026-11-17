@@ -4,7 +4,10 @@ import subprocess
 import tempfile
 
 tool = Path(__file__).resolve().parents[1] / 'Tools/check-distribution.py'
-notices = ('Airwindows-MIT.txt', 'EXS-Parser-MIT.md', 'StageKeys-Dense-Reverb-MIT.txt', 'OFL.txt')
+notices = ('StageKeys-MIT.txt','Airwindows-MIT.txt', 'EXS-Parser-MIT.md', 'Drawbar-BSD-3-Clause.txt', 'StageKeys-Dense-Reverb-MIT.txt', 'OFL.txt')
+
+repo = tool.parent.parent
+assert (repo / 'LICENSE').read_bytes() == (repo / 'Licenses/StageKeys-MIT.txt').read_bytes(), 'Bundled MIT text drifted from root license'
 
 # Naming no target would otherwise report PASS after checking nothing.
 bare = subprocess.run(['python3', str(tool)], capture_output=True)
@@ -25,6 +28,11 @@ with tempfile.TemporaryDirectory() as temporary:
     for notice in notices:
         (resources / notice).write_text('fixture notice')
     check(app, True)
+    for notice in notices:
+        path = resources / notice
+        saved = path.read_bytes(); path.unlink()
+        check(app, False)
+        path.write_bytes(saved)
     (resources / 'private.wav').write_bytes(b'fixture')
     check(app, False)
     (resources / 'private.wav').unlink()
@@ -39,6 +47,31 @@ with tempfile.TemporaryDirectory() as temporary:
     empty.mkdir()
     check(app, False)
     empty.rmdir()
+    for name in ('Personal.stagekeyspack', 'Personal.STAGEKEYSPACK', 'Private.npno', 'Private.NPNO', 'Private.nsmp', 'Private.nsmp3', 'Private.nsmp4'):
+        pack=resources / name
+        pack.write_bytes(b'synthetic personal pack')
+        check(app, False)
+        pack.unlink()
+    pack=resources / 'Empty.stagekeyspack'
+    pack.mkdir()
+    check(app, False)
+    pack.rmdir()
+    for name in ('Shared.stagekeyssetlist', 'Shared.STAGEKEYSSETLIST'):
+        share=resources / name
+        share.write_bytes(b'synthetic setlist share')
+        check(app, False)
+        share.unlink()
+    seeded=resources / 'factory.txt'
+    seeded.write_text('builtin-0')
+    check(app, False)
+    seeded.unlink()
+    seeded=app / 'Contents' / 'MacOS' / 'StageKeys'
+    seeded.parent.mkdir()
+    seeded.write_bytes(b'synthetic executable: Soft Keys / Warm Pad / Glass Bells')
+    check(app, False)
+    seeded.write_bytes(b'x'*(1024*1024-3)+b'builtin-0')
+    check(app, False)
+    seeded.unlink()
     link = root / 'Linked.app'
     link.symlink_to(app, target_is_directory=True)
     check(link, False)
@@ -57,6 +90,18 @@ def repo_check(files, expected):
         assert (result.returncode == 0) == expected, message
 
 repo_check({'Sources/Model.swift': b'fixture source'}, True)
+repo_check({'Sources/Browser.swift': b'let id = "builtin-0"'}, False)
+repo_check({'Sources/Models.swift': b'let names = ["Soft Keys", "Warm Pad", "Glass Bells"]'}, False)
+repo_check({'Sources/Audio.swift': b'sk_note_on(pointer, 0, 60, 1, 0, 1)'}, False)
+repo_check({'Tests/Fixture.swift': b'let names = ["Soft Keys", "Warm Pad", "Glass Bells"]'}, True)
+repo_check({'Sources/Synth.c': b'void sk_note_on(void) {}'}, True)
+repo_check({'Private.npno': b'synthetic Nord content'}, False)
+repo_check({'Private.NSMP4': b'synthetic Nord content'}, False)
+repo_check({'Personal.stagekeyspack': b'fixture personal pack'}, False)
+repo_check({'Personal.STAGEKEYSPACK': b'fixture personal pack'}, False)
+repo_check({'Personal.stagekeyspack/README.txt': b'fixture nested pack'}, False)
+repo_check({'Shared.stagekeyssetlist': b'fixture user setlist share'}, False)
+repo_check({'Docs/stagekeyspack.md': b'fixture format documentation'}, True)
 repo_check({'setlist.json': b'fixture user setlist'}, False)
 repo_check({'setlist-v3-backup.json': b'fixture pre-migration setlist backup'}, False)
 repo_check({'sound-library.json': b'fixture private library index'}, False)
@@ -89,4 +134,5 @@ def checkout_check(staged, untracked, expected, ignore=''):
 checkout_check({'Sources/Model.swift': b'fixture source'}, {'note.aifc': b'fixture private sample'}, False)
 checkout_check({'Sources/Model.swift': b'fixture source'}, {'Samples/soft.wav': b'fixture private sample'}, True, ignore='*.wav\n')
 checkout_check({'Sources/Model.swift': b'fixture source'}, {'Sources/Extra.swift': b'fixture source'}, True)
-print('PASS: no-target runs, missing notices, embedded samples, empty MainStage document directories, symlink bundles and private library, setlist, MainStage and Ableton content rejected')
+checkout_check({'Sources/Model.swift': b'fixture source'}, {'Personal.stagekeyspack': b'fixture pack'}, False)
+print('PASS: portable packs, no-target runs, missing notices, embedded samples, empty MainStage document directories, symlink bundles and private library, setlist, MainStage and Ableton content rejected')

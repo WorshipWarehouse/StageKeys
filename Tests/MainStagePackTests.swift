@@ -5,7 +5,7 @@ import AVFoundation
   guard let path=ProcessInfo.processInfo.environment["STAGEKEYS_MAINSTAGE_PACK"] else{print("SKIP: private MainStage pack unset");return}
   let source=URL(fileURLWithPath:path),pack=try LibraryBackup.read(source)
   for original in pack.sounds {
-   guard let archive=original.sourceArchiveID,let rack=original.layer?.importedRack else{continue}
+   guard let archive=original.sourceArchiveID,let originalLayer=original.layer,let rack=originalLayer.importedRack else{continue}
    let patch=source.appendingPathComponent("MainStage Sources/"+archive+"/Source.patch")
    let hash=String(original.id.dropFirst("mainstage-channel-".count).prefix(64))
    let files=try FileManager.default.contentsOfDirectory(at:patch,includingPropertiesForKeys:nil).filter{$0.pathExtension=="cst"}
@@ -13,9 +13,15 @@ import AVFoundation
    let document=try PropertyListSerialization.propertyList(from:Data(contentsOf:patch.appendingPathComponent("data.plist")),options:[],format:nil) as! [String:Any]
    let channels=document["channels"] as? [[String:Any]] ?? []
    let settings=channels.first{$0["Filename"] as? String==channel.lastPathComponent} ?? [:]
-   let translated=try MainStageProcessing.translate(Data(contentsOf:channel),channelID:settings["Channel_instID"] as? Int)
-   let expected=try translated.appending(to:original.sound?.nativeSampler?.rack)
-   assert(expected==rack,"Installed processing must match fresh source translation: \(original.name)")
+   var translated=try MainStageProcessing.translate(Data(contentsOf:channel),channelID:settings["Channel_instID"] as? Int)
+   MainStageProcessing.channelSettings(settings,to:&translated)
+   if let record=originalLayer.mainStageSource {
+    let rebuilt=try translated.applying(to:Layer(name:original.name,instrument:-1,gain:1),selection:.init(audio:record.selectedAudio,midi:record.selectedMIDI,midiEnabled:record.midiEnabled))
+    assert(rebuilt.layer.effects==originalLayer.effects && rebuilt.layer.channelSettings.equalizer==originalLayer.channelSettings.equalizer,"Installed selected processing must match fresh source translation: \(original.name)")
+   } else {
+    let expected=try translated.appending(to:original.sound?.nativeSampler?.rack)
+    assert(expected==rack,"Installed legacy processing must match fresh source translation: \(original.name)")
+   }
   }
   print("PASS: all native pack racks match fresh translation of original MainStage channel settings")
   let store=PerformanceStore();try store.audio.prepareOffline();defer{store.audio.stop()}

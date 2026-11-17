@@ -24,7 +24,8 @@ void sk_gain(SKSynth *s, int layer, float gain, float seconds);
 void sk_effect(SKSynth *s, int layer, int slot, int kind, float amount);
 void sk_pan(SKSynth *s, int layer, float pan);
 void sk_block_sustain(SKSynth *s, int layer, int enabled);
-void sk_clock(SKSynth *s, float tempo, int enabled);
+// Tempo for synced effects. The metronome is a separate engine; see SKMetronome.
+void sk_clock(SKSynth *s, float tempo);
 void sk_sustain(SKSynth *s, int enabled);
 void sk_panic(SKSynth *s);
 void sk_panic_channel(SKSynth *s,int layer);
@@ -40,6 +41,9 @@ void sk_voice_limit(SKSynth *s,int layer,int voices);
 void sk_sampler_gain(SKSynth *s,int layer,float gain);
 void sk_filter(SKSynth *s,int layer,float cutoff,float resonance);
 void sk_eq(SKSynth *s,int layer,int band,float frequency,float gainDB,float q);
+// Channel compressor. Mix is a dry/wet crossfade where 0 is a true bypass;
+// input gain and makeup belong to the compressed path only. Disabling (or
+// re-enabling) clears stored detector gain reduction.
 void sk_compressor(SKSynth *s,int layer,int enabled,float thresholdDB,float ratio,float attack,float release,float makeupDB);
 
 // Physical parameter values and indices match AudioEffectCatalog descriptors.
@@ -48,3 +52,38 @@ void sk_effect_parameter(SKSynth *s,int layer,int slot,int parameterIndex,float 
 void sk_compressor_blend(SKSynth *s,int layer,float inputGainDB,float wet);
 
 void sk_imported_delay_channel(SKSynth*s,int slot,int enabled,float feedback,float crossFeedback,float mix,int input);
+void sk_imported_delay_levels(SKSynth*s,int slot,int enabled,float dry,float wet);
+
+// Independent metronome click engine. It never enters the synth's shared
+// reverb or limiter. The control thread publishes settings through a bounded
+// single-producer/single-consumer queue; rendering allocates and locks nothing.
+// `level` scales a click capped at 0.2 peak before the host's output headroom.
+typedef struct SKMetronome SKMetronome;
+typedef struct {
+    float level;            // 0...1
+    int preset;             // 0 click, 1 woodblock
+    float beatVelocity;     // 0...1, also the accent base
+    int downbeatEnabled;
+    float downbeatVelocity; // 0...1
+    int beatsPerBar;        // 1...16
+    int accentEvery;        // 0 off, 1...16 beats
+    int subdivision;        // 1...4 clicks per beat
+} SKMetronomeSettings;
+SKMetronome *sk_metronome_create(double sampleRate);
+void sk_metronome_destroy(SKMetronome *m);
+void sk_metronome_settings(SKMetronome *m, SKMetronomeSettings settings);
+void sk_metronome_enable(SKMetronome *m, int enabled);
+void sk_metronome_tempo(SKMetronome *m, float tempo);
+// Output gain: follow the performance master, or hold the click's own level.
+void sk_metronome_master(SKMetronome *m, float volume, int followsMaster);
+// Play a one-shot count-in. If the click was off it stops after the requested
+// bars; if it was already on the normal click continues in phase.
+void sk_metronome_count_in(SKMetronome *m, int bars);
+// External MIDI clock: 24 pulses per quarter note. While enabled the click
+// waits for Start/Continue and follows Stop. Events are timestamped with the
+// caller's monotonic seconds; the render thread applies them in order.
+void sk_metronome_clock_enabled(SKMetronome *m, int enabled);
+// event: 0 tick, 1 start, 2 continue, 3 stop.
+void sk_metronome_clock_event(SKMetronome *m, int event, double time);
+void sk_metronome_reset(SKMetronome *m);
+void sk_metronome_render(SKMetronome *m, float *left, float *right, uint32_t frames);

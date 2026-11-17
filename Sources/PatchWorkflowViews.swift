@@ -44,6 +44,9 @@ struct TonicSettingsEditor:View {
     @State private var choosing=false
     @State private var selectingSound=false
     @State private var selectedLibrarySoundID:String?
+    @State private var priorSound:ExternalSound?
+    @State private var priorVelocitySelector=false
+    @State private var priorTimbre=0
     @State private var instrument:URL?
     private var eligibleSounds:[LibrarySound] {
         store.librarySounds.filter { entry in
@@ -55,10 +58,13 @@ struct TonicSettingsEditor:View {
         EditorFrame(title:"Tonic Pad Settings",width:700,height:520) {
             ScrollView {VStack(alignment:.leading,spacing:20) {
                 HStack(spacing:10) {
-                    Text("Pad Instrument: \(store.tonicSound?.name ?? "Built-in Warm")").font(.headline)
+                    Text("Pad Instrument: \(store.tonicSound?.name ?? "No sound selected")").font(.headline)
                     Spacer()
-                    Button("Choose Sound…"){selectingSound=true}.buttonStyle(StageButtonStyle())
-                    Button("Built-in Warm"){store.useBuiltinTonic()}.buttonStyle(StageButtonStyle())
+                    Button("Choose Sound…"){
+                        priorSound=store.tonicSound;priorVelocitySelector=store.tonicVelocitySelector;priorTimbre=store.tonicTimbre
+                        selectedLibrarySoundID=nil;selectingSound=true
+                    }.buttonStyle(StageButtonStyle())
+
                 }
                 if let selectedLibrarySoundID,
                    let selected=store.librarySounds.first(where:{$0.id==selectedLibrarySoundID}),
@@ -70,8 +76,8 @@ struct TonicSettingsEditor:View {
                     Picker("Pad Sound",selection:$store.tonicTimbre){ForEach(Array(store.tonicNames.enumerated()),id:\.offset){index,name in Text("\(index+1). \(name)").tag(index)}}
                     Button("Import Pad Instrument"){instrument=nil;choosing=true}.buttonStyle(StageButtonStyle())
                 }
-                Text(store.tonicSound == nil ? "Built-in pad · no sound library required":"User-library sampler · existing sample assets are used in place").font(.caption).foregroundStyle(.secondary)
-                if store.tonicSound != nil {Button("Use Built-in Pad"){store.useBuiltinTonic()}.buttonStyle(StageButtonStyle())}
+                Text(store.tonicSound == nil ? "Choose Sound or import a looped sampler instrument. StageKeys includes no pad sounds.":"User-library sampler · existing sample assets are used in place").font(.caption).foregroundStyle(.secondary)
+                if store.tonicSound != nil {Button("Clear Pad Sound"){store.clearTonicSound()}.buttonStyle(StageButtonStyle())}
                 HStack(spacing:18) {
                     EffectKnob(descriptor:.init(index:0,name:"Brightness",minimum:0,maximum:1,defaultValue:0.7,unit:"%"),value:$store.tonicBrightness)
                     EffectKnob(descriptor:.init(index:1,name:"Shimmer",minimum:0,maximum:1,defaultValue:0,unit:"%"),value:$store.tonicShimmer)
@@ -89,8 +95,7 @@ struct TonicSettingsEditor:View {
                             let sound=entry.sound ?? entry.layer?.external!
                             Button {
                                 selectedLibrarySoundID=entry.id
-                                if let sound {store.setTonicInstrument(sound)}
-                                selectingSound=false
+                                if let sound {store.auditionTonicInstrument(sound)}
                             } label: {
                                 HStack {
                                     VStack(alignment:.leading,spacing:4) {Text(entry.name);Text(entry.collection).font(.caption).foregroundStyle(.secondary)}
@@ -115,9 +120,18 @@ struct TonicSettingsEditor:View {
                     }
                 }
                 .navigationTitle("Choose Tonic Pad Sound")
-                .toolbar {ToolbarItem(placement:.cancellationAction){Button("Cancel"){selectingSound=false}}}
+                .toolbar {
+                    ToolbarItem(placement:.cancellationAction){Button("Cancel"){
+                        store.restoreTonicInstrument(priorSound,velocitySelector:priorVelocitySelector,timbre:priorTimbre)
+                        selectingSound=false
+                    }}
+                    ToolbarItem(placement:.confirmationAction){Button("Use Sound"){
+                        store.commitTonicInstrumentSelection();selectingSound=false
+                    }.disabled(selectedLibrarySoundID==nil || store.tonicSoundLoading)}
+                }
+                .overlay(alignment:.bottom){if store.tonicSoundLoading {ProgressView("Loading preview…").padding(10).background(.ultraThinMaterial,in:Capsule()).padding()}}
                 .overlay {if store.librarySounds.isEmpty {VStack(spacing:8){Image(systemName:"music.note.list");Text("No User Sounds").font(.headline);Text("Import a supported looped sampler to My Sounds first.").font(.caption).foregroundStyle(.secondary)}.padding()}}
-            }
+            }.interactiveDismissDisabled(true)
         }
         .fileImporter(isPresented:$choosing,allowedContentTypes:instrument == nil ? [.data]:[.folder]){result in
             switch result {

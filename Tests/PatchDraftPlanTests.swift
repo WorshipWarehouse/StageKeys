@@ -2,11 +2,11 @@ import Foundation
 
 @main struct PatchDraftPlanTests {
     static func main() throws {
-        var original=Layer(name:"Authorized Pad",instrument:1,gain:0.2)
+        var original=TestFixtures.layer(1,gain:0.2,name:"Authorized Pad")
         original.effects[0]=AudioEffect.factoryDefault(kind:13)
         let entry=LibrarySound(id:"owned-pad",name:original.name,collection:"My Sounds",layer:original)
         let plan=PatchDraftPlan(name:"Local Draft",sounds:[.init(libraryID:entry.id,gain:0.3,pan:-0.2,low:48,high:96)])
-        let preview=try plan.preview(library:[entry],available:{_ in false})
+        let preview=try plan.preview(library:[entry],available:{_ in true})
         assert(preview.patch?.layers.count==15 && preview.patch?.layers[0].effects==original.effects)
         assert(preview.patch?.layers[0].id != original.id && original.gain==0.2)
         let decoded=try JSONDecoder().decode(PatchDraftPlan.self,from:JSONEncoder().encode(plan))

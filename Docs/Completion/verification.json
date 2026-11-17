@@ -1,0 +1,799 @@
+{
+  "date": "2026-11-02",
+  "source_commit": "6a253130196e8beca471a575a45c1834d52cedf8",
+  "environment": {
+    "platform": "macOS",
+    "version": "27.2",
+    "build": "26B123",
+    "architecture": "arm64",
+    "xcode": "27.2 (27B52)",
+    "node": "26.4.0",
+    "source_mutations": "Docs/Completion only"
+  },
+  "checks": [
+    {
+      "command": "python3 Tests/run-local-library.py . /private/tmp/stagekeys-completion-library",
+      "status": "environment-failure",
+      "exit_code": 1,
+      "log": "/private/tmp/stagekeys-completion-library.log",
+      "log_sha256": "990d931d8bfa75d24c3d82dc270745b120fd3ce14c2656494ad182188f55d8dd",
+      "notes": "Core compiled; first program passed; PersonalSoundPackTests aborted under sandbox Apple audio/service restrictions. Not a product-fix claim; unchanged sources rerun below."
+    },
+    {
+      "command": "python3 Tests/run-local-library.py . /private/tmp/stagekeys-completion-library-unrestricted",
+      "status": "passed-with-skips",
+      "exit_code": 0,
+      "log": "/private/tmp/stagekeys-completion-library-unrestricted.log",
+      "log_sha256": "c20f4634c1344af29d9c190cebd73d7730669af11d8bfd174669fd13cf1f7320",
+      "notes": "Normal Apple service access; disposable STAGEKEYS_DATA_DIR per program. 99 entries: 88 passed, 11 explicit private-fixture skips, 0 failed."
+    },
+    {
+      "command": "Tools/verify-release.sh mac /private/tmp/stagekeys-completion-mac",
+      "status": "environment-failure",
+      "exit_code": null,
+      "log": "/private/tmp/stagekeys-completion-mac.log",
+      "log_sha256": "a0969b8ff1f3df660085e6e23d5ac831d9ba68a3fcff85ad181b31e1b6134faf",
+      "notes": "SwiftUI macro helper sandbox_apply Operation not permitted and cascading missing @State members; unchanged normal-service retry passed. Exact process exit code was not retained; failed-build diagnostics are in the hashed log."
+    },
+    {
+      "command": "Tools/verify-release.sh simulator /private/tmp/stagekeys-completion-simulator",
+      "status": "environment-failure",
+      "exit_code": null,
+      "log": "/private/tmp/stagekeys-completion-simulator.log",
+      "log_sha256": "2b052ab6c5f01929c7c21adf8704ffa37862a2d550d2b0f90d398cc57ce4f153",
+      "notes": "CoreSimulator/service and compiler helper restrictions; not mobile qualification. Exact process exit code was not retained; failed-build diagnostics are in the hashed log."
+    },
+    {
+      "command": "Tools/verify-release.sh mac /private/tmp/stagekeys-completion-mac-unrestricted",
+      "status": "passed",
+      "exit_code": 0,
+      "log": "/private/tmp/stagekeys-completion-mac-unrestricted.log",
+      "log_sha256": "117b705d4d4828f3ca0cbf5faa5823203f0cb56624010f2ae5a83f8759567a3e",
+      "notes": "Unsigned universal arm64/x86_64 artifact; bundle/provenance/notices/personal-pack metadata gates passed."
+    },
+    {
+      "command": "Tools/verify-release.sh simulator /private/tmp/stagekeys-completion-simulator-unrestricted",
+      "status": "passed",
+      "exit_code": 0,
+      "log": "/private/tmp/stagekeys-completion-simulator-unrestricted.log",
+      "log_sha256": "21fc19aad44da55aa2e09779e3d417a7987fc7156ce37e038134b5b8a58a98c1",
+      "notes": "Unsigned simulator artifact/content/document/icon gates passed. CoreSimulator version mismatch warning remains; no simulator app interaction or physical-device run."
+    },
+    {
+      "command": "Tests/test-reverb.sh",
+      "status": "passed",
+      "exit_code": 0,
+      "log": "/private/tmp/stagekeys-completion-reverb.log",
+      "log_sha256": "1676ce7aef024ff3e2951102021d4dbab8dc0a734a7a8f210e3edc3e9922ad3d",
+      "notes": "21 C test programs under AddressSanitizer and UndefinedBehaviorSanitizer; tested code assertions at declared sample rates, not audible reference fidelity."
+    },
+    {
+      "command": "python3 Tests/test-*.py (each of the 9 files, individually)",
+      "status": "passed",
+      "exit_code": 0,
+      "log": "/private/tmp/stagekeys-completion-python.log",
+      "log_sha256": "c5cfca85d5d988b10cc8b44ca743a9afb8c0e6a655442bd16b2eaabf00772c9f",
+      "notes": "All nine Python script entry points returned 0; exact command/exit pairs are in the log."
+    }
+  ],
+  "library_results": [
+    {
+      "test": "MainStageTapeDelayTests",
+      "status": "passed",
+      "passed": true,
+      "seconds": 0.876
+    },
+    {
+      "test": "PersonalSoundPackTests",
+      "status": "passed",
+      "passed": true,
+      "seconds": 3.556
+    },
+    {
+      "test": "MainStageGuidedImportTests",
+      "status": "passed",
+      "passed": true,
+      "seconds": 1.521
+    },
+    {
+      "test": "MetadataRecoveryTests",
+      "status": "passed",
+      "passed": true,
+      "seconds": 0.98
+    },
+    {
+      "test": "CatalogRecoveryTests",
+      "status": "passed",
+      "passed": true,
+      "seconds": 1.02
+    },
+    {
+      "test": "MainStageFaderTests",
+      "status": "passed",
+      "passed": true,
+      "seconds": 1.479
+    },
+    {
+      "test": "NoFactorySoundsTests",
+      "status": "passed",
+      "passed": true,
+      "seconds": 4.978
+    },
+    {
+      "test": "SamplerStartupTests",
+      "status": "passed",
+      "passed": true,
+      "seconds": 0.764
+    },
+    {
+      "test": "SetlistPathAliasTests",
+      "status": "passed",
+      "passed": true,
+      "seconds": 0.524
+    },
+    {
+      "test": "StoreTests",
+      "status": "passed",
+      "passed": true,
+      "seconds": 1.459
+    },
+    {
+      "test": "SnapshotSlotTests",
+      "status": "passed",
+      "passed": true,
+      "seconds": 0.668
+    },
+    {
+      "test": "SessionRecoveryTests",
+      "status": "passed",
+      "passed": true,
+      "seconds": 0.794
+    },
+    {
+      "test": "SupportDiagnosticsTests",
+      "status": "passed",
+      "passed": true,
+      "seconds": 0.514
+    },
+    {
+      "test": "TransactionalImportTests",
+      "status": "passed",
+      "passed": true,
+      "seconds": 5.371
+    },
+    {
+      "test": "MainStagePreflightTests",
+      "status": "passed",
+      "passed": true,
+      "seconds": 0.731
+    },
+    {
+      "test": "PluginRecoveryTests",
+      "status": "passed",
+      "passed": true,
+      "seconds": 0.534
+    },
+    {
+      "test": "EffectStressTests",
+      "status": "passed",
+      "passed": true,
+      "seconds": 1.108
+    },
+    {
+      "test": "OutputMeterTests",
+      "status": "passed",
+      "passed": true,
+      "seconds": 0.983
+    },
+    {
+      "test": "MainStageLayerAssemblyTests",
+      "status": "passed",
+      "passed": true,
+      "seconds": 1.15
+    },
+    {
+      "test": "ModulationWheelTests",
+      "status": "passed",
+      "passed": true,
+      "seconds": 0.794
+    },
+    {
+      "test": "AllSoundSlotsTests",
+      "status": "passed",
+      "passed": true,
+      "seconds": 6.494
+    },
+    {
+      "test": "PatchDraftPlanTests",
+      "status": "passed",
+      "passed": true,
+      "seconds": 0.752
+    },
+    {
+      "test": "ManualMIDIDestinationRefreshTests",
+      "status": "passed",
+      "passed": true,
+      "seconds": 0.681
+    },
+    {
+      "test": "PluginParameterModelTests",
+      "status": "passed",
+      "passed": true,
+      "seconds": 2.667
+    },
+    {
+      "test": "PrimaVerbModelTests",
+      "status": "passed",
+      "passed": true,
+      "seconds": 0.479
+    },
+    {
+      "test": "EffectPresetTests",
+      "status": "passed",
+      "passed": true,
+      "seconds": 0.482
+    },
+    {
+      "test": "DenseHostedTests",
+      "status": "passed",
+      "passed": true,
+      "seconds": 0.657
+    },
+    {
+      "test": "ReverbTransitionTests",
+      "status": "passed",
+      "passed": true,
+      "seconds": 3.454
+    },
+    {
+      "test": "ExternalGraphTailTests",
+      "status": "passed",
+      "passed": true,
+      "seconds": 1.131
+    },
+    {
+      "test": "LibraryBrowserTests",
+      "status": "passed",
+      "passed": true,
+      "seconds": 0.573
+    },
+    {
+      "test": "SoundRatingTests",
+      "status": "passed",
+      "passed": true,
+      "seconds": 0.571
+    },
+    {
+      "test": "LibraryNoteRangeTests",
+      "status": "passed",
+      "passed": true,
+      "seconds": 0.58
+    },
+    {
+      "test": "SoundLibraryTests",
+      "status": "passed",
+      "passed": true,
+      "seconds": 0.496
+    },
+    {
+      "test": "ImportedSampleContinuityTests",
+      "status": "passed",
+      "passed": true,
+      "seconds": 0.682
+    },
+    {
+      "test": "ImportedSoundRetentionTests",
+      "status": "passed",
+      "passed": true,
+      "seconds": 0.659
+    },
+    {
+      "test": "MainStagePatchTests",
+      "status": "passed",
+      "passed": true,
+      "seconds": 0.738
+    },
+    {
+      "test": "StageKeysSamplerTests",
+      "status": "passed",
+      "passed": true,
+      "seconds": 0.479
+    },
+    {
+      "test": "SamplerAttackTests",
+      "status": "passed",
+      "passed": true,
+      "seconds": 0.558
+    },
+    {
+      "test": "AudioDiagnosticRecorderTests",
+      "status": "passed",
+      "passed": true,
+      "seconds": 0.516
+    },
+    {
+      "test": "InstrumentGainMatchTests",
+      "status": "passed",
+      "passed": true,
+      "seconds": 10.829
+    },
+    {
+      "test": "PatchGainTests",
+      "status": "passed",
+      "passed": true,
+      "seconds": 0.803
+    },
+    {
+      "test": "EXSEnvelopeTests",
+      "status": "passed",
+      "passed": true,
+      "seconds": 0.65
+    },
+    {
+      "test": "EXSVoiceControlsTests",
+      "status": "passed",
+      "passed": true,
+      "seconds": 1.111
+    },
+    {
+      "test": "EXSSplitRegionTests",
+      "status": "passed",
+      "passed": true,
+      "seconds": 0.727
+    },
+    {
+      "test": "LibraryBackupTests",
+      "status": "passed",
+      "passed": true,
+      "seconds": 0.652
+    },
+    {
+      "test": "TonicPadTests",
+      "status": "passed",
+      "passed": true,
+      "seconds": 1.091
+    },
+    {
+      "test": "MainStageProcessingTests",
+      "status": "passed",
+      "passed": true,
+      "seconds": 0.71
+    },
+    {
+      "test": "MainStageControllerDefaultsTests",
+      "status": "passed",
+      "passed": true,
+      "seconds": 0.774
+    },
+    {
+      "test": "MainStageAudioUnitImportTests",
+      "status": "passed",
+      "passed": true,
+      "seconds": 0.994
+    },
+    {
+      "test": "EXSReferenceIdentityTests",
+      "status": "passed",
+      "passed": true,
+      "seconds": 0.527
+    },
+    {
+      "test": "EXSCrossfadeNeutralTests",
+      "status": "passed",
+      "passed": true,
+      "seconds": 0.54
+    },
+    {
+      "test": "SamplerHostVelocityTests",
+      "status": "passed",
+      "passed": true,
+      "seconds": 1.112
+    },
+    {
+      "test": "NativeSamplerGroupTests",
+      "status": "passed",
+      "passed": true,
+      "seconds": 0.892
+    },
+    {
+      "test": "PianoFidelityTests",
+      "status": "skipped",
+      "passed": null,
+      "reasons": [
+        "SKIP: private piano fixture unset"
+      ],
+      "seconds": 0.498
+    },
+    {
+      "test": "SamplerBoundaryRegressionTests",
+      "status": "passed",
+      "passed": true,
+      "seconds": 1.37
+    },
+    {
+      "test": "SamplerStreamingStressTests",
+      "status": "passed",
+      "passed": true,
+      "seconds": 3.21
+    },
+    {
+      "test": "AudioUnitCatalogTests",
+      "status": "passed",
+      "passed": true,
+      "seconds": 0.525
+    },
+    {
+      "test": "MIDISetupTests",
+      "status": "passed",
+      "passed": true,
+      "seconds": 0.516
+    },
+    {
+      "test": "BuiltinEffectUnitTests",
+      "status": "passed",
+      "passed": true,
+      "seconds": 2.014
+    },
+    {
+      "test": "NativeCreamCoatTests",
+      "status": "passed",
+      "passed": true,
+      "seconds": 0.606
+    },
+    {
+      "test": "ParallelAudioTests",
+      "status": "passed",
+      "passed": true,
+      "seconds": 0.586
+    },
+    {
+      "test": "PianoHeldNoteTests",
+      "status": "passed",
+      "passed": true,
+      "seconds": 0.533
+    },
+    {
+      "test": "ModelTests",
+      "status": "passed",
+      "passed": true,
+      "seconds": 0.773
+    },
+    {
+      "test": "GrooveTests",
+      "status": "passed",
+      "passed": true,
+      "seconds": 0.463
+    },
+    {
+      "test": "MIDIFXTests",
+      "status": "passed",
+      "passed": true,
+      "seconds": 0.526
+    },
+    {
+      "test": "SnapshotMorphTests",
+      "status": "passed",
+      "passed": true,
+      "seconds": 0.508
+    },
+    {
+      "test": "EXSAmplitudeUpgradeTests",
+      "status": "skipped",
+      "passed": null,
+      "reasons": [
+        "SKIP: private sampler/source unset"
+      ],
+      "seconds": 0.493
+    },
+    {
+      "test": "EXSResponseUpgradeTests",
+      "status": "skipped",
+      "passed": null,
+      "reasons": [
+        "SKIP: private response fixture unset"
+      ],
+      "seconds": 0.496
+    },
+    {
+      "test": "EXSVoiceUpgradeTests",
+      "status": "skipped",
+      "passed": null,
+      "reasons": [
+        "SKIP: private v2 sampler/source fixture unset"
+      ],
+      "seconds": 0.574
+    },
+    {
+      "test": "EXSCaptureCompatibilityTests",
+      "status": "passed",
+      "passed": true,
+      "seconds": 0.804
+    },
+    {
+      "test": "EXSImportTests",
+      "status": "skipped",
+      "passed": null,
+      "reasons": [
+        "SKIP EXS test: provide scratch directory, installed EXS, and explicit sample root"
+      ],
+      "seconds": 0.541
+    },
+    {
+      "test": "ModernEXSImportTests",
+      "status": "skipped",
+      "passed": null,
+      "reasons": [
+        "SKIP: provide private EXS fixture and selected sample root"
+      ],
+      "seconds": 0.652
+    },
+    {
+      "test": "ModernEXSPlaybackTests",
+      "status": "skipped",
+      "passed": null,
+      "reasons": [
+        "SKIP: provide private EXS fixture and selected sample root"
+      ],
+      "seconds": 0.55
+    },
+    {
+      "test": "MainStageAutoConversionTests",
+      "status": "skipped",
+      "passed": null,
+      "reasons": [
+        "SKIP: private bundled MainStage fixture unset"
+      ],
+      "seconds": 0.554
+    },
+    {
+      "test": "MainStagePackTests",
+      "status": "skipped",
+      "passed": null,
+      "reasons": [
+        "SKIP: private MainStage pack unset"
+      ],
+      "seconds": 0.62
+    },
+    {
+      "test": "ReferencedMainStageImportTests",
+      "status": "skipped",
+      "passed": null,
+      "reasons": [
+        "SKIP: provide private source patch and selected sample root"
+      ],
+      "seconds": 0.508
+    },
+    {
+      "test": "ImportedAttackAuditTests",
+      "status": "skipped",
+      "passed": null,
+      "reasons": [
+        "SKIP: optional installed-sound audit fixture unset"
+      ],
+      "seconds": 0.59
+    },
+    {
+      "test": "EQBandwidthTests",
+      "status": "passed",
+      "passed": true,
+      "seconds": 0.461
+    },
+    {
+      "test": "PlugAndPlayTests",
+      "status": "passed",
+      "passed": true,
+      "seconds": 2.931
+    },
+    {
+      "test": "ProgramChangeOptInTests",
+      "status": "passed",
+      "passed": true,
+      "seconds": 1.61
+    },
+    {
+      "test": "AudioStartupTests",
+      "status": "passed",
+      "passed": true,
+      "seconds": 0.525
+    },
+    {
+      "test": "ChannelSignalOrderTests",
+      "status": "passed",
+      "passed": true,
+      "seconds": 0.523
+    },
+    {
+      "test": "PatchTranspositionTests",
+      "status": "passed",
+      "passed": true,
+      "seconds": 0.536
+    },
+    {
+      "test": "MainStageEffectSelectionTests",
+      "status": "passed",
+      "passed": true,
+      "seconds": 0.627
+    },
+    {
+      "test": "MainStageEffectSelectionImportTests",
+      "status": "passed",
+      "passed": true,
+      "seconds": 0.831
+    },
+    {
+      "test": "MetronomeSettingsTests",
+      "status": "passed",
+      "passed": true,
+      "seconds": 0.525
+    },
+    {
+      "test": "PluginInterfaceRequestTests",
+      "status": "passed",
+      "passed": true,
+      "seconds": 3.299
+    },
+    {
+      "test": "AudioGraphTests",
+      "status": "passed",
+      "passed": true,
+      "seconds": 0.907
+    },
+    {
+      "test": "SetlistLibraryTests",
+      "status": "passed",
+      "passed": true,
+      "seconds": 0.597
+    },
+    {
+      "test": "MIDIInputTests",
+      "status": "passed",
+      "passed": true,
+      "seconds": 1.319
+    },
+    {
+      "test": "ExternalMIDITests",
+      "status": "passed",
+      "passed": true,
+      "seconds": 0.563
+    },
+    {
+      "test": "DelayIndependentLevelsTests",
+      "status": "passed",
+      "passed": true,
+      "seconds": 0.183
+    },
+    {
+      "test": "AudioEffectsTests",
+      "status": "passed",
+      "passed": true,
+      "seconds": 0.754
+    },
+    {
+      "test": "ChannelDSPTests",
+      "status": "passed",
+      "passed": true,
+      "seconds": 0.197
+    },
+    {
+      "test": "ChannelPanicTests",
+      "status": "passed",
+      "passed": true,
+      "seconds": 0.209
+    },
+    {
+      "test": "RackTests",
+      "status": "passed",
+      "passed": true,
+      "seconds": 0.389
+    },
+    {
+      "test": "SynthTests",
+      "status": "passed",
+      "passed": true,
+      "seconds": 0.801
+    },
+    {
+      "test": "MetronomeTests",
+      "status": "passed",
+      "passed": true,
+      "seconds": 0.19
+    },
+    {
+      "test": "NativeSoundOrderTests",
+      "status": "passed",
+      "passed": true,
+      "seconds": 0.178
+    }
+  ],
+  "reference_static_summary": {
+    "application": "Sunday Keys",
+    "version": "2.5.2",
+    "build": "3367",
+    "current_entitlement": "UNKNOWN; prior records document Demo Mode",
+    "evidence_id": "ev_95b7ab92f4046760aa7e0b9f07b34a335ab7134d11220b2c03655a5e8d8b43b6",
+    "target_sha256": "501f35cc48b4d897b76875faca6b0f8b4b1477a686bd4409476e40fef3288c86",
+    "operation": "inspect_macho",
+    "rea_version": "6.7.0",
+    "provider": {
+      "id": "native-macos",
+      "name": "macOS native inspection utilities",
+      "version": null
+    },
+    "selected_architecture": {
+      "name": "arm64",
+      "container_file_offset": 22806528
+    },
+    "architectures": {
+      "items": [
+        {
+          "name": "x86_64",
+          "cpu_type": "CPU_TYPE_X86_64",
+          "cpu_subtype": "CPU_SUBTYPE_X86_ALL",
+          "file_offset": 16384,
+          "size": 22783152,
+          "alignment": 16384
+        },
+        {
+          "name": "arm64",
+          "cpu_type": "CPU_TYPE_ARM64",
+          "cpu_subtype": "CPU_SUBTYPE_ARM64_ALL",
+          "file_offset": 22806528,
+          "size": 21329568,
+          "alignment": 16384
+        }
+      ],
+      "total": 2,
+      "exhaustive": true,
+      "limitations": []
+    },
+    "uuid": "D46737DB-2A2B-3A60-B351-14B60D235669",
+    "build_metadata": {
+      "items": [
+        {
+          "platform": "MACOS",
+          "minimum_os": "13.0",
+          "sdk": "26.5",
+          "tools": [
+            {
+              "name": "LD",
+              "version": "1267.0"
+            }
+          ]
+        }
+      ],
+      "total": 1,
+      "exhaustive": true,
+      "limitations": []
+    },
+    "limitations": [
+      "Imports and exports combine dyld_info and nm; stripped or toolchain-hidden symbols may be absent.",
+      "vtool output is retained as provenance but only otool build metadata is normalized."
+    ],
+    "complete_raw_evidence_path": "/private/tmp/stagekeys-completion-sunday-macho-full.json",
+    "complete_raw_evidence_sha256": "56dbdf0795062ef93d58c7b2e95794d6f7b09dc0f7f41ef320bc82c1c708a715",
+    "runtime_UI": "cua.getApp(\"Sunday Keys\") timed out -10005; no new UI observation",
+    "license_scope": "Do not infer access rights from bundle metadata or static inventory."
+  },
+  "unperformed": [
+    "physical iPhone/iPad operation",
+    "physical keyboard boot capture",
+    "MIDI-to-speaker latency and jitter",
+    "eight-hour performance soak",
+    "matched reference audio/listening",
+    "all third-party AU compatibility",
+    "public signing/notarization/install/update/rollback",
+    "all historical PR review/diff content",
+    "StageKeys-Library issue discussions"
+  ],
+  "library_interpretation": {
+    "runner_reported": {
+      "passed": 88,
+      "skipped": 11,
+      "failed": 0
+    },
+    "additional_unexercised_successful_return": [
+      "PianoHeldNoteTests"
+    ],
+    "reason": "Private fixture absent; program emits no SKIP marker. Do not claim 88 exercised test bodies."
+  }
+}

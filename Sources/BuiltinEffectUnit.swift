@@ -13,8 +13,13 @@ final class BuiltinEffectUnit: AUAudioUnit {
     private var scratch:AVAudioPCMBuffer?
     private var left:OpaquePointer?
     private var right:OpaquePointer?
-    private struct Setting {var kind=0;var enabled=false;var values:[Float]=[];var tempo:Float=120;var delay:ImportedDelay?}
+    struct Setting {var kind=0;var enabled=false;var values:[Float]=[];var tempo:Float=120;var delay:ImportedDelay?}
     private var settings=Array(repeating:Setting(),count:3)
+    func configurationSnapshot() -> [Setting] { settings }
+    func restoreConfiguration(_ snapshot: [Setting]) {
+        settings = snapshot
+        for slot in settings.indices { apply(slot) }
+    }
     override init(componentDescription:AudioComponentDescription,options:AudioComponentInstantiationOptions=[]) throws {
         try super.init(componentDescription:componentDescription,options:options)
         let format=AVAudioFormat(standardFormatWithSampleRate:48000,channels:2)!
@@ -53,13 +58,14 @@ final class BuiltinEffectUnit: AUAudioUnit {
         for (side,pointer) in [left,right].enumerated() {
             guard let pointer else{continue}
             sk_effect(pointer,0,Int32(slot),setting.enabled ? Int32(setting.kind):0,1)
-            sk_clock(pointer,setting.tempo,0)
+            sk_clock(pointer,setting.tempo)
             let delay=setting.delay
             let leftSeconds=delay.map{$0.seconds($0.left,synced:$0.leftSynced,tempo:setting.tempo)} ?? 0.001
             let rightSeconds=delay.map{$0.seconds($0.right,synced:$0.rightSynced,tempo:setting.tempo)} ?? 0.001
             let channel=side==0 ? delay?.leftChannel:delay?.rightChannel
             sk_imported_delay_channel(pointer,Int32(slot),channel != nil ? 1:0,(channel?.feedback ?? 0)*(channel?.feedbackPolarity ?? 1),(channel?.crossFeedback ?? 0)*(channel?.crossPolarity ?? 1),channel?.mix ?? 0,Int32(channel?.input ?? (side==0 ? 1:2)))
             sk_imported_delay(pointer,Int32(slot),delay != nil && setting.enabled ? 1:0,leftSeconds,rightSeconds,delay?.pingPong == true ? 1:0,channel?.lowCut ?? delay?.lowCut ?? 20,channel?.highCut ?? delay?.highCut ?? 20000)
+            sk_imported_delay_levels(pointer,Int32(slot),delay?.dryGain != nil && setting.enabled ? 1:0,delay?.dryGain ?? 1,delay?.wetGain ?? 0)
             if setting.enabled {for (index,value) in setting.values.enumerated(){sk_effect_parameter(pointer,0,Int32(slot),Int32(index),value)}}
         }
     }

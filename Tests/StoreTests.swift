@@ -4,13 +4,13 @@ import AVFoundation
     static func main() throws {
         precondition(Thread.isMainThread)
         let store = PerformanceStore()
-        store.setlist = Setlist()
+        store.setlist = TestFixtures.setlist()
         try store.audio.prepareOffline()
         store.start()
         assert(store.started)
         let auditionEncoder=JSONEncoder();auditionEncoder.outputFormatting = .sortedKeys
         let savedBeforeAudition=try auditionEncoder.encode(store.setlist)
-        let token=store.auditionLibrarySound(0,Layer(name:"Audition Bells",instrument:2,gain:0.6))!
+        let token=store.auditionLibrarySound(0,TestFixtures.layer(2,gain:0.6,name:"Audition Bells"))!
         assert(store.playbackLayer(0).name == "Audition Bells")
         assert((try! auditionEncoder.encode(store.setlist)) == savedBeforeAudition)
         store.endAudition(token)
@@ -65,12 +65,23 @@ import AVFoundation
         let originalID = store.currentSetlistID!
         let originalName = store.setlist.name
         store.createLocalSetlist(); let newID = store.currentSetlistID!
+        assert(store.recentSetlistIDs.first == newID)
         assert(newID != originalID && store.setlist.patches.count == 1 && store.patch.layers.allSatisfy { !$0.loaded })
         store.renameLocalSetlist(newID,name:"Second Service")
         store.openLocalSetlist(originalID); assert(store.setlist.name == originalName && store.setlist.patches.count == 4)
+        assert(store.recentSetlistIDs.first == originalID && store.recentSetlistIDs.contains(newID))
         store.duplicateLocalSetlist(newID); assert(store.savedSetlists.count == 3)
         store.archiveLocalSetlist(newID); assert(store.archivedSetlists.count == 1)
+        assert(!store.recentSetlistIDs.contains(newID), "Trashed setlists leave the recently opened history")
         store.restoreLocalSetlist(store.archivedSetlists[0].token); assert(store.savedSetlists.contains { $0.id == newID })
+        let setlistCountBeforeHistoryEdit = store.savedSetlists.count
+        store.removeRecentSetlist(originalID)
+        assert(!store.recentSetlistIDs.contains(originalID))
+        store.clearRecentSetlists()
+        assert(store.recentSetlistIDs.isEmpty)
+        assert(store.savedSetlists.count == setlistCountBeforeHistoryEdit, "History edits must not change any setlist")
+        let recentsURL = URL(fileURLWithPath: ProcessInfo.processInfo.environment["STAGEKEYS_DATA_DIR"]!).appendingPathComponent("setlist-recents.json")
+        assert(SetlistRecents.read(recentsURL).ids.isEmpty, "Clearing history must persist")
         let before = store.patch
         let assignment = store.setlist.assignments[20]!
         store.reorderLayer(assignment,14)
@@ -106,11 +117,36 @@ import AVFoundation
         try store.setlist.validate()
         assert(store.message == nil, store.message ?? "")
         let beforePreview=store.patch.layers[0]
-        var libraryPreview=Layer(name:"Library Preview",instrument:1,gain:0.5);libraryPreview.low=36;libraryPreview.high=48
+        var libraryPreview=TestFixtures.layer(1,gain:0.5,name:"Library Preview");libraryPreview.low=36;libraryPreview.high=48
         store.previewLibraryRange(0,libraryPreview)
         assert(store.displayedLayers[0].low==36 && store.displayedLayers[0].high==48)
         assert(store.patch.layers[0]==beforePreview,"Library selection committed a sound")
         store.previewLibraryRange(0,nil);assert(store.displayedLayers[0]==beforePreview)
-        print("PASS: performance store audio, note lifecycle, range/reorder, snapshot capture, remove, patch switch/lock, duplicate and persistence")
+        // Explicit history edits report a failed write instead of pretending the
+        // history was forgotten, and the control remains retryable.
+        store.createLocalSetlist(); assert(!store.recentSetlistIDs.isEmpty)
+        let recentToForget = store.recentSetlistIDs[0]
+        let historyURL = URL(fileURLWithPath: ProcessInfo.processInfo.environment["STAGEKEYS_DATA_DIR"]!).appendingPathComponent("setlist-recents.json")
+        try? FileManager.default.removeItem(at: historyURL)
+        try FileManager.default.createDirectory(at: historyURL, withIntermediateDirectories: true)
+        store.removeRecentSetlist(recentToForget)
+        assert(store.recentSetlistIDs.contains(recentToForget), "A failed removal must not look forgotten")
+        assert(store.message != nil, "A failed history write must be reported")
+        store.message = nil
+        try FileManager.default.removeItem(at: historyURL)
+        store.removeRecentSetlist(recentToForget)
+        assert(!store.recentSetlistIDs.contains(recentToForget), "Removal must remain retryable")
+        store.createLocalSetlist(); assert(!store.recentSetlistIDs.isEmpty)
+        try? FileManager.default.removeItem(at: historyURL)
+        try FileManager.default.createDirectory(at: historyURL, withIntermediateDirectories: true)
+        let historyBeforeFailedClear = store.recentSetlistIDs
+        store.clearRecentSetlists()
+        assert(store.recentSetlistIDs == historyBeforeFailedClear, "A failed clear must not look cleared")
+        assert(store.message != nil, "A failed clear must be reported")
+        store.message = nil
+        try FileManager.default.removeItem(at: historyURL)
+        store.clearRecentSetlists()
+        assert(store.recentSetlistIDs.isEmpty, "Clearing the history must remain retryable")
+        print("PASS: performance store audio, note lifecycle, range/reorder, snapshot capture, remove, patch switch/lock, duplicate, persistence and retryable history edits")
     }
 }

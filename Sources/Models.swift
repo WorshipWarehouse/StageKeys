@@ -71,8 +71,10 @@ struct ImportedDelay: Codable, Equatable {
     var rightChannel:Channel?
     var lowCut: Float = 20
     var highCut: Float = 20000
+    var dryGain:Float?
+    var wetGain:Float?
     func validate() -> Bool {
-        (leftChannel?.valid ?? true) && (rightChannel?.valid ?? true) && (leftChannel == nil) == (rightChannel == nil) && !(leftChannel != nil && pingPong) && left.isFinite && right.isFinite && (0.001...5.334).contains(left) && (0.001...5.334).contains(right) && lowCut.isFinite && highCut.isFinite && (20...20000).contains(lowCut) && (lowCut...20000).contains(highCut)
+        (dryGain == nil)==(wetGain == nil) && ([dryGain,wetGain].compactMap{$0}.allSatisfy{$0.isFinite && (0...1).contains($0)}) && (leftChannel?.valid ?? true) && (rightChannel?.valid ?? true) && (leftChannel == nil) == (rightChannel == nil) && !(leftChannel != nil && pingPong) && left.isFinite && right.isFinite && (0.001...5.334).contains(left) && (0.001...5.334).contains(right) && lowCut.isFinite && highCut.isFinite && (20...20000).contains(lowCut) && (lowCut...20000).contains(highCut)
     }
     func seconds(_ value:Double,synced:Bool,tempo:Float)->Float {Float(min(16,max(0.001,synced ? value*60/Double(tempo) : value)))}
 }
@@ -107,6 +109,13 @@ struct AudioEffect: Codable, Equatable {
     }
     var renderValues:[Float] { kind == 13 ? values+[reverbCore == "dense-v1" ? 2:usesCreamCoat ? 1:0]:kind == 15 ? values+[reverbCore == "dense-v1" ? 1:0]:values }
     var title: String { AudioEffectCatalog.names.indices.contains(kind) ? AudioEffectCatalog.names[kind] : "No Effect" }
+    /// Resolves a learnable parameter range, including imported-delay-only controls.
+    func macroDescriptor(_ index:Int)->AudioEffectParameterDescriptor? {
+        if kind==3,importedDelay?.dryGain != nil,[4,5].contains(index) {return .init(index:index,name:index==4 ? "Dry":"Wet",minimum:0,maximum:1,defaultValue:1,unit:"%")}
+        if kind==3,let delay=importedDelay,index==26 {return .init(index:index,name:"Low Cut",minimum:20,maximum:delay.highCut,defaultValue:20,unit:"Hz")}
+        if kind==3,let delay=importedDelay,index==27 {return .init(index:index,name:"High Cut",minimum:delay.lowCut,maximum:20000,defaultValue:20000,unit:"Hz")}
+        return AudioEffectCatalog.descriptors(for:kind).first{$0.index==index}
+    }
     var values: [Float] {
         if let parameters { if kind == 15 && parameters.count == 10 {return parameters+[1]}; return (kind == 13 || kind == 10) && parameters.count == 9 ? parameters+[1]:parameters }
         var values = AudioEffectCatalog.defaults(for: kind)
@@ -144,6 +153,40 @@ struct ImportedMacro: Codable, Equatable, Identifiable {
     var midiCC:Int?
     var midiChannel:Int?
     var id: Int { index }
+}
+/// Data-only record of the source MainStage processing that produced a layer.
+/// It keeps every translated effect, bypass state, macro and compatibility note
+/// even when an effect was not selected for one of the three performance slots.
+struct MainStageSourceRecord: Codable, Equatable {
+    var effects: [AudioEffect]
+    var sourceNames: [String]
+    var effectNotes: [[String]]
+    var macros: [ImportedMacro]
+    var issues: [String]
+    var selectedAudio: [Int]
+    var selectedMIDI: MIDIProgram?
+    var midiEnabled: Bool
+    var hasMIDITransform: Bool
+    var omitted: [String]
+    /// Source sound-shaping values retained as data. Channel-scope envelope and
+    /// filter keys have no observed unit or encoding, so they are preserved and
+    /// reported per key rather than guessed into destination controls.
+    var retainedShaping: [String: String]? = nil
+    /// An empty but valid record, used when a layer has none yet but must
+    /// retain source data reported by the editor preview.
+    static let empty = MainStageSourceRecord(effects: [], sourceNames: [], effectNotes: [], macros: [], issues: [], selectedAudio: [], selectedMIDI: nil, midiEnabled: false, hasMIDITransform: false, omitted: [], retainedShaping: nil)
+    var valid: Bool {
+        effects.count == sourceNames.count && effects.count == effectNotes.count && effects.count <= 12 &&
+        effects.allSatisfy { $0.validate() } && sourceNames.allSatisfy { $0.count <= 200 } &&
+        effectNotes.allSatisfy { notes in notes.count <= 32 && notes.allSatisfy { $0.count <= 2000 } } &&
+        selectedAudio.count <= 3 && Set(selectedAudio).count == selectedAudio.count &&
+        selectedAudio.allSatisfy { effects.indices.contains($0) && ![6, 7].contains(effects[$0].kind) } &&
+        (selectedMIDI.map { $0 == $0.validated } ?? true) && macros.count <= 128 &&
+        macros.allSatisfy { (0..<128).contains($0.index) && $0.name.count <= 200 && $0.value.isFinite && (0...127).contains($0.value) } &&
+        omitted.count <= 128 && omitted.allSatisfy { $0.count <= 2000 } &&
+        (retainedShaping.map { $0.count <= 64 && $0.allSatisfy { !$0.key.isEmpty && $0.key.count <= 96 && $0.value.count <= 160 } } ?? true) &&
+        issues.count <= 128 && issues.allSatisfy { $0.count <= 2000 }
+    }
 }
 struct ImportedBranch: Codable, Equatable {
     var name: String
@@ -218,7 +261,7 @@ struct ImportedRack: Codable, Equatable {
         return macros.allSatisfy { m in
             (m.midiCC.map{(0...127).contains($0)} ?? true) && (m.midiChannel.map{(0...15).contains($0)} ?? true) && (0..<128).contains(m.index) && m.name.count <= 200 && m.value.isFinite && (0...127).contains(m.value) && m.bindings.count <= 128 && m.bindings.allSatisfy { b in
                 guard let rack=targetRack(b.branchPath ?? [],audioPath:b.audioPath ?? []),rack.effects.indices.contains(b.effect), b.minimum.isFinite, b.maximum.isFinite,
-                      let p = AudioEffectCatalog.descriptors(for:rack.effects[b.effect].kind).first(where:{$0.index == b.parameter}) else { return false }
+                      let p = rack.effects[b.effect].macroDescriptor(b.parameter) else { return false }
                 return (p.minimum...p.maximum).contains(b.minimum) && (p.minimum...p.maximum).contains(b.maximum) && (!b.logarithmic || (b.minimum > 0 && b.maximum > 0))
             }
         }
@@ -251,6 +294,11 @@ struct ImportedRack: Codable, Equatable {
             audioRacks![audioPath[0]].branches[audioPath[1]].rack.apply(binding,path:[],audioPath:Array(audioPath.dropFirst(2)),fraction:fraction);return
         }
         guard effects.indices.contains(binding.effect) else{return}
+        if effects[binding.effect].kind==3,effects[binding.effect].importedDelay?.dryGain != nil,[4,5].contains(binding.parameter) {
+            let value=binding.logarithmic ? exp(log(binding.minimum)+(log(binding.maximum)-log(binding.minimum))*fraction):binding.minimum+(binding.maximum-binding.minimum)*fraction
+            if binding.parameter==4 {effects[binding.effect].importedDelay?.dryGain=value}else{effects[binding.effect].importedDelay?.wetGain=value}
+            return
+        }
         var values=effects[binding.effect].values;guard values.indices.contains(binding.parameter) else{return}
         values[binding.parameter]=binding.logarithmic ? exp(log(binding.minimum)+(log(binding.maximum)-log(binding.minimum))*fraction):binding.minimum+(binding.maximum-binding.minimum)*fraction
         effects[binding.effect].parameters=values
@@ -282,13 +330,14 @@ struct Layer: Codable, Identifiable, Equatable {
     var external: ExternalSound?
     var importedRack: ImportedRack?
     var pluginState: Data?
+    var mainStageSource: MainStageSourceRecord?
     var midiEffectEnabled = true
     var midiProgram: MIDIProgram?
     var midiDestinationID: Int32?
     var midiOutputChannel = 0
-    var loaded: Bool { instrument >= 0 || external != nil || midiDestinationID != nil }
+    var loaded: Bool { external != nil || midiDestinationID != nil }
     static func empty() -> Layer { Layer(name: "Add Sound", instrument: -1, gain: 0) }
-    enum CodingKeys: String, CodingKey { case id,name,instrument,gain,muted,low,high,octave,transpose,pan,blockSustain,octaveEffect,effects,channelSettings,external,importedRack,pluginState,midiEffectEnabled,midiProgram,midiDestinationID,midiOutputChannel }
+    enum CodingKeys: String, CodingKey { case id,name,instrument,gain,muted,low,high,octave,transpose,pan,blockSustain,octaveEffect,effects,channelSettings,external,importedRack,pluginState,mainStageSource,midiEffectEnabled,midiProgram,midiDestinationID,midiOutputChannel }
     init(name: String, instrument: Int, gain: Float) { self.name = name; self.instrument = instrument; self.gain = gain; if instrument != 1 { channelSettings.attack = 0.006; channelSettings.release = 0.3 } }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -306,6 +355,7 @@ struct Layer: Codable, Identifiable, Equatable {
         external = try c.decodeIfPresent(ExternalSound.self, forKey: .external)
         importedRack = try c.decodeIfPresent(ImportedRack.self, forKey: .importedRack)
         pluginState = try c.decodeIfPresent(Data.self, forKey: .pluginState)
+        mainStageSource = try c.decodeIfPresent(MainStageSourceRecord.self, forKey: .mainStageSource)
         midiEffectEnabled = try c.decodeIfPresent(Bool.self, forKey: .midiEffectEnabled) ?? true
         midiProgram = try c.decodeIfPresent(MIDIProgram.self, forKey: .midiProgram)
         midiDestinationID = try c.decodeIfPresent(Int32.self, forKey: .midiDestinationID)
@@ -362,6 +412,15 @@ struct Patch: Codable, Identifiable {
     var transpose = 0
     var playIn = 0
     var hearIn = 0
+    /// How a key change picks its direction. Absent in older setlists, which
+    /// keep playing their stored transposition unchanged.
+    var keyDirection: KeyDirection?
+    /// Explicit octave offset applied on top of the key distance. Nil derives it
+    /// from the stored transposition so legacy patches keep their exact value.
+    var octaveShift: Int?
+    /// Nil keeps the legacy behaviour: this patch's tempo is recalled with it.
+    /// An explicit false shares one live tempo across unlocked patches.
+    var tempoLocked: Bool?
     var layers: [Layer]
     var snapshots: [Snapshot] = []
     var visualMode = 0 // 0 unchanged, 1 effects, 2 notes
@@ -371,7 +430,7 @@ struct Patch: Codable, Identifiable {
     var tonicState:TonicPatchState?
     var silencePrevious = false
     var conversionNotes:[String]?
-    enum CodingKeys: String, CodingKey { case id,name,tempo,transpose,playIn,hearIn,layers,snapshots,visualMode,silencePrevious,volumeDB,programChangeEnabled,programChangeNumber,tonicState,conversionNotes }
+    enum CodingKeys: String, CodingKey { case id,name,tempo,transpose,playIn,hearIn,keyDirection,octaveShift,tempoLocked,layers,snapshots,visualMode,silencePrevious,volumeDB,programChangeEnabled,programChangeNumber,tonicState,conversionNotes }
     init(name: String, layers: [Layer], snapshots: [Snapshot]) { self.name = name; self.layers = layers; self.snapshots = snapshots }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -380,6 +439,9 @@ struct Patch: Codable, Identifiable {
         transpose = try c.decodeIfPresent(Int.self, forKey: .transpose) ?? 0
         playIn = try c.decodeIfPresent(Int.self, forKey: .playIn) ?? 0
         hearIn = try c.decodeIfPresent(Int.self, forKey: .hearIn) ?? ((transpose % 12 + 12) % 12)
+        keyDirection = try c.decodeIfPresent(KeyDirection.self, forKey: .keyDirection)
+        octaveShift = try c.decodeIfPresent(Int.self, forKey: .octaveShift)
+        tempoLocked = try c.decodeIfPresent(Bool.self, forKey: .tempoLocked)
         layers = try c.decode([Layer].self, forKey: .layers); snapshots = try c.decode([Snapshot].self, forKey: .snapshots)
         visualMode = try c.decodeIfPresent(Int.self, forKey: .visualMode) ?? 0
         volumeDB = try c.decodeIfPresent(Float.self,forKey:.volumeDB) ?? 0
@@ -389,10 +451,15 @@ struct Patch: Codable, Identifiable {
         silencePrevious = try c.decodeIfPresent(Bool.self, forKey: .silencePrevious) ?? false
         conversionNotes = try c.decodeIfPresent([String].self,forKey:.conversionNotes)
     }
-    static func make(_ name: String = "New Patch", gains: [Float] = [0.72, 0.35, 0]) -> Patch {
-        let layers = [Layer(name: "Soft Keys", instrument: 0, gain: gains[0]), Layer(name: "Warm Pad", instrument: 1, gain: gains[1]), Layer(name: "Glass Bells", instrument: 2, gain: gains[2])] + (0..<12).map { _ in Layer.empty() }
-        let scenes: [(String,[Float])] = [("Start Here",[0.65,0.2,0]),("Lift",[0.75,0.5,0.15]),("Build",[0.75,0.65,0.24]),("Full",[0.85,0.7,0.4]),("Reflection",[0.35,0.65,0])]
-        return Patch(name: name, layers: layers, snapshots: scenes.map { Snapshot(name: $0.0, gains: $0.1 + Array(repeating: 0, count: 12)) })
+    var keyDirectionResolved: KeyDirection { keyDirection ?? .nearest }
+    /// Octave offset that explains the stored transposition when none was saved.
+    var octaveShiftResolved: Int { PatchTransposition.clampOctave(octaveShift ?? PatchTransposition.octave(forTranspose: transpose, playIn: playIn, hearIn: hearIn, direction: keyDirectionResolved)) }
+    var recallsPatchTempo: Bool { PatchTransposition.recallsPatchTempo(locked: tempoLocked) }
+    static func make(_ name:String = "New Patch") -> Patch {
+        var patch=Patch(name:name,layers:(0..<15).map{_ in Layer.empty()},
+                        snapshots:(0..<5).map{Snapshot(emptySlot:true,name:"Snapshot \($0+1)",gains:Array(repeating:0,count:15))})
+        patch.programChangeEnabled=false
+        return patch
     }
     func duplicate() -> Patch {
         var p = self; p.id = UUID(); p.name += " Copy"
@@ -401,11 +468,35 @@ struct Patch: Codable, Identifiable {
         return p
     }
 }
+/// Display and mapping policy for the per-patch Program Change opt-in.
+/// StageKeys stores and matches the raw MIDI Program Change byte (0...127). Some
+/// keyboards label the identical values 1...128, so the UI shows both and explains
+/// the offset instead of silently translating it. This is the single policy point
+/// used by Patch Settings and by the Program Change tests.
+enum ProgramChangeMapping {
+    static let values = 0...127
+    /// Only a valid MIDI Program Change byte can select a patch.
+    static func isValid(_ value: Int?) -> Bool { value.map { values.contains($0) } ?? false }
+    /// Label used by hardware and manuals that number Program Changes 1...128.
+    static func label(_ value: Int) -> Int { value + 1 }
+    /// Inverse of `label` for values entered or documented as 1...128.
+    static func value(fromLabel label: Int) -> Int { label - 1 }
+    static func title(_ value: Int) -> String { "Program \(label(value))" }
+    static func explanation(_ value: Int) -> String {
+        "StageKeys matches MIDI \(value). Keyboards that display Program Change 1–128 show the same number as \(label(value)). Only this number selects the Patch."
+    }
+    /// One explicit number for a newly enabled patch: its own position when that
+    /// value is unclaimed, otherwise the lowest unclaimed value.
+    static func defaultNumber(preferring position: Int, taken: Set<Int>) -> Int {
+        if values.contains(position), !taken.contains(position) { return position }
+        return values.first { !taken.contains($0) } ?? position
+    }
+}
 struct Setlist: Codable {
     var version = 4
-    var name = "Sunday Morning"
-    var patches = [Patch.make("Opening • Piano + Pad"), Patch.make("Reflection • Soft Pad", gains: [0.35, 0.6, 0]), Patch.make("Celebration • Glass Keys", gains: [0.75, 0.3, 0.45])]
-    var assignments: [Int: Int] = [20: 0, 21: 1, 22: 2]
+    var name = "My Setlist"
+    var patches = [Patch.make()]
+    var assignments: [Int: Int] = [:]
     var controlAssignments: [Int:MIDIControlTarget]?
     func upgraded() throws -> Setlist {
         try validate()
@@ -426,7 +517,7 @@ struct Setlist: Codable {
         for p in patches {
             guard p.conversionNotes.map({$0.count<=128 && $0.allSatisfy{$0.count<=2000}}) ?? true else {throw SetlistError.invalid}
             guard p.tonicState?.valid ?? true else{throw SetlistError.invalid}
-            guard p.volumeDB.isFinite,(-24...12).contains(p.volumeDB),p.programChangeNumber == nil || (0...127).contains(p.programChangeNumber!), !p.name.isEmpty, p.name.count <= 200, p.tempo.isFinite, (20...300).contains(p.tempo), (-24...24).contains(p.transpose), (0...11).contains(p.playIn), (0...11).contains(p.hearIn), (1...15).contains(p.layers.count), p.snapshots.count <= 16, (0...2).contains(p.visualMode), Set(p.layers.map(\.id)).count == p.layers.count, Set(p.snapshots.map(\.id)).count == p.snapshots.count else { throw SetlistError.invalid }
+            guard p.volumeDB.isFinite,(-24...12).contains(p.volumeDB),p.programChangeNumber == nil || (0...127).contains(p.programChangeNumber!), !p.name.isEmpty, p.name.count <= 200, p.tempo.isFinite, (20...300).contains(p.tempo), (-24...24).contains(p.transpose), (0...11).contains(p.playIn), (0...11).contains(p.hearIn), p.octaveShift.map({ (PatchTransposition.minimumOctave...PatchTransposition.maximumOctave).contains($0) }) ?? true, (1...15).contains(p.layers.count), p.snapshots.count <= 16, (0...2).contains(p.visualMode), Set(p.layers.map(\.id)).count == p.layers.count, Set(p.snapshots.map(\.id)).count == p.snapshots.count else { throw SetlistError.invalid }
             for l in p.layers {
                 if let m = l.midiProgram { guard m == m.validated else { throw SetlistError.invalid } }
                 if let e = l.external {
@@ -435,7 +526,7 @@ struct Setlist: Codable {
                     if e.kind == .audioUnit { guard e.component?.type == 0x61756d75, (e.component?.name.count ?? 201) <= 200 else { throw SetlistError.invalid } }
                     else { guard let f = e.fileName, f == URL(fileURLWithPath: f).lastPathComponent, !f.isEmpty, f.count <= 200 else { throw SetlistError.invalid } }
                 }
-                guard l.importedRack?.validate() ?? true else { throw SetlistError.invalid }
+                guard l.importedRack?.validate() ?? true, l.mainStageSource?.valid ?? true else { throw SetlistError.invalid }
                 guard l.channelSettings.validate(), (0...15).contains(l.midiOutputChannel), (l.pluginState?.count ?? 0) <= 2_000_000, (-1...2).contains(l.instrument), l.gain.isFinite, (0...1).contains(l.gain), (0...127).contains(l.low), (l.low...127).contains(l.high), (-2...2).contains(l.octave), (-48...48).contains(l.effectiveTranspose), l.pan.isFinite, (-1...1).contains(l.pan), l.name.count <= 200, l.effects.count == 3, l.effects.allSatisfy({ $0.validate() }) else { throw SetlistError.invalid }
             }
             for s in p.snapshots {
@@ -461,12 +552,25 @@ struct EffectPreset: Codable, Equatable, Identifiable {
 }
 enum EffectPresetArchive {
     static func load(_ url:URL)->[EffectPreset] {
-        guard let data=try? Data(contentsOf:url),let presets=try? JSONDecoder().decode([EffectPreset].self,from:data),presets.count<=128,presets.allSatisfy({$0.validate()}),Set(presets.map(\.id)).count==presets.count else{return []}
+        (try? read(url)) ?? []
+    }
+    private static func decoded(_ data:Data)throws->[EffectPreset] {
+        guard data.count<=4_000_000 else{throw SetlistLibraryError.oversized}
+        let presets=try JSONDecoder().decode([EffectPreset].self,from:data)
+        guard presets.count<=128,presets.allSatisfy({$0.validate()}),Set(presets.map(\.id)).count==presets.count else{throw SetlistError.invalid}
         return presets
+    }
+    static func read(_ url:URL)throws->[EffectPreset] {
+        guard FileManager.default.fileExists(atPath:url.path) || (try? url.resourceValues(forKeys:[.isSymbolicLinkKey]).isSymbolicLink)==true else{return []}
+        return try decoded(RecoverableSessionFile.read(url,limit:4_000_000))
+    }
+    static func recover(_ url:URL)throws->[EffectPreset] {
+        try decoded(RecoverableSessionFile.restore(url,limit:4_000_000){_ = try decoded($0)})
     }
     static func save(_ presets:[EffectPreset],to url:URL)throws {
         guard presets.count<=128,presets.allSatisfy({$0.validate()}),Set(presets.map(\.id)).count==presets.count else{throw CocoaError(.fileWriteInvalidFileName)}
+        _ = try read(url)
         try FileManager.default.createDirectory(at:url.deletingLastPathComponent(),withIntermediateDirectories:true)
-        try JSONEncoder().encode(presets).write(to:url,options:.atomic)
+        try RecoverableSessionFile.write(JSONEncoder().encode(presets),to:url,limit:4_000_000){_ = try decoded($0)}
     }
 }

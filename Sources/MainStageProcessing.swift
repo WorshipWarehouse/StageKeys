@@ -1,33 +1,158 @@
 import Foundation
+import CoreFoundation
 
 /// Data-only decoder: UID references become ordinary dictionaries; archived
 /// application classes are never instantiated and MIDI scripts are never run.
 enum MainStageProcessing {
+    /// User choices for one converted channel. EQ and compressor are mapped
+    /// automatically; `audio` names only the effects that fill the three slots.
+    struct Selection: Codable, Equatable {
+        var audio:[Int]=[]
+        var midi:MIDIProgram?
+        var midiEnabled=true
+        static let none=Selection()
+    }
+    struct Applied {
+        var layer:Layer
+        var notes:[String]
+        var omitted:[String]
+    }
     struct Draft:Identifiable {
         var id=UUID()
         var effects:[AudioEffect]=[]
         var sourceNames:[String]=[]
         var macros:[ImportedMacro]=[]
         var issues:[String]=[]
+        /// Source shaping values preserved as data and reported per key.
+        var retainedShaping:[String:String]=[:]
+        var effectNotes:[[String]]=[]
+        var hasMIDITransform=false
         var low:Int?
         var high:Int?
         var transpose:Int?
         var blockSustain:Bool?
         var gain:Float?
+        var faderBoostDB:Float?
         var pan:Float?
         var muted:Bool?
         var amplitudeVelocityCurve:Int?
         var hasChanges:Bool {amplitudeVelocityCurve != nil || !effects.isEmpty || !macros.isEmpty || low != nil || high != nil || transpose != nil || blockSustain != nil || gain != nil || pan != nil || muted != nil}
-        func applying(to original:Layer)throws->Layer {
+        var instrumentIndices:[Int] {effects.indices.filter{[6,7].contains(effects[$0].kind)}}
+        var slotIndices:[Int] {effects.indices.filter{![6,7].contains(effects[$0].kind)}}
+        private func sourceName(_ index:Int)->String {sourceNames.indices.contains(index) ? sourceNames[index]:effects.indices.contains(index) ? effects[index].title:"Source effect"}
+        func selectionProblem(_ selection:Selection)->String? {
+            guard selection.audio.count<=3 else{return "Choose no more than three audio effects for the visible slots."}
+            guard Set(selection.audio).count==selection.audio.count else{return "Each source effect can be selected only once."}
+            for index in selection.audio {
+                guard effects.indices.contains(index) else{return "A selected source effect no longer exists; reopen the source patch and choose again."}
+                guard ![6,7].contains(effects[index].kind) else{return "\(sourceName(index)) maps to the instrument controls and cannot also fill an Audio slot."}
+            }
+            guard selection.midi.map({$0 == $0.validated}) ?? true else{return "The selected MIDI effect has unsupported values."}
+            return nil
+        }
+        private func applyingChannelFields(to original:Layer)throws->Layer {
             var layer=original
-            layer.importedRack=try appending(to:layer.importedRack ?? layer.external?.nativeSampler?.rack)
             if let low,let high {layer.low=low;layer.high=high}
             if let transpose {layer.transpose=transpose}
             if let blockSustain {layer.blockSustain=blockSustain}
             if let gain {layer.gain=gain}
+            if let faderBoostDB {
+                let combined=(layer.channelSettings.outputTrimDB ?? 0)+faderBoostDB
+                guard combined.isFinite,(-24...12).contains(combined) else {
+                    throw MainStagePatch.Failure.invalid("The source fader boost plus the destination output trim exceeds the supported range. Reset the destination trim before importing.")
+                }
+                layer.channelSettings.outputTrimDB=combined
+            }
             if let pan {layer.pan=pan}
             if let muted {layer.muted=muted}
             return layer
+        }
+        func applying(to original:Layer)throws->Layer {
+            var layer=try applyingChannelFields(to:original)
+            layer.importedRack=try appending(to:layer.importedRack ?? layer.external?.nativeSampler?.rack)
+            // The preview reports each shaping value as retained in the source
+            // record, so the apply path must actually store it and must not
+            // discard a record the layer already carries.
+            if !retainedShaping.isEmpty {
+                var record=layer.mainStageSource ?? .empty
+                record.retainedShaping=(record.retainedShaping ?? [:]).merging(retainedShaping) { _, new in new }
+                guard record.valid else {
+                    throw MainStagePatch.Failure.invalid("The combined source record exceeds its retention limits. Keep the existing sound and import this source separately.")
+                }
+                layer.mainStageSource=record
+            }
+            return layer
+        }
+        /// Apply selected source processing without appending an overflow rack.
+        /// EQ/compressor go to the instrument controls, at most three other
+        /// effects replace visible slots, and every source effect remains in the
+        /// data-only record for review and persistence.
+        func applying(to original:Layer,selection:Selection)throws->Applied {
+            if let problem=selectionProblem(selection) {throw MainStagePatch.Failure.invalid(problem)}
+            var layer=try applyingChannelFields(to:original),notes:[String]=[],omitted:[String]=[]
+            if !selection.audio.isEmpty && layer.effects.count != 3 {throw MainStagePatch.Failure.invalid("The destination sound has an unsupported effect slot layout.")}
+            if let curve=amplitudeVelocityCurve {
+                var rack=layer.importedRack ?? layer.external?.nativeSampler?.rack ?? ImportedRack()
+                guard rack.mainStageAmplitudeVelocityCurve == nil || rack.mainStageAmplitudeVelocityCurve==curve else{throw MainStagePatch.Failure.invalid("The destination already has a different source velocity curve.")}
+                rack.mainStageAmplitudeVelocityCurve=curve
+                layer.importedRack=rack
+            }
+            if var rack=layer.importedRack ?? layer.external?.nativeSampler?.rack {rack.mainStageUnityControllers=true;layer.importedRack=rack}
+            else {var rack=ImportedRack();rack.mainStageUnityControllers=true;layer.importedRack=rack}
+            let eqIndices=effects.indices.filter{effects[$0].kind==7},compIndices=effects.indices.filter{effects[$0].kind==6}
+            if let index=eqIndices.first {
+                let effect=effects[index],values=effect.values
+                if values.count>=24 {
+                    var bands=EQBand.defaults
+                    for band in 0..<8 {
+                        bands[band].frequency=min(20000,max(20,values[band*3]))
+                        bands[band].gain=min(24,max(-24,values[band*3+1]))
+                        bands[band].q=min(10,max(0.1,values[band*3+2]))
+                    }
+                    layer.channelSettings.equalizer=bands
+                    layer.channelSettings.eqEnabled=effect.enabled
+                    notes.append("Channel EQ mapped to the instrument EQ (FX A); "+(effect.enabled ? "enabled":"bypassed")+". Filter slopes, output gain and the exact Apple EQ response remain approximate.")
+                }
+            }
+            for index in eqIndices.dropFirst() {omitted.append(sourceName(index)+": an additional Channel EQ is retained in the source record and was not mapped; StageKeys has one instrument EQ.")}
+            if let index=compIndices.first {
+                let effect=effects[index],values=effect.values
+                if values.count>=7 {
+                    var settings=layer.channelSettings
+                    settings.compressorEnabled=effect.enabled
+                    settings.compressorAttack=min(1,max(0.001,values[1]/1000))
+                    settings.compressorRelease=min(3,max(0.01,values[2]/1000))
+                    settings.ratio=min(20,max(1,values[3]))
+                    settings.threshold=min(0,max(-60,values[4]))
+                    settings.compressorMix=min(1,max(0,values[5]))
+                    settings.makeup=min(24,max(-24,values[6]))
+                    settings.compressorInputGain=min(24,max(-24,values[0]))
+                    layer.channelSettings=settings
+                    notes.append("Compressor mapped to the instrument compressor (FX B); "+(effect.enabled ? "enabled":"bypassed")+". Circuit model, knee, automatic gain/release, sidechain and limiter behavior are not identical to Apple's compressor.")
+                }
+            }
+            for index in compIndices.dropFirst() {omitted.append(sourceName(index)+": an additional Compressor is retained in the source record and was not mapped; StageKeys has one instrument compressor.")}
+            let chosen=selection.audio.sorted()
+            for (slot,index) in chosen.enumerated() {
+                if layer.effects[slot].kind != 0 {notes.append("Audio 0\(slot+1) replaced the destination effect with \(effects[index].title).")}
+                layer.effects[slot]=effects[index]
+                notes.append("Audio 0\(slot+1): \(effects[index].title) from \(sourceName(index)); "+(effects[index].enabled ? "enabled":"bypassed")+".")
+            }
+            for index in slotIndices where !chosen.contains(index) {omitted.append(sourceName(index)+" · \(effects[index].title): not selected; no automatic rack effect was appended.")}
+            if let midi=selection.midi {
+                layer.midiProgram=midi.validated
+                layer.midiEffectEnabled=selection.midiEnabled
+                notes.append("MIDI effect: \(midi.kind.rawValue.capitalized) "+(selection.midiEnabled ? "enabled":"bypassed")+"; selected manually.")
+            }
+            if hasMIDITransform {notes.append(selection.midi == nil ? "The source MIDI transform is retained in the source record but is not translated, so no MIDI effect was assigned.":"The source MIDI transform is retained in the source record; the selected native MIDI effect is a manual replacement, not a translation of the source transform.")}
+            if !macros.isEmpty {notes.append("\(macros.count) source Smart Control assignment(s) and their macro/MIDI values are retained in the source record; they are not active on the three performance slots.")}
+            let recordNames=sourceNames.count==effects.count ? sourceNames:effects.map{$0.title}
+            let recordNotes=effectNotes.count==effects.count ? effectNotes:effects.map{_ in [String]()}
+            layer.mainStageSource=MainStageSourceRecord(effects:effects,sourceNames:recordNames,effectNotes:recordNotes,macros:macros,issues:issues,selectedAudio:chosen,selectedMIDI:selection.midi?.validated,midiEnabled:selection.midiEnabled,hasMIDITransform:hasMIDITransform,omitted:omitted,retainedShaping:retainedShaping.isEmpty ? nil:retainedShaping)
+            guard layer.mainStageSource?.valid == true else {
+                throw MainStagePatch.Failure.invalid("The source channel exceeds the supported record limits. Its original document remains in the archive.")
+            }
+            return Applied(layer:layer,notes:notes,omitted:omitted)
         }
         func appending(to original:ImportedRack?)throws->ImportedRack {
             var rack=original ?? ImportedRack()
@@ -47,19 +172,81 @@ enum MainStageProcessing {
             return rack
         }
     }
+    static func conversionNotes(_ notes:[String])->[String] {
+        let shortened=notes.contains{$0.count>2000}
+        guard notes.count>128 || shortened else{return notes}
+        let retained=notes.prefix(127).map{String($0.prefix(2000))}
+        return retained+["Conversion notes were shortened or omitted to fit library limits. Keep the original source archive for full source data."]
+    }
     static func channelSettings(_ source:[String:Any],to draft:inout Draft) {
         draft.blockSustain=source["Channel_filterSustainPedal"] as? Bool
         draft.muted=source["Channel_isMuted"] as? Bool
         if let pan=source["Channel_pan"] as? NSNumber,pan.floatValue.isFinite,(-1...1).contains(pan.floatValue) {draft.pan=pan.floatValue}
-        if let volume=source["volume"] as? NSNumber {
-            if volume.int64Value==0 {draft.gain=0}
-            else if volume.int64Value==1509949440 {draft.gain=1}
-        }
-        if let volume=source["volume"] as? NSNumber,![Int64(0),1509949440].contains(volume.int64Value) {
-            draft.issues.append("The source channel fader is retained in the archived patch; its non-unity taper requires calibration. Native import uses unity gain instead of adding the previous automatic −6 dB attenuation.")
+        if let value=source["volume"] {
+            if let volume=value as? NSNumber,CFGetTypeID(volume) != CFBooleanGetTypeID(),
+               let amplitude=channelFaderAmplitude(volume.doubleValue) {
+                draft.gain=Float(min(1,amplitude))
+                draft.faderBoostDB=amplitude>1 ? Float(20*log10(amplitude)):nil
+            } else {
+                draft.issues.append("The source channel fader has an unrecognized encoding or range. Its value is archived; the destination gain is unchanged. Review its level before performing.")
+            }
         }
         if let expression=source["Channel_expressionValue"] as? Int,expression != 127 {draft.issues.append("Source expression \(expression) is retained; channel expression response requires translation.")}
         if let sends=source["Channel_sends"] as? [[String:Any]],sends.contains(where:{!$0.isEmpty}) {draft.issues.append("Source bus sends are retained in the patch archive; auxiliary routing is not flattened into insert effects.")}
+        // Channel-scope envelope and filter fields have no observed unit or
+        // encoding, so translating them would be a guess. Preserve each value as
+        // data, name it individually, and never let a destination default pass
+        // for the source setting.
+        let shapingFields = source.keys.compactMap { key -> (String,String)? in
+            let lower = key.lowercased()
+            guard key != "Channel_filterSustainPedal",
+                  shapingKeys.contains(where: { lower.contains($0) }) else{return nil}
+            return (key,shapingText(source[key]))
+        }.sorted{$0.0<$1.0}
+        // A key that cannot be stored without breaking the record's bounds is
+        // skipped, never truncated: distinct keys can share a prefix, and an
+        // invalid record would stop a library import from committing.
+        for (key,value) in shapingFields.filter({$0.0.count<=96}).prefix(32) {
+            draft.retainedShaping[key]=value
+            draft.issues.append("\(key) = \(value): retained in the source record and not translated; no StageKeys value was derived from it.")
+        }
+        let oversized=shapingFields.filter{$0.0.count>96}
+        if !oversized.isEmpty {
+            draft.issues.append("\(oversized.count) source sound-shaping \(oversized.count==1 ? "key is":"keys are") longer than 96 characters and \(oversized.count==1 ? "was":"were") not retained or translated; the longest is \(oversized.map{$0.0.count}.max() ?? 0) characters. Those values remain in the patch archive.")
+        }
+        if shapingFields.count>32 {
+            draft.issues.append("The source channel has \(shapingFields.count) sound-shaping fields; only the first 32 are considered for retention, and none is translated.")
+        }
+        if !shapingFields.isEmpty {
+            draft.issues.append("No destination shaping value was substituted from the source. A converted sampler or hosted Audio Unit owns its amplitude envelope, so Sound Settings hides the native envelope for that sound; the Mod Filter is a separate StageKeys stage and is available there.")
+        }
+    }
+    /// Names that make an archived channel field look like sound shaping. Kept as
+    /// one table so every match is reported and none is silently substituted.
+    static let shapingKeys=["attack","decay","sustain","release","cutoff","resonance","filter","adsr","envelope"]
+    /// Bounded printable form of an archived value. Numbers keep their archived
+    /// spelling; containers are described by size, never expanded or guessed.
+    static func shapingText(_ value:Any?)->String {
+        guard let value else{return "absent"}
+        if let number=value as? NSNumber {
+            if CFGetTypeID(number)==CFBooleanGetTypeID(){return number.boolValue ? "true":"false"}
+            let double=number.doubleValue
+            guard double.isFinite else{return "non-finite"}
+            return double.rounded()==double && abs(double)<1e15 ? String(Int(double)):String(double)
+        }
+        if let text=value as? String {return "\"\(String(text.prefix(120)))\""}
+        if let data=value as? Data {return "\(data.count) bytes"}
+        if let list=value as? [Any] {return "\(list.count) values"}
+        if let fields=value as? [String:Any] {return "\(fields.count) fields"}
+        return "unreadable \(type(of: value))"
+    }
+    /// Observed MainStage 4.3.1 channel `volume`: Q24 square-root amplitude,
+    /// unity at 90 and maximum at 127. This is not the mixer slider's AX value.
+    /// Keep silence exact, reject unknown encodings, and never infer a new taper.
+    static func channelFaderAmplitude(_ raw:Double)->Double? {
+        guard raw.isFinite,raw.rounded()==raw,(0...2_130_706_432).contains(raw) else{return nil}
+        let root=raw/1_509_949_440
+        return root*root
     }
     static func archives(_ data:Data)throws->[[String:Any]] {
         var result:[[String:Any]]=[],position=0
@@ -134,6 +321,7 @@ enum MainStageProcessing {
                 values.append(Float(bitPattern:bits))
             }
             var effect=AudioEffect()
+            let issueStart=draft.issues.count
             let nativeName=canonicalName(device.name)
             switch nativeName {
             case "Chan EQ":
@@ -154,6 +342,16 @@ enum MainStageProcessing {
                 guard values.count>=25 else{draft.issues.append("Truncated Compressor parameters.");continue}
                 effect.kind=6;effect.parameters=[0,values[2],values[3],values[1],values[0],values[24]/100,values[4]]
                 draft.issues.append("Compressor threshold, ratio, attack, release, manual makeup and mix are translated. Circuit model, knee, automatic gain/release, sidechain and limiter behavior are not identical to Apple's compressor; review the native response.")
+            case "Tape Delay":
+                guard values.count>=21,values.prefix(21).allSatisfy(\.isFinite),[0,1].contains(values[6]),[1,2,4,8,16,32,64].contains(values[7]),(-99...100).contains(values[8]),(20...300).contains(values[15]) else{draft.issues.append("Tape Delay has an unverified time/tempo encoding.");continue}
+                guard [0,1,2,10,11,13,14,16,17,18].allSatisfy({abs(values[$0])<0.000001}) else{draft.issues.append("Tape Delay modulation, freeze, diffuse head, non-default clip threshold or stereo spread is unsupported; no flattened substitute was created.");continue}
+                let beats=4/Double(values[7])*(1+Double(values[8])/100),synced=values[6]==1
+                let time=synced ? beats:beats*60/Double(values[15])
+                var delay=ImportedDelay(left:time,right:time,leftSynced:synced,rightSynced:synced,lowCut:values[5],highCut:values[4])
+                delay.dryGain=values[19]/100;delay.wetGain=values[20]/100
+                guard delay.validate(),(0...95).contains(values[3]) else{draft.issues.append("Tape Delay levels, feedback, time or filters exceed the supported native range.");continue}
+                effect.kind=3;effect.importedDelay=delay;effect.parameters=[values[3]/100,1,values[4],1]
+                draft.issues.append("Tape Delay clean static timing, note deviation, filters, feedback and independent dry/wet levels are active. Native feedback filtering/saturation is independent; Apple tape color, modulation, smoothing and exact transient response are not matched.")
             case "St-Delay":
                 guard values.count>=26 else{draft.issues.append("Truncated Stereo Delay parameters.");continue}
                 guard [values[15],values[16]].allSatisfy({$0.isFinite && (0...4).contains($0) && $0.rounded()==$0}),[0,1].contains(values[10]),[1,-1].contains(values[17]),[1,-1].contains(values[18]),[1,-1].contains(values[19]),[1,-1].contains(values[20]),values[21]==0 else{draft.issues.append("Stereo Delay has unsupported sync/phase/tempo-freeze state.");continue}
@@ -198,7 +396,7 @@ enum MainStageProcessing {
                 else {draft.issues.append("\(device.name): unrecognized processor bypass flag; review its enabled state.")}
             }
             guard effect.validate() else{draft.issues.append("\(device.name): parameters outside the native effect's supported range.");continue}
-            targets[slot]=(draft.effects.count,nativeName);draft.effects.append(effect);draft.sourceNames.append(device.name)
+            targets[slot]=(draft.effects.count,nativeName);draft.effects.append(effect);draft.sourceNames.append(device.name);draft.effectNotes.append(Array(draft.issues[issueStart...]))
         }
         let decoded=try archives(data)
         var rows:[(Int,[String:Any])]=[]
@@ -229,6 +427,9 @@ enum MainStageProcessing {
             case "Comp":
                 let mapping:[Int:(Int,Float)]=[0:(4,1),1:(3,1),2:(1,1),3:(2,1),4:(6,1),24:(5,0.01)]
                 guard let mapped=mapping[sourceParameter] else{continue};parameter=mapped.0;scale=mapped.1
+            case "Tape Delay":
+                guard [3,19,20].contains(sourceParameter) else{draft.issues.append("A Tape Delay macro targets an untranslated control; its source mapping remains archived.");continue}
+                parameter=sourceParameter==3 ? 0:sourceParameter==19 ? 4:5;scale=0.01
             case "SilvVerb":
                 let independent=independentReverbSlots.contains(slot)
                 guard independent ? sourceParameter != 0 : ![10,11].contains(sourceParameter) else{draft.issues.append("A SilverVerb macro targets an inactive mix mode; its mapping remains archived.");continue}
@@ -238,8 +439,11 @@ enum MainStageProcessing {
             case "Chorus":guard (0...2).contains(sourceParameter) else{continue};parameter=[1,4,0][sourceParameter];scale=sourceParameter==2 ? 1:0.01
             default:continue
             }
-            guard let descriptor=AudioEffectCatalog.descriptors(for:draft.effects[target.effect].kind).first(where:{$0.index==parameter}),low*scale>=descriptor.minimum,high*scale<=descriptor.maximum else{continue}
-            guard abs(draft.effects[target.effect].values[parameter]-Float(saved)*scale)<0.001 else {
+            guard let descriptor=draft.effects[target.effect].macroDescriptor(parameter),low*scale>=descriptor.minimum,high*scale<=descriptor.maximum else{continue}
+            let actual:Float
+            if target.name=="Tape Delay",[4,5].contains(parameter) {actual=(parameter==4 ? draft.effects[target.effect].importedDelay?.dryGain:draft.effects[target.effect].importedDelay?.wetGain) ?? -1}
+            else{actual=draft.effects[target.effect].values[parameter]}
+            guard abs(actual-Float(saved)*scale)<0.001 else {
                 draft.issues.append("A Smart Control saved value does not match the native parameter's units; its mapping was retained as source data rather than guessed.");continue
             }
             let flipped=row["rangeIsFlipped"] as? Bool == true

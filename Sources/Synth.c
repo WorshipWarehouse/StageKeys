@@ -56,7 +56,7 @@ typedef struct {
  double oscSin[8],oscCos[8],stepSin[8],stepCos[8];
  int ready;
 } DenseReverb;
-typedef struct { DenseReverb reverb; float p[32],z[12],coef[8],shiftPhase,stereo; int custom; Biquad eq[8];float shimmerControl[4],clipControl[3];int shimmerReady,clipReady; } EffectState;
+typedef struct { DenseReverb reverb; float p[32],z[12],coef[8],shiftPhase,stereo; int custom; Biquad eq[8];float shimmerControl[4],delayLevels[2];double clipControl[3];int shimmerReady,clipReady;float delayPrevious,delayTarget,delayMix;int delayReady; } EffectState;
 struct SKSynth {
  double rate;
  int delayLength,predelayLength;
@@ -78,10 +78,9 @@ struct SKSynth {
  int predelayPosition[BUSES][3];
  _Atomic(SKCreamCoat*) cream[BUSES][3];
  _Atomic(SKShimmerPitch*) shimmer[BUSES][3];
- double fxPhase[BUSES][3],clockRemaining,clockPhase;
- float clockTempo,clockEnvelope;
+ double fxPhase[BUSES][3];
+ float clockTempo;
  int stereoSide;
- int clockEnabled;
  EffectState effect[BUSES][3];
 };
 static SKSynth *create_engine(double rate,int buses,double seconds) {
@@ -97,7 +96,7 @@ SKSynth *sk_create(double rate){return create_engine(rate,BUSES,2);}
 SKSynth *sk_create_effects(double rate){return create_engine(rate,1,2);}
 SKSynth *sk_create_effects_with_capacity(double rate,double seconds){return create_engine(rate,1,seconds);}
 void sk_destroy(SKSynth *s){if(!s)return;for(int l=0;l<BUSES;l++)for(int k=0;k<3;k++){sk_cream_destroy(atomic_load(&s->cream[l][k]));free(atomic_load(&s->shimmer[l][k]));free(s->delay[l][k]);free(s->predelay[l][k]);}free(s);}
-static void clear_delay(SKSynth*s,int l,int k){SKCreamCoat*c=atomic_load_explicit(&s->cream[l][k],memory_order_acquire);if(c)sk_cream_reset(c);sk_pitch_reset(atomic_load_explicit(&s->shimmer[l][k],memory_order_acquire));if(s->predelay[l][k])memset(s->predelay[l][k],0,s->predelayLength*sizeof(float));s->predelayPosition[l][k]=0;if(s->delay[l][k])memset(s->delay[l][k],0,s->delayLength*sizeof(float));}
+static void clear_delay(SKSynth*s,int l,int k){SKCreamCoat*c=atomic_load_explicit(&s->cream[l][k],memory_order_acquire);if(c)sk_cream_reset(c);sk_pitch_reset(atomic_load_explicit(&s->shimmer[l][k],memory_order_acquire));if(s->predelay[l][k])memset(s->predelay[l][k],0,s->predelayLength*sizeof(float));s->predelayPosition[l][k]=0;if(s->delay[l][k])memset(s->delay[l][k],0,s->delayLength*sizeof(float));EffectState*e=&s->effect[l][k];e->delayReady=0;e->delayMix=0;e->delayPrevious=e->delayTarget=0;}
 static void enqueue(SKSynth *s,Command c) {
  unsigned w=atomic_load_explicit(&s->write,memory_order_relaxed);
  unsigned next=(w+1)%QUEUE;
@@ -126,7 +125,7 @@ void sk_effect(SKSynth *s,int layer,int slot,int kind,float amount){
 }
 void sk_pan(SKSynth *s,int layer,float pan){if(layer>=0&&layer<BUSES)enqueue(s,(Command){.kind=6,.layer=layer,.value=fminf(1,fmaxf(-1,pan))});}
 void sk_block_sustain(SKSynth *s,int layer,int enabled){if(layer>=0&&layer<BUSES)enqueue(s,(Command){.kind=7,.layer=layer,.value=enabled?1:0});}
-void sk_clock(SKSynth *s,float tempo,int enabled){enqueue(s,(Command){.kind=8,.value=fminf(300,fmaxf(20,tempo)),.key=enabled});}
+void sk_clock(SKSynth *s,float tempo){enqueue(s,(Command){.kind=8,.value=fminf(300,fmaxf(20,tempo))});}
 void sk_sustain(SKSynth *s,int on){enqueue(s,(Command){.kind=4,.value=on?1:0});}
 void sk_panic(SKSynth *s){enqueue(s,(Command){.kind=9});}
 void sk_panic_channel(SKSynth *s,int layer){if(layer>=0&&layer<BUSES)enqueue(s,(Command){.kind=18,.layer=layer});}
@@ -244,7 +243,7 @@ static void effectCoefficients(EffectState*e,int kind,double rate){
  if(kind==9)e->coef[0]=p[0]<=-96?0:pow(10,p[0]/20);
  if(kind==5)e->coef[0]=pow(10,p[3]/20);
  if(kind==11){e->coef[0]=1-exp(-TAU*p[1]/rate);e->coef[1]=1-exp(-TAU*p[2]/rate);e->coef[2]=pow(10,p[4]/20);}
- if(kind==3)e->coef[0]=1-exp(-TAU*p[2]/rate);
+ if(kind==3){e->coef[0]=1-exp(-TAU*p[2]/rate);e->coef[1]=1-exp(-1/(rate*.02));}
  if(kind==16){e->coef[0]=1-exp(-TAU*p[4]/rate);e->coef[1]=1-exp(-TAU*p[5]/rate);}
  if(kind==17){
   e->coef[6]=1-exp(-1/(rate*.02));
@@ -366,7 +365,18 @@ static float effectProcess(SKSynth*s,int l,int k,float x){
  switch(kind){
  case 1:y=p[0]>=20000?x:process(&e->eq[0],x);y=dry+(y-dry)*p[2];break;
  case 2:{float mod=.5f+.5f*sinf(phase);y=x*(1-p[0]*mod);y=dry+(y-dry)*p[2];e->stereo=p[3]*p[0]*sinf(phase)*.5f;s->fxPhase[l][k]=fmod(phase+TAU*p[1]/rate,TAU);break;}
- case 3:{float duration=fminf(s->delayLength-2,rate*60/s->clockTempo*p[1]);float t=tap(buffer,pos,duration);e->z[0]+=e->coef[0]*(t-e->z[0]);buffer[pos]=tanhf(x+e->z[0]*p[0]);y=x*(1-p[3])+e->z[0]*p[3];break;}
+ case 3:{
+  // Tempo and subdivision changes move the read position. Stepping it in one
+  // sample clicks (measured 5.3x the steady slope at 48 kHz), so overlap the
+  // old and new taps for 20 ms. Both taps stay fixed during the fade, which
+  // makes this a short crossfade rather than a pitch glide.
+  float target=fminf(s->delayLength-2,rate*60/s->clockTempo*p[1]);
+  if(!e->delayReady){e->delayPrevious=e->delayTarget=target;e->delayMix=1;e->delayReady=1;}
+  else if(e->delayMix>=1&&fabsf(target-e->delayTarget)>1){e->delayPrevious=e->delayTarget;e->delayTarget=target;e->delayMix=0;}
+  float t;
+  if(e->delayMix<1){float a=tap(buffer,pos,e->delayPrevious),b=tap(buffer,pos,e->delayTarget);t=a+(b-a)*e->delayMix;e->delayMix=fminf(1,e->delayMix+e->coef[1]);if(e->delayMix>=1)e->delayPrevious=e->delayTarget;}
+  else t=tap(buffer,pos,e->delayTarget);
+  e->z[0]+=e->coef[0]*(t-e->z[0]);buffer[pos]=tanhf(x+e->z[0]*p[0]);y=x*(1-p[3])+e->z[0]*p[3];break;}
  case 4:{e->z[1]+=p[1]/rate;if(e->z[1]>=1){e->z[1]-=floorf(e->z[1]);float levels=powf(2,roundf(p[0])-1);e->z[0]=roundf(x*levels)/levels;}y=x+(e->z[0]-x)*p[2];break;}
  case 5:case 8:{float hz=p[0],depth=p[1],feedback=p[2],mix=kind==5?p[4]:p[3];float delay=kind==5?rate*(.015f+.01f*depth*(.5f+.5f*sinf(phase))):rate*(.0005f+.004f*depth*(.5f+.5f*sinf(phase)));float t=tap(buffer,pos,delay);buffer[pos]=tanhf(x+t*feedback);y=(x*(1-mix)+t*mix)*(kind==5?e->coef[0]:1);s->fxPhase[l][k]=fmod(phase+TAU*hz/rate,TAU);break;}
  case 6:{float v=x*e->coef[2],level=fabsf(v),a=level>e->z[0]?e->coef[0]:e->coef[1];e->z[0]=a*e->z[0]+(1-a)*level;float db=20*log10f(fmaxf(1e-9,e->z[0]));float reduction=fmaxf(0,db-p[4])*(1-1/p[3]);y=(dry*(1-p[5])+v*powf(10,-reduction/20)*p[5])*e->coef[3];break;}
@@ -492,6 +502,8 @@ static float effectProcess(SKSynth*s,int l,int k,float x){
   y=x*p[9]+wet*p[10];s->fxPhase[l][k]=fmod(phase+TAU*p[6]/rate,TAU);break;
  }
  case 17:{
+  // Keep smoothing state precise: float increments can round to zero before
+  // reaching the target, leaving a persistent gain error after automation.
   if(!e->clipReady){e->clipControl[0]=e->coef[5];e->clipControl[1]=e->coef[4];e->clipControl[2]=p[3];e->clipReady=1;}
   e->clipControl[0]+=e->coef[6]*(e->coef[5]-e->clipControl[0]);
   e->clipControl[1]+=e->coef[6]*(e->coef[4]-e->clipControl[1]);
@@ -527,12 +539,15 @@ void sk_imported_delay(SKSynth*s,int slot,int enabled,float leftSeconds,float ri
 void sk_imported_delay_channel(SKSynth*s,int slot,int enabled,float feedback,float crossFeedback,float mix,int input){
  if(slot>=0&&slot<3&&isfinite(feedback)&&isfinite(crossFeedback)&&isfinite(mix))enqueue(s,(Command){.kind=21,.key=slot,.instrument=enabled,.value=feedback,.a=crossFeedback,.b=mix,.d=input});
 }
+void sk_imported_delay_levels(SKSynth*s,int slot,int enabled,float dry,float wet){
+ if(slot>=0&&slot<3&&isfinite(dry)&&isfinite(wet))enqueue(s,(Command){.kind=23,.key=slot,.instrument=enabled,.value=dry,.a=wet});
+}
 void sk_effect_parameter(SKSynth*s,int l,int slot,int index,float value){if(l>=0&&l<BUSES&&slot>=0&&slot<3&&index>=0&&index<32&&isfinite(value))enqueue(s,(Command){.kind=17,.layer=l,.key=slot,.pitch=index,.value=value});}
 static void commands(SKSynth *s) {
  unsigned r=atomic_load_explicit(&s->read,memory_order_relaxed);
  unsigned w=atomic_load_explicit(&s->write,memory_order_acquire);
  if(atomic_exchange(&s->emergency,0)){
-  memset(s->voices,0,sizeof(s->voices));for(int dl=0;dl<BUSES;dl++)for(int dk=0;dk<3;dk++)clear_delay(s,dl,dk);memset(s->tone,0,sizeof(s->tone));for(int el=0;el<BUSES;el++)for(int ek=0;ek<3;ek++){EffectState*e=&s->effect[el][ek];memset(e->z,0,sizeof(e->z));memset(&e->reverb,0,sizeof(e->reverb));e->shiftPhase=e->stereo=0;s->delayPosition[el][ek]=0;s->fxPhase[el][ek]=0;for(int eb=0;eb<8;eb++)e->eq[eb].z1=e->eq[eb].z2=0;}for(int l=0;l<BUSES;l++){s->filter[l].z1=s->filter[l].z2=0;s->detector[l]=0;for(int k=0;k<8;k++)s->eq[l][k].z1=s->eq[l][k].z2=0;}s->sustain=0;s->clockEnabled=0;s->clockEnvelope=0;
+  memset(s->voices,0,sizeof(s->voices));for(int dl=0;dl<BUSES;dl++)for(int dk=0;dk<3;dk++)clear_delay(s,dl,dk);memset(s->tone,0,sizeof(s->tone));for(int el=0;el<BUSES;el++)for(int ek=0;ek<3;ek++){EffectState*e=&s->effect[el][ek];memset(e->z,0,sizeof(e->z));memset(&e->reverb,0,sizeof(e->reverb));e->shiftPhase=e->stereo=0;s->delayPosition[el][ek]=0;s->fxPhase[el][ek]=0;for(int eb=0;eb<8;eb++)e->eq[eb].z1=e->eq[eb].z2=0;}for(int l=0;l<BUSES;l++){s->filter[l].z1=s->filter[l].z2=0;s->detector[l]=0;for(int k=0;k<8;k++)s->eq[l][k].z1=s->eq[l][k].z2=0;}s->sustain=0;
   atomic_store_explicit(&s->read,w,memory_order_release);return;
  }
  while(r!=w){Command c=s->queue[r];
@@ -548,20 +563,26 @@ static void commands(SKSynth *s) {
   else if(c.kind==5){int l=c.layer,k=c.key;if(s->fxKind[l][k]!=c.instrument){s->tone[l][k]=0;clear_delay(s,l,k);s->delayPosition[l][k]=0;s->fxPhase[l][k]=0;effectReset(&s->effect[l][k]);memcpy(s->effect[l][k].p,effectDefault[c.instrument],sizeof(s->effect[l][k].p));effectCoefficients(&s->effect[l][k],c.instrument,s->rate);}s->fxKind[l][k]=c.instrument;s->fxAmount[l][k]=c.value;}
   else if(c.kind==6)s->pan[c.layer]=c.value;
   else if(c.kind==7){s->blockSustain[c.layer]=c.value>0;if(c.value>0)for(int i=0;i<VOICES;i++)if(s->voices[i].layer==c.layer&&!s->voices[i].held)s->voices[i].releasing=1;}
-  else if(c.kind==8){s->clockTempo=c.value;if(c.key&&!s->clockEnabled)s->clockRemaining=0;s->clockEnabled=c.key;}
-  else if(c.kind==9){memset(s->voices,0,sizeof(s->voices));for(int dl=0;dl<BUSES;dl++)for(int dk=0;dk<3;dk++)clear_delay(s,dl,dk);memset(s->tone,0,sizeof(s->tone));for(int el=0;el<BUSES;el++)for(int ek=0;ek<3;ek++){EffectState*e=&s->effect[el][ek];memset(e->z,0,sizeof(e->z));memset(&e->reverb,0,sizeof(e->reverb));e->shiftPhase=e->stereo=0;s->delayPosition[el][ek]=0;s->fxPhase[el][ek]=0;for(int eb=0;eb<8;eb++)e->eq[eb].z1=e->eq[eb].z2=0;}for(int l=0;l<BUSES;l++){s->filter[l].z1=s->filter[l].z2=0;s->detector[l]=0;for(int k=0;k<8;k++)s->eq[l][k].z1=s->eq[l][k].z2=0;}s->sustain=0;s->clockEnabled=0;s->clockEnvelope=0;}
+  else if(c.kind==8){s->clockTempo=c.value;}
+  else if(c.kind==9){memset(s->voices,0,sizeof(s->voices));for(int dl=0;dl<BUSES;dl++)for(int dk=0;dk<3;dk++)clear_delay(s,dl,dk);memset(s->tone,0,sizeof(s->tone));for(int el=0;el<BUSES;el++)for(int ek=0;ek<3;ek++){EffectState*e=&s->effect[el][ek];memset(e->z,0,sizeof(e->z));memset(&e->reverb,0,sizeof(e->reverb));e->shiftPhase=e->stereo=0;s->delayPosition[el][ek]=0;s->fxPhase[el][ek]=0;for(int eb=0;eb<8;eb++)e->eq[eb].z1=e->eq[eb].z2=0;}for(int l=0;l<BUSES;l++){s->filter[l].z1=s->filter[l].z2=0;s->detector[l]=0;for(int k=0;k<8;k++)s->eq[l][k].z1=s->eq[l][k].z2=0;}s->sustain=0;}
   else if(c.kind==10){s->customEnvelope[c.layer]=1;s->adsr[c.layer][0]=c.value;s->adsr[c.layer][1]=c.seconds;s->adsr[c.layer][2]=c.a;s->adsr[c.layer][3]=c.b;}
   else if(c.kind==11){s->voiceLimit[c.layer]=c.key;int count=0;for(int i=0;i<VOICES;i++)if(s->voices[i].active&&s->voices[i].layer==c.layer&&++count>c.key)s->voices[i].active=0;}
   else if(c.kind==12)s->preGain[c.layer]=c.value;
   else if(c.kind==13){s->cutoff[c.layer]=c.value;coefficients(&s->filter[c.layer],s->rate,c.value,c.a,0,0);}
   else if(c.kind==14)equalizer(&s->eq[c.layer][c.key],s->rate,c.key,c.value,c.a,c.b);
-  else if(c.kind==15){int l=c.layer;s->compressEnabled[l]=c.key;s->threshold[l]=c.value;s->ratio[l]=c.seconds;s->compAttack[l]=exp(-1/(s->rate*c.a));s->compRelease[l]=exp(-1/(s->rate*c.b));s->makeup[l]=c.d;}
+  else if(c.kind==15){int l=c.layer,wasEnabled=s->compressEnabled[l];s->compressEnabled[l]=c.key;s->threshold[l]=c.value;s->ratio[l]=c.seconds;s->compAttack[l]=exp(-1/(s->rate*c.a));s->compRelease[l]=exp(-1/(s->rate*c.b));s->makeup[l]=c.d;
+   // Bypass must not store gain reduction. A compressor switched off and back
+   // on otherwise starts from the last captured level and ducks the first notes
+   // for the whole release time.
+   if(!c.key||!wasEnabled)s->detector[l]=0;
+  }
   else if(c.kind==22){for(int i=0;i<VOICES;i++)if(s->voices[i].layer==c.layer){s->voices[i].held=0;s->voices[i].releasing=1;}}
   else if(c.kind==18){int l=c.layer;for(int i=0;i<VOICES;i++)if(s->voices[i].layer==l)s->voices[i].active=0;for(int dk=0;dk<3;dk++)clear_delay(s,l,dk);memset(s->tone[l],0,sizeof(s->tone[l]));s->filter[l].z1=s->filter[l].z2=s->detector[l]=0;for(int k=0;k<3;k++){EffectState*e=&s->effect[l][k];memset(e->z,0,sizeof(e->z));memset(&e->reverb,0,sizeof(e->reverb));e->shiftPhase=e->stereo=0;s->delayPosition[l][k]=0;s->fxPhase[l][k]=0;for(int b=0;b<8;b++)e->eq[b].z1=e->eq[b].z2=0;}for(int b=0;b<8;b++)s->eq[l][b].z1=s->eq[l][b].z2=0;}
   else if(c.kind==16){for(int i=0;i<VOICES;i++)if(s->voices[i].active&&s->voices[i].layer==c.layer&&s->voices[i].key==c.key){s->voices[i].held=0;if(c.instrument||!s->sustain||s->blockSustain[c.layer])s->voices[i].releasing=1;}}
   else if(c.kind==20){s->compressorInput[c.layer]=powf(10,c.value/20);s->compressorWet[c.layer]=c.a;}
   else if(c.kind==21){EffectState*e=&s->effect[0][c.key];e->p[30]=c.instrument?1:0;e->p[4]=bounded(c.value,-.95f,.95f);e->p[5]=bounded(c.a,-(.95f-fabsf(e->p[4])),.95f-fabsf(e->p[4]));e->p[6]=bounded(c.b,0,1);e->p[7]=bounded(c.d,0,4);}
   else if(c.kind==19){EffectState*e=&s->effect[0][c.key];e->p[24]=c.instrument?1:0;e->p[25]=bounded(c.value,.001f,16);e->p[26]=bounded(c.a,.001f,16);e->p[27]=c.b;e->p[28]=bounded(c.d,20,20000);e->p[29]=bounded(c.seconds,e->p[28],20000);e->coef[4]=1-exp(-TAU*e->p[28]/s->rate);e->coef[5]=1-exp(-TAU*e->p[29]/s->rate);}
+  else if(c.kind==23){EffectState*e=&s->effect[0][c.key];int ready=e->p[31]>0;e->p[31]=c.instrument?1:0;e->p[8]=bounded(c.value,0,1);e->p[9]=bounded(c.a,0,1);e->coef[6]=1-exp(-1/(.02*s->rate));if(!ready){e->delayLevels[0]=e->p[8];e->delayLevels[1]=e->p[9];}}
   else if(c.kind==17){int kind=s->fxKind[c.layer][c.key];if(c.pitch<effectCount[kind]){EffectState*e=&s->effect[c.layer][c.key];e->custom=1;
    if(((kind==13&&c.pitch==10)||(kind==15&&c.pitch==11))&&e->p[c.pitch]!=c.value){clear_delay(s,c.layer,c.key);memset(e->z,0,sizeof(e->z));memset(&e->reverb,0,sizeof(e->reverb));s->delayPosition[c.layer][c.key]=0;s->fxPhase[c.layer][c.key]=0;}
    e->p[c.pitch]=bounded(c.value,effectMin[kind][c.pitch],effectMax[kind][c.pitch]);effectCoefficients(e,kind,s->rate);}}
@@ -603,7 +624,7 @@ void sk_process_effects_stereo(SKSynth*l,SKSynth*r,float*left,float*right,uint32
     if(b->p[28]>20){b->z[2]+=b->coef[4]*(dr-b->z[2]);dr-=b->z[2];}
     if(a->p[29]<20000){a->z[3]+=a->coef[5]*(dl-a->z[3]);dl=a->z[3];}
     if(b->p[29]<20000){b->z[3]+=b->coef[5]*(dr-b->z[3]);dr=b->z[3];}
-    float feedback=a->p[0],mix=a->p[3];
+    float feedback=a->p[0],mix=a->p[3],dryLeft=x,dryRight=y;
     float il=a->p[27]>0?(x+y)*.5f:x,ir=a->p[27]>0?0:y;
     if(a->p[30]>0 && b->p[30]>0){
      int li=(int)a->p[7],ri=(int)b->p[7];
@@ -617,6 +638,7 @@ void sk_process_effects_stereo(SKSynth*l,SKSynth*r,float*left,float*right,uint32
      r->delay[0][k][rp]=fminf(16,fmaxf(-16,ir+(a->p[27]>0?dl:dr)*feedback));
      x=x*(1-mix)+dl*mix;y=y*(1-mix)+dr*mix;
     }
+    if(a->p[31]>0 && b->p[31]>0){for(int i=0;i<2;i++){a->delayLevels[i]+=a->coef[6]*(a->p[8+i]-a->delayLevels[i]);b->delayLevels[i]+=b->coef[6]*(b->p[8+i]-b->delayLevels[i]);}x=dryLeft*a->delayLevels[0]+dl*a->delayLevels[1];y=dryRight*b->delayLevels[0]+dr*b->delayLevels[1];}
     l->delayPosition[0][k]=(lp+1)%l->delayLength;r->delayPosition[0][k]=(rp+1)%r->delayLength;
    }else{
     if(l->fxKind[0][k])x=effectProcess(l,0,k,x);
@@ -652,20 +674,33 @@ void sk_render(SKSynth *s,float *left,float *right,uint32_t frames){
   }
   // Soft output limiting; bounded for large chords and sustained layers.
   for(int l=0;l<BUSES;l++){
+   // Documented native order: source gain -> compressor -> Mod Filter ->
+   // 8-band EQ -> three audio-effect slots -> pan -> performance fader. The
+   // compressor therefore detects the source level, not an EQ boost or a
+   // Mod-Filtered signal.
    float x=bus[l]*s->preGain[l];
+   if(s->compressEnabled[l]){
+    // Input gain and makeup belong to the compressed path, so the dry/wet mix
+    // keeps a true bypass at 0%: neither gain may lift the unprocessed signal.
+    float dry=x,wet=x*s->compressorInput[l];float level=fabsf(wet),c=level>s->detector[l]?s->compAttack[l]:s->compRelease[l];s->detector[l]=c*s->detector[l]+(1-c)*level;float db=20*log10f(fmaxf(1e-9,s->detector[l]));float reduction=fmaxf(0,db-s->threshold[l])*(1-1/s->ratio[l]);wet*=powf(10,-reduction/20)*powf(10,s->makeup[l]/20);x=dry+(wet-dry)*s->compressorWet[l];
+   }
    if(s->cutoff[l]<20000)x=process(&s->filter[l],x);
    for(int band=0;band<8;band++)x=process(&s->eq[l][band],x);
-   if(s->compressEnabled[l]){float dry=x;x*=s->compressorInput[l];float level=fabsf(x),c=level>s->detector[l]?s->compAttack[l]:s->compRelease[l];s->detector[l]=c*s->detector[l]+(1-c)*level;float db=20*log10f(fmaxf(1e-9,s->detector[l]));float reduction=fmaxf(0,db-s->threshold[l])*(1-1/s->ratio[l]);x*=powf(10,-reduction/20);x=(dry*(1-s->compressorWet[l])+x*s->compressorWet[l])*powf(10,s->makeup[l]/20);}
 
    float spread=0;
    for(int k=0;k<3;k++)if(s->fxKind[l][k]){x=effectProcess(s,l,k,x);spread+=s->effect[l][k].stereo;}
-   x*=s->gain[l];float pan=s->pan[l];sumL+=x*(pan>0?1-pan:1)*(1-fminf(1,fmaxf(0,spread)));sumR+=x*(pan<0?1+pan:1)*(1-fminf(1,fmaxf(0,-spread)));
+   // Pan is the last stereo stage; the performance fader scales both sides.
+   float pan=s->pan[l];
+   float panL=(pan>0?1-pan:1)*(1-fminf(1,fmaxf(0,spread)));
+   float panR=(pan<0?1+pan:1)*(1-fminf(1,fmaxf(0,-spread)));
+   x*=s->gain[l];
+   sumL+=x*panL;sumR+=x*panR;
   }
-  if(s->clockEnabled){if(s->clockRemaining<=0){s->clockRemaining+=s->rate*60/s->clockTempo;s->clockEnvelope=0.1f;s->clockPhase=0;}s->clockRemaining--;float click=sin(s->clockPhase)*s->clockEnvelope;s->clockPhase+=TAU*1600/s->rate;s->clockEnvelope*=0.995f;sumL+=click;sumR+=click;}
   left[n]=tanhf(sumL);if(right)right[n]=tanhf(sumR);
  }
 }
-// Decode MIDI 1 UMP and MIDI 2 channel-voice note/CC messages. Packet traversal is C-native.
+// Decode MIDI 1 UMP, including system realtime transport, and MIDI 2
+// channel-voice note/CC messages. Packet traversal is C-native.
 void sk_read_midi(const MIDIEventList *list,SKMIDIEvent callback,void *context){
  const MIDIEventPacket *p=&list->packet[0];
  for(uint32_t i=0;i<list->numPackets;i++,p=MIDIEventPacketNext(p)){
@@ -674,8 +709,200 @@ void sk_read_midi(const MIDIEventList *list,SKMIDIEvent callback,void *context){
    if(j+size>p->wordCount)break;
    uint8_t status=(w>>16)&255,d1=(w>>8)&127,d2=w&127;
    if(type==2)callback(context,status,d1,d2);
+   else if(type==1&&status>=0xF8)callback(context,status,0,0);
    else if(type==4){unsigned kind=status&0xf0;uint32_t data=p->words[j+1];if(kind==0x90||kind==0x80)d2=(data>>25)&127;else if(kind==0xb0)d2=data>>25;else if(kind==0xc0){d1=(data>>24)&127;d2=0;}if(kind==0x90||kind==0x80||kind==0xb0||kind==0xc0)callback(context,status,d1,d2);}
    j+=size;
   }
+ }
+}
+// Independent metronome. It has no signal path through the synth above, so the
+// host can mix it after the shared reverb and set its level predictably.
+#define METRONOME_QUEUE 64
+// Clock ticks yield this many slots so Start/Continue/Stop can still be queued
+// while the render thread is stopped or delayed.
+#define METRONOME_TRANSPORT_RESERVE 4
+#define METRONOME_PEAK 0.2f
+typedef struct { int kind; SKMetronomeSettings settings; float value; int flag; double when; } MetronomeCommand;
+struct SKMetronome {
+ double rate;
+ SKMetronomeSettings settings;
+ double tempo,interval,remaining;
+ unsigned beat,step,noise;
+ double phase;
+ float envelope,decay,woodDecay,master;
+ int followsMaster,enabled,requestedEnabled;
+ int externalClock,clockHasLast;
+ unsigned clockPulses;
+ double clockLast,clockTick;
+ int countInRemaining,countInOnly,countInStopPending;
+ MetronomeCommand queue[METRONOME_QUEUE];
+ _Atomic unsigned read,write;
+};
+static float metro_unit(float x){return isfinite(x)?fminf(1,fmaxf(0,x)):0;}
+static double metro_interval(const SKMetronome*m){return m->rate*60.0/m->tempo/(double)m->settings.subdivision;}
+// Drop rather than block: every setting is idempotent and the next control
+// change republishes the full state. `reserve` keeps room for transport events
+// when the queue is carrying a burst of clock ticks.
+static int metro_push_reserved(SKMetronome*m,MetronomeCommand c,unsigned reserve){
+ unsigned w=atomic_load_explicit(&m->write,memory_order_relaxed),next=(w+1)%METRONOME_QUEUE;
+ unsigned read=atomic_load_explicit(&m->read,memory_order_acquire);
+ unsigned free=(read+METRONOME_QUEUE-w-1)%METRONOME_QUEUE;
+ if(free<=reserve)return 0;
+ m->queue[w]=c;atomic_store_explicit(&m->write,next,memory_order_release);
+ return 1;
+}
+static void metro_push(SKMetronome*m,MetronomeCommand c){(void)metro_push_reserved(m,c,0);}
+SKMetronome *sk_metronome_create(double rate){
+ if(!(rate>0))return NULL;
+ SKMetronome*m=calloc(1,sizeof(*m));if(!m)return NULL;
+ m->rate=rate;m->tempo=120;m->interval=rate/2;m->master=1;m->followsMaster=1;
+ m->settings=(SKMetronomeSettings){.level=0.6f,.preset=0,.beatVelocity=0.7f,.downbeatEnabled=1,.downbeatVelocity=1,.beatsPerBar=4,.accentEvery=0,.subdivision=1};
+ m->decay=(float)exp(-1.0/(rate*0.012));m->woodDecay=(float)exp(-1.0/(rate*0.006));
+ atomic_init(&m->read,0);atomic_init(&m->write,0);
+ return m;
+}
+void sk_metronome_destroy(SKMetronome*m){free(m);}
+void sk_metronome_settings(SKMetronome*m,SKMetronomeSettings s){
+ if(!m)return;
+ s.level=metro_unit(s.level);s.beatVelocity=metro_unit(s.beatVelocity);s.downbeatVelocity=metro_unit(s.downbeatVelocity);
+ s.preset=s.preset==1?1:0;
+ s.beatsPerBar=s.beatsPerBar<1?1:s.beatsPerBar>16?16:s.beatsPerBar;
+ s.accentEvery=s.accentEvery<0?0:s.accentEvery>16?16:s.accentEvery;
+ s.subdivision=s.subdivision<1?1:s.subdivision>4?4:s.subdivision;
+ metro_push(m,(MetronomeCommand){.kind=1,.settings=s});
+}
+void sk_metronome_enable(SKMetronome*m,int enabled){if(m)metro_push(m,(MetronomeCommand){.kind=2,.flag=enabled?1:0});}
+void sk_metronome_tempo(SKMetronome*m,float tempo){if(m)metro_push(m,(MetronomeCommand){.kind=3,.value=isfinite(tempo)?fminf(300,fmaxf(20,tempo)):120});}
+void sk_metronome_master(SKMetronome*m,float volume,int followsMaster){if(m)metro_push(m,(MetronomeCommand){.kind=4,.value=metro_unit(volume),.flag=followsMaster?1:0});}
+void sk_metronome_count_in(SKMetronome*m,int bars){if(m)metro_push(m,(MetronomeCommand){.kind=6,.flag=bars<1?1:bars>16?16:bars});}
+void sk_metronome_clock_enabled(SKMetronome*m,int enabled){if(m)metro_push(m,(MetronomeCommand){.kind=7,.flag=enabled?1:0});}
+void sk_metronome_clock_event(SKMetronome*m,int event,double time){
+ if(!m)return;
+ int kind=event<0?0:event>3?3:event;
+ MetronomeCommand c={.kind=8,.flag=kind,.when=time};
+ if(kind==0)(void)metro_push_reserved(m,c,METRONOME_TRANSPORT_RESERVE);
+ else metro_push(m,c);
+}
+void sk_metronome_reset(SKMetronome*m){if(m)metro_push(m,(MetronomeCommand){.kind=5});}
+// Tempo and subdivision edits scale the pending interval instead of restarting
+// it, so a change cannot double-trigger or skip the beat the performer hears.
+static void metro_rescale(SKMetronome*m,double old){
+ if(m->enabled&&m->remaining>0&&old>0)m->remaining=m->remaining*(m->interval/old);
+ if(m->remaining>m->interval)m->remaining=m->interval;
+}
+static void metro_apply(SKMetronome*m,const MetronomeCommand*c){
+ double old=m->interval;
+ if(c->kind==1){
+  m->settings=c->settings;m->interval=metro_interval(m);metro_rescale(m,old);
+  if(m->step>=(unsigned)m->settings.subdivision)m->step=0;
+  if(m->beat>=(unsigned)m->settings.beatsPerBar)m->beat=0;
+ }else if(c->kind==2){
+  int wasRequested=m->requestedEnabled;
+  m->requestedEnabled=c->flag;
+  if(c->flag){
+   // Promoting a temporary count-in must preserve the running phase.
+   m->countInRemaining=0;m->countInOnly=0;m->countInStopPending=0;
+   if(!m->externalClock&&!m->enabled){m->enabled=1;m->beat=0;m->step=0;m->remaining=0;m->envelope=0;m->phase=0;}
+  }else if(wasRequested || !m->countInOnly){m->enabled=0;m->envelope=0;m->countInRemaining=0;m->countInOnly=0;m->countInStopPending=0;}
+ }else if(c->kind==3){m->tempo=c->value;m->interval=metro_interval(m);metro_rescale(m,old);}
+ else if(c->kind==4){m->master=c->value;m->followsMaster=c->flag;}
+ else if(c->kind==5){if(m->countInOnly)m->enabled=m->requestedEnabled;m->beat=0;m->step=0;m->remaining=m->interval;m->envelope=0;m->phase=0;m->countInRemaining=0;m->countInOnly=0;m->countInStopPending=0;}
+ else if(c->kind==6){
+  int wasEnabled=m->enabled;
+  m->countInOnly=!m->requestedEnabled;
+  m->countInStopPending=0;
+  if(m->countInOnly){
+   // A temporary count-in starts or restarts on a downbeat. Repeated requests
+   // stay temporary even though `enabled` is already true from the first one.
+   m->countInRemaining=c->flag*m->settings.beatsPerBar*m->settings.subdivision;
+   m->enabled=1;m->beat=0;m->step=0;m->remaining=0;m->envelope=0;m->phase=0;
+  }else{
+   // The normal click is already wanted. Preserve its scheduler phase instead
+   // of inserting an early downbeat; Count In has no audible effect here.
+   m->countInRemaining=0;
+   if(!wasEnabled){m->enabled=1;m->beat=0;m->step=0;m->remaining=0;m->envelope=0;m->phase=0;}
+  }
+ }else if(c->kind==7){
+  if(m->externalClock!=c->flag){
+   m->externalClock=c->flag;
+   m->clockPulses=0;m->clockHasLast=0;m->clockTick=0;
+   // Count-in belongs to the internal clock. A mode change cancels it instead
+   // of leaving a temporary stop pending for a later normal click.
+   m->countInRemaining=0;m->countInOnly=0;m->countInStopPending=0;
+   if(m->externalClock){m->enabled=0;m->envelope=0;}
+   else{m->enabled=m->requestedEnabled;}
+  }
+ }else if(c->kind==8&&m->externalClock&&m->requestedEnabled){
+  if(c->flag==1){
+   m->enabled=1;m->beat=0;m->step=0;m->remaining=0;m->envelope=0;m->phase=0;
+   m->clockPulses=0;m->clockTick=0;m->clockLast=c->when;m->clockHasLast=isfinite(c->when);
+   m->countInRemaining=0;m->countInOnly=0;m->countInStopPending=0;
+  }else if(c->flag==2){
+   m->enabled=1;m->remaining=0;m->envelope=0;m->phase=0;
+   m->clockPulses=0;m->clockTick=0;m->clockLast=c->when;m->clockHasLast=isfinite(c->when);
+   m->countInRemaining=0;m->countInOnly=0;m->countInStopPending=0;
+  }else if(c->flag==3){
+   m->enabled=0;m->envelope=0;m->clockHasLast=0;m->clockPulses=0;
+   m->countInRemaining=0;m->countInOnly=0;m->countInStopPending=0;
+  }else if(c->flag==0&&m->enabled&&isfinite(c->when)){
+   if(m->clockHasLast){
+    double delta=c->when-m->clockLast;
+    if(delta>0.001&&delta<1){
+     if(m->clockTick<=0)m->clockTick=delta;
+     else m->clockTick+=(delta-m->clockTick)*0.125;
+    }
+   }
+   m->clockLast=c->when;m->clockHasLast=1;
+   m->clockPulses++;
+   if(m->clockPulses%24==0&&m->clockTick>0){
+    double tempo=fmin(300,fmax(20,60.0/(m->clockTick*24.0)));
+    m->tempo=tempo;m->interval=metro_interval(m);metro_rescale(m,old);
+   }
+  }
+ }
+}
+static void metro_trigger(SKMetronome*m){
+ const SKMetronomeSettings*s=&m->settings;float amp=METRONOME_PEAK*s->level;
+ if(m->step>0)amp*=s->beatVelocity*0.55f;
+ else if(m->beat==0&&s->downbeatEnabled)amp*=s->downbeatVelocity;
+ else if(m->beat>0&&s->accentEvery>0&&m->beat%(unsigned)s->accentEvery==0)amp*=fminf(1,s->beatVelocity*1.25f);
+ else amp*=s->beatVelocity;
+ m->envelope=amp;m->phase=0;
+ m->noise=0x9e3779b9u+(m->beat+1)*2654435761u+(m->step+1)*40503u;
+ m->step++;if(m->step>=(unsigned)s->subdivision){m->step=0;m->beat=(m->beat+1)%(unsigned)s->beatsPerBar;}
+ if(m->countInRemaining>0){m->countInRemaining--;if(m->countInRemaining==0&&m->countInOnly)m->countInStopPending=1;}
+}
+// Two independent synthesized timbres; extend with another preset branch and a
+// matching catalog entry. No recorded or vendor click samples are used.
+static float metro_sample(SKMetronome*m){
+ if(m->envelope<1e-5f)return 0;
+ float env=m->envelope,y;
+ if(m->settings.preset==1){
+  unsigned x=m->noise;x^=x<<13;x^=x>>17;x^=x<<5;m->noise=x;
+  float noise=(float)(x>>9)/4194304.0f-1;
+  y=(0.6f*sinf((float)m->phase)+0.25f*sinf((float)m->phase*2.37f)+0.15f*noise)*env;
+  m->phase+=TAU*920.0/m->rate;m->envelope*=m->woodDecay;
+ }else{y=sinf((float)m->phase)*env;m->phase+=TAU*1760.0/m->rate;m->envelope*=m->decay;}
+ if(m->phase>TAU)m->phase-=TAU;
+ return y;
+}
+void sk_metronome_render(SKMetronome*m,float*left,float*right,uint32_t frames){
+ if(!m)return;
+ for(;;){
+  unsigned rd=atomic_load_explicit(&m->read,memory_order_relaxed);
+  if(rd==atomic_load_explicit(&m->write,memory_order_acquire))break;
+  MetronomeCommand c=m->queue[rd];atomic_store_explicit(&m->read,(rd+1)%METRONOME_QUEUE,memory_order_release);
+  metro_apply(m,&c);
+ }
+ float gain=m->followsMaster?m->master:1;
+ for(uint32_t n=0;n<frames;n++){
+  float y=0;
+  if(m->enabled){
+   while(m->remaining<=0){if(!m->countInStopPending)metro_trigger(m);m->remaining+=m->interval;}
+   m->remaining-=1;y=metro_sample(m)*gain;
+   if(m->countInStopPending&&m->envelope<1e-5f){m->enabled=0;m->countInStopPending=0;m->countInOnly=0;y=0;}
+  }else{m->envelope=0;m->phase=0;}
+  if(!isfinite(y))y=0;if(fabsf(y)>1)y=y>0?1:-1;
+  if(left)left[n]=y;if(right)right[n]=y;
  }
 }

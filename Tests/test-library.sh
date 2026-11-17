@@ -6,18 +6,24 @@ trap 'rm -rf "$build"' EXIT HUP INT TERM
 xcrun clang -std=c11 -O2 -c "$repo/Sources/Synth.c" -o "$build/Synth.o"
 xcrun clang -std=c11 -O2 -c "$repo/Sources/CreamCoat.c" -o "$build/CreamCoat.o"
 sources=(
+    "$repo/Tests/FixtureSupport.swift"
     "$repo/Sources/MIDIControlTarget.swift"
     "$repo/Sources/Models.swift"
+    "$repo/Sources/EQBandwidth.swift"
     "$repo/Sources/ChannelSettings.swift"
     "$repo/Sources/SetlistLibrary.swift"
+    "$repo/Sources/SetlistShare.swift"
     "$repo/Sources/SessionSettings.swift"
     "$repo/Sources/AudioEffectParameters.swift"
     "$repo/Sources/AudioDevices.swift"
     "$repo/Sources/MIDIPrograms.swift"
     "$repo/Sources/MIDIFXProcessor.swift"
+    "$repo/Sources/MIDIAudioTimeline.swift"
+    "$repo/Sources/MIDIDeliveryPolicy.swift"
     "$repo/Sources/MIDIInput.swift"
     "$repo/Sources/EXSNative.swift"
     "$repo/Sources/ExternalSound.swift"
+    "$repo/Sources/PluginEditorModel.swift"
     "$repo/Sources/PluginParameterModel.swift"
     "$repo/Sources/EXSCaptureCompatibility.swift"
     "$repo/Sources/BuiltinEffectUnit.swift"
@@ -28,6 +34,9 @@ sources=(
     "$repo/Sources/AudioDiagnosticRecorder.swift"
     "$repo/Sources/SamplerInterchange.swift"
     "$repo/Sources/AssetDigest.swift"
+    "$repo/Sources/NordPiano.swift"
+    "$repo/Sources/NordNative.swift"
+    "$repo/Sources/StageA11y.swift"
     "$repo/Sources/SundayFactoryVoicing.swift"
     "$repo/Sources/StageKeysSampler.swift"
     "$repo/Sources/MainStagePatch.swift"
@@ -38,14 +47,33 @@ sources=(
     "$repo/Sources/SnapshotMorph.swift"
     "$repo/Sources/Store.swift"
 )
-if (( $# )); then tests=("$@"); else tests=(SamplerStartupTests SetlistPathAliasTests StoreTests SnapshotSlotTests SessionRecoveryTests SupportDiagnosticsTests TransactionalImportTests MainStagePreflightTests PluginRecoveryTests EffectStressTests OutputMeterTests MainStageLayerAssemblyTests ModulationWheelTests AllSoundSlotsTests PatchDraftPlanTests ManualMIDIDestinationRefreshTests PluginParameterModelTests PrimaVerbModelTests EffectPresetTests DenseHostedTests ReverbTransitionTests LibraryBrowserTests SoundRatingTests LibraryNoteRangeTests SoundLibraryTests ImportedSoundRetentionTests MainStagePatchTests StageKeysSamplerTests SamplerAttackTests AudioDiagnosticRecorderTests InstrumentGainMatchTests EXSEnvelopeTests EXSVoiceControlsTests EXSSplitRegionTests LibraryBackupTests TonicPadTests MainStageProcessingTests MainStageControllerDefaultsTests MainStageAudioUnitImportTests EXSReferenceIdentityTests EXSCrossfadeNeutralTests SamplerHostVelocityTests NativeSamplerGroupTests PianoFidelityTests SamplerBoundaryRegressionTests SamplerStreamingStressTests AudioUnitCatalogTests MIDISetupTests); fi
+if (( $# )); then tests=("$@"); else tests=(SoundMeterTests ImportedSignalOrderTests MetronomeControlTests SessionMigrationTests HeldNoteSoundEditTests PatchRemovalTests LiveSessionRecoveryTests TonicRecallAdmissionTests SetlistResourceAdmissionTests SetlistActivationTests SetlistTemplateTests SetlistShareTests DynamicMIDIRangeTests AudioDeviceInventoryTests KeyboardPerformanceSettingsTests PendingAudioUnitLoadTests AudioOperationCancelTests ManualAudioStopTests SnapshotLifecycleTests InstrumentCatalogScopeTests MissingAudioUnitTests PluginRecoverySettingsTests ResourceAvailabilityTests PatchReadinessTests SnapshotProcessingTests AudioUnitCommitTests NativeGraphRollbackTests MainStageTapeDelayTests PersonalSoundPackTests MainStageGuidedImportTests MetadataRecoveryTests CatalogRecoveryTests MainStageFaderTests NoFactorySoundsTests SamplerStartupTests SetlistPathAliasTests StoreTests SnapshotSlotTests SessionRecoveryTests SupportDiagnosticsTests TransactionalImportTests MainStagePreflightTests PluginRecoveryTests EffectStressTests OutputMeterTests MainStageLayerAssemblyTests ModulationWheelTests AllSoundSlotsTests PatchDraftPlanTests ManualMIDIDestinationRefreshTests PluginParameterModelTests PrimaVerbModelTests EffectPresetTests DenseHostedTests ReverbTransitionTests ExternalGraphTailTests LibraryBrowserTests SoundRatingTests LibraryNoteRangeTests SoundLibraryTests ImportedSampleContinuityTests ImportedSoundRetentionTests MainStagePatchTests StageKeysSamplerTests SamplerAttackTests AudioDiagnosticRecorderTests InstrumentGainMatchTests PatchGainTests EXSEnvelopeTests EXSVoiceControlsTests EXSSplitRegionTests LibraryBackupTests TonicPadTests MainStageProcessingTests MainStageShapingReportTests MainStageControllerDefaultsTests MainStageAudioUnitImportTests EXSReferenceIdentityTests EXSCrossfadeNeutralTests SamplerHostVelocityTests NativeSamplerGroupTests PianoFidelityTests SamplerBoundaryRegressionTests SamplerStreamingStressTests AudioUnitCatalogTests MIDISetupTests BuiltinEffectUnitTests NativeCreamCoatTests ParallelAudioTests PianoHeldNoteTests ModelTests GrooveTests MIDIFXTests SnapshotMorphTests EXSAmplitudeUpgradeTests EXSResponseUpgradeTests EXSVoiceUpgradeTests EXSCaptureCompatibilityTests EXSImportTests ModernEXSImportTests ModernEXSPlaybackTests MainStageAutoConversionTests MainStagePackTests ReferencedMainStageImportTests ImportedAttackAuditTests EQBandwidthTests PlugAndPlayTests ProgramChangeOptInTests MIDIFXTimerTests MIDIAudioTimelineTests MIDIDeliveryPolicyTests AudioStartupTests AudioStartupRecoveryTests ChannelSignalOrderTests PatchTranspositionTests TempoContinuityTests TranspositionPersistenceTests MainStageEffectSelectionTests MainStageEffectSelectionImportTests MetronomeSettingsTests PluginInterfaceRequestTests LiveSoundChangeTests NativeLoadFailureTests GraphCompletionFailureTests AudioGraphTests SetlistLibraryTests MIDIInputTests ExternalMIDITests LibraryRepairTests StageA11yTests PluginEditorModelTests NordPianoInspectionTests NordPianoDecodeTests NordNativeImportTests); fi
 for test in "${tests[@]}"; do
+    args=()
+    case "$test" in
+        AudioGraphTests) mkdir -p "$build/scratch/$test"; args=("$build/scratch/$test/rendered.wav") ;;
+        ExternalAudioTests|SamplerInterchangeTests|SetlistLibraryTests) mkdir -p "$build/scratch/$test"; args=("$build/scratch/$test") ;;
+    esac
+    # Give Intel test helpers the same ephemeral linker identity as arm64,
+    # required by security-scoped bookmarks; no developer certificate is used.
     xcrun swiftc -DDEBUG -import-objc-header "$repo/Sources/Bridge.h" \
         -module-cache-path "$build/modules" "${sources[@]}" "$repo/Tests/$test.swift" \
-        "$build/Synth.o" "$build/CreamCoat.o" -framework CoreMIDI -lz -o "$build/$test"
+        "$build/Synth.o" "$build/CreamCoat.o" -framework CoreMIDI -lz \
+        -Xlinker -adhoc_codesign -o "$build/$test"
     if [[ "$test" == EXSImportTests && -n "${STAGEKEYS_EXS_FIXTURE:-}" && -n "${STAGEKEYS_EXS_ROOT:-}" ]]; then
         STAGEKEYS_DATA_DIR="$build/data-$test" "$build/$test" "$build/exs-scratch" "$STAGEKEYS_EXS_FIXTURE" "$STAGEKEYS_EXS_ROOT"
     else
-        STAGEKEYS_DATA_DIR="$build/data-$test" "$build/$test"
+        STAGEKEYS_DATA_DIR="$build/data-$test" "$build/$test" ${args[@]+"${args[@]}"}
     fi
 done
+# Native C regressions. They include ../Sources/Synth.h and link the objects built
+# above, so they need no Swift sources, fixtures or audio hardware.
+for test in DelayIndependentLevelsTests DelayTempoTransitionTests AudioEffectsTests ChannelDSPTests ChannelPanicTests RackTests SynthTests MetronomeTests NativeSoundOrderTests CompressorResponseTests; do
+    xcrun clang -I "$repo/Sources" -std=c11 -O1 -g \
+        "$repo/Tests/$test.c" "$build/Synth.o" "$build/CreamCoat.o" \
+        -framework CoreMIDI -o "$build/$test"
+    STAGEKEYS_DATA_DIR="$build/data-$test" "$build/$test"
+done
+# Tests that need hardware, private content or a specific installed third-party
+# Audio Unit stay on demand; Docs/LOCAL-VERIFICATION.md classifies each one and
+# Tests/test-library-gate.py fails when a test program is neither gated nor listed.

@@ -17,13 +17,13 @@ int main(void){
   }
   sk_effect_parameter(a,0,0,9,-12);
   float first=0,settled=0;
-  for(int block=0;block<100;block++){
+  for(int block=0;block<200;block++){
    for(int i=0;i<256;i++)x[i]=y[i]=.1f;
    sk_process_effects(a,x,256);sk_process_effects(b,y,256);
    if(!block)first=x[0]/y[0];settled=x[255]/y[255];
    for(int i=0;i<256;i++)assert(isfinite(x[i]));
   }
-  assert(first>.99f&&first<1);assert(fabsf(settled-powf(10,-12.f/20))<.0001f);
+  assert(first>.99f&&first<1);assert(fabsf(settled-powf(10,-12.f/20))<.000001f);
   printf("PASS ClipDist %dHz output automation first ratio=%g settled=%g\n",rate,first,settled);
   sk_destroy(a);sk_destroy(b);
  }

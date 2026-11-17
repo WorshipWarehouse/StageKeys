@@ -34,15 +34,20 @@ struct AudioLatencyChain: Equatable {
     var totalMilliseconds: Double { bufferMilliseconds + presentationLatencyMilliseconds }
 }
 enum AudioDeviceError: LocalizedError {
-    case unavailable, unsupported, offline, invalidBuffer, status(OSStatus), restartFailed(String)
+    case unavailable, unsupported, offline, invalidBuffer, invalidInventory, status(OSStatus), resumeFailed(Error)
+    /// Numeric code only. A raw AVFAudio/Core Audio description can contain
+    /// private paths or device details and is not actionable during a set.
     var errorDescription: String? {
         switch self {
-        case .unavailable: return "The selected audio output is unavailable."
+        case .unavailable: return "The selected audio output is unavailable. Choose another output in Audio Settings, then retry."
         case .unsupported: return "This platform manages the audio output through system route controls."
         case .offline: return "Audio-device settings cannot change during offline rendering."
-        case .invalidBuffer: return "This buffer size is not supported by the selected audio device."
-        case .status(let code): return "Audio-device operation failed (\(code))."
-        case .restartFailed(let reason): return "The audio engine could not resume: \(reason)"
+        case .invalidInventory: return "The audio output list could not be read safely. Refresh Audio Devices, then retry."
+        case .invalidBuffer: return "This buffer size is not supported by the selected audio device. Choose a supported size, then retry."
+        case .status(let code): return "The audio-device operation failed (error \(code)). Choose another output or refresh the device list, then retry."
+        case .resumeFailed(let cause):
+            let code = (cause as NSError).code
+            return "The audio engine could not resume after the device change (error \(code)). Choose another output in Audio Settings, then start audio. Copy Support Diagnostics before reporting this problem."
         }
     }
 }
@@ -52,10 +57,28 @@ enum AudioDeviceError: LocalizedError {
 /// size belongs to the selected hardware device and can affect other clients.
 final class AudioDeviceController {
     private let engine: AVAudioEngine
+    #if DEBUG
+    // Simulate accepted control-thread transactions without touching hardware.
+    var debugSelect: ((UInt32) throws -> Void)?
+    var debugBuffer: ((UInt32) throws -> Void)?
+    var debugOutputUID: (() throws -> String?)?
+    #endif
     init(engine: AVAudioEngine) { self.engine = engine }
     private func assertOnline() throws {
         precondition(Thread.isMainThread)
         guard !engine.isInManualRenderingMode else { throw AudioDeviceError.offline }
+    }
+    /// Read the hardware buffer without enumerating devices or reading their
+    /// names. Offline rendering and unavailable routes have no hardware value.
+    func diagnosticBufferFrames() -> UInt32? {
+        guard Thread.isMainThread, !engine.isInManualRenderingMode else { return nil }
+        #if os(macOS)
+        guard let device = try? currentDevice() else { return nil }
+        return try? Self.scalar(device, kAudioDevicePropertyBufferFrameSize, default: UInt32(0))
+        #else
+        let session = AVAudioSession.sharedInstance()
+        return UInt32(exactly: (session.ioBufferDuration * session.sampleRate).rounded())
+        #endif
     }
     #if os(macOS)
     private static func address(_ selector: AudioObjectPropertySelector,
@@ -81,30 +104,30 @@ final class AudioDeviceController {
         guard code == noErr else { throw AudioDeviceError.status(code) }
         return value?.takeRetainedValue() as String? ?? "Audio Output"
     }
+    /// Control-thread allocation only. A changing device may invalidate the
+    /// queried size; errors leave the caller's current route untouched.
+    private static func propertyData(_ object: AudioObjectID, property: inout AudioObjectPropertyAddress) throws -> Data {
+        var size: UInt32 = 0
+        var code = AudioObjectGetPropertyDataSize(object, &property, 0, nil, &size)
+        guard code == noErr else { throw AudioDeviceError.status(code) }
+        guard size <= AudioDeviceInventoryData.maximumBytes else { throw AudioDeviceError.invalidInventory }
+        guard size > 0 else { return Data() }
+        let capacity = size
+        let allocation = UnsafeMutableRawPointer.allocate(byteCount: Int(capacity), alignment: MemoryLayout<AudioBufferList>.alignment)
+        defer { allocation.deallocate() }
+        allocation.initializeMemory(as: UInt8.self, repeating: 0, count: Int(capacity))
+        code = AudioObjectGetPropertyData(object, &property, 0, nil, &size, allocation)
+        guard code == noErr else { throw AudioDeviceError.status(code) }
+        guard size <= capacity else { throw AudioDeviceError.invalidInventory }
+        return Data(bytes: allocation, count: Int(size))
+    }
     private static func outputChannels(_ device: AudioDeviceID) throws -> UInt32 {
         var property = address(kAudioDevicePropertyStreamConfiguration, scope: kAudioDevicePropertyScopeOutput)
-        var size: UInt32 = 0
-        var code = AudioObjectGetPropertyDataSize(device, &property, 0, nil, &size)
-        guard code == noErr else { throw AudioDeviceError.status(code) }
-        guard size >= MemoryLayout<AudioBufferList>.size else { return 0 }
-        let allocation = UnsafeMutableRawPointer.allocate(byteCount: Int(size), alignment: MemoryLayout<AudioBufferList>.alignment)
-        defer { allocation.deallocate() }
-        code = AudioObjectGetPropertyData(device, &property, 0, nil, &size, allocation)
-        guard code == noErr else { throw AudioDeviceError.status(code) }
-        let list = UnsafeMutableAudioBufferListPointer(allocation.assumingMemoryBound(to: AudioBufferList.self))
-        return list.reduce(0) { $0 + $1.mNumberChannels }
+        return try AudioDeviceInventoryData.outputChannels(propertyData(device, property: &property))
     }
     static func availableOutputs() throws -> [AudioOutputDevice] {
         var property = address(kAudioHardwarePropertyDevices)
-        var size: UInt32 = 0
-        var code = AudioObjectGetPropertyDataSize(AudioObjectID(kAudioObjectSystemObject), &property, 0, nil, &size)
-        guard code == noErr else { throw AudioDeviceError.status(code) }
-        var devices = [AudioDeviceID](repeating: 0, count: Int(size) / MemoryLayout<AudioDeviceID>.size)
-        guard !devices.isEmpty else { return [] }
-        code = devices.withUnsafeMutableBytes {
-            AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &property, 0, nil, &size, $0.baseAddress!)
-        }
-        guard code == noErr else { throw AudioDeviceError.status(code) }
+        let devices = try AudioDeviceInventoryData.deviceIDs(propertyData(AudioObjectID(kAudioObjectSystemObject), property: &property))
         return devices.compactMap { device in
             // Hotplug races can remove a single endpoint during enumeration.
             guard let channels = try? outputChannels(device), channels > 0,
@@ -141,12 +164,20 @@ final class AudioDeviceController {
         guard code == noErr, let value else { throw AudioDeviceError.status(code) }
         return value.takeRetainedValue() as String
     }
-    func outputUID() throws -> String? { try Self.uid(currentDevice()) }
+    func outputUID() throws -> String? {
+        #if DEBUG
+        if let read = debugOutputUID { return try read() }
+        #endif
+        return try Self.uid(currentDevice())
+    }
     func select(uid: String) throws {
         guard let device = try Self.availableOutputs().first(where: { (try? Self.uid($0.id)) == uid }) else { throw AudioDeviceError.unavailable }
         try select(deviceID: device.id)
     }
     func select(deviceID: UInt32) throws {
+        #if DEBUG
+        if let select = debugSelect { try select(deviceID); return }
+        #endif
         try assertOnline()
         guard try Self.availableOutputs().contains(where: { $0.id == deviceID }) else { throw AudioDeviceError.unavailable }
         guard let unit = engine.outputNode.audioUnit else { throw AudioDeviceError.unavailable }
@@ -164,6 +195,9 @@ final class AudioDeviceController {
         })
     }
     func buffer(frameCount: UInt32) throws {
+        #if DEBUG
+        if let buffer = debugBuffer { try buffer(frameCount); return }
+        #endif
         try assertOnline()
         let current = try status()
         guard current.canSetBuffer, frameCount >= current.minimumBufferFrames,
@@ -233,10 +267,42 @@ final class AudioDeviceController {
             rollback()
             if wasRunning && !engine.isRunning {
                 do { engine.prepare(); try engine.start() }
-                catch { throw AudioDeviceError.restartFailed(error.localizedDescription) }
+                catch { throw AudioDeviceError.resumeFailed(error) }
             }
             engine.mainMixerNode.outputVolume = volume
             throw originalError
+        }
+    }
+}
+
+/// Parses copied Core Audio property bytes, never follows mData pointers. The
+/// one-MiB property bound is an inventory safety budget, not a channel limit.
+enum AudioDeviceInventoryData {
+    static let maximumBytes: UInt32 = 1_048_576
+    static func deviceIDs(_ data: Data) throws -> [UInt32] {
+        guard data.count <= Int(maximumBytes), data.count % MemoryLayout<UInt32>.size == 0 else { throw AudioDeviceError.invalidInventory }
+        return data.withUnsafeBytes { bytes in
+            var seen = Set<UInt32>()
+            return stride(from: 0, to: bytes.count, by: MemoryLayout<UInt32>.size).compactMap { offset in
+                let id = bytes.loadUnaligned(fromByteOffset: offset, as: UInt32.self)
+                return id != 0 && seen.insert(id).inserted ? id : nil
+            }
+        }
+    }
+    static func outputChannels(_ data: Data) throws -> UInt32 {
+        guard data.count <= Int(maximumBytes), data.count >= MemoryLayout<UInt32>.size else { throw AudioDeviceError.invalidInventory }
+        return try data.withUnsafeBytes { bytes in
+            let count = bytes.loadUnaligned(as: UInt32.self)
+            if count == 0 { return 0 }
+            let offset = MemoryLayout<AudioBufferList>.offset(of: \.mBuffers)!
+            let stride = MemoryLayout<AudioBuffer>.stride
+            guard bytes.count >= offset, Int(count) <= (bytes.count - offset) / stride else { throw AudioDeviceError.invalidInventory }
+            var total: UInt64 = 0
+            for index in 0..<Int(count) {
+                total += UInt64(bytes.loadUnaligned(fromByteOffset: offset + index * stride, as: UInt32.self))
+                guard total <= UInt32.max else { throw AudioDeviceError.invalidInventory }
+            }
+            return UInt32(total)
         }
     }
 }

@@ -23,8 +23,11 @@ int main(void){
   double a=energy(dry,100,0),b=energy(fx,100,0);assert(fabs(a-b)>0.01);
   sk_panic(fx);assert(energy(fx,1,0)==0);sk_destroy(dry);sk_destroy(fx);
  }
- sk_clock(s,120,1);assert(energy(s,50,0)>0.01);sk_panic(s);assert(energy(s,1,0)==0);
+ // The synth clock now publishes tempo for synced effects only; the metronome
+ // renders on its own path (MetronomeTests). Reintroducing a synth click here
+ // would double-trigger the app's metronome.
+ sk_clock(s,120);assert(energy(s,50,0)==0);sk_panic(s);assert(energy(s,1,0)==0);
  // Ordered panic must not drop a new note queued immediately afterwards.
  sk_panic(s);sk_gain(s,14,0.7,0);sk_note_on(s,60,60,0,14,0.8);assert(energy(s,20,0)>0.01);sk_panic(s);assert(energy(s,1,0)==0);
- sk_destroy(s);puts("PASS: 15-layer rack, separate tonic, stereo pan, block sustain, three DSP effects, clock, panic cleanup");
+ sk_destroy(s);puts("PASS: 15-layer rack, separate tonic, stereo pan, block sustain, three DSP effects, clock tempo only, panic cleanup");
 }

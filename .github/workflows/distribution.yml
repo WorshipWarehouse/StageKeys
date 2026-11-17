@@ -15,7 +15,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   builds:
-    runs-on: macos-15
+    runs-on: macos-15-intel
     timeout-minutes: 40
     strategy:
       fail-fast: false
@@ -35,22 +35,31 @@ jobs:
           path: ${{ runner.temp }}/stagekeys-build/*.log
           retention-days: 14
   processing:
-    runs-on: macos-15
+    runs-on: macos-15-intel
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - name: Parser corpus
         run: |
           python3 Tests/test-preset-coverage.py
-          for check in Tests/test-catalog-tags.py Tests/test-distribution.py Tests/test-sampler-calibration.py Tests/test-midi-learn-reserved.py; do
+          for check in Tests/test-audit-mainstage-presets.py Tests/test-app-icon.py Tests/test-pack-document-type.py Tests/test-local-library-runner.py Tests/test-library-gate.py Tests/test-accessibility-audit.py Tests/test-catalog-tags.py Tests/test-distribution.py Tests/test-sampler-calibration.py Tests/test-midi-learn-reserved.py; do
             if [[ -f "$check" ]]; then python3 "$check"; fi
           done
       - name: Reverb memory and undefined-behavior regressions
         run: Tests/test-reverb.sh
   library:
-    runs-on: macos-15
+    runs-on: macos-15-intel
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - name: Portable conversion, persistence, host and routing regressions
-        run: Tests/test-library.sh
+        run: python3 Tests/run-local-library.py . "$RUNNER_TEMP/stagekeys-library"
+      - name: Preserve test outcomes and explicit fixture skips
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: library-results
+          path: |
+            ${{ runner.temp }}/stagekeys-library/results.json
+            ${{ runner.temp }}/stagekeys-library/summary.md
+          retention-days: 14

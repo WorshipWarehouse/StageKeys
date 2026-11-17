@@ -1,13 +1,17 @@
 # Distribution provenance and verification
 
-Refs #21. The application distribution excludes the private library, imported MainStage/Ableton samples, user setlists and AU state. Private backup does not establish redistribution permission.
+Refs #21. StageKeys-authored code/documentation is MIT-licensed by the owner’s 4 November 2026 decision; see [license scope](PROJECT-LICENSE.md). Root `LICENSE` is retained in source, and `Licenses/StageKeys-MIT.txt` is bundled in both app targets alongside existing notices. This does not complete the independent asset/dependency review or grant vendor-content rights.
+
+ The application distribution excludes the private library, imported MainStage/Ableton samples, user setlists and AU state. Private backup does not establish redistribution permission.
 
 `Tools/check-distribution.py` enforces that exclusion in the source checkout (`--repo`, the first step of `Tools/verify-release.sh`) and in a built bundle (`--bundle`). It refuses absent, symlinked or Info.plist-less bundles and missing dependency notices, and refuses content by file name, extension or path component: sampled audio in formats the app can read, including `.aifc` and `.sd2`; sampler instruments, channel strips and host devices/sets (`.exs`, `.aupreset`, `.cst`, `.alp`, `.adg`, `.als`); MainStage documents (any `.patch` or `.concert` bundle); the app's own data files (`sound-library.json`, `manifest.json`, `setlist.json`, `setlist-v<N>-backup.json`); and anything under `Imported Sounds`. These are name-based backstops against accidental commits, not proof that no private content is present — a file the app renames, such as a per-identity file inside a setlist library, is not detectable by name here.
 
 | Included component | Provenance / retained notice |
 | --- | --- |
+| StageKeys-authored code/documentation | Owner-selected MIT, `LICENSE` / bundled `Licenses/StageKeys-MIT.txt` |
 | IBM Plex Sans fonts | IBM, SIL OFL 1.1, `Resources/Fonts/OFL.txt` |
 | CreamCoat-derived DSP | Airwindows / Chris Johnson, `Licenses/Airwindows-MIT.txt` |
+| Nord stroke parser/decoder and measured velocity selector | John Moore / drawbar `nord-format`, BSD-3-Clause, `Licenses/Drawbar-BSD-3-Clause.txt` |
 | EXS parser-derived implementation | Matt Allan and contributors, `Licenses/EXS-Parser-MIT.md` |
 | Independent dense reverb | StageKeys implementation, scoped `Licenses/StageKeys-Dense-Reverb-MIT.txt` |
 | StageKeys icon | Generated StageKeys artwork, `Tools/GenerateAppIcon.swift`; reference-brand assets excluded |
@@ -16,3 +20,7 @@ Refs #21. The application distribution excludes the private library, imported Ma
 Run `Tools/verify-public-mac.sh /path/to/StageKeys.app` before publishing a Mac package. This read-only gate requires a valid Developer ID Application signature, hardened runtime, a stapled notarization ticket, Gatekeeper acceptance and the required bundled notices. It intentionally rejects local ad-hoc builds. It performs no credential lookup, upload, signing or legal agreement acceptance.
 
 The development Mac currently has no valid signing identities. Public signing/notarization, clean-machine install/update/rollback, independent asset review and iOS signing/TestFlight preparation remain unverified. This PR provides an enforceable gate, not evidence of completed public distribution. Store notarization credentials in the platform keychain or CI secret store, never in this repository or diagnostics.
+
+Personal portable libraries (`.stagekeyspack`) are private content, not application resources. The gate refuses that extension in source, untracked addable files and built bundles, case-insensitively, including content nested beneath a package directory. Format documentation in normal source/Markdown files remains allowed. This is a distribution backstop for #87, not an implemented export/archive reader or authorization to share a vendor library.
+
+The no-sounds product rule also excludes synthesized factory presets and demo seeding. Product Swift cannot expose `builtin-` catalog entries, the removed factory voice-name set, or a direct C musical note-on route. Built bundles are streamed for factory catalog markers without loading whole binaries into memory. Generated fixtures live only in test data; app targets never compile Tests/FixtureSupport.swift. The clean-profile runtime regression enforces empty/silent startup as well as sample-asset exclusion; see FIRST-RUN.md.

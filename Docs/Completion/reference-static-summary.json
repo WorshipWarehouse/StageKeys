@@ -1,0 +1,69 @@
+{
+  "application": "Sunday Keys",
+  "version": "2.5.2",
+  "build": "3367",
+  "current_entitlement": "UNKNOWN; prior records document Demo Mode",
+  "evidence_id": "ev_95b7ab92f4046760aa7e0b9f07b34a335ab7134d11220b2c03655a5e8d8b43b6",
+  "target_sha256": "501f35cc48b4d897b76875faca6b0f8b4b1477a686bd4409476e40fef3288c86",
+  "operation": "inspect_macho",
+  "rea_version": "6.7.0",
+  "provider": {
+    "id": "native-macos",
+    "name": "macOS native inspection utilities",
+    "version": null
+  },
+  "selected_architecture": {
+    "name": "arm64",
+    "container_file_offset": 22806528
+  },
+  "architectures": {
+    "items": [
+      {
+        "name": "x86_64",
+        "cpu_type": "CPU_TYPE_X86_64",
+        "cpu_subtype": "CPU_SUBTYPE_X86_ALL",
+        "file_offset": 16384,
+        "size": 22783152,
+        "alignment": 16384
+      },
+      {
+        "name": "arm64",
+        "cpu_type": "CPU_TYPE_ARM64",
+        "cpu_subtype": "CPU_SUBTYPE_ARM64_ALL",
+        "file_offset": 22806528,
+        "size": 21329568,
+        "alignment": 16384
+      }
+    ],
+    "total": 2,
+    "exhaustive": true,
+    "limitations": []
+  },
+  "uuid": "D46737DB-2A2B-3A60-B351-14B60D235669",
+  "build_metadata": {
+    "items": [
+      {
+        "platform": "MACOS",
+        "minimum_os": "13.0",
+        "sdk": "26.5",
+        "tools": [
+          {
+            "name": "LD",
+            "version": "1267.0"
+          }
+        ]
+      }
+    ],
+    "total": 1,
+    "exhaustive": true,
+    "limitations": []
+  },
+  "limitations": [
+    "Imports and exports combine dyld_info and nm; stripped or toolchain-hidden symbols may be absent.",
+    "vtool output is retained as provenance but only otool build metadata is normalized."
+  ],
+  "complete_raw_evidence_path": "/private/tmp/stagekeys-completion-sunday-macho-full.json",
+  "complete_raw_evidence_sha256": "56dbdf0795062ef93d58c7b2e95794d6f7b09dc0f7f41ef320bc82c1c708a715",
+  "runtime_UI": "cua.getApp(\"Sunday Keys\") timed out -10005; no new UI observation",
+  "license_scope": "Do not infer access rights from bundle metadata or static inventory."
+}

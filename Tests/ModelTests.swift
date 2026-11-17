@@ -3,7 +3,9 @@ import Foundation
 @main
 struct ModelTests {
     static func main() throws {
-        let original = Setlist()
+        // Use a populated fixture: the shipping default intentionally has no
+        // factory sounds, so it cannot exercise layer identity or mutation.
+        let original = TestFixtures.setlist()
         try original.validate()
         let data = try JSONEncoder().encode(original)
         let decoded = try JSONDecoder().decode(Setlist.self, from: data)
@@ -41,12 +43,33 @@ struct ModelTests {
         assert(migrated.patches[0].layers[0].id == legacy.patches[0].layers[0].id)
         assert(migrated.patches[0].snapshots[0].gains.count == 15)
         assert(migrated.patches[0].layers[14].instrument == -1)
+        // Play In / Hear In direction, octave shift and tempo lock are patch data
+        // and round-trip without touching the stored playback transposition.
+        var keyed = original.patches[0]
+        keyed.playIn = 2; keyed.hearIn = 0; keyed.keyDirection = .down; keyed.octaveShift = -1; keyed.tempoLocked = false
+        keyed.transpose = PatchTransposition.semitones(playIn: keyed.playIn, hearIn: keyed.hearIn, direction: .down, octave: -1)
+        let keyedRound = try JSONDecoder().decode(Patch.self, from: JSONEncoder().encode(keyed))
+        assert(keyed.transpose == -14 && keyedRound.transpose == -14)
+        assert(keyedRound.keyDirection == .down && keyedRound.octaveShift == -1 && keyedRound.tempoLocked == false)
+        assert(keyedRound.octaveShiftResolved == -1 && !keyedRound.recallsPatchTempo)
+        assert(keyedRound.duplicate().tempoLocked == false && keyedRound.duplicate().keyDirection == .down)
+        // Legacy documents have no new keys: tempo recall and octave stay as saved.
+        assert(migrated.patches[0].tempoLocked == nil && migrated.patches[0].keyDirection == nil)
+        assert(migrated.patches[0].octaveShiftResolved == PatchTransposition.octave(forTranspose: migrated.patches[0].transpose, playIn: migrated.patches[0].playIn, hearIn: migrated.patches[0].hearIn, direction: .nearest))
+        assert(migrated.patches[0].recallsPatchTempo)
         bad = original; bad.patches[0].layers[0].effects = []; rejected(bad)
         bad = original; bad.patches[0].snapshots[0].beats = .nan; rejected(bad)
         bad = original; bad.patches[0].layers[0].pan = 2; rejected(bad)
         var v3 = original; v3.version=3
         let upgrade3=try JSONDecoder().decode(Setlist.self,from:JSONEncoder().encode(v3)).upgraded()
         assert(upgrade3.version==4 && upgrade3.patches[0].id==original.patches[0].id)
+        // Snapshot recall captures performance state, not sound-editor shaping.
+        var shaped = original.patches[0].layers[0]
+        shaped.channelSettings.attack = 3; shaped.channelSettings.filterMin = 90; shaped.channelSettings.resonance = 6
+        let captured = SnapshotSoundState(shaped)
+        let capturedText = String(decoding: try JSONEncoder().encode(captured), as: UTF8.self)
+        assert(!capturedText.contains("channelSettings") && !capturedText.contains("attack") && !capturedText.contains("filterMin"), "Snapshots must not store sound-editor envelope or filter values")
+        assert(captured.effects == shaped.effects && captured.pan == shaped.pan)
         print("PASS: legacy migration and new rack bounds")
         print("PASS: setlist round-trip, independent duplicate identity and values, malformed setlist rejection")
     }

@@ -1,32 +1,51 @@
 import Foundation
 
-/// Last-known-good session bytes. Call only on the serialized persistence executor.
+/// Last-known-good session and metadata bytes. Call only on the serialized persistence executor.
 enum RecoverableSessionFile {
     static func previous(_ url: URL) -> URL { url.appendingPathExtension("previous") }
-    static func read(_ url: URL) throws -> Data {
-        let values = try url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey])
+    static func read(_ url: URL, limit:Int = 64_000_000) throws -> Data {
+        // Atomic restoration changes the file behind a reusable URL. Do not
+        // reject restored bytes using a cached oversized-file measurement.
+        var current=url;current.removeAllCachedResourceValues()
+        let values = try current.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey])
         guard values.isRegularFile == true, values.isSymbolicLink != true,
-              (values.fileSize ?? Int.max) <= 64_000_000 else { throw SetlistLibraryError.unsafeFile }
-        let data = try Data(contentsOf: url)
-        guard data.count <= 64_000_000 else { throw SetlistLibraryError.oversized }
+              (values.fileSize ?? Int.max) <= limit else { throw SetlistLibraryError.unsafeFile }
+        let handle=try FileHandle(forReadingFrom:url);defer{try? handle.close()}
+        var data=Data()
+        while data.count<=limit {
+            guard let chunk=try handle.read(upToCount:min(1_048_576,limit+1-data.count)),!chunk.isEmpty else{break}
+            data.append(chunk)
+        }
+        guard data.count <= limit else { throw SetlistLibraryError.oversized }
         return data
     }
-    static func write(_ data: Data, to url: URL, validate: (Data) throws -> Void) throws {
+    static func write(
+        _ data: Data,
+        to url: URL,
+        limit: Int = 64_000_000,
+        atomicWrite: (Data, URL) throws -> Void = { data, url in try data.write(to: url, options: .atomic) },
+        validate: (Data) throws -> Void
+    ) throws {
         try validate(data)
-        guard data.count <= 64_000_000 else { throw SetlistLibraryError.oversized }
+        guard data.count <= limit else { throw SetlistLibraryError.oversized }
         if FileManager.default.fileExists(atPath: url.path) {
-            let old = try read(url)
+            let old = try read(url,limit:limit)
             try validate(old) // Never rotate corrupt or future-version data over the recovery copy.
-            if old != data { try old.write(to: previous(url), options: .atomic) }
+            if old != data { try atomicWrite(old, previous(url)) }
         }
-        try data.write(to: url, options: .atomic)
+        try atomicWrite(data, url)
     }
-    static func restore(_ url: URL, validate: (Data) throws -> Void) throws -> Data {
-        let recovered = try read(previous(url))
+    static func restore(_ url: URL, limit:Int = 64_000_000, validate: (Data) throws -> Void) throws -> Data {
+        let recovered = try read(previous(url),limit:limit)
         try validate(recovered)
-        if FileManager.default.fileExists(atPath: url.path) {
-            let damaged = try read(url)
-            try damaged.write(to: url.appendingPathExtension("damaged-" + UUID().uuidString), options: .atomic)
+        if FileManager.default.fileExists(atPath: url.path) ||
+            (try? url.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) == true {
+            // A damaged session may exceed the normal read limit. Preserve it
+            // on disk without loading it into memory before restoring the
+            // bounded, validated backup. Never copy a directory or follow a link.
+            let values = try url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
+            guard values.isRegularFile == true, values.isSymbolicLink != true else { throw SetlistLibraryError.unsafeFile }
+            try FileManager.default.copyItem(at: url, to: url.appendingPathExtension("damaged-" + UUID().uuidString))
         }
         try recovered.write(to: url, options: .atomic)
         return recovered
@@ -59,9 +78,10 @@ struct SetlistTrashInventory {
     var issues: [SetlistLibraryIssue]
 }
 enum SetlistLibraryError: LocalizedError {
-    case full, oversized, unsafeFile, name, restoreConflict
+    case full, oversized, unsafeFile, name, restoreConflict, recoveryRequired
     var errorDescription: String? {
         switch self {
+        case .recoveryRequired: return "Recover the saved session data in Settings before changing or copying the active setlist."
         case .full: return "The local library holds up to 128 setlists. Move a setlist to Trash before adding another."
         case .oversized: return "This setlist exceeds the 64 MB file limit."
         case .unsafeFile: return "The setlist file is not a regular local library file."
@@ -169,6 +189,24 @@ final class SetlistLibrary {
         }
         return try save(copy)
     }
+    /// Save one patch as its own one-patch library document. The copy always gets
+    /// fresh patch, layer and snapshot identities, so later edits to the source
+    /// setlist cannot change the export; authored settings and internal references
+    /// are preserved. There is deliberately no identity parameter: exporting again
+    /// adds another document rather than overwriting the earlier one. Setlist-level
+    /// MIDI CC assignments are not copied because they belong to the source
+    /// document, not to the patch.
+    @discardableResult
+    func exportPatch(_ source: Patch, name: String? = nil) throws -> SetlistLibraryDescriptor {
+        let title = (name ?? source.name).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !title.isEmpty, title.count <= 200, !source.name.isEmpty, source.name.count <= 200 else { throw SetlistLibraryError.name }
+        var patch = source.duplicate()
+        patch.name = source.name
+        var document = Setlist()
+        document.name = title
+        document.patches = [patch]
+        return try save(document)
+    }
     @discardableResult
     func delete(id: UUID) throws -> SetlistTrashEntry {
         let setlist = try load(id: id)
@@ -208,5 +246,65 @@ final class SetlistLibrary {
         // Keep the Trash record as an additional recovery copy. Restore never
         // permanently removes the user's only historical backup.
         return restored
+    }
+}
+
+/// Read-only browser projection. "Recently Opened" uses the recorded history
+/// supplied by the caller; modification time is only a fallback, never a claim
+/// about what was opened last.
+enum SetlistBrowserOrder: String, CaseIterable, Identifiable, Hashable {
+    case recent, updated, name
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .recent: return "Recently Opened"
+        case .updated: return "Recently Updated"
+        case .name: return "Name A–Z"
+        }
+    }
+    func entries(_ source: [SetlistLibraryDescriptor], search: String, recents: [UUID] = []) -> [SetlistLibraryDescriptor] {
+        let query = search.trimmingCharacters(in: .whitespacesAndNewlines)
+        let ranks = Dictionary(recents.enumerated().map { ($1, $0) }, uniquingKeysWith: { first, _ in first })
+        return source.filter { query.isEmpty || $0.name.localizedCaseInsensitiveContains(query) }.sorted { left, right in
+            switch self {
+            case .name:
+                let comparison = left.name.localizedCaseInsensitiveCompare(right.name)
+                if comparison != .orderedSame { return comparison == .orderedAscending }
+            case .recent:
+                let leftRank = ranks[left.id] ?? Int.max, rightRank = ranks[right.id] ?? Int.max
+                if leftRank != rightRank { return leftRank < rightRank }
+                if left.modifiedDate != right.modifiedDate { return left.modifiedDate > right.modifiedDate }
+            case .updated:
+                if left.modifiedDate != right.modifiedDate { return left.modifiedDate > right.modifiedDate }
+            }
+            return left.id.uuidString < right.id.uuidString
+        }
+    }
+}
+
+/// Bounded last-opened history for the setlist browser. It is stored in its own
+/// file so library documents keep their authored schema and a damaged history
+/// can be discarded without touching a saved setlist.
+struct SetlistRecents: Codable, Equatable {
+    static let maximum = 20
+    static let byteLimit = 64_000
+    var ids: [UUID]
+    init(ids: [UUID] = []) { self.ids = Array(ids.prefix(Self.maximum)) }
+    /// Missing, oversized or damaged history reads as empty. Recents are a
+    /// convenience projection; the setlist documents remain the source of truth.
+    static func read(_ url: URL) -> SetlistRecents {
+        guard let data = try? RecoverableSessionFile.read(url, limit: byteLimit),
+              let stored = try? JSONDecoder().decode(SetlistRecents.self, from: data) else { return SetlistRecents() }
+        return SetlistRecents(ids: stored.ids)
+    }
+    func recording(_ id: UUID) -> SetlistRecents { SetlistRecents(ids: [id] + ids.filter { $0 != id }) }
+    func removing(_ id: UUID) -> SetlistRecents { SetlistRecents(ids: ids.filter { $0 != id }) }
+    func retaining(_ available: Set<UUID>) -> SetlistRecents { SetlistRecents(ids: ids.filter(available.contains)) }
+    func write(to url: URL) throws {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let data = try encoder.encode(self)
+        guard data.count <= Self.byteLimit else { throw SetlistLibraryError.oversized }
+        try data.write(to: url, options: .atomic)
     }
 }

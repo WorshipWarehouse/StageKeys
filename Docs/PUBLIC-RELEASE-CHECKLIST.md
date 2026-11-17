@@ -76,6 +76,7 @@ The code has an Audio Unit instrument-hosting foundation and external MIDI suppo
 - [ ] Finish effect-panel layouts, grouped controls, labels/units, faders/knobs, numeric entry, preset menus, active/bypass state and Confirm/Discard placement. Map percentage controls to measured DSP tapers rather than relabeling Hertz values.
 - [ ] Finish library modal dimensions/column behavior, scrolling, filter chips, empty/loading/error states, preview/add flow and dismissal without losing edits.
 - [ ] Establish StageKeys' own release visual identity and assets while preserving the validated workflow. Audit contrast, readable minimum text size, keyboard navigation, VoiceOver labels, touch targets, focus and scaling.
+  - Measured baseline: `Docs/ACCESSIBILITY.md` records the single palette, the 11 pt floor, 9 audited contrast pairs, the accent-text derivation and the touch/pointer targets, asserted by `Tests/StageA11yTests.swift`. Keyboard, VoiceOver, Dynamic Type and device-layout evidence are still outstanding; the box stays unchecked.
 - [ ] Verify Mac resizable/full-screen behavior and physical iPad landscape/portrait, split view and iPhone compact layouts. No clipped controls or hidden essential actions.
 
 ## P0/P1 — persistence, distribution and support

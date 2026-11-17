@@ -59,7 +59,7 @@ struct RotaryControl: View {
                 .gesture(DragGesture(minimumDistance: 0).onChanged { v in if initial == nil { initial = value }; value = min(1, max(0, initial! - Float(v.translation.height) / 120)) }.onEnded { _ in initial = nil })
                 .accessibilityElement().accessibilityLabel(title).accessibilityValue("\(Int(value*100)) percent")
                 .accessibilityAdjustableAction { value = min(1, max(0, value + ($0 == .increment ? 0.05 : -0.05))) }
-            VStack(alignment: .leading, spacing: 3) { Text(title).font(.system(size: 9)).foregroundStyle(.secondary); Text("\(Int(value*100)) %").font(StageTheme.font(14, weight: .semibold)).monospacedDigit() }
+            VStack(alignment: .leading, spacing: 3) { Text(title).font(.system(size: 11)).foregroundStyle(.secondary); Text("\(Int(value*100)) %").font(StageTheme.font(14, weight: .semibold)).monospacedDigit() }
         }
     }
 }
@@ -74,10 +74,10 @@ struct TonicPanel: View {
                         Image(systemName:"power").frame(width:38,height:46)
                     }.buttonStyle(.plain).background(store.tonic == nil ? StageTheme.raised.opacity(0.5):StageTheme.selected.opacity(0.7),in:RoundedRectangle(cornerRadius:5)).accessibilityLabel("Tonic Pad power").accessibilityValue(store.tonic == nil ? "Off":"On")
                     Button(action:onSettings) {
-                        VStack(alignment:.leading,spacing:3) {Text("Tonic Pad").font(.system(size:9)).foregroundStyle(.secondary);Text(store.tonicLabel).font(StageTheme.font(12,weight:.semibold)).lineLimit(1)}.frame(maxWidth:.infinity,alignment:.leading).frame(height:46).padding(.horizontal,6)
+                        VStack(alignment:.leading,spacing:3) {Text("Tonic Pad").font(.system(size:11)).foregroundStyle(.secondary);Text(store.tonicLabel).font(StageTheme.font(12,weight:.semibold)).lineLimit(1)}.frame(maxWidth:.infinity,alignment:.leading).frame(height:46).padding(.horizontal,6)
                     }.buttonStyle(.plain).background(StageTheme.raised.opacity(0.5),in:RoundedRectangle(cornerRadius:5)).accessibilityLabel("Tonic Pad Settings, \(store.tonicLabel)")
                     Button {store.toggleTonicPatchLock()}label:{
-                        Group {if store.tonicLocked {Image(systemName:"lock.fill")} else {Text("Patch\nLock").font(.system(size:10,weight:.semibold))}}.frame(width:40,height:46)
+                        Group {if store.tonicLocked {Image(systemName:"lock.fill")} else {Text("Patch\nLock").font(.system(size:11,weight:.semibold))}}.frame(width:40,height:46)
                     }.buttonStyle(.plain).background(store.tonicLocked ? StageTheme.selected:StageTheme.raised.opacity(0.5),in:RoundedRectangle(cornerRadius:5)).foregroundStyle(store.tonicLocked ? StageTheme.base:.primary).accessibilityLabel("Tonic Pad Patch Lock").accessibilityValue(store.tonicLocked ? "Saved":"Not saved")
                 }
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 4), count: 4), spacing: 4) {
@@ -90,7 +90,7 @@ struct TonicPanel: View {
                 Spacer(minLength: 0)
                 HStack(spacing: 4) { RotaryControl(title: "Brightness", value: $store.tonicBrightness); RotaryControl(title: "Shimmer", value: $store.tonicShimmer) }.padding(.top, 2)
             }
-            VStack(spacing: 5) { VerticalFader(gain: $store.tonicGain, color: StageTheme.selected, label: "Tonic volume"); Text(StageTheme.db(store.tonicGain)).font(.system(size: 9)).monospacedDigit() }.frame(width: 44, height: 260)
+            VStack(spacing: 5) { VerticalFader(gain: $store.tonicGain, color: StageTheme.selected, label: "Tonic volume"); Text(StageTheme.db(store.tonicGain)).font(.system(size: 11)).monospacedDigit().lineLimit(1) }.frame(width: 52, height: 260)
         }.padding(8).background(StageTheme.panel, in: RoundedRectangle(cornerRadius: 9))
     }
 }
@@ -108,13 +108,18 @@ struct SoundModule: View {
             }
             Divider().opacity(0.2)
             if layer.loaded {
+                if store.showSoundMeters && store.started && layer.external != nil {
+                    TimelineView(.periodic(from: .now, by: 0.1)) { _ in
+                        SoundLevelMeter(reading: store.soundMeter(index), color: layer.muted ? .gray : color, label: "Sound \(index+1) external output level")
+                    }.frame(height: 6).padding(.horizontal, 2)
+                }
                 if !store.notesMode {
                     if store.patch.layers.contains(where:{$0.loaded && ($0.importedRack?.effectCount ?? 0)>0}) {
                         Group {
                             if let rack=layer.importedRack,rack.effectCount>0 {
                                 Button {open(.sound(index))} label:{
                                     HStack {Image(systemName:"waveform.path");Text("Rack FX · \(rack.effectCount)");Spacer();Image(systemName:"chevron.right")}
-                                        .font(StageTheme.font(10)).foregroundStyle(color)
+                                        .font(StageTheme.font(11)).foregroundStyle(StageTheme.accentText(index))
                                 }.buttonStyle(.plain).accessibilityLabel("Imported rack effects and macros")
                             } else {Color.clear.accessibilityHidden(true)}
                         }.frame(height:20)
@@ -125,7 +130,7 @@ struct SoundModule: View {
                 HStack(spacing: 8) {
                     Spacer(minLength: 13)
                     VerticalFader(gain: Binding(get: { store.patch.layers[index].gain }, set: { store.setGain(index, $0) }), color: layer.muted ? .gray : color, label: "Sound \(index+1) volume", minDB: layer.channelSettings.faderMin, maxDB: layer.channelSettings.faderMax, onEnd: { store.save() }).frame(width: 62)
-                    VStack { Text(StageTheme.db(layer.gain)).font(.system(size: 9)).foregroundStyle(.secondary); Spacer(); Text("−∞").font(.system(size: 9)).foregroundStyle(.tertiary) }.frame(width: 45)
+                    VStack { Text(StageTheme.db(layer.gain)).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1); Spacer(); Text("−∞").font(.system(size: 11)).foregroundStyle(.secondary) }.frame(width: 52)
                     Spacer(minLength: 0)
                 }.frame(minHeight: 70).padding(.vertical, 7)
                 Color.clear.frame(height: 1)
@@ -146,7 +151,7 @@ struct SoundModule: View {
             }.buttonStyle(.plain).accessibilityLabel("Sound \(index+1) MIDI effect bypass").accessibilityValue(hasEffect && layer.midiEffectEnabled ? "On":"Off")
             Button { open(.midi(index)) } label: {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("Midi").font(StageTheme.font(9)).foregroundStyle(.secondary)
+                    Text("Midi").font(StageTheme.font(11)).foregroundStyle(.secondary)
                     Text(layer.midiProgram.map { $0.kind == .bypass ? "Select Effect" : $0.kind.title } ?? (layer.octaveEffect ? "Octave Up" : "Select Effect")).font(StageTheme.font(14, weight: .semibold)).lineLimit(1)
                 }.frame(maxWidth: .infinity, alignment: .leading).padding(.leading, 5)
             }.buttonStyle(.plain).accessibilityLabel("Sound \(index+1) MIDI Effect")
@@ -159,8 +164,34 @@ struct SoundModule: View {
                 if effect.kind == 0 { open(.effect(index, slot)) }
                 else { var fx = effect; fx.enabled.toggle(); store.setEffect(index, slot, fx) }
             } label: { Image(systemName: "power").font(.system(size: 14)).frame(width: 36, height: 49).background(effect.kind > 0 && effect.enabled ? color.opacity(0.7) : Color.clear) }.buttonStyle(.plain).accessibilityLabel("Sound \(index+1) effect \(slot+1) bypass").accessibilityValue(effect.kind > 0 && effect.enabled ? "On":"Off")
-            Button { open(.effect(index, slot)) } label: { VStack(alignment: .leading, spacing: 3) { Text("Audio 0\(slot+1)").font(.system(size: 9)).foregroundStyle(.secondary); Text(effect.title).font(StageTheme.font(14, weight: .semibold)) }.frame(maxWidth: .infinity, alignment: .leading).padding(.leading, 5) }.buttonStyle(.plain).accessibilityLabel("Sound \(index+1) Audio \(slot+1) \(effect.title)")
+            Button { open(.effect(index, slot)) } label: { VStack(alignment: .leading, spacing: 3) { Text("Audio 0\(slot+1)").font(.system(size: 11)).foregroundStyle(.secondary); Text(effect.title).font(StageTheme.font(14, weight: .semibold)) }.frame(maxWidth: .infinity, alignment: .leading).padding(.leading, 5) }.buttonStyle(.plain).accessibilityLabel("Sound \(index+1) Audio \(slot+1) \(effect.title)")
         }.frame(height: 49).background(StageTheme.raised.opacity(0.55), in: RoundedRectangle(cornerRadius: 6)).clipShape(RoundedRectangle(cornerRadius: 6))
+    }
+}
+struct SoundLevelMeter: View {
+    let reading: OutputMeter.Reading?
+    let color: Color
+    let label: String
+    @State private var warnings = MeterWarningState()
+    private func fraction(_ db: Float) -> CGFloat {
+        CGFloat(max(0, min(1, (db + 60) / 60)))
+    }
+    var body: some View {
+        GeometryReader { geometry in
+            ZStack(alignment: .leading) {
+                Capsule().fill(Color.black.opacity(0.35))
+                if let reading {
+                    Capsule().fill(warnings.invalid ? Color.red : warnings.overload ? Color.orange : color)
+                        .frame(width: max(1, geometry.size.width * fraction(reading.peakDB)))
+                }
+            }
+        }.frame(height: 6)
+        .onAppear { warnings.update(reading) }
+        .onChange(of: reading) { newValue in warnings.update(newValue) }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(label)
+        .accessibilityValue((reading.map { "\(Int($0.peakDB.rounded())) dBFS sample peak" } ?? "No signal") +
+            (warnings.invalid ? " · invalid input" : warnings.overload ? " · overload" : ""))
     }
 }
 enum PianoGeometry {
@@ -232,19 +263,32 @@ struct KeyboardWorkspace: View {
             ModulationWheel(value:$store.modWheel).frame(width:48)
             VStack(spacing: 5) {
                 if store.showRanges {
-                    VStack(spacing: 2) {
-                        ForEach(Array(store.displayedLayers.enumerated()).filter { $0.element.loaded }.reversed(), id: \.element.id) { index, layer in
-                            GeometryReader { g in
-                                let lo = max(21, layer.low), hi = min(108, layer.high)
-                                if hi >= lo { RoundedRectangle(cornerRadius: 3).fill(StageTheme.colors[index].opacity(layer.muted ? 0.25 : 0.95)).frame(width: max(2, g.size.width * (PianoGeometry.position(hi) - PianoGeometry.position(lo) + 1) / 52)).offset(x: g.size.width * max(0, PianoGeometry.position(lo)-0.5) / 52) }
-                            }.frame(height: 15)
+                    if store.dynamicMIDIRanges {
+                        VStack(spacing: 2) {
+                            Text("Active MIDI output spans").font(.caption).foregroundStyle(.secondary)
+                            TimelineView(.periodic(from: .now, by: 0.05)) { _ in rangeBands }
                         }
-                    }.frame(maxHeight: 85).accessibilityLabel("Sound layer ranges")
+                    } else { rangeBands }
                 }
                 PianoKeyboard().disabled(!store.started).opacity(store.started ? 1 : 0.5)
             }
         }.padding(8).background(StageTheme.panel.opacity(0.7), in: RoundedRectangle(cornerRadius: 8))
     }
+    private var rangeBands: some View {
+        VStack(spacing: 2) {
+            ForEach(Array(store.displayedLayers.enumerated()).filter { $0.element.loaded }.reversed(), id: \.element.id) { index, layer in
+                GeometryReader { g in
+                    if let range = store.displayedLayerRange(index) {
+                        let lo = max(21, range.lowerBound), hi = min(108, range.upperBound)
+                        if hi >= lo { RoundedRectangle(cornerRadius: 3).fill(StageTheme.colors[index].opacity(layer.muted ? 0.25 : 0.95)).frame(width: max(2, g.size.width * (PianoGeometry.position(hi) - PianoGeometry.position(lo) + 1) / 52)).offset(x: g.size.width * max(0, PianoGeometry.position(lo)-0.5) / 52) }
+                    }
+                }.frame(minHeight: 2, maxHeight: 15).accessibilityElement(children: .ignore)
+                    .accessibilityLabel("Sound \(index + 1): \(layer.name)")
+                    .accessibilityValue(store.displayedLayerRange(index).map { "MIDI \($0.lowerBound) through \($0.upperBound)" } ?? "No active MIDI output")
+            }
+        }.frame(maxHeight: 85).accessibilityElement(children: .contain).accessibilityLabel(store.dynamicMIDIRanges ? "Active MIDI output spans" : "Sound layer input ranges")
+    }
+
 }
 struct PianoKeyboard: View {
     var body: some View {
@@ -343,10 +387,14 @@ struct PianoKey: View {
     let note: Int
     let black: Bool
     var body: some View {
-        RoundedRectangle(cornerRadius: 3).fill(store.isNoteHeld(note) ? StageTheme.selected : (black ? Color(white: 0.07) : Color(white: 0.88)))
-            .overlay(alignment: .bottom) { if !black && note % 12 == 0 { Text("C\(note/12-1)").font(.system(size: 8)).foregroundStyle(.black.opacity(0.4)).padding(.bottom, 3) } }
+        RoundedRectangle(cornerRadius: 3).fill(store.isNoteHighlighted(note) ? StageTheme.selected : (black ? Color(white: 0.07) : Color(white: 0.88)))
+            // Decorative octave marker: the key itself is labelled "C3", and the
+            // glyph has to fit a dark-key gap, so it keeps a smaller size but is
+            // darkened to the audited 5.26:1 (it measured 2.74:1 at 40 % black).
+            .overlay(alignment: .bottom) { if !black && note % 12 == 0 { Text("C\(note/12-1)").font(.system(size: 8)).foregroundStyle(.black.opacity(0.6)).padding(.bottom, 3) } }
             .gesture(DragGesture(minimumDistance: 0).updating($touching) { _, state, _ in state = true }.onChanged { _ in store.noteOn(note) }.onEnded { _ in store.noteOff(note) })
             .onChange(of: touching) { if !$0 { store.noteOff(note) } }.onDisappear { store.noteOff(note) }
+            .disabled(!store.started || !store.keyboardPlayable)
             .accessibilityLabel("\(StageTheme.notes[note%12])\(note/12-1)").accessibilityAddTraits(.isButton)
             .accessibilityAction { store.noteOn(note); DispatchQueue.main.asyncAfter(deadline: .now()+0.4) { store.noteOff(note) } }
     }

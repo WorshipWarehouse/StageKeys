@@ -12,6 +12,16 @@ struct SoundTags: Codable, Equatable {
     var noteRanges:[String]?
     var types:[String]?
     var recommended:Bool?
+    /// Facets explicitly edited by the user or supplied as authored metadata.
+    /// Nil on legacy and purely inferred tags, where provenance cannot be recovered.
+    var authoredFacets:[String]?
+    mutating func markAuthored(_ facet:LibraryFacet) {
+        guard facet.isTagFacet else{return}
+        var values=Set(authoredFacets ?? [])
+        values.insert(facet.rawValue)
+        authoredFacets=LibraryFacet.tagFacets.map(\.rawValue).filter{values.contains($0)}
+    }
+    func isAuthored(_ facet:LibraryFacet)->Bool {authoredFacets?.contains(facet.rawValue)==true}
     static func inferred(name: String, source: String = "Sampler") -> SoundTags {
         let n = name.replacingOccurrences(of:"([a-z])([A-Z])",with:"$1 $2",options:.regularExpression).lowercased()
         let words=Set(n.split(whereSeparator:{!$0.isLetter && !$0.isNumber}).map(String.init))
@@ -45,13 +55,20 @@ enum LibraryNoteRange:String,CaseIterable {
 enum LibraryFacet: String, CaseIterable, Identifiable {
     case category="Category", type="Type", timbre="Timbre", articulation="Articulation", library="Sound Library", source="Source/Model", availability="Availability", complexity="Complexity",noteRange="Note Range"
     var id:String {rawValue}
+    var isTagFacet:Bool {
+        switch self {
+        case .library,.availability:return false
+        default:return true
+        }
+    }
+    static var tagFacets:[LibraryFacet] {allCases.filter(\.isTagFacet)}
 }
+enum LibraryTagOrigin:String {case authored="Authored",suggested="Suggested",unknown="Not Tagged"}
 struct BrowserSound: Identifiable {
     let id:String
     let name:String
     let collection:String
-    let tags:SoundTags
-    var builtin:Int?
+    var tags:SoundTags
     var entry:LibrarySound?
     var external:ExternalSound?
     var destination:ExternalMIDIDestination?
@@ -61,42 +78,125 @@ struct BrowserSound: Identifiable {
     /// for reporting that a component has not passed auval.
     var unavailableReason:String?
     var validationNote:String?
+    /// Set when the sound's own managed file or one of its samples is gone, so
+    /// the row can offer repair instead of failing only after Add/Replace.
+    var contentIssue:LibraryContentIssue?
     var ratingID:String {entry?.id ?? id}
-    var playable:Bool {(builtin != nil || entry?.sound != nil || entry?.layer != nil || external != nil || destination != nil) && unavailableReason == nil}
+    var playable:Bool {(entry?.sound != nil || entry?.layer?.loaded == true || external != nil || destination != nil) && unavailableReason == nil && contentIssue == nil}
+    var isAudioUnit: Bool { (external ?? entry?.layer?.external ?? entry?.sound)?.kind == .audioUnit }
+    func checkingAudioUnitAvailability(installed: [ExternalAUIdentity], isMobile: Bool) -> BrowserSound {
+        guard isAudioUnit else { return self }
+        var copy = self
+        guard let component = (external ?? entry?.layer?.external ?? entry?.sound)?.component else {
+            copy.unavailableReason = "The saved Audio Unit identity is missing. Choose a replacement sound."
+            return copy
+        }
+        copy.unavailableReason = ExternalAUCatalog.unavailableReason(for: component, installed: installed, isMobile: isMobile)
+        return copy
+    }
+    /// Managed content is checked once per library read, never per keystroke.
+    func checkingContent(_ issues:[String:LibraryContentIssue])->BrowserSound {
+        var copy=self;copy.contentIssue=issues[entry?.id ?? id];return copy
+    }
+    /// A blank or absent tag is unknown, never an empty facet option or a
+    /// claim of authored metadata.
+    static let unknownTag="Not Tagged"
+    private static func taggedValues(_ raw:[String])->[String] {
+        let values=Set(raw.map{$0.trimmingCharacters(in:.whitespacesAndNewlines)}.filter{!$0.isEmpty && $0 != unknownTag})
+        return values.isEmpty ? [unknownTag]:values.sorted()
+    }
+    /// Facet values are canonical and deterministic: Note Range uses the fixed
+    /// filter order, repeated or blank values collapse, and anything unknown is
+    /// reported as Not Tagged so it stays filterable and visibly untagged.
     func values(_ facet:LibraryFacet)->[String] {
         switch facet {
-        case .noteRange:return tags.noteRanges?.isEmpty == false ? tags.noteRanges!:["Not Tagged"]
-        case .complexity:return [tags.complexity ?? "Not Tagged"]
-        case .category:return [tags.category]
-        case .type:return Array(Set([tags.type]+(tags.types ?? []))).sorted()
-        case .timbre:return tags.timbres.isEmpty ? ["Not Tagged"]:tags.timbres
-        case .articulation:return tags.articulations.isEmpty ? ["Not Tagged"]:tags.articulations
+        case .noteRange:
+            let selected=Set(tags.noteRanges ?? [])
+            let ordered=LibraryNoteRange.allCases.map(\.rawValue).filter{selected.contains($0)}
+            return ordered.isEmpty ? [Self.unknownTag]:ordered
+        case .complexity:return Self.taggedValues([tags.complexity ?? ""])
+        case .category:return Self.taggedValues([tags.category])
+        case .type:return Self.taggedValues([tags.type]+(tags.types ?? []))
+        case .timbre:return Self.taggedValues(tags.timbres)
+        case .articulation:return Self.taggedValues(tags.articulations)
         case .library:return [collection]
-        case .source:return [tags.sourceModel]
-        case .availability:return [unavailableReason != nil ? "Unavailable" : playable ? "Playable" : "Needs Conversion"]
+        case .source:return Self.taggedValues([tags.sourceModel])
+        case .availability:return [unavailableReason != nil || contentIssue != nil ? "Unavailable" : playable ? "Playable" : "Needs Conversion"]
         }
+    }
+    func tagOrigin(_ facet:LibraryFacet)->LibraryTagOrigin? {
+        guard facet.isTagFacet else{return nil}
+        if tags.isAuthored(facet) {return .authored}
+        if values(facet).contains(Self.unknownTag) {return .unknown}
+        return tags.inferred ? .suggested:.authored
+    }
+    private var tagOriginGroups:(authored:[String],suggested:[String],unknown:[String]) {
+        var authored:[String]=[],suggested:[String]=[],unknown:[String]=[]
+        for facet in LibraryFacet.tagFacets {
+            guard let origin=tagOrigin(facet) else{continue}
+            switch origin {
+            case .authored:authored.append(facet.rawValue)
+            case .suggested:suggested.append(facet.rawValue)
+            case .unknown:unknown.append(facet.rawValue)
+            }
+        }
+        return (authored,suggested,unknown)
+    }
+    var tagOriginSummary:String? {
+        let groups=tagOriginGroups
+        var parts:[String]=[]
+        if !groups.authored.isEmpty {parts.append("Authored: "+groups.authored.joined(separator:", "))}
+        if !groups.suggested.isEmpty {parts.append("Suggested: \(groups.suggested.count)")}
+        if !groups.unknown.isEmpty {parts.append("Not tagged: \(groups.unknown.count)")}
+        return parts.isEmpty ? nil:parts.joined(separator:" · ")
+    }
+    var tagOriginDetail:String? {
+        let groups=tagOriginGroups
+        var parts:[String]=[]
+        if !groups.authored.isEmpty {parts.append("Authored: "+groups.authored.joined(separator:", "))}
+        if !groups.suggested.isEmpty {parts.append("Suggested: "+groups.suggested.joined(separator:", "))}
+        if !groups.unknown.isEmpty {parts.append("Not tagged: "+groups.unknown.joined(separator:", "))}
+        return parts.isEmpty ? nil:parts.joined(separator:" · ")
     }
     static func archive(_ original:LibrarySound,converted:LibrarySound)->BrowserSound {
         let playable=library(converted)
         var tags=original.tags ?? playable.tags
         // Row annotations belong to the playable entry, shared across collections.
         tags.noteRanges=playable.tags.noteRanges;tags.complexity=playable.tags.complexity;tags.types=playable.tags.types;tags.recommended=playable.tags.recommended
+        var authored=Set(tags.authoredFacets ?? []);authored.formUnion(playable.tags.authoredFacets ?? [])
+        tags.authoredFacets=LibraryFacet.tagFacets.map(\.rawValue).filter{authored.contains($0)}
         return BrowserSound(id:original.id,name:original.name,collection:original.collection,tags:tags,entry:converted)
     }
     static func library(_ entry:LibrarySound)->BrowserSound {
-        BrowserSound(id:entry.id,name:entry.name,collection:entry.collection,tags:entry.tags ?? .inferred(name:entry.name,source:entry.hostPath != nil ? "MainStage" : entry.sound?.kind == .audioUnit ? "Audio Unit" : "Sampler"),entry:entry)
+        var sound=BrowserSound(id:entry.id,name:entry.name,collection:entry.collection,tags:entry.tags ?? .inferred(name:entry.name,source:entry.hostPath != nil ? "MainStage" : entry.sound?.kind == .audioUnit ? "Audio Unit" : "Sampler"),entry:entry)
+        if let layer=entry.layer,entry.sound==nil,!layer.loaded,layer.instrument>=0 {sound.unavailableReason="Legacy voice unavailable. Import a replacement sound; saved settings are retained."}
+        return sound
     }
 }
 enum LibrarySort:String,CaseIterable {case name="Name",recommended="Recommended",rating="Rating",recent="Recently Added",random="Random"}
+struct ActiveLibraryFilter:Identifiable,Equatable {
+    let facet:LibraryFacet
+    let value:String
+    var id:String {"\(facet.rawValue)=\(value)"}
+}
 struct LibraryQuery {
     var search=""
+    var activeFilters:[ActiveLibraryFilter] {
+        LibraryFacet.allCases.compactMap { facet in
+            guard let value=filters[facet],value != "All" else{return nil}
+            return ActiveLibraryFilter(facet:facet,value:value)
+        }
+    }
     var filters:[LibraryFacet:String]=[:]
     var sort:LibraryFacet?=nil
     var ascending=true
     var ordering:LibrarySort = .name
     var shuffleSeed:UInt64=0
     mutating func order(by mode:LibrarySort) {
-        ordering=mode;sort=nil;ascending=mode == .name || mode == .recommended
+        let changed=ordering != mode
+        ordering=mode;sort=nil
+        guard changed else{return}
+        ascending=mode == .name || mode == .recommended
         if mode == .random {shuffleSeed=UInt64.random(in:1...UInt64.max)}
     }
     private func randomKey(_ id:String)->UInt64 {
@@ -134,8 +234,8 @@ struct LibraryQuery {
     func options(_ facet:LibraryFacet,in sounds:[BrowserSound])->[String] {
         if facet == .noteRange {
             // The source retains all four choices even after narrowing by type.
-            let unknown=filters[facet]=="Not Tagged" || sounds.filter{matches($0,ignoring:facet)}.contains{$0.values(.noteRange).contains("Not Tagged")}
-            return ["All"]+LibraryNoteRange.allCases.map(\.rawValue)+(unknown ? ["Not Tagged"]:[])
+            let unknown=filters[facet]==BrowserSound.unknownTag || sounds.filter{matches($0,ignoring:facet)}.contains{$0.values(.noteRange).contains(BrowserSound.unknownTag)}
+            return ["All"]+LibraryNoteRange.allCases.map(\.rawValue)+(unknown ? [BrowserSound.unknownTag]:[])
         }
         var values=Set(sounds.filter{matches($0,ignoring:facet)}.flatMap{$0.values(facet)})
         if let selected=filters[facet],selected != "All" {values.insert(selected)}
@@ -143,12 +243,114 @@ struct LibraryQuery {
     }
 }
 
+/// What the library shows when it has no result rows. An unreadable catalog is
+/// an error with its own recovery action, never an "install without sounds"
+/// empty state that invites importing over the preserved catalog.
+enum LibraryEmptyState:Equatable {
+    case noSounds,noMatches,catalogUnreadable
+    static func resolve(catalogUnreadable:Bool,searching:Bool,filtering:Bool)->Self {
+        if catalogUnreadable {return .catalogUnreadable}
+        return searching || filtering ? .noMatches:.noSounds
+    }
+    var title:String {
+        switch self {
+        case .noSounds:return "No Sounds found"
+        case .noMatches:return "No Sounds match"
+        case .catalogUnreadable:return "Sound library could not be read"
+        }
+    }
+    var message:String {
+        switch self {
+        case .noSounds:return "StageKeys ships without sounds. Import samples, choose Audio Units, or select an external MIDI destination."
+        case .noMatches:return "Change the search or filters to find more sounds."
+        case .catalogUnreadable:return "The saved catalog is preserved but was not loaded, so this list may look empty. Catalog writes are blocked until you recover it; samples and current patches are unchanged."
+        }
+    }
+    /// Importing before recovery cannot repair an unreadable catalog, so only a
+    /// readable library offers the import shortcuts.
+    var offersImport:Bool {self != .catalogUnreadable}
+    var offersRecovery:Bool {self == .catalogUnreadable}
+}
+
+/// A library sound whose managed content was moved or lost stays listed so it can
+/// be repaired; it is reported as unavailable instead of failing only on Add.
+enum LibraryContentIssue:String,Equatable {
+    case missingFile,missingSamples
+    var message:String {
+        switch self {
+        case .missingFile:return "The saved sound file is missing or unreadable. Locate it, or import the sound again."
+        case .missingSamples:return "A sample this preset needs is missing or unreadable. Reconnect its storage or import the sound again."
+        }
+    }
+    var locateTitle:String {"Locate Sound File…"}
+}
+
+/// Repair is identity-checked: a merely similar file never replaces a sound.
+enum LibraryRepair {
+    /// The stored reference is a bare file name, so a path, traversal or blank
+    /// name cannot address anything outside the managed folder.
+    static func safeName(_ name:String)->Bool {
+        !name.isEmpty && name.count<=200 && !name.hasPrefix(".") && name==URL(fileURLWithPath:name).lastPathComponent
+    }
+    /// Only the digest of the managed asset establishes its identity. A name,
+    /// or the original EXS digest before conversion, does not identify its bytes.
+    static func accepts(candidateName:String,digest:String?,originalDigest:String?,storedName:String)->Bool {
+        guard safeName(candidateName),safeName(storedName) else{return false}
+        guard let digest,let originalDigest else{return false}
+        return digest.count==64 && digest==originalDigest
+    }
+}
+
+/// Copies a located asset into the library folder as a managed file. The copy is
+/// verified before it becomes visible, and an existing readable file is never
+/// overwritten, so repair cannot destroy the bytes that are still there.
+enum LibraryAssetRepair {
+    enum Failure:LocalizedError {
+        case unsafeName,unreadableSource,alreadyPresent,verificationFailed
+        var errorDescription:String? {
+            switch self {
+            case .unsafeName:return "That file name cannot be stored in the sound library."
+            case .unreadableSource:return "That file is missing, unreadable, or larger than the library allows."
+            case .alreadyPresent:return "A file with that name is already in the sound library."
+            case .verificationFailed:return "That file did not verify as the saved sound, so nothing was changed."
+            }
+        }
+    }
+    static let byteLimit=2_000_000_000
+    static func restore(named name:String,from source:URL,to directory:URL,verify:(URL)throws->Void)throws {
+        guard LibraryRepair.safeName(name) else{throw Failure.unsafeName}
+        let values=try source.resourceValues(forKeys:[.isRegularFileKey,.isSymbolicLinkKey,.fileSizeKey])
+        guard values.isRegularFile == true, values.isSymbolicLink != true,
+              let size=values.fileSize,size>0,size<=byteLimit else{throw Failure.unreadableSource}
+        try FileManager.default.createDirectory(at:directory,withIntermediateDirectories:true)
+        let destination=directory.appendingPathComponent(name)
+        guard !FileManager.default.fileExists(atPath:destination.path) else{throw Failure.alreadyPresent}
+        let temporary=directory.appendingPathComponent(".repair-\(UUID().uuidString)")
+        defer {try? FileManager.default.removeItem(at:temporary)}
+        do { try FileManager.default.copyItem(at:source,to:temporary) } catch { throw Failure.unreadableSource }
+        do { try verify(temporary) } catch { throw Failure.verificationFailed }
+        try FileManager.default.moveItem(at:temporary,to:destination)
+    }
+}
+
 /// Personal ratings are independent of samples, sound presets and patch snapshots.
 enum SoundRatingArchive {
     static func valid(_ ratings:[String:Int])->Bool {ratings.count<=8192 && ratings.allSatisfy{!$0.key.isEmpty && $0.key.count<=512 && (1...5).contains($0.value)}}
     static func load(_ url:URL)->[String:Int] {
-        guard let data=try? Data(contentsOf:url),data.count<=4_000_000,let ratings=try? JSONDecoder().decode([String:Int].self,from:data),valid(ratings) else{return [:]}
+        (try? read(url)) ?? [:]
+    }
+    private static func decoded(_ data:Data)throws->[String:Int] {
+        guard data.count<=4_000_000 else{throw SetlistLibraryError.oversized}
+        let ratings=try JSONDecoder().decode([String:Int].self,from:data)
+        guard valid(ratings) else{throw SetlistError.invalid}
         return ratings
+    }
+    static func read(_ url:URL)throws->[String:Int] {
+        guard FileManager.default.fileExists(atPath:url.path) || (try? url.resourceValues(forKeys:[.isSymbolicLinkKey]).isSymbolicLink)==true else{return [:]}
+        return try decoded(RecoverableSessionFile.read(url,limit:4_000_000))
+    }
+    static func recover(_ url:URL)throws->[String:Int] {
+        try decoded(RecoverableSessionFile.restore(url,limit:4_000_000){_ = try decoded($0)})
     }
     static func setting(_ value:Int,for id:String,in ratings:[String:Int])->[String:Int]? {
         guard !id.isEmpty,id.count<=512,(0...5).contains(value) else{return nil}
@@ -157,9 +359,10 @@ enum SoundRatingArchive {
     }
     static func save(_ ratings:[String:Int],to url:URL)throws {
         guard valid(ratings) else{throw CocoaError(.fileWriteInvalidFileName)}
+        _ = try read(url)
         let data=try JSONEncoder().encode(ratings)
         guard data.count<=4_000_000 else{throw CocoaError(.fileWriteOutOfSpace)}
         try FileManager.default.createDirectory(at:url.deletingLastPathComponent(),withIntermediateDirectories:true)
-        try data.write(to:url,options:.atomic)
+        try RecoverableSessionFile.write(data,to:url,limit:4_000_000){_ = try decoded($0)}
     }
 }

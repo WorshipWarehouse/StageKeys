@@ -1,0 +1,57 @@
+{
+  "date": "2026-11-02",
+  "preceding_evidence": "au-load-admission-verification.json",
+  "scope": "Known resource rejection before audition draft, editor ownership, panic and isolation changes.",
+  "checks": [
+    {
+      "label": "focused",
+      "command": "python3 Tests/run-local-library.py . /private/tmp/stagekeys-audition-preflight-checked ResourceAvailabilityTests StoreTests MissingAudioUnitTests",
+      "exit_code": 0,
+      "log": "/private/tmp/stagekeys-audition-preflight-checked.log",
+      "sha256": "7e684a11dd756ef3b43a36caf09405363f189bd2812fce726ad2c9f59fe64885"
+    },
+    {
+      "label": "mac",
+      "command": "Tools/verify-release.sh mac /private/tmp/stagekeys-audition-preflight-mac",
+      "exit_code": 0,
+      "log": "/private/tmp/stagekeys-audition-preflight-mac.log",
+      "sha256": "b4bf095a6724176b2fa31e95a47eded03bce67b5a9d1d784105d1958dc13997d"
+    }
+  ],
+  "results": [
+    {
+      "test": "ResourceAvailabilityTests",
+      "status": "passed",
+      "passed": true,
+      "seconds": 1.361
+    },
+    {
+      "test": "StoreTests",
+      "status": "passed",
+      "passed": true,
+      "seconds": 1.364
+    },
+    {
+      "test": "MissingAudioUnitTests",
+      "status": "passed",
+      "passed": true,
+      "seconds": 0.939
+    }
+  ],
+  "source_sha256": {
+    "Sources/Store.swift": "f84d5c31d718d06a3dfd52f39c2683bbad3399da2eb6850a095f279c3d468468",
+    "Tests/ResourceAvailabilityTests.swift": "f4c962963a9e9363319f317582cfddaa0b6e8887d1640894a3b83e9faa460ba4"
+  },
+  "additional_checks": [
+    "Library gate inventory: 106 Swift / 8 C; passed",
+    "Repository distribution content policy; passed",
+    "git diff --check; passed"
+  ],
+  "test_development": "Two initial runs passed the new rejection assertions but disturbed the earlier test held-note/energy setup. Final audition section moved after those earlier checks; final three-program run passed.",
+  "limits": "Focused suite and unsigned Mac artifact gate only on this change. Full default suite and Simulator gate last ran for preceding evidence; not rerun here. No real vendor/hardware/mobile qualification.",
+  "not_performed": [
+    "GitHub changes",
+    "commit/push",
+    "signing/install/distribution"
+  ]
+}

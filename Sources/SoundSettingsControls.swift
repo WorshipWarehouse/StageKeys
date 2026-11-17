@@ -18,7 +18,34 @@ struct SoundSettingsControls: View {
             Button {value.wrappedValue=min(range.upperBound,value.wrappedValue+1)} label:{Image(systemName:"plus").frame(width:36,height:42)}.disabled(value.wrappedValue>=range.upperBound).accessibilityLabel("Increase \(title)")
         }.buttonStyle(.plain).background(StageTheme.raised,in:RoundedRectangle(cornerRadius:7))
     }
+    private var canEditEnvelope: Bool { layer.external == nil && layer.midiDestinationID == nil }
+    private var canEditFilter: Bool { layer.midiDestinationID == nil }
+    private var filterMinBinding: Binding<Float> { Binding(get:{layer.channelSettings.filterMin},set:{layer.channelSettings.filterMin=min($0,layer.channelSettings.filterMax)}) }
+    private var filterMaxBinding: Binding<Float> { Binding(get:{layer.channelSettings.filterMax},set:{layer.channelSettings.filterMax=max($0,layer.channelSettings.filterMin)}) }
+    private var shaping: some View {
+        VStack(alignment:.leading,spacing:8) {
+            Text("Native Sound Shaping").font(StageTheme.font(15,weight:.semibold))
+            Text("Source gain → compressor → Mod Filter → EQ → three Audio slots → pan → fader. Hosted plug-ins run their own internal order.").font(.caption).foregroundStyle(.secondary)
+            if canEditEnvelope {
+                HStack(spacing:8) {
+                    EffectKnob(compact:true,descriptor:.init(index:0,name:"Attack",minimum:0.001,maximum:10,defaultValue:0.35,unit:"s"),value:$layer.channelSettings.attack)
+                    EffectKnob(compact:true,descriptor:.init(index:1,name:"Decay",minimum:0.001,maximum:10,defaultValue:0.1,unit:"s"),value:$layer.channelSettings.decay)
+                    EffectKnob(compact:true,descriptor:.init(index:2,name:"Sustain",minimum:0,maximum:1,defaultValue:1,unit:"%"),value:$layer.channelSettings.sustain)
+                    EffectKnob(compact:true,descriptor:.init(index:3,name:"Release",minimum:0.001,maximum:30,defaultValue:1.2,unit:"s"),value:$layer.channelSettings.release)
+                }
+            } else {
+                Text("This sound's amplitude envelope belongs to its loaded instrument or hosted plug-in. The native envelope is hidden rather than substituted.").font(.caption).foregroundStyle(.secondary)
+            }
+            HStack(spacing:8) {
+                EffectKnob(compact:true,descriptor:.init(index:4,name:"Filter Min",minimum:20,maximum:20000,defaultValue:20000,unit:"Hz"),value:filterMinBinding)
+                EffectKnob(compact:true,descriptor:.init(index:5,name:"Filter Max",minimum:20,maximum:20000,defaultValue:20000,unit:"Hz"),value:filterMaxBinding)
+                EffectKnob(compact:true,descriptor:.init(index:6,name:"Resonance",minimum:0.1,maximum:10,defaultValue:0.707,unit:"Q"),value:$layer.channelSettings.resonance)
+            }.disabled(!canEditFilter)
+            Text(canEditFilter ? "Mod Wheel CC1 sweeps the filter exponentially from Filter Min to Filter Max." : "A MIDI-destination sound has no native filter path; use the receiving instrument's own filter.").font(.caption).foregroundStyle(.secondary)
+        }.padding(16).frame(maxWidth:.infinity,alignment:.leading).background(StageTheme.panel,in:RoundedRectangle(cornerRadius:8))
+    }
     var body: some View {
+        VStack(alignment:.leading,spacing:8) {
         HStack(alignment: .top, spacing:8) {
             VStack(spacing:8) {
                 card("Block Sustain", detail:"Make the Sound ignore the Sustain Pedal") { Toggle("Block Sustain",isOn:$layer.blockSustain).labelsHidden().toggleStyle(.switch) }
@@ -45,6 +72,8 @@ struct SoundSettingsControls: View {
                     }.background(StageTheme.panel,in:RoundedRectangle(cornerRadius:8))
                 }.frame(width:165)
             }
+        }
+        shaping
         }
     }
 }
@@ -119,6 +148,10 @@ struct ImportedRackControls: View {
                     EffectKnob(descriptor:.init(index:4,name:side+" High Cut",minimum:20,maximum:20000,defaultValue:20000,unit:"Hz"),value:channelBinding(index,right,\.highCut))
                 }
             }else{
+                if delay.dryGain != nil {
+                    EffectKnob(descriptor:.init(index:4,name:"Dry",minimum:0,maximum:1,defaultValue:1,unit:"%"),value:Binding(get:{layer.importedRack?.effects[index].importedDelay?.dryGain ?? 1},set:{layer.importedRack?.effects[index].importedDelay?.dryGain=$0}))
+                    EffectKnob(descriptor:.init(index:5,name:"Wet",minimum:0,maximum:1,defaultValue:0,unit:"%"),value:Binding(get:{layer.importedRack?.effects[index].importedDelay?.wetGain ?? 0},set:{layer.importedRack?.effects[index].importedDelay?.wetGain=$0}))
+                }
                 Toggle("Ping Pong",isOn:Binding(get:{layer.importedRack?.effects[index].importedDelay?.pingPong ?? false},set:{layer.importedRack?.effects[index].importedDelay?.pingPong=$0}))
                 EffectKnob(descriptor:.init(index:26,name:"Low Cut",minimum:20,maximum:delay.highCut,defaultValue:20,unit:"Hz"),value:Binding(get:{layer.importedRack?.effects[index].importedDelay?.lowCut ?? 20},set:{layer.importedRack?.effects[index].importedDelay?.lowCut=$0}))
                 EffectKnob(descriptor:.init(index:27,name:"High Cut",minimum:delay.lowCut,maximum:20000,defaultValue:20000,unit:"Hz"),value:Binding(get:{layer.importedRack?.effects[index].importedDelay?.highCut ?? 20000},set:{layer.importedRack?.effects[index].importedDelay?.highCut=$0}))
@@ -146,7 +179,7 @@ struct ImportedRackControls: View {
                         } else {
                         LazyVGrid(columns:[GridItem(.adaptive(minimum:140))],spacing:8) {
                             if effect.importedDelay != nil { delayControls(index) }
-                            ForEach(AudioEffectCatalog.descriptors(for:effect.kind).filter{!(effect.kind==16 && [9,10].contains($0.index)) && (effect.importedDelay == nil || effect.importedDelay?.leftChannel == nil && ![1,2].contains($0.index))}) { parameter in
+                            ForEach(AudioEffectCatalog.descriptors(for:effect.kind).filter{!(effect.kind==16 && [9,10].contains($0.index)) && !(effect.importedDelay?.dryGain != nil && $0.index==3) && (effect.importedDelay == nil || effect.importedDelay?.leftChannel == nil && ![1,2].contains($0.index))}) { parameter in
                                 EffectKnob(descriptor:parameter,value:Binding(get:{layer.importedRack?.effects[index].values[parameter.index] ?? parameter.defaultValue},set:{value in guard var imported=layer.importedRack else{return};var values=imported.effects[index].values;values[parameter.index]=value;imported.effects[index].parameters=values;layer.importedRack=imported}))
                             }
                         }
@@ -181,7 +214,7 @@ struct ImportedRackControls: View {
 
 struct ImportedBranchControls:View {
     @Binding var branch:ImportedBranch
-    private var rackLayer:Binding<Layer>{Binding(get:{var layer=Layer(name:branch.name,instrument:0,gain:0.5);layer.importedRack=branch.rack;return layer},set:{if let rack=$0.importedRack{branch.rack=rack}})}
+    private var rackLayer:Binding<Layer>{Binding(get:{var layer=Layer(name:branch.name,instrument:-1,gain:0.5);layer.importedRack=branch.rack;return layer},set:{if let rack=$0.importedRack{branch.rack=rack}})}
     var body:some View {
         DisclosureGroup(branch.name) {
             Toggle("Branch On",isOn:Binding(get:{branch.enabled ?? true},set:{branch.enabled=$0}))
@@ -208,7 +241,7 @@ struct ImportedBranchControls:View {
 
 struct ImportedAudioBranchControls:View {
     @Binding var branch:ImportedAudioBranch
-    private var rackLayer:Binding<Layer>{Binding(get:{var layer=Layer(name:branch.name,instrument:0,gain:0.5);layer.importedRack=branch.rack;return layer},set:{if let rack=$0.importedRack{branch.rack=rack}})}
+    private var rackLayer:Binding<Layer>{Binding(get:{var layer=Layer(name:branch.name,instrument:-1,gain:0.5);layer.importedRack=branch.rack;return layer},set:{if let rack=$0.importedRack{branch.rack=rack}})}
     var body:some View {
         DisclosureGroup(branch.name) {
             Toggle("Branch On",isOn:$branch.enabled)
@@ -282,24 +315,30 @@ struct StageKeysSamplerControls:View {
 struct InstrumentGainMatchControls:View {
     @EnvironmentObject private var store:PerformanceStore
     @Binding var layer:Layer
+    @Binding var trimDraft:InstrumentGainMatch.TrimDraft
     let index:Int
     @State private var measurement:InstrumentGainMatch.Result?
+    @State private var measurementInput:Layer?
     @State private var status:String?
     @State private var task:Task<Void,Never>?
     @State private var measurementToken=UUID()
-    @State private var undoTrim:Float?
-    @State private var canUndoTrim=false
+    private func restoreComparison() {
+        guard trimDraft.isComparing else{return}
+        layer.channelSettings.outputTrimDB=trimDraft.cancelComparison()
+    }
     private func measure() {
+        restoreComparison()
         let input=layer,token=UUID();measurementToken=token
         var source=input
-        do {if source.external?.kind == .audioUnit {source.pluginState=try store.audio.externalRack?.stateData(channel:index) ?? source.pluginState}}
+        do {if source.external?.kind == .audioUnit {source=try store.audio.calibrationSource(source,channel:index)}}
         catch{status=error.localizedDescription;return}
-        measurement=nil;status="Measuring an isolated copy; live playback is unchanged."
+        measurement=nil;measurementInput=nil;status="Measuring an isolated copy; live playback is unchanged."
         task=Task { @MainActor in
             do {
-                let result=try await InstrumentGainMatch.measure(source,modulation:store.modWheel,targetDB:store.gainMatchTargetDB,tempo:store.patch.tempo)
+                let result=try await InstrumentGainMatch.measure(source,modulation:store.modWheel,targetDB:store.gainMatchTargetDB,tempo:store.performedTempo)
                 guard !Task.isCancelled,measurementToken==token,layer==input else{return}
                 measurement=try InstrumentGainMatch.retarget(result,to:store.gainMatchTargetDB)
+                measurementInput=input
                 status="Measurement complete. Review the suggested trim before applying."
             }catch is CancellationError {}catch{if measurementToken==token{status=error.localizedDescription}}
             if measurementToken==token{task=nil}
@@ -313,10 +352,20 @@ struct InstrumentGainMatchControls:View {
                 Spacer()
                 if task != nil {ProgressView();Button("Cancel"){task?.cancel();task=nil;measurementToken=UUID();status="Calibration cancelled."}}
                 else {Button("Measure Sound",action:measure)}
-                Button("Reset Trim"){undoTrim=layer.channelSettings.outputTrimDB;canUndoTrim=true;layer.channelSettings.outputTrimDB=nil}.disabled(layer.channelSettings.outputTrimDB==nil)
-                if let result=measurement {Button(String(format:"Apply %+.1f dB",result.trimDB)){undoTrim=layer.channelSettings.outputTrimDB;canUndoTrim=true;layer.channelSettings.outputTrimDB=result.trimDB;measurement=nil;status="Output trim applied to this draft. Confirm to save or Discard to restore."}}
+                Button("Reset Trim"){layer.channelSettings.outputTrimDB=trimDraft.reset(current:layer.channelSettings.outputTrimDB);status="Output trim reset to unity in this draft."}.disabled(layer.channelSettings.outputTrimDB==nil && !trimDraft.isComparing)
+                if let result=measurement {
+                    Button(trimDraft.isComparing ? "Return to Current Trim":"Compare Match") {
+                        layer.channelSettings.outputTrimDB=trimDraft.toggleComparison(current:layer.channelSettings.outputTrimDB,proposed:result.trimDB)
+                        status=trimDraft.isComparing ? "Comparing the suggested trim in the live audition. Return to the current trim or Apply it. Confirm keeps the current trim unless you Apply." : "Returned to the current trim."
+                    }
+                    Button(String(format:"Apply %+.1f dB",result.trimDB)){
+                        layer.channelSettings.outputTrimDB=trimDraft.apply(current:layer.channelSettings.outputTrimDB,proposed:result.trimDB)
+                        measurement=nil;measurementInput=nil
+                        status="Output trim applied to this draft. Confirm to save or Discard to restore."
+                    }
+                }
             }.buttonStyle(StageButtonStyle())
-            if canUndoTrim {Button("Undo Last Trim Change") {layer.channelSettings.outputTrimDB=undoTrim;canUndoTrim=false;status="Previous output trim restored to this draft."}.buttonStyle(StageButtonStyle())}
+            if trimDraft.canUndo {Button("Undo Last Trim Change") {layer.channelSettings.outputTrimDB=trimDraft.undo();status="Previous output trim restored to this draft."}.buttonStyle(StageButtonStyle())}
             HStack(spacing:8) {
                 Text("Target RMS").font(.caption)
                 TextField("Target RMS",value:Binding(get:{store.gainMatchTargetDB},set:{if $0.isFinite{store.gainMatchTargetDB=min(-6,max(-60,$0));store.gainMatchReferenceName=nil}}),format:.number.precision(.fractionLength(1))).textFieldStyle(.roundedBorder).frame(width:65)
@@ -330,20 +379,25 @@ struct InstrumentGainMatchControls:View {
                 Spacer()
             }
             if let name=store.gainMatchReferenceName {Text("Session reference: "+name).font(.caption).foregroundStyle(.secondary)}
-            Text("Unity-fader probe at velocities 83 and 127; measured peak ceiling −9 dBFS, trim −24…+12 dB. Applies a separate output trim and preserves source settings. Check sustained chords and slow or tempo-dependent sounds by ear; this is a fixed-probe estimate, not continuous leveling.").font(.caption).foregroundStyle(.secondary)
+            Text("Two passes at unity fader: RMS uses the 0.10–0.50 s stereo window for each in-range note at velocity 83. Sample peak spans the full render, including a sustained velocity-127 chord, against a −9 dBFS ceiling. Trim is limited to −24…+12 dB; no LUFS, true-peak or perceived-loudness measurement is made.").font(.caption).foregroundStyle(.secondary)
             if let result=measurement {Text(String(format:"Probe RMS %.1f dBFS · peak %.1f dBFS · proposed RMS %.1f dBFS%@",result.rmsDB,result.peakDB,result.outputRMSDB,result.peakLimited ? " · peak limited":result.trimLimited ? " · trim limited":"")).font(.caption).monospacedDigit()}
+            if let tempo=measurement?.probeTempo {Text("Probe tempo: \(tempo,specifier:"%.1f") BPM").font(.caption).monospacedDigit()}
             if let result=measurement,let variation=result.repeatabilityDB {
-                Text("MIDI notes: \(result.probeNotes.map(String.init).joined(separator:", ")) · two-pass spread \(variation,specifier:"%.2f") dB · sample peak only, not true peak").font(.caption)
+                Text("MIDI notes: \(result.probeNotes.map(String.init).joined(separator:", ")) · RMS velocity \(result.measuredVelocity) · peak-stress velocity \(result.peakStressVelocity) · two-pass RMS spread \(variation,specifier:"%.2f") dB (repeatability only) · sample peak only").font(.caption)
                 if let warning=result.confidenceWarning {Text(warning).font(.caption).foregroundStyle(.orange)}
             }
             if let status {Text(status).font(.caption).textSelection(.enabled)}
         }.padding(12).background(StageTheme.panel,in:RoundedRectangle(cornerRadius:8))
         .onChange(of:store.gainMatchTargetDB){target in
+            restoreComparison()
             if let result=measurement {do{measurement=try InstrumentGainMatch.retarget(result,to:target)}catch{measurement=nil;status=error.localizedDescription}}
         }
-        .onChange(of:store.patch.tempo){_ in task?.cancel();task=nil;measurementToken=UUID();measurement=nil;status="Tempo changed; measure again."}
-        .onChange(of:layer){_ in task?.cancel();task=nil;measurementToken=UUID();measurement=nil}
-        .onChange(of:store.modWheel){_ in task?.cancel();task=nil;measurementToken=UUID();measurement=nil;status="Modulation changed; measure again."}
-        .onDisappear{task?.cancel();task=nil;measurementToken=UUID()}
+        .onChange(of:store.performedTempo){_ in restoreComparison();task?.cancel();task=nil;measurementToken=UUID();measurement=nil;measurementInput=nil;status="Tempo changed; measure again."}
+        .onChange(of:layer){updated in
+            if let input=measurementInput,InstrumentGainMatch.sameMeasurementInputs(input,updated){return}
+            restoreComparison();task?.cancel();task=nil;measurementToken=UUID();measurement=nil;measurementInput=nil
+        }
+        .onChange(of:store.modWheel){_ in restoreComparison();task?.cancel();task=nil;measurementToken=UUID();measurement=nil;measurementInput=nil;status="Modulation changed; measure again."}
+        .onDisappear{restoreComparison();task?.cancel();task=nil;measurementToken=UUID()}
     }
 }
