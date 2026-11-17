@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Keep the library's chosen order across launches: the sort mode (Name, Recommended, Rating, Recently Added, Random) and, for Random, the seed the list was shown with are stored as view preferences, so reopening the library no longer falls back to Name or reshuffles the same set (#17). Search text and facet filters are deliberately not persisted; the built-in order still defaults to Name for a library with no stored preference.
+
 - Clear a channel's MIDI FX lookahead mark when a hosted-AU install is rejected or the instrument is retired, and report a channel as not schedulable while its replacement is pending, so a failed plug-in cannot keep a stale eligibility.
 
 - Recompute the per-channel MIDI FX lookahead set once patch activation installs finish and again when the activation drains, so a channel that gained or lost a sample-timed AU is never left marked from the outgoing instrument.
