@@ -699,23 +699,22 @@ void sk_render(SKSynth *s,float *left,float *right,uint32_t frames){
   left[n]=tanhf(sumL);if(right)right[n]=tanhf(sumR);
  }
 }
-// The receive block dates clock pulses with the driver's stamp, not the time the
-// callback reached the main queue. A zero stamp means "as soon as possible".
-uint64_t sk_read_midi_first_timestamp(const MIDIEventList *list){
- return list&&list->numPackets?list->packet[0].timeStamp:0;
-}
 // Decode MIDI 1 UMP, including system realtime transport, and MIDI 2
-// channel-voice note/CC messages. Packet traversal is C-native.
+// channel-voice note/CC messages. Packet traversal is C-native. Each event is
+// handed its own packet's driver stamp: one list can carry packets tens of
+// milliseconds apart, so a list-wide stamp would collapse clock intervals. A
+// zero stamp means "as soon as possible".
 void sk_read_midi(const MIDIEventList *list,SKMIDIEvent callback,void *context){
  const MIDIEventPacket *p=&list->packet[0];
  for(uint32_t i=0;i<list->numPackets;i++,p=MIDIEventPacketNext(p)){
+  uint64_t timeStamp=p->timeStamp;
   for(uint32_t j=0;j<p->wordCount;){uint32_t w=p->words[j];unsigned type=w>>28;
    unsigned size=(type<=2||type==6||type==7)?1:(type==3||type==4||type==8||type==9||type==10)?2:4;
    if(j+size>p->wordCount)break;
    uint8_t status=(w>>16)&255,d1=(w>>8)&127,d2=w&127;
-   if(type==2)callback(context,status,d1,d2);
-   else if(type==1&&status>=0xF8)callback(context,status,0,0);
-   else if(type==4){unsigned kind=status&0xf0;uint32_t data=p->words[j+1];if(kind==0x90||kind==0x80)d2=(data>>25)&127;else if(kind==0xb0)d2=data>>25;else if(kind==0xc0){d1=(data>>24)&127;d2=0;}if(kind==0x90||kind==0x80||kind==0xb0||kind==0xc0)callback(context,status,d1,d2);}
+   if(type==2)callback(context,status,d1,d2,timeStamp);
+   else if(type==1&&status>=0xF8)callback(context,status,0,0,timeStamp);
+   else if(type==4){unsigned kind=status&0xf0;uint32_t data=p->words[j+1];if(kind==0x90||kind==0x80)d2=(data>>25)&127;else if(kind==0xb0)d2=data>>25;else if(kind==0xc0){d1=(data>>24)&127;d2=0;}if(kind==0x90||kind==0x80||kind==0xb0||kind==0xc0)callback(context,status,d1,d2,timeStamp);}
    j+=size;
   }
  }

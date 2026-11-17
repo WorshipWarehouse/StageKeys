@@ -32,11 +32,11 @@ void sk_panic_channel(SKSynth *s,int layer);
 // Release voices without clearing effect histories; explicit Panic still clears all.
 void sk_release_voices(SKSynth *s,int layer);
 void sk_render(SKSynth *s, float *left, float *right, uint32_t frames);
-typedef void (*SKMIDIEvent)(void *context, uint8_t status, uint8_t data1, uint8_t data2);
+// The final argument is that event's packet stamp in mach host ticks; 0 when the
+// driver means "as soon as possible". A list can carry several stamps, so the
+// stamp belongs to the event, not to the callback context.
+typedef void (*SKMIDIEvent)(void *context, uint8_t status, uint8_t data1, uint8_t data2, uint64_t timeStamp);
 void sk_read_midi(const MIDIEventList *list, SKMIDIEvent callback, void *context);
-// Driver stamp of the first packet in the list, in mach host ticks; 0 when the
-// list is empty or the driver means "as soon as possible".
-uint64_t sk_read_midi_first_timestamp(const MIDIEventList *list);
 
 // Per-channel synthesis/DSP. Times in seconds, gain linear, filter resonance Q.
 void sk_envelope(SKSynth *s,int layer,float attack,float decay,float sustain,float release);

@@ -2,6 +2,7 @@
 #include <assert.h>
 #include <math.h>
 #include <stdio.h>
+#include <string.h>
 #define N 512
 static float left[N],right[N];
 static double render(SKSynth *s,int blocks) {
@@ -9,8 +10,10 @@ static double render(SKSynth *s,int blocks) {
  for(int b=0;b<blocks;b++){sk_render(s,left,right,N);for(int i=0;i<N;i++){assert(isfinite(left[i]));assert(fabsf(left[i])<=1);assert(left[i]==right[i]);energy+=left[i]*left[i];}}
  return energy;
 }
-static void event(void *ctx,uint8_t status,uint8_t a,uint8_t b){int *count=ctx;assert(status==0x90);assert(a==60);assert(b==100);(*count)++;}
-static void realtime_event(void *ctx,uint8_t status,uint8_t a,uint8_t b){int *count=ctx;assert(status==0xF8);assert(a==0);assert(b==0);(*count)++;}
+static void event(void *ctx,uint8_t status,uint8_t a,uint8_t b,uint64_t timeStamp){(void)timeStamp;int *count=ctx;assert(status==0x90);assert(a==60);assert(b==100);(*count)++;}
+static void realtime_event(void *ctx,uint8_t status,uint8_t a,uint8_t b,uint64_t timeStamp){(void)timeStamp;int *count=ctx;assert(status==0xF8);assert(a==0);assert(b==0);(*count)++;}
+typedef struct { uint64_t stamps[2]; int count; } StampSink;
+static void stamped_event(void *ctx,uint8_t status,uint8_t a,uint8_t b,uint64_t timeStamp){(void)status;(void)a;(void)b;StampSink *sink=ctx;sink->stamps[sink->count++]=timeStamp;}
 int main(void){
  SKSynth *s=sk_create(48000);assert(s);
  assert(render(s,1)==0);
@@ -31,5 +34,13 @@ int main(void){
  MIDIEventList list;MIDIEventPacket *packet=MIDIEventListInit(&list,kMIDIProtocol_1_0);UInt32 word=0x20903c64;assert(MIDIEventListAdd(&list,sizeof(list),packet,0,1,&word));int count=0;sk_read_midi(&list,event,&count);assert(count==1);
  // UMP type-1 system realtime is the MIDI Clock/Start/Continue/Stop path.
  MIDIEventList realtimeList;MIDIEventPacket *realtimePacket=MIDIEventListInit(&realtimeList,kMIDIProtocol_1_0);UInt32 realtimeWord=0x10F80000;assert(MIDIEventListAdd(&realtimeList,sizeof(realtimeList),realtimePacket,0,1,&realtimeWord));int realtimeCount=0;sk_read_midi(&realtimeList,realtime_event,&realtimeCount);assert(realtimeCount==1);
+ // Each event carries its own packet stamp: two clock pulses 20.8 ms apart in
+ // one list must not arrive with the same time.
+ MIDIEventList stampedList;MIDIEventPacket *stampedPacket=MIDIEventListInit(&stampedList,kMIDIProtocol_1_0);
+ UInt32 firstPulse=0x10F80000,secondPulse=0x10F80000;
+ assert(MIDIEventListAdd(&stampedList,sizeof(stampedList),stampedPacket,1000,1,&firstPulse));
+ assert(MIDIEventListAdd(&stampedList,sizeof(stampedList),stampedPacket,9000,1,&secondPulse));
+ StampSink sink;memset(&sink,0,sizeof(sink));sk_read_midi(&stampedList,stamped_event,&sink);
+ assert(sink.count==2&&sink.stamps[0]==1000&&sink.stamps[1]==9000);
  sk_destroy(s);puts("PASS: instruments, release, sustain, transpose identity, fades, panic, overflow, voice bounds, MIDI UMP");
 }
