@@ -676,7 +676,9 @@ final class AudioController {
         let hostCurve = layer.importedRack?.mainStageAmplitudeVelocityCurve ?? layer.external?.nativeSampler?.rack.mainStageAmplitudeVelocityCurve
         // A forced reload also covers a nil state: clearing the cache alone would
         // compare equal and keep whatever the live unit holds.
-        let forced = forcedPluginReloads.remove(index) != nil
+        // The mark stays until a current request installs, so a second configuration
+        // for the same patch while this load is pending is still forced.
+        let forced = forcedPluginReloads.contains(index)
         let changed = forced || samplerHostCurves[index] != hostCurve || externalSounds[index] != layer.external ||
             externalStates[index] != layer.pluginState || samplerAttacks[index] != layer.samplerAttackMinimum
         if changed, let sound = layer.external {
@@ -703,6 +705,7 @@ final class AudioController {
                 guard let self, self.configurationRequests[index] == request else { completion?(false); return }
                 switch result {
                 case .success:
+                    self.forcedPluginReloads.remove(index)
                     self.externalSounds[index] = sound
                     self.externalStates[index] = layer.pluginState
                     self.samplerAttacks[index] = layer.samplerAttackMinimum
@@ -740,6 +743,8 @@ final class AudioController {
                 completion?(false)
                 return false
             }
+            // The rack removal succeeded, so the forced reload is complete.
+            forcedPluginReloads.remove(index)
             externalSounds[index] = nil
             onLookaheadEligibilityLost?(index)
             externalStates[index] = layer.pluginState
