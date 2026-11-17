@@ -1,6 +1,6 @@
 ## Unreleased
 
-- Keep a channel that is already installed in the library reported as a duplicate, with the reason it was skipped, when a later channel or the catalog commit fails or the import is cancelled; only outcomes still waiting to commit are closed, so a refused batch no longer turns an installed channel into a failure (#5).
+- Keep a channel that is already installed in the library reported as a duplicate, with the reason it was skipped, when a later channel or the catalog commit fails or the import is cancelled; only outcomes still waiting to commit are closed, so a refused batch no longer turns an installed channel into a failure (#5). A channel that shares a conversion with an earlier row in the same batch waits for that batch's commit instead of claiming to be installed, and "Create Patch from Ready Channels" still assembles the duplicates a refused commit left in the library.
 
 - Add experimental, bounded Nord `.npno` attack-only conversion into the native sampler with feature/size preview, exact integer decoding, key/velocity/loop/tuning maps, background preparation, cancellation rollback, duplicate source identities and personal-pack portability. Resonance/release banks and Nord-specific dynamics are disclosed as unsupported; physical Mac/iPad live qualification remains open (#212–#216). Retain the adapted decoder’s BSD notice and exclude Nord assets from distribution.
 

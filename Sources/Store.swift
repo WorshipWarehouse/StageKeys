@@ -2251,6 +2251,10 @@ final class PerformanceStore: ObservableObject {
                 let library=SoundLibrary(url:saveURL.deletingLastPathComponent().appendingPathComponent("sound-library.json"))
                 let original=try library.read()
                 var entries=original,imported=0,skipped=0,failures:[String]=[]
+                // Only entries that were already installed report as installed; a row
+                // that shares a conversion with an earlier row in this batch is still
+                // waiting on this batch's commit.
+                let committedIDs=Set(original.map(\.id))
                 for (channelIndex,channel) in report.channels.enumerated() where selection.contains(channelIndex) && !channel.instruments.isEmpty {
                     guard channel.unsupportedInstrumentFamily == nil else {outcome(channelIndex,.unsupported,channel.nativeInstrumentStatus);failures.append(channel.name+": "+channel.nativeInstrumentStatus);continue}
                     guard channel.instruments.count==1,let name=channel.instruments.first else{outcome(channelIndex,.unsupported,"Multiple sampler instruments require channel topology translation; none were silently flattened.");failures.append(channel.name+": layered sampler selection requires translation");continue}
@@ -2266,7 +2270,11 @@ final class PerformanceStore: ObservableObject {
                         let id=try MainStagePatch.conversionID(report,channel:channel,variant:AssetDigest.sha256(file))
                         if let existing=entries.firstIndex(where:{$0.id==id}) {
                             entries[existing].sourceArchiveID=report.sourceArchiveID
-                            outcome(channelIndex,.duplicate,"Already installed; personal edits retained.",id)
+                            if committedIDs.contains(id) {
+                                outcome(channelIndex,.duplicate,"Already installed; personal edits retained.",id)
+                            } else {
+                                outcome(channelIndex,.prepared,"Shares a conversion with an earlier channel in this import.",id)
+                            }
                             skipped+=1;continue
                         }
                         var prepared:(ExternalSound,[String]?,Layer?)?
@@ -2312,7 +2320,11 @@ final class PerformanceStore: ObservableObject {
                             let id=try MainStagePatch.conversionID(report,channel:channel,variant:"audio-unit")
                             if let existing=entries.firstIndex(where:{$0.id==id}) {
                                 entries[existing].sourceArchiveID=archiveID
-                                outcome(channelIndex,.duplicate,"Already installed; personal edits retained.",id)
+                                if committedIDs.contains(id) {
+                                    outcome(channelIndex,.duplicate,"Already installed; personal edits retained.",id)
+                                } else {
+                                    outcome(channelIndex,.prepared,"Shares a conversion with an earlier channel in this import.",id)
+                                }
                                 skipped+=1;continue
                             }
                             let applied=try processing.applying(to:hosted.layer,selection:mainStageSelection(channelIndex))

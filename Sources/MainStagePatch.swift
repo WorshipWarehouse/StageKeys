@@ -105,14 +105,19 @@ enum MainStagePatch {
     }
     static func assembledChannels(_ report:Report,entries:[LibrarySound],selected:Set<Int>?=nil)throws->Patch {
         let channels=report.channels.enumerated().filter{(selected?.contains($0.offset) ?? true) && $0.element.isConvertible}.map(\.element)
-        guard let archive=report.sourceArchiveID,!channels.isEmpty,channels.count<=15 else {
+        guard report.sourceArchiveID != nil,!channels.isEmpty,channels.count<=15 else {
             throw Failure.invalid("Choose a source patch with 1–15 converted instrument channels. More complex patch routing requires manual setup.")
         }
         var layers:[Layer]=[],notes=["Converted channel strips only. Patch-level buses/sends, tempo, scripts and routing require review; this is not full MainStage topology parity."]
         for channel in channels {
             let modernPrefix=try? conversionID(report,channel:channel,variant:"")
+            // The conversion ID already ties an entry to this channel: it embeds the
+            // stripped channel bytes, the metadata digest and the variant, so it
+            // cannot match another channel. Archive equality would additionally
+            // reject a preserved duplicate whose commit was refused, because that
+            // entry keeps the archive ID it was first converted from.
             let matches=entries.filter{entry in
-                guard entry.sourceArchiveID==archive,entry.id.hasPrefix("mainstage-channel-"+channel.sha256+"-") else{return false}
+                guard entry.id.hasPrefix("mainstage-channel-"+channel.sha256+"-") else{return false}
                 return !entry.id.contains("-v2-") || modernPrefix.map{entry.id.hasPrefix($0)} == true
             }
             guard matches.count==1,let entry=matches.first,var layer=entry.layer,

@@ -43,6 +43,12 @@ import Darwin
         assert(store.mainStageOutcomes.prefix(2).allSatisfy{$0.detail.contains("Already installed")},store.mainStageOutcomes.map(\.detail).joined(separator:"; "))
         assert(store.libraryImportProgress?.contains("Another library operation")==true,store.libraryImportProgress ?? "No failure message")
         assert((try! Data(contentsOf:catalog))==before,"A refused commit must not rewrite the catalog")
+        // The refused commit left the stored entries as they were; the ready-only
+        // patch must still assemble from those preserved duplicates.
+        let patchesBefore=store.setlist.patches.count
+        store.assembleConvertedMainStagePatch(readyOnly:true)
+        assert(store.setlist.patches.count==patchesBefore+1,store.message ?? "Ready-only assembly refused preserved duplicates")
+        assert(store.patch.layers[0].name=="First" && store.patch.layers[1].name=="Second")
         store.importMainStageAutomatically(patch,locations:[.init(instruments:patch,samples:patch,label:"Synthetic source")]);store.cancelLibraryImport();try await wait()
         assert((try! Data(contentsOf:catalog))==before)
         let other=root.appendingPathComponent("Conflicting");_ = try TestFixtures.exs(in:other)
