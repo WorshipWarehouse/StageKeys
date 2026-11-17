@@ -196,7 +196,7 @@ import AVFoundation
         assert(store.audio.running && store.audio.loadedUnit(channel: 0, sound: oldLayer.external) != nil,
                "The previous graph must stay loaded and running")
         rack.noteOn(channel: 0, key: 60, pitch: 60, velocity: 0.7, sourceID: 47)
-        assert((try energy()) > 0.01, "The previous graph must keep rendering after a rejected edit")
+        assert((try! energy()) > 0.01, "The previous graph must keep rendering after a rejected edit")
         rack.noteOff(channel: 0, key: 60)
         rack.panic()
         store.metronome = false
