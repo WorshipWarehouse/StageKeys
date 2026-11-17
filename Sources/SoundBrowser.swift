@@ -260,7 +260,7 @@ struct SoundBrowser: View {
                                         // follow-up read failed; the store reports that in
                                         // `message`, so surface it rather than replacing it
                                         // with plain success text and then clearing it.
-                                        notice=store.message ?? "Removed \(removed.name) from My Sounds. Its file stays in the library folder so saved patches keep playing."
+                                        notice=store.message ?? "Removed \(removed.name) from My Sounds. Its file stays in the library folder so saved patches keep playing. Use Undo to restore it."
                                     }
                                     // A failed attempt must not drop the Undo for an
                                     // earlier removal: keep that entry and name it in
