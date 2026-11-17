@@ -29,6 +29,11 @@ enum StageA11y {
     /// missed even the pointer minimum.
     static func ratingStarTarget(touch: Bool)->Double {touch ? minimumTouchTarget:minimumPointerTarget}
 
+    /// The audited box for the workspace strip's icon buttons (sustain, layer
+    /// ranges, keyboard ranges). Touch platforms take the touch minimum; a mouse
+    /// pointer keeps the compact dense box, which still clears the pointer one.
+    static func workspaceButtonTarget(touch: Bool)->Double {touch ? minimumTouchTarget:30}
+
     /// The release palette. These are the only colour definitions: `StageTheme`
     /// builds SwiftUI colours from them instead of carrying its own copies.
     enum Palette {

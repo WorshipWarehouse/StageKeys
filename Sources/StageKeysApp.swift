@@ -262,11 +262,21 @@ struct PerformanceView: View {
             }.foregroundStyle(StageTheme.selected.opacity(0.85)).padding(.vertical, 3)
         }.frame(height: 52)
     }
+    /// Only the interactive box grows: the glyph, the selected fill and the
+    /// strip's spacing are unchanged, so the audited target reaches the performer
+    /// without a new visual style.
+    private var workspaceButtonBox: CGFloat {
+        #if os(iOS)
+        return CGFloat(StageA11y.workspaceButtonTarget(touch: true))
+        #else
+        return CGFloat(StageA11y.workspaceButtonTarget(touch: false))
+        #endif
+    }
     private var workspaceButtons: some View {
         HStack(spacing: 6) {
-            Button { store.setSustain(!store.sustain) } label: { Image(systemName: "pedal.accelerator").frame(width: 30, height: 28) }.buttonStyle(StageButtonStyle(selected: store.sustain)).accessibilityLabel("Sustain pedal")
-            Button { store.editRanges.toggle() } label: { Image(systemName: "rectangle.split.3x1").frame(width: 30, height: 28) }.buttonStyle(StageButtonStyle(selected: store.editRanges)).accessibilityLabel("Edit keyboard layers")
-            Button { store.showRanges.toggle() } label: { Image(systemName: "pianokeys").frame(width: 30, height: 28) }.buttonStyle(StageButtonStyle(selected: store.showRanges)).accessibilityLabel("Show keyboard ranges")
+            Button { store.setSustain(!store.sustain) } label: { Image(systemName: "pedal.accelerator").frame(width: workspaceButtonBox, height: workspaceButtonBox) }.buttonStyle(StageButtonStyle(selected: store.sustain)).accessibilityLabel("Sustain pedal")
+            Button { store.editRanges.toggle() } label: { Image(systemName: "rectangle.split.3x1").frame(width: workspaceButtonBox, height: workspaceButtonBox) }.buttonStyle(StageButtonStyle(selected: store.editRanges)).accessibilityLabel("Edit keyboard layers")
+            Button { store.showRanges.toggle() } label: { Image(systemName: "pianokeys").frame(width: workspaceButtonBox, height: workspaceButtonBox) }.buttonStyle(StageButtonStyle(selected: store.showRanges)).accessibilityLabel("Show keyboard ranges")
         }.padding(4).background(StageTheme.panel, in: RoundedRectangle(cornerRadius: 8))
     }
     private var compactNavigation: some View {
