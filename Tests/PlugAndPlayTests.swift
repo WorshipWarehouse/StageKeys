@@ -158,6 +158,14 @@ import CoreMIDI
     assert(store.assignedCC(.master)==nil && store.assignedCC(bypass)==nil)
     assert(store.message=="MIDI learn assignments cleared. Fixed modulation, sustain, panic and program-change routes remain.")
     store.message=nil
+    // Reset cleared every learned assignment, Master and Next Patch included, so
+    // learn them again: the reserved-CC scenario below proves a refused learn keeps
+    // them, and the reload assertion expects them on disk.
+    store.beginMIDILearn(.master);send(a,0xb0,30,127);wait { store.assignedCC(.master)==30 }
+    store.beginMIDILearn(.nextPatch);send(a,0xb0,31,127);wait { store.assignedCC(.nextPatch)==31 }
+    assert(store.assignedCC(.master)==30 && store.assignedCC(.nextPatch)==31,
+           "The reserved-CC scenario needs Master and Next Patch learned first")
+    store.message=nil
     store.modWheel=0.25;send(b,0xb2,1,127);assert(abs(store.modWheel-0.25)<0.001)
     store.midiLog=[];send(a,0xb0,1,127);wait { store.midiLog.first?.contains("Ch 01 · B0 · 1 · 127") == true }
     assert(store.modWheel==1)
@@ -173,7 +181,7 @@ import CoreMIDI
     assert(store.message?.contains("fixed route") == true,"A refused learn explains the reserved route")
     store.message = nil
     send(a,0xb0,64,0);wait { !store.sustain }
-    store.save();let learned=PerformanceStore();assert(learned.assignedCC(.master)==30 && learned.assignedCC(.nextPatch)==31)
+    store.save();let relearned=PerformanceStore();assert(relearned.assignedCC(.master)==30 && relearned.assignedCC(.nextPatch)==31)
     store.setlist.patches[0].programChangeEnabled=true;store.setlist.patches[0].programChangeNumber=99
     store.choose(1);send(b,0xc2,99,0);wait { store.midiLog.first?.contains("Ch 03 · C0 · 99 · 0") == true }
     assert(store.selected==1,"Secondary Program Change must not select a patch")
