@@ -357,6 +357,16 @@ private struct LibraryActionStyle:ButtonStyle {
 }
 
 private struct SoundRatingControl:View {
+    /// A star's tappable box, not its glyph: 44 pt on touch and 28 pt with the
+    /// pointer (`StageA11y`). The drawn star stays 12 pt so the row looks the
+    /// same, and a rating tap is no longer a 17 pt-wide strip.
+    private static var starTarget:CGFloat {
+        #if os(iOS)
+        return CGFloat(StageA11y.ratingStarTarget(touch: true))
+        #else
+        return CGFloat(StageA11y.ratingStarTarget(touch: false))
+        #endif
+    }
     let name:String
     let rating:Int
     let set:(Int)->Void
@@ -369,7 +379,9 @@ private struct SoundRatingControl:View {
                         if star<=rating {Image(systemName:"star.fill").font(.system(size:12))}
                         else if hovering {Image(systemName:"star").font(.system(size:12))}
                         else {Circle().frame(width:3,height:3)}
-                    }.frame(width:17,height:28).contentShape(Rectangle())
+                    }
+                    .frame(width:Self.starTarget,height:Self.starTarget)
+                    .contentShape(Rectangle())
                 }.buttonStyle(.plain)
                 .accessibilityLabel("Rate \(name) \(star) stars")
                 .accessibilityValue(star<=rating ? "Selected":"Not selected")

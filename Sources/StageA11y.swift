@@ -23,6 +23,11 @@ enum StageA11y {
         let minimum=pointer ? minimumPointerTarget:minimumTouchTarget
         return width >= minimum && height >= minimum
     }
+    /// One star in a five-star rating row. The drawn glyph is an icon, not the
+    /// target: only its tappable box grows, and touch needs more room than a
+    /// pointer. The shipped library control sized each star 17×28 pt, which
+    /// missed even the pointer minimum.
+    static func ratingStarTarget(touch: Bool)->Double {touch ? minimumTouchTarget:minimumPointerTarget}
 
     /// The release palette. These are the only colour definitions: `StageTheme`
     /// builds SwiftUI colours from them instead of carrying its own copies.

@@ -74,6 +74,36 @@ def main(source: Path) -> int:
         if absent not in theme:
             errors.append(f'StageTheme is missing {absent}')
 
+    # Interactive targets: a drawn glyph is not the target. The library rating
+    # stars sat in 17 x 28 pt boxes, below the audited pointer minimum, so the
+    # view must size them from StageA11y and must not keep a smaller literal.
+    a11y = (source / 'Sources/StageA11y.swift').read_text()
+    pointer = re.search(r'minimumPointerTarget:\s*Double\s*=\s*([0-9.]+)', a11y)
+    if not re.search(r'static func ratingStarTarget\(touch: Bool\)->Double', a11y):
+        errors.append('StageA11y.ratingStarTarget is missing; the rating stars have no audited target')
+    elif pointer is None:
+        errors.append('StageA11y does not declare its pointer minimum')
+    else:
+        minimum = float(pointer.group(1))
+        browser = (source / 'Sources/SoundBrowser.swift').read_text()
+        marker = 'private struct SoundRatingControl'
+        if marker not in browser:
+            errors.append('SoundBrowser has no SoundRatingControl to audit')
+        else:
+            star = browser[browser.index(marker):]
+            star = star[:star.index('\n}')]
+            if 'StageA11y.ratingStarTarget(' not in star:
+                errors.append('SoundRatingControl does not size its stars from StageA11y.ratingStarTarget')
+            # Only the star's own tappable frame carries the content shape; the
+            # 3 pt dot drawn for an unrated sound is a glyph, not a target.
+            box = re.search(r'\.frame\(width:\s*([^,)]+?)\s*,\s*height:\s*([^,)]+?)\s*\)\s*\.contentShape\(Rectangle\(\)\)', star)
+            if box is None:
+                errors.append('SoundRatingControl has no tappable star frame to audit')
+            else:
+                for token in box.groups():
+                    if re.fullmatch(r'[0-9.]+', token) and float(token) < minimum:
+                        errors.append(f'SoundRatingControl tappable box {token} pt is below the {minimum:g} pt pointer minimum')
+
     shell = (source / 'Tests/test-library.sh').read_text()
     if 'Sources/StageA11y.swift' not in shell:
         errors.append('Tests/test-library.sh does not compile Sources/StageA11y.swift')
@@ -89,7 +119,8 @@ def main(source: Path) -> int:
             print('FAIL:', error)
         return 1
     print(f'PASS: {len(sources)} sources hold the {MINIMUM_TEXT_SIZE} pt floor, '
-          f'the palette has one definition and {len(EXCEPTIONS)} documented exception')
+          f'the palette has one definition, {len(EXCEPTIONS)} documented exception and the '
+          f'rating stars are sized from the audited target')
     return 0
 
 
