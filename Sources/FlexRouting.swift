@@ -72,6 +72,22 @@ enum FlexRouting {
         return .available(pairs[index])
     }
 
+    /// The selected device's reported output channels, or nil when they are not
+    /// known. A status that identifies a device missing from the inventory is
+    /// stale — for example a refresh that enumerated a different device before
+    /// `status()` threw — so it reports unknown instead of borrowing the
+    /// remaining device's capability. Only a status without a device ID (iOS)
+    /// may resolve by name or by a single enumerated route.
+    static func selectedChannels(status: AudioDeviceStatus?, outputs: [AudioOutputDevice]) -> UInt32? {
+        if let id = status?.deviceID {
+            return outputs.first { $0.id == id }?.channels
+        }
+        if let name = status?.name, !name.isEmpty, let device = outputs.first(where: { $0.name == name }) {
+            return device.channels
+        }
+        return outputs.count == 1 ? outputs[0].channels : nil
+    }
+
     /// Bounded one-line capability summary for Settings and diagnostics.
     static func summary(channels: UInt32) -> String {
         let pairs = pairs(channels: channels)

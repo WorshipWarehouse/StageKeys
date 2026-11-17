@@ -1018,13 +1018,7 @@ final class PerformanceStore: ObservableObject {
     /// known. Read from the enumerated device rather than queried again, so the
     /// report cannot disagree with the device the user selected.
     var selectedOutputChannels: UInt32? {
-        if let id = audioStatus?.deviceID, let device = audioOutputs.first(where: { $0.id == id }) {
-            return device.channels
-        }
-        if let name = audioStatus?.name, let device = audioOutputs.first(where: { $0.name == name }) {
-            return device.channels
-        }
-        return audioOutputs.count == 1 ? audioOutputs[0].channels : nil
+        FlexRouting.selectedChannels(status: audioStatus, outputs: audioOutputs)
     }
     /// Stereo pairs the selected device reports. Pair 0 is the only one that is
     /// mixed to today; the rest are reported, not routed.

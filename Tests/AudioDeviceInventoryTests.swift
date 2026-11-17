@@ -69,6 +69,19 @@ import AudioToolbox
         assert(FlexRouting.state(pair: 1, channels: 2).message.contains("Output 3–4"), "A stale pair must be named, not substituted")
         assert(FlexRouting.summary(channels: 6).contains("3 stereo pairs") && FlexRouting.summary(channels: 3).contains("unpaired channel"))
         assert(FlexRouting.summary(channels: 0).contains("No output channels") && FlexRouting.summary(channels: 1).contains("no stereo pair"))
+        // A refresh can enumerate one device and then fail to read the new
+        // status, leaving a stale status beside a different inventory.
+        let stale = AudioDeviceStatus(deviceID: 7, name: "AudioBox", sampleRate: 48_000, bufferFrames: 512,
+                                      minimumBufferFrames: 32, maximumBufferFrames: 4_096, canSetBuffer: true)
+        let other = [AudioOutputDevice(id: 9, name: "Built-in Output", channels: 2)]
+        assert(FlexRouting.selectedChannels(status: stale, outputs: other) == nil, "A stale status must not borrow another device's channels")
+        assert(FlexRouting.selectedChannels(status: stale, outputs: []) == nil)
+        assert(FlexRouting.selectedChannels(status: nil, outputs: other) == 2)
+        let twoRoutes = [AudioOutputDevice(id: 1, name: "A", channels: 2), AudioOutputDevice(id: 2, name: "B", channels: 4)]
+        assert(FlexRouting.selectedChannels(status: nil, outputs: twoRoutes) == nil, "Two routes without an identity must stay unknown")
+        let named = AudioDeviceStatus(deviceID: nil, name: "Built-in Output", sampleRate: 48_000, bufferFrames: 512,
+                                      minimumBufferFrames: 32, maximumBufferFrames: 4_096, canSetBuffer: true)
+        assert(FlexRouting.selectedChannels(status: named, outputs: other) == 2)
         print("PASS device inventory: mono/stereo/multi-stream, truncated headers/entries, invalid counts/pointers, overflow, byte budgets, unique device IDs and reported stereo output pairs")
     }
 }

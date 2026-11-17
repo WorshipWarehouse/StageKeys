@@ -121,6 +121,9 @@ struct SettingsEditor: View {
                         Section("Selected Output") {
                             Text(store.audioStatus?.name ?? "No audio output is selected.")
                             Text(store.selectedOutputChannels.map { String($0) + " reported output channels" } ?? "Output channel count unavailable")
+                            if let channels = store.selectedOutputChannels, FlexRouting.unpairedChannels(channels) == 1 {
+                                Text("1 unpaired channel").font(.caption).foregroundStyle(Color.secondary)
+                            }
                             Text(store.outputRoutingState.message).font(.caption)
                                 .foregroundStyle(store.outputRoutingState.isAvailable ? Color.secondary : Color.orange)
                         }

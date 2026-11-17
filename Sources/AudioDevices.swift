@@ -225,8 +225,12 @@ final class AudioDeviceController {
     #else
     static func availableOutputs() throws -> [AudioOutputDevice] {
         let session = AVAudioSession.sharedInstance()
-        return session.currentRoute.outputs.enumerated().map {
-            AudioOutputDevice(id: UInt32($0.offset), name: $0.element.portName, channels: UInt32($0.element.channels?.count ?? 2))
+        // A route that publishes no channel list has an unknown capability, not
+        // a stereo pair. Omit it so Settings and diagnostics report unknown
+        // rather than inventing two channels and an active Output 1-2 mix.
+        return session.currentRoute.outputs.enumerated().compactMap {
+            guard let channels = $0.element.channels, !channels.isEmpty else { return nil }
+            return AudioOutputDevice(id: UInt32($0.offset), name: $0.element.portName, channels: UInt32(clamping: channels.count))
         }
     }
     func status() throws -> AudioDeviceStatus {
