@@ -871,10 +871,17 @@ final class PerformanceStore: ObservableObject {
                 let rising=down && !(pressedCCs[key] ?? false); pressedCCs[key]=down
                 if let target = learningTarget ?? learning.map({ MIDIControlTarget.soundLevel($0) }) {
                     guard target.valid else { learningTarget=nil; learning=nil; return }
+                    let learned=MIDIControllerRules.assigning(cc,to:target,assignments:setlist.controlAssignments ?? [:],soundLevels:setlist.assignments)
+                    // A reserved controller keeps its fixed route. Decide that before
+                    // touching the target, otherwise a refused learn silently removes
+                    // the assignment it was aimed at.
+                    guard !learned.reserved else {
+                        learningTarget=nil; learning=nil
+                        message = "CC \(cc) keeps its fixed route; choose another controller for \(target.title)."
+                        return
+                    }
                     clearMIDILearn(target,saveChanges:false)
                     mappedPedals=mappedPedals.filter{$0.cc != cc}; applySustain()
-                    let learned=MIDIControllerRules.assigning(cc,to:target,assignments:setlist.controlAssignments ?? [:],soundLevels:setlist.assignments)
-                    guard !learned.reserved else { learningTarget=nil; learning=nil; return }
                     setlist.controlAssignments = learned.assignments.isEmpty ? nil : learned.assignments
                     setlist.assignments = learned.soundLevels
                     if let displaced=learned.displaced { message = "CC \(cc) moved from \(displaced.title) to \(target.title)." }

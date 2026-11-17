@@ -1,3 +1,7 @@
+## Unreleased
+
+- Refuse a MIDI-learn attempt from a reserved controller (CC 1, 64, 120 or 123) before it can remove the listening control's existing assignment, and say which fixed route kept it, so a pedal press while learning no longer silently unlearns the control (#15).
+
 ## 0.21.0
 
 - Recreate PrimaVerb's observed Settings, Character, Modulation and Output layout with seven named room sizes, inline knobs, output faders and power control.

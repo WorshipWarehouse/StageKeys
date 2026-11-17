@@ -70,6 +70,15 @@ import CoreMIDI
     send(a,0xb0,64,127);store.clearMIDILearn(.sustain)
     RunLoop.current.run(until:Date().addingTimeInterval(0.1));assert(store.sustain)
     send(a,0xb0,64,0);wait { !store.sustain }
+    // A reserved controller cannot be learned, and the refused learn must leave
+    // the listening target's existing assignment intact rather than unlearning it.
+    store.beginMIDILearn(.master);send(a,0xb0,64,127)
+    wait { store.learningTarget == nil }
+    assert(store.assignedCC(.master) == 30,"A reserved CC must not unlearn the listening target")
+    assert(store.learningTarget == nil,"A refused learn stops listening")
+    assert(store.message?.contains("fixed route") == true,"A refused learn explains the reserved route")
+    store.message = nil
+    send(a,0xb0,64,0);wait { !store.sustain }
     store.save();let learned=PerformanceStore();assert(learned.assignedCC(.master)==30 && learned.assignedCC(.nextPatch)==31)
     store.setlist.patches[0].programChangeEnabled=true;store.setlist.patches[0].programChangeNumber=99
     send(a,0xc0,99,0);wait {store.selected==0}
@@ -77,6 +86,6 @@ import CoreMIDI
     send(a,0xc0,99,0);RunLoop.current.run(until:Date().addingTimeInterval(0.1));assert(store.selected==1)
     store.panic();try store.setlist.validate()
     assert(store.message == nil,store.message ?? "")
-    print("PASS: CoreMIDI hot-plug → source-aware production Store → audible graph; simultaneous notes, sustain/unplug, stable refresh, FX/mod snapshot recall and effect replacement")
+    print("PASS: CoreMIDI hot-plug → source-aware production Store → audible graph; simultaneous notes, sustain/unplug, stable refresh, FX/mod snapshot recall, effect replacement and reserved-CC learn refusal")
  }
 }
