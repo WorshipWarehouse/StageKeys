@@ -171,6 +171,35 @@ import AVFoundation
         store.start()
         assert(store.started && store.audio.running && store.patch.layers[0] == oldLayer)
         assert(store.audio.loadedUnit(channel: 0, sound: oldLayer.external) != nil)
+        // A rejected live edit must leave the rest of the performance alone: the
+        // metronome and Tonic Pad keep their settings, the document is unchanged, no
+        // node or tail leaks, and the previous graph still plays a new note (#123
+        // acceptance: notes, sustain, Tonic Pad and metronome stay consistent after an
+        // injected failure).
+        store.metronome = true
+        store.tonicGain = 0.25; store.tonicBrightness = 0.4
+        let documentBefore = try Data(contentsOf: document)
+        let nodesBefore = rack.debugOwnedNodeCount, tailsBefore = rack.debugRetiredTailCount
+        rack.debugGraphFault = { point in
+            if case .restartEngine = point { return NSError(domain: NSOSStatusErrorDomain, code: 804) }
+            return nil
+        }
+        _ = store.audio.configure(0, TestFixtures.layer(1))
+        rack.debugGraphFault = nil
+        assert(store.metronome, "A failed graph edit must not switch the metronome off")
+        assert(abs(store.tonicGain - 0.25) < 0.0001 && abs(store.tonicBrightness - 0.4) < 0.0001,
+               "A failed graph edit must not change the Tonic Pad")
+        assert((try! Data(contentsOf: document)) == documentBefore, "A failed graph edit must not rewrite the document")
+        assert(rack.debugOwnedNodeCount == nodesBefore && rack.debugRetiredTailCount == tailsBefore,
+               "A rejected edit must not leak nodes or tails")
+        assert(rack.debugNoteIntentCount(0) == 0, "A rejected edit must not invent note ownership")
+        assert(store.audio.running && store.audio.loadedUnit(channel: 0, sound: oldLayer.external) != nil,
+               "The previous graph must stay loaded and running")
+        rack.noteOn(channel: 0, key: 60, pitch: 60, velocity: 0.7, sourceID: 47)
+        assert((try energy()) > 0.01, "The previous graph must keep rendering after a rejected edit")
+        rack.noteOff(channel: 0, key: 60)
+        rack.panic()
+        store.metronome = false
         print("PASS native graph rollback: identity, saved bytes, bounded nodes, held/pedal replay and source release")
     }
 }
