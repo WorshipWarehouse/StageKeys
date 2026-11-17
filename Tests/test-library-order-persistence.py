@@ -77,8 +77,17 @@ else:
         fail('the transient clear rewrites the saved library order')
     if 'LibraryQuery()' in body:
         fail('the transient clear still replaces the whole library query')
-if 'clearTransientQuery()' not in browser:
-    fail('the empty-state actions no longer use the transient clear')
+# The declaration alone proves nothing: inspect each action body, so a missing
+# clear call or a whole-query replacement (in any spacing) fails the gate.
+for label in ['Add Audio Unit', 'MIDI Routing']:
+    action = re.search(r'Button\("' + re.escape(label) + r'"\)\{(.*?)\}[.]buttonStyle', browser, re.S)
+    if not action:
+        fail(f'the {label} action is missing from the empty state')
+    action_body = action.group(1).replace(' ', '')
+    if 'clearTransientQuery()' not in action_body:
+        fail(f'the {label} action does not clear the transient library state')
+    if 'query=LibraryQuery(' in action_body:
+        fail(f'the {label} action replaces the whole library query and overwrites the saved order')
 
 if not test_path.exists():
     fail('Tests/LibraryOrderPersistenceTests.swift is missing')
