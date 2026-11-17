@@ -76,7 +76,7 @@ import Foundation
         let selectedReload=try JSONDecoder().decode(Layer.self,from:JSONEncoder().encode(selected.layer))
         assert(selectedReload.mainStageSource==selected.layer.mainStageSource && selectedReload.effects[0].values[0]==0)
         let store=PerformanceStore()
-        var live=try translated.applying(to:Layer(name:"Loaded macro",instrument:0,gain:1),selection:.init(audio:[0])).layer
+        var live=try translated.applying(to:TestFixtures.layer(name:"Loaded macro"),selection:.init(audio:[0])).layer
         var unrelated=AudioEffect();unrelated.kind=3;unrelated.parameters=unrelated.values;unrelated.parameters![0]=0.41
         live.effects[1]=unrelated
         store.setlist.patches[store.selected].layers[0]=live
