@@ -194,7 +194,7 @@ struct SoundBrowser: View {
             HStack(spacing:8) {
                 Text("Order by").font(StageTheme.font(12))
                 LibraryChoiceMenu(title:query.ordering.rawValue,choices:LibrarySort.allCases.map(\.rawValue),accessibility:"Order by \(query.ordering.rawValue)"){if let order=LibrarySort(rawValue:$0){query.order(by:order)}}
-                Button{query.ascending.toggle()}label:{Image(systemName:query.ascending ? "arrow.down.to.line" : "arrow.up.to.line").frame(width:30,height:42)}.buttonStyle(.plain).accessibilityLabel(query.ascending ? "Sort descending" : "Sort ascending")
+                Button{query.ascending.toggle()}label:{Image(systemName:query.ascending ? "arrow.down.to.line" : "arrow.up.to.line").frame(width: CGFloat(StageA11y.denseWidth(.librarySort)), height: CGFloat(StageA11y.denseHeight(.librarySort)))}.buttonStyle(.plain).accessibilityLabel(query.ascending ? "Sort descending" : "Sort ascending")
             }.padding(8).frame(height:70)
             ScrollView {
                 LazyVStack(spacing:2) {

@@ -65,6 +65,36 @@ import Foundation
    assert(StageA11y.meetsHitTarget(width: box, height: box, pointer: !touch),
           "the workspace box must clear its own minimum")
   }
+  // Dense performer and editor controls: every one shipped at a fixed 30-40 pt wide
+  // (and some at 30-42 pt high) box, so every one is below the 44 pt touch minimum.
+  // The shipped sizes stay in this record as the failing witnesses: the pointer keeps
+  // them, the touch platform takes the audited minimum, and neither agent may shrink.
+  let dense:[(StageA11y.DenseControl, Double, Double)] = [
+   (.tonicPower, 38, 46), (.tonicPatchLock, 40, 46), (.mixerSoundSettings, 34, 45),
+   (.midiEffectBypass, 34, 49), (.audioEffectBypass, 36, 49), (.metronome, 38, 44),
+   (.countIn, 34, 44), (.importSounds, 30, 36), (.mainMenu, 40, 36),
+   (.midiLearnClose, 30, 30), (.librarySort, 30, 42), (.numberStepper, 36, 42)]
+  assert(dense.count==StageA11y.DenseControl.allCases.count,
+         "every dense control is a release record; add to it, do not delete from it")
+  assert(Set(dense.map{$0.0.rawValue}).count==dense.count)
+  for (control, width, height) in dense {
+   assert(control.shippedWidth==width && control.shippedHeight==height,
+          "\(control.rawValue) drifted from the audited shipped size")
+   assert(!StageA11y.meetsHitTarget(width: width, height: height, pointer: false),
+          "\(control.rawValue) shipped at \(width) x \(height), which already cleared the touch minimum")
+   assert(StageA11y.meetsHitTarget(width: width, height: height, pointer: true),
+          "\(control.rawValue) shipped below the pointer minimum too, so the pointer could not keep it")
+   let touchWidth=StageA11y.denseWidth(control, touch: true), touchHeight=StageA11y.denseHeight(control, touch: true)
+   assert(touchWidth==max(StageA11y.minimumTouchTarget, width) && touchHeight==max(StageA11y.minimumTouchTarget, height))
+   assert(StageA11y.meetsHitTarget(width: touchWidth, height: touchHeight, pointer: false))
+   let pointerWidth=StageA11y.denseWidth(control, touch: false), pointerHeight=StageA11y.denseHeight(control, touch: false)
+   assert(pointerWidth==max(StageA11y.minimumPointerTarget, width) && pointerHeight==max(StageA11y.minimumPointerTarget, height))
+   assert(StageA11y.meetsHitTarget(width: pointerWidth, height: pointerHeight, pointer: true))
+   assert(touchWidth>=width && touchHeight>=height && pointerWidth>=width && pointerHeight>=height,
+          "\(control.rawValue) renders smaller than the box it ships with today")
+   assert(StageA11y.denseWidth(control)==StageA11y.denseWidth(control, touch: StageA11y.touchTargetsApply))
+   assert(StageA11y.denseHeight(control)==StageA11y.denseHeight(control, touch: StageA11y.touchTargetsApply))
+  }
   // Layer identity hues: two of the five measure 3.03:1 (blue) and 3.41:1 (purple)
   // as text on a panel, so the text colour has to be derived, not reused raw. The
   // fills, borders and icons keep the original hue.
@@ -84,6 +114,6 @@ import Foundation
     if accent.contrast(against: panel) >= StageA11y.bodyTextContrast {assert(raised==accent)} else {assert(raised != accent && raised.relativeLuminance > accent.relativeLuminance)}
     assert(abs(raised.contrast(against: panel)-accentPairs[index].ratio) < 0.000001)
   }
-  print("PASS: contrast math, palette record, \(pairs.count) audited pairs, \(accentPairs.count) legible accents, octave-marker regression, readable-size floor and hit targets")
+  print("PASS: contrast math, palette record, \(pairs.count) audited pairs, \(accentPairs.count) legible accents, octave-marker regression, readable-size floor, \(dense.count) dense control targets and hit targets")
  }
 }

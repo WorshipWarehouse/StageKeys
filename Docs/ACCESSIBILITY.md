@@ -16,6 +16,7 @@ physical devices — see [Not verified here](#not-verified-here).
 | Piano octave marker at 40 % black on the 88 % key (**2.74:1**) | 60 % black (**5.26:1**); the failing value stays in the test as a witness |
 | No stated touch/pointer target, no record | 44 pt touch / 28 pt pointer constants, measured against the dense controls |
 | Workspace strip (sustain, layer ranges, keyboard ranges) at a literal **30 × 28** box | Sized from `StageA11y.workspaceButtonTarget`: **44 × 44** touch, **30 × 30** pointer |
+| Twelve dense controls at fixed **30–40 × 30–49** boxes (Tonic power and patch lock, sound settings and both effect bypasses, metronome, count-in, import, main menu, MIDI Learn close, library sort, number steppers) | Sized from `StageA11y.DenseControl`: at least **44 pt on touch**, the shipped box with the pointer |
 | Contrast unmeasured | 9 audited text/background pairs asserted in a gated test |
 
 ## Measured contrast
@@ -98,12 +99,46 @@ before it allows the exemption.
 Constants: 44 pt for touch platforms, 28 pt for the pointer (`StageA11y.minimumTouchTarget` /
 `minimumPointerTarget`), asserted in `StageA11yTests`.
 
-Measured from the source at the audited surfaces: the dense mixer icon buttons are 34–38 pt wide by
-45–49 pt high, the Tonic power/settings/lock buttons 38–40 × 46, and the snapshot card
-100 × 34. Every one clears the 28 pt pointer minimum, so these controls clear the project's pointer-size threshold (not a claim of macOS accessibility compliance); on iPhone/iPad the
-34–38 pt widths are below 44 pt. Widening them reflows the mixer that the issue also requires
-photographic evidence for, so that change is deliberately left to the device pass rather than
-guessed at from Linux.
+Measured from the source at the audited surfaces, twelve dense controls shipped with a fixed box
+narrower than 44 pt, and five of them were shorter than 44 pt as well. Every one cleared the 28 pt
+pointer minimum, so the pointer keeps the shipped box and only the touch platform grows:
+
+| Control | Source | Shipped | Touch (iPhone/iPad) | Pointer |
+| --- | --- | --- | --- | --- |
+| Tonic pad power | `PerformanceControls.swift` | 38 × 46 | 44 × 46 | 38 × 46 |
+| Tonic patch lock | `PerformanceControls.swift` | 40 × 46 | 44 × 46 | 40 × 46 |
+| Sound settings | `PerformanceControls.swift` | 34 × 45 | 44 × 45 | 34 × 45 |
+| MIDI effect bypass | `PerformanceControls.swift` | 34 × 49 | 44 × 49 | 34 × 49 |
+| Audio slot 1–3 bypass | `PerformanceControls.swift` | 36 × 49 | 44 × 49 | 36 × 49 |
+| Metronome | `StageKeysApp.swift` | 38 × 44 | 44 × 44 | 38 × 44 |
+| Metronome count-in | `StageKeysApp.swift` | 34 × 44 | 44 × 44 | 34 × 44 |
+| Import sounds | `StageKeysApp.swift` | 30 × 36 | 44 × 44 | 30 × 36 |
+| Main menu | `StageKeysApp.swift` | 40 × 36 | 44 × 44 | 40 × 36 |
+| MIDI Learn close | `MIDIControlLearnView.swift` | 30 × 30 | 44 × 44 | 30 × 30 |
+| Library sort | `SoundBrowser.swift` | 30 × 42 | 44 × 44 | 30 × 42 |
+| Number steppers (`−`/`+`) | `SoundSettingsControls.swift` | 36 × 42 | 44 × 44 | 36 × 42 |
+
+Each box now comes from the audited record: `StageA11y.DenseControl` holds the shipped size and
+`StageA11y.denseWidth` / `denseHeight` apply the same 44 pt touch and 28 pt pointer minima, with
+`StageA11y.touchTargetsApply` as the single platform switch. No view holds a threshold, and no
+control can render smaller than the box that ships today. Glyphs, fills, spacing, labels and the
+hit-tested regions are unchanged; the pointer layout is unchanged because the shipped size is what
+a mouse keeps.
+
+Two clusters absorbed the growth rather than moving: the mixer rows and the Tonic header place the
+wider box beside a `maxWidth: .infinity` label, so a touch layout narrows those labels by 4–10 pt
+instead of resizing the row. The transport bar (52 pt) and the library order row (70 pt) are
+`HStack`s with no flexible spacer, so their contents compress inside the same height. **The
+rendered result of either is not viewed here.**
+
+Left alone deliberately, because widening them needs a reflow no Linux pass can see:
+
+- The **snapshot card** (100 × 34) clears the touch minimum in width and fails it in height; raising
+  it to 44 pt changes the strip height that sets the top bar's height.
+- The **layer-range handles** (22 × 22 circles) and the **fader caps** are drag surfaces inside
+  45-pt and 60-pt rows. Enlarging the circle changes the drawing, not only the hit box, so they keep
+  their role as instrument surfaces rather than buttons.
+- The **piano keys** (≈21 pt wide) are the instrument itself, not a set of targets to enlarge.
 
 The workspace strip's three icon buttons (sustain, edit layer ranges, show keyboard ranges) were the
 smallest interactive controls at a literal 30 × 28 box — exactly the pointer minimum and 14 pt short
@@ -143,7 +178,11 @@ claimed as verified:
   it does not grow; this is unchanged behaviour and still open).
 - VoiceOver reading order and labels, keyboard focus order and `Tab` navigation, and Reduce
   Transparency/Increase Contrast behaviour.
-- Whether the 34–38 pt touch targets above need widening, with the resulting reflow.
+- The twelve widened dense controls: no simulator or device screen was viewed. The mixer and
+  Tonic labels lose 4–10 pt on touch, and the transport bar and library order row compress
+  inside their heights; label truncation and the resulting spacing are unverified.
+- The snapshot card’s 34 pt height, the layer-range handles and the fader caps are unchanged;
+  the reflow of widening them is unverified.
 - The workspace strip's 44 pt touch boxes: no device or simulator screen was viewed, so the
   resulting compact-width layout and the narrowed snapshot scroll area are unverified.
 

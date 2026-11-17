@@ -236,9 +236,9 @@ struct PerformanceView: View {
                     Button { sheet = .tempo } label: { Text("4/4").frame(width: 49, height: 44) }.buttonStyle(.plain)
                     if store.metronomeSettings.visible {
                         Divider().frame(height: 30)
-                        Button { store.metronome.toggle() } label: { Image(systemName: "metronome").frame(width: 38, height: 44).foregroundStyle(store.metronome ? StageTheme.selected : .secondary) }.buttonStyle(.plain).accessibilityLabel("Metronome").accessibilityValue(store.metronome ? "On" : "Off").accessibilityHint(store.metronomeSettings.followsMIDIClock ? "The click waits for the next MIDI Start or Continue when enabled." : "Turns the metronome click on or off.")
+                        Button { store.metronome.toggle() } label: { Image(systemName: "metronome").frame(width: CGFloat(StageA11y.denseWidth(.metronome)), height: CGFloat(StageA11y.denseHeight(.metronome))).foregroundStyle(store.metronome ? StageTheme.selected : .secondary) }.buttonStyle(.plain).accessibilityLabel("Metronome").accessibilityValue(store.metronome ? "On" : "Off").accessibilityHint(store.metronomeSettings.followsMIDIClock ? "The click waits for the next MIDI Start or Continue when enabled." : "Turns the metronome click on or off.")
                         if !store.metronomeSettings.followsMIDIClock && store.metronomeSettings.countInBars > 0 {
-                            Button { store.countIn() } label: { Image(systemName: "timer").frame(width: 34, height: 44) }.buttonStyle(.plain).accessibilityLabel("Metronome Count In").accessibilityValue("\(store.metronomeSettings.countInBars) bars").accessibilityHint("Plays the configured count-in bars from a downbeat. Audio must be running.")
+                            Button { store.countIn() } label: { Image(systemName: "timer").frame(width: CGFloat(StageA11y.denseWidth(.countIn)), height: CGFloat(StageA11y.denseHeight(.countIn))) }.buttonStyle(.plain).accessibilityLabel("Metronome Count In").accessibilityValue("\(store.metronomeSettings.countInBars) bars").accessibilityHint("Plays the configured count-in bars from a downbeat. Audio must be running.")
                         }
                     }
                     Divider().frame(height: 30)
@@ -253,11 +253,11 @@ struct PerformanceView: View {
                     VStack(alignment: .leading, spacing: 2) { Text("Master").foregroundStyle(.secondary); Text(StageTheme.db(store.master)).monospacedDigit() }.font(StageTheme.font(12, weight: .semibold))
                     MasterFader(gain: $store.master).frame(width: 180, height: 38)
                 }
-                Button { sheet = .importSounds } label: { Image(systemName:"plus.circle.fill").frame(width:30,height:36) }.buttonStyle(.plain).accessibilityLabel("Import Sounds")
+                Button { sheet = .importSounds } label: { Image(systemName:"plus.circle.fill").frame(width: CGFloat(StageA11y.denseWidth(.importSounds)), height: CGFloat(StageA11y.denseHeight(.importSounds))) }.buttonStyle(.plain).accessibilityLabel("Import Sounds")
                 Button { if store.started { sheet = .settings } else { store.start() } } label: {
                     Group { if store.audioIsStarting { ProgressView().controlSize(.small) } else { Image(systemName: store.started ? "speaker.wave.2" : "power") } }.frame(width: 24, height: 24)
                 }.buttonStyle(StageButtonStyle()).accessibilityLabel(store.started ? "Audio Settings" : store.audioIsStarting ? "Starting Audio" : "Start Audio").disabled(store.audioIsStarting)
-                Button { menuExpanded.toggle() } label: { Image(systemName:"line.3.horizontal").frame(width:40,height:36) }.buttonStyle(.plain).accessibilityLabel("Main Menu")
+                Button { menuExpanded.toggle() } label: { Image(systemName:"line.3.horizontal").frame(width: CGFloat(StageA11y.denseWidth(.mainMenu)), height: CGFloat(StageA11y.denseHeight(.mainMenu))) }.buttonStyle(.plain).accessibilityLabel("Main Menu")
 
             }.foregroundStyle(StageTheme.selected.opacity(0.85)).padding(.vertical, 3)
         }.frame(height: 52)
