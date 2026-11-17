@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Report the selected audio device's detected stereo output pairs from its real channel count, name a saved or requested pair that this device cannot provide instead of substituting one, and add a bounded pair count to local support diagnostics. Per-sound/category routing to extra pairs is still unimplemented, so no audio is sent to a pair that is only reported (#107).
+
 - Report each retained MainStage channel shaping value individually with its archived-value representation, store it in the layer's source record so it survives persistence, backup and setlist sharing, and stop telling users to set an envelope that Sound Settings hides for a converted sampler or hosted plug-in (#112). Containers are recorded as counts and strings are truncated to 120 characters, so this is a bounded representation, not the complete source value; keep the original MainStage document when you need the full setting. Shaping keys longer than the record limit are reported and skipped instead of stored, and sharing redacts absolute and home-relative paths in keys and values, so one oversized or path-like field cannot block an import or leak a local location.
 - Add optional per-sound sample-peak/RMS meters after each sound's fader and pan, with no taps while disabled and persisted legacy-safe settings; document the signal point and its true-peak/loudness limits.
 

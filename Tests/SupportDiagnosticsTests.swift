@@ -63,6 +63,17 @@ import Foundation
         assert(!deviceJSON.contains("PRIVATE") && !deviceJSON.contains("couldn’t"))
         let decodedDevice = try JSONDecoder().decode(SupportDiagnostics.self, from: Data(deviceJSON.utf8)).lastAudioChangeFailure
         assert(decodedDevice == stoppedDevice && decodedDevice?.bufferFrames == 256)
+        // Detected output pairs are a bounded count. The field stays optional so
+        // reports written before it existed still decode.
+        let pairReport = SupportDiagnostics(version: "test", build: "test", running: true, status: status,
+            latency: latency, midiSources: 1, loadedSlots: 2, limiterBypassed: false, recording: false,
+            usableOutputPairs: FlexRouting.pairs(channels: 6).count)
+        let pairJSON = try pairReport.json()
+        assert(try JSONDecoder().decode(SupportDiagnostics.self, from: Data(pairJSON.utf8)).usableOutputPairs == 3)
+        assert(report.usableOutputPairs == nil, "An unmeasured pair count must not be reported as zero")
+        let boundedPairs = SupportDiagnostics(version: "test", build: "test", running: true, status: nil, latency: nil,
+            midiSources: 0, loadedSlots: 0, limiterBypassed: false, recording: false, usableOutputPairs: 99)
+        assert(boundedPairs.usableOutputPairs == FlexOutputPair.maximumPairs)
         print("PASS: diagnostics omit names/IDs/paths, distinguish unknown metrics and bound numeric data")
     }
 }

@@ -170,6 +170,13 @@ final class AudioDeviceController {
         #endif
         return try Self.uid(currentDevice())
     }
+    /// Output channels the selected device reports. Read-only: it never starts
+    /// audio, changes the route or allocates on the render thread. Offline
+    /// rendering has no hardware device and reports `offline`.
+    func outputChannelCount() throws -> UInt32 {
+        try assertOnline()
+        return try Self.outputChannels(currentDevice())
+    }
     func select(uid: String) throws {
         guard let device = try Self.availableOutputs().first(where: { (try? Self.uid($0.id)) == uid }) else { throw AudioDeviceError.unavailable }
         try select(deviceID: device.id)
@@ -231,6 +238,14 @@ final class AudioDeviceController {
                                  minimumBufferFrames: 32, maximumBufferFrames: 4096, canSetBuffer: rate > 0)
     }
     func outputUID() throws -> String? { nil }
+    /// The system route owns the hardware channels on iOS; report only what the
+    /// active route publishes instead of guessing a device pair.
+    func outputChannelCount() throws -> UInt32 {
+        try assertOnline()
+        return AVAudioSession.sharedInstance().currentRoute.outputs.reduce(0) { total, output in
+            total + UInt32(clamping: output.channels?.count ?? 0)
+        }
+    }
     func select(uid: String) throws { throw AudioDeviceError.unsupported }
     func select(deviceID: UInt32) throws { try assertOnline(); throw AudioDeviceError.unsupported }
     /// iOS grants a preference rather than a guarantee; refresh status afterward.
