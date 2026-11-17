@@ -87,16 +87,19 @@ import Foundation
         assert(removedEntry == removable,"The removed entry must be returned unchanged")
         let afterRemoval = try removalLibrary.read()
         assert(afterRemoval == [kept,installed],"Only the requested entry may be removed")
-        assert((try Data(contentsOf:managed)) == Data("managed preset bytes".utf8),
+        // `assert` takes a non-throwing autoclosure, so throwing reads are hoisted.
+        assert((try! Data(contentsOf:managed)) == Data("managed preset bytes".utf8),
                "Removing an entry must not delete the managed file saved patches use")
         do { _ = try removalLibrary.delete(id:"removable"); assertionFailure("Removing a missing sound reported success") }
         catch SoundLibrary.EditFailure.unknownSound {}
-        assert(try removalLibrary.read() == afterRemoval,"A refused removal must not change the catalog")
+        let catalogAfterRefusedRemoval = try removalLibrary.read()
+        assert(catalogAfterRefusedRemoval == afterRemoval,"A refused removal must not change the catalog")
         // The catalog write keeps its validated previous copy, so the existing
         // catalog recovery action can bring an accidental removal back.
         let recoveredRemoval = try removalLibrary.recoverPrevious()
         assert(recoveredRemoval.contains { $0.id == "removable" },"The previous catalog must still hold the removed sound")
-        assert(try removalLibrary.read().contains { $0.id == "removable" })
+        let restoredRemoval = try removalLibrary.read()
+        assert(restoredRemoval.contains { $0.id == "removable" },"Recovering the previous catalog must restore the removed sound")
         print("PASS: native and host sound library round-trip; corrupt library preserved; independent sound export; recoverable sound removal")
     }
 }
