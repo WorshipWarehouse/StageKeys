@@ -11,12 +11,12 @@ import CoreMIDI
     assert(MIDISourceCreate(client,"Test Keyboard A" as CFString,&a)==noErr)
     assert(MIDISourceCreate(client,"Test Keyboard B" as CFString,&b)==noErr)
     var waitIndex=0
-    func wait(seconds:TimeInterval=3,_ predicate:()->Bool) {
+    func wait(seconds:TimeInterval=3,line:Int=#line,_ predicate:()->Bool) {
         waitIndex += 1
         let end=Date().addingTimeInterval(seconds)
         while !predicate() && Date()<end { RunLoop.current.run(until:Date().addingTimeInterval(0.01)) }
         let discovered=store.midiSources.map{String(describing:$0.endpoint)+":"+$0.name}
-        assert(predicate(),"Timed out at wait \(waitIndex); endpoints \(a), \(b), discovered \(discovered), CoreMIDI source count: \(MIDIGetNumberOfSources()), selected \(store.selected), patch lock \(store.patchLock), started \(store.started), message \(store.message ?? "none")")
+        assert(predicate(),"Timed out at wait \(waitIndex) (\(line)); endpoints \(a), \(b), discovered \(discovered), CoreMIDI source count: \(MIDIGetNumberOfSources()), selected \(store.selected), patch lock \(store.patchLock), started \(store.started), learning \(String(describing:store.learningTarget)), assignments \(store.setlist.controlAssignments?.count ?? -1), message \(store.message ?? "none")")
     }
     wait { store.midiSources.contains(where:{$0.name=="Test Keyboard A"}) && store.midiSources.contains(where:{$0.name=="Test Keyboard B"}) }
     store.primarySourceID=store.midiSources.first{$0.name=="Test Keyboard A"}!.id;store.midiChannel=0
