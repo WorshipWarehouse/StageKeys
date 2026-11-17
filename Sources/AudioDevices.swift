@@ -68,6 +68,18 @@ final class AudioDeviceController {
         precondition(Thread.isMainThread)
         guard !engine.isInManualRenderingMode else { throw AudioDeviceError.offline }
     }
+    /// Read the hardware buffer without enumerating devices or reading their
+    /// names. Offline rendering and unavailable routes have no hardware value.
+    func diagnosticBufferFrames() -> UInt32? {
+        guard Thread.isMainThread, !engine.isInManualRenderingMode else { return nil }
+        #if os(macOS)
+        guard let device = try? currentDevice() else { return nil }
+        return try? Self.scalar(device, kAudioDevicePropertyBufferFrameSize, default: UInt32(0))
+        #else
+        let session = AVAudioSession.sharedInstance()
+        return UInt32(exactly: (session.ioBufferDuration * session.sampleRate).rounded())
+        #endif
+    }
     #if os(macOS)
     private static func address(_ selector: AudioObjectPropertySelector,
                                 scope: AudioObjectPropertyScope = kAudioObjectPropertyScopeGlobal) -> AudioObjectPropertyAddress {

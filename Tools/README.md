@@ -1,3 +1,28 @@
+# Matched effect captures
+
+`CaptureAppAudio.swift` records the system audio emitted by one running macOS
+application through ScreenCaptureKit. It does not install a loopback driver and
+does not alter the captured application's graph. The first run requires the
+normal macOS Screen Recording permission.
+
+```sh
+xcrun swiftc -parse-as-library Tools/CaptureAppAudio.swift -o /tmp/capture-app-audio \
+  -framework ScreenCaptureKit -framework AVFoundation -framework CoreMedia
+/tmp/capture-app-audio com.sundaysounds.sundaykeys 15 /tmp/sunday-chorus.caf
+afconvert /tmp/sunday-chorus.caf /tmp/sunday-chorus.wav -f WAVE -d LEF32@48000 -c 2
+```
+
+CAF and WAVE_FORMAT_EXTENSIBLE WAV are both lossless 32-bit float PCM in this workflow. The command
+never overwrites a capture. Match the resulting Sunday Keys WAV
+against an equivalent StageKeys render with `compare-effect-captures.py`.
+Use `--align-onset` for separately started live captures; the report preserves
+their original start offset while comparing from the first detected dry onset.
+
+`SendMIDIProbe.swift` creates a temporary virtual MIDI keyboard and performs a
+fixed velocity/pitch sequence followed by a sustained chord. Compile it with
+`xcrun swiftc -parse-as-library Tools/SendMIDIProbe.swift -o /tmp/send-midi-probe
+-framework CoreMIDI`. Keep physical keyboards idle while a matched pair runs.
+
 # Native MainStage conversion
 
 Import a MainStage `.patch` in StageKeys, then choose its original EXS/sample folder. Each supported sampler channel becomes a separate library sound with its supported effects, macros, MIDI range/transpose, pan and sustain settings attached. The saved library layer is the complete reusable sound; adding it to another patch retains those settings. Review conversion notes: private synthesizers, non-unity fader tapers, unrecognized MIDI processors and auxiliary buses still need work.
@@ -202,3 +227,7 @@ It refuses private content by file name, extension or path component: sampled-au
 This is a name-based backstop against accidental commits, not proof that no private content is present: a file the app renames, such as a per-identity file inside a setlist library, is invisible to it. `--repo` checks the checkout as a plain `git add -A` would commit it — tracked files plus untracked files that the checkout's `.gitignore` does not exclude — so an untracked `Song.als`, `note.aifc` or `setlist-v3-backup.json` is refused instead of passing until someone stages it; gitignored private audio stays out of scope on purpose, because committing it already needs `git add -f`. It needs a real Git repository, failing with Git's own error rather than a verdict if the path is not one. `--bundle` walks files and directories alike, so an empty `.patch` or `.concert` bundle inside a shipped app is refused as well as a populated one. One target is required: with neither flag the tool prints usage and exits 2 instead of checking nothing.
 
 `--repo` is the first step of `Tools/verify-release.sh`, which then checks the Release bundle it just built with `--bundle`, so the `builds` CI job runs both modes for `mac` and `simulator`; `Tests/test-distribution.py` exercises the refusals — untracked content, an empty MainStage document directory, a missing notice, a symlink bundle and a no-target run — against disposable synthetic checkouts in the `processing` job. `Tools/verify-public-mac.sh` runs the bundle check before signature, hardened-runtime, stapled-notarization and Gatekeeper verification. Passing this gate proves exclusion from the artifact, not redistribution rights and not a valid signature: public signing/notarization and clean-machine installation remain unverified.
+
+# Live sampler disposal verification
+
+`Tools/VerifySamplerDisposal.swift` is an opt-in, master-muted live-output probe for #192. It drives 96 generated sampler patch changes through Store, checks stopped-point releases and output progress, and requires a new isolated data folder and report path. Compile it against the DEBUG core from the library runner as documented in [sampler disposal verification](../Docs/SAMPLER-DISPOSAL-192.md). It changes no system route/buffer or installed user session and records no audio; it is not a latency, listening or soak test.

@@ -1,0 +1,51 @@
+{
+  "status": "not-matched",
+  "date": "2026-11-07",
+  "reference": {
+    "application": "Sunday Keys 2.5.2 (3367)",
+    "instrument": "Una Corda Felt | Hall",
+    "effect": "PrimaVerb",
+    "settings": {
+      "size": "Large Hall",
+      "predelayPercent": 15,
+      "reflectivityPercent": 64,
+      "lowCutHz": 258,
+      "toneHz": 6094,
+      "qualityPercent": 100,
+      "chorusAmountPercent": 3,
+      "chorusRateHz": 0.75,
+      "dryPercent": 0,
+      "wetPercent": 17
+    },
+    "wetCAF_SHA256": "e46300f36472c761fb75174cf4d7e10378ecc9b075750dd6d4de64c3a64e8340",
+    "wetWAV_SHA256": "6777a23eb72b5d6d32dca97e7f824856d18d1d2cf870101f0b79b536dd12e59d",
+    "dryCAF_SHA256": "136c7a7a46f6be6fb22cc436155bf0f00540d589864e69a11a165bd8ce43d50d",
+    "dryWAV_SHA256": "1425dd89af7118afdb90b968e2e8df0dad5384651fadbe37184b44b28ffa692b"
+  },
+  "candidate": {
+    "renderer": "StageKeys native DSP via Tools/RenderEffectCapture.swift",
+    "wetWAV_SHA256": "00f63ceb2cd44b769bd8ad40721de6861972b172e66481e05c8839ab44dabc3a",
+    "parameters": [0.6666667, 30, 0.64, 258, 6094, 0.03, 0.75, 0, 0.17, 1, 1]
+  },
+  "wholeProbe": {
+    "candidateToReferenceGainDB": -6.053212969768186,
+    "referenceCentroidHz": 518.6710420745846,
+    "candidateCentroidHz": 722.9499874283102,
+    "referenceDecay60Seconds": null,
+    "candidateDecay60Seconds": 8.68,
+    "correlation": 0.05256044168339009
+  },
+  "firstNote750ms": {
+    "candidateToReferenceGainDB": -4.904281732703255,
+    "referenceCentroidHz": 296.22608666101723,
+    "candidateCentroidHz": 279.32136203528285,
+    "correlation": 0.1877438921740724
+  },
+  "interpretation": [
+    "PrimaVerb Large Hall is not sonically identical at these matched visible settings.",
+    "The first-note window confirms the wet-level mismatch without later MIDI scheduling drift.",
+    "The Sunday tail did not cross the -60 dB threshold before the reference capture ended; a longer wet-only impulse or note capture is required for an exact RT60.",
+    "Low correlation confirms a different impulse/tank response and is not correctable with gain alone.",
+    "Private rendered audio remains outside the repository; only hashes and measurements are retained."
+  ]
+}

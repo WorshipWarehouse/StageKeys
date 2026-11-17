@@ -236,13 +236,33 @@ final class AudioController {
     private let metronomeEngine: OpaquePointer
     private var metronomeNode: AVAudioSourceNode!
     private var metronomeFollowsMaster = true
+    private var metronomeFollowsMIDIClock = false
     private var masterVolume: Float = 0.7
     private let reverb = AVAudioUnitReverb()
     private let outputLimiter=AVAudioUnitEffect(audioComponentDescription:AudioComponentDescription(componentType:kAudioUnitType_Effect,componentSubType:kAudioUnitSubType_PeakLimiter,componentManufacturer:kAudioUnitManufacturer_Apple,componentFlags:0,componentFlagsMask:0))
     private let protectedOutput=AVAudioMixerNode()
     private var source: AVAudioSourceNode!
     lazy var deviceController = AudioDeviceController(engine: engine)
-    lazy var externalRack: ExternalInstrumentRack? = try? ExternalInstrumentRack(engine: engine)
+    private var externalRackStorage: ExternalInstrumentRack?
+    private var externalRackLoaded = false
+    private var soundMeteringEnabled = false
+    var externalRack: ExternalInstrumentRack? {
+        if !externalRackLoaded {
+            externalRackLoaded = true
+            externalRackStorage = try? ExternalInstrumentRack(engine: engine)
+            externalRackStorage?.setMeteringEnabled(soundMeteringEnabled)
+        }
+        return externalRackStorage
+    }
+    /// DEBUG-only hosted-sampler teardown evidence for the local support record.
+    /// Reading it never creates the rack.
+    var samplerTeardownEvidence: [SamplerTeardownRecord]? {
+        #if DEBUG
+        return externalRackLoaded ? externalRackStorage?.samplerTeardownEvidence : nil
+        #else
+        return nil
+        #endif
+    }
     private var externalSounds: [Int: ExternalSound] = [:]
     private var externalStates: [Int: Data] = [:]
     private var samplerAttacks:[Int:Float]=[:]
@@ -252,6 +272,16 @@ final class AudioController {
     private let outputMeter=OutputMeter()
     private var outputTapInstalled=false
     var outputMetrics:OutputMeter.Reading {outputMeter.read()}
+    /// Optional per-sound taps are installed on demand and removed when off.
+    /// This does not create the rack or edit the audio graph.
+    func setSoundMetering(_ enabled: Bool) {
+        soundMeteringEnabled = enabled
+        if externalRackLoaded { externalRackStorage?.setMeteringEnabled(enabled) }
+    }
+    func soundMeter(_ channel: Int) -> OutputMeter.Reading? {
+        guard externalRackLoaded, (0..<16).contains(channel) else { return nil }
+        return externalRackStorage?.soundMeter(channel: channel)
+    }
     private func installOutputTap(recorder:AudioDiagnosticRecorder?=nil) {
         if outputTapInstalled {protectedOutput.removeTap(onBus:0)}
         let meter=outputMeter
@@ -286,16 +316,21 @@ final class AudioController {
     /// Reports a failure after the engine itself started, so tests can exercise
     /// cleanup from a partially initialized start without a real device.
     var debugFailureAfterEngineStart: (() -> Error?)?
+    /// Counts Store-accepted count-in requests. The C engine owns scheduling;
+    /// this only lets a runtime test prove a stopped or clock-synced request
+    /// never reaches the engine.
+    private(set) var debugCountInRequests = 0
     #endif
     @discardableResult
     private func changeFailure(_ error: Error, phase: AudioChangeDiagnostic.Phase,
                                slot: Int? = nil, retained: Bool? = nil, forceUnavailable: Bool = false,
-                               includeGraphFailure: Bool = true, bufferFrames: UInt32? = nil) -> AudioChangeFailure {
+                               includeGraphFailure: Bool = true) -> AudioChangeFailure {
         let rate = engine.isInManualRenderingMode ? engine.manualRenderingFormat.sampleRate : engine.mainMixerNode.outputFormat(forBus: 0).sampleRate
         let graphFailure = includeGraphFailure ? externalRack?.lastGraphFailure : nil
         let diagnostic = AudioChangeDiagnostic(error: error, phase: phase, slot: slot,
             generation: externalRack?.graphGeneration ?? 0, running: engine.isRunning,
-            sampleRate: rate, bufferFrames: bufferFrames, previousSoundRetained: retained, lastGraphFailure: graphFailure)
+            sampleRate: rate, bufferFrames: deviceController.diagnosticBufferFrames(),
+            previousSoundRetained: retained, lastGraphFailure: graphFailure)
         lastChangeFailure = diagnostic
         let graphUnavailable = includeGraphFailure && (diagnostic.lastGraphFailure.map { $0.edited && $0.wasRunning && !engine.isRunning && handledGraphFailure != $0.id } ?? false)
         if forceUnavailable || graphUnavailable {
@@ -322,8 +357,7 @@ final class AudioController {
         let cause: Error
         if let device = error as? AudioDeviceError, case .resumeFailed(let underlying) = device { cause = underlying }
         else { cause = error }
-        let frames = (try? deviceController.status())?.bufferFrames
-        return changeFailure(cause, phase: .audioDevice, includeGraphFailure: false, bufferFrames: frames)
+        return changeFailure(cause, phase: .audioDevice, includeGraphFailure: false)
     }
     /// Check known unavailable resources before the store changes snapshots,
     /// panics held notes, or persists the proposed sound. Does not load an AU or
@@ -341,7 +375,8 @@ final class AudioController {
             try rack.validateSound(sound, checkInstallation: checkInstallation)
         } catch {
             throw changeFailure(error, phase: .prepareSound, slot: index,
-                                retained: externalRack?.unit(channel: index) != nil && engine.isRunning ? true : nil)
+                                retained: externalRack?.unit(channel: index) != nil && engine.isRunning ? true : nil,
+                                includeGraphFailure: false)
         }
     }
     func withInstrumentCatalog<T>(_ operation: () throws -> T) rethrows -> T {
@@ -434,7 +469,10 @@ final class AudioController {
         try session.setPreferredIOBufferDuration(0.0053)
         try session.setActive(true)
         #endif
-        if !engine.isRunning { engine.prepare(); try engine.start() }
+        if !engine.isRunning {
+            try externalRackStorage?.validateSamplerDisposals()
+            engine.prepare(); try engine.start()
+        }
         #if DEBUG
         if let failure = debugFailureAfterEngineStart?() { throw failure }
         #endif
@@ -552,7 +590,8 @@ final class AudioController {
         if let failure = error as? AudioChangeFailure {
             let d = failure.diagnostic
             changeFailure(NSError(domain: d.errorDomain, code: d.errorCode), phase: d.phase,
-                          slot: d.soundSlot.map { $0 - 1 }, forceUnavailable: true)
+                          slot: d.soundSlot.map { $0 - 1 }, forceUnavailable: true,
+                          includeGraphFailure: d.phase != .prepareSound)
         } else { changeFailure(error, phase: .finishGraph, forceUnavailable: true) }
     }
     private func invalidateInstrumentCaches() {
@@ -584,6 +623,23 @@ final class AudioController {
     func pluginStateData(channel: Int, sound: ExternalSound?) throws -> Data? {
         guard sound?.kind == .audioUnit, loadedUnit(channel: channel, sound: sound) != nil else { return nil }
         return try externalRack?.stateData(channel: channel)
+    }
+    /// Synchronizes the cache without restoring state (which panics the AU) when the same unit is unchanged.
+    func preservePluginStateIfUnchanged(channel: Int, sound: ExternalSound?, unit: AVAudioUnit, state: Data) throws -> Bool {
+        guard loadedUnit(channel: channel, sound: sound) === unit,
+              try pluginStateData(channel: channel, sound: sound) == state else { return false }
+        externalStates[channel] = state
+        return true
+    }
+    /// Adopt a confirmed audition's captured state for the installed unit so
+    /// the commit does not reload (and retire) a voice that is still holding
+    /// notes. This captured state is what the next load restores. Returns false
+    /// when the requested unit is no longer installed.
+    @discardableResult
+    func adoptPluginState(channel: Int, sound: ExternalSound?, unit: AVAudioUnit, state: Data?) -> Bool {
+        guard loadedUnit(channel: channel, sound: sound) === unit else { return false }
+        externalStates[channel] = state
+        return true
     }
     /// Capture only the draft's installed AU. A pending/rejected replacement
     /// must retain its authored state instead of borrowing the old unit's state.
@@ -617,6 +673,7 @@ final class AudioController {
                 return false
             }
             let previousUnit = rack.unit(channel: index)
+            let hadPreviousUnit = previousUnit != nil
             let previousGeneration = rack.graphGeneration
             unavailableConfigurations.insert(index)
             var rejected = false
@@ -629,7 +686,7 @@ final class AudioController {
                 guard shouldInstall?() ?? true else { throw ExternalInstrumentError.superseded }
                 if self.patchLoading { rack.volume(channel: index, gain: 0, pan: layer.pan) }
                 if let state = layer.pluginState { try rack.restoreStateData(state, channel: index) }
-            }) { [weak self] result in
+            }) { [weak self, weak previousUnit] result in
                 guard let self, self.configurationRequests[index] == request else { completion?(false); return }
                 switch result {
                 case .success:
@@ -651,7 +708,7 @@ final class AudioController {
                         completion?(false)
                         return
                     }
-                    let unchanged = rack.unit(channel: index) === previousUnit && (rack.graphGeneration == previousGeneration || rack.lastGraphFailure?.rollbackSucceeded == true)
+                    let unchanged = (!hadPreviousUnit || previousUnit != nil) && rack.unit(channel: index) === previousUnit && (rack.graphGeneration == previousGeneration || rack.lastGraphFailure?.rollbackSucceeded == true)
                     if unchanged && self.externalSounds[index] != sound {
                         self.unavailableConfigurations.remove(index)
                     } else {
@@ -803,7 +860,7 @@ final class AudioController {
     func clock(_ tempo: Double, _ enabled: Bool) {
         let changed = self.tempo != Float(tempo); self.tempo = Float(tempo)
         sk_clock(synth,Float(tempo))
-        sk_metronome_tempo(metronomeEngine, Float(tempo))
+        if !metronomeFollowsMIDIClock { sk_metronome_tempo(metronomeEngine, Float(tempo)) }
         sk_metronome_enable(metronomeEngine, enabled ? 1 : 0)
         if changed { for (index,chain) in effects { configureEffects(index,chain,force:true) }; for (index,rack) in importedRacks {configureImported(index,rack)} }
     }
@@ -818,16 +875,33 @@ final class AudioController {
     /// clock; no audio-thread allocation or locking is involved.
     func metronome(_ enabled: Bool, settings: MetronomeSettings) {
         metronomeFollowsMaster = settings.followsMaster
+        metronomeFollowsMIDIClock = settings.followsMIDIClock
+        sk_metronome_clock_enabled(metronomeEngine, metronomeFollowsMIDIClock ? 1 : 0)
         sk_metronome_settings(metronomeEngine, SKMetronomeSettings(level: settings.level, preset: Int32(settings.preset), beatVelocity: settings.beatVelocity, downbeatEnabled: settings.downbeatEnabled ? 1 : 0, downbeatVelocity: settings.downbeatVelocity, beatsPerBar: Int32(settings.beatsPerBar), accentEvery: Int32(settings.accentEvery), subdivision: Int32(settings.subdivision)))
         sk_metronome_master(metronomeEngine, masterVolume, metronomeFollowsMaster ? 1 : 0)
+        if !metronomeFollowsMIDIClock { sk_metronome_tempo(metronomeEngine, tempo) }
         sk_metronome_enable(metronomeEngine, enabled ? 1 : 0)
     }
+    /// One-shot count-in. The engine stops after the bars when the click was off
+    /// and keeps the normal click running when it was already on.
+    func countIn(bars: Int) {
+        #if DEBUG
+        debugCountInRequests += 1
+        #endif
+        sk_metronome_count_in(metronomeEngine, Int32(max(0, min(8, bars))))
+    }
+    func cancelCountIn() { sk_metronome_reset(metronomeEngine) }
+    func midiClockTick(at time: Double) { sk_metronome_clock_event(metronomeEngine, 0, time) }
+    func midiClockStart(at time: Double) { sk_metronome_clock_event(metronomeEngine, 1, time) }
+    func midiClockContinue(at time: Double) { sk_metronome_clock_event(metronomeEngine, 2, time) }
+    func midiClockStop() { sk_metronome_clock_event(metronomeEngine, 3, 0) }
     func space(_ amount: Float) { reverb.wetDryMix = amount }
     // Runs an isolated production graph without sending sound to the device.
     func prepareOffline() throws {
         let format = AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 2)!
         try engine.enableManualRenderingMode(.offline, format: format, maximumFrameCount: 512)
         try externalRack?.prepareOfflineSamples()
+        try externalRackStorage?.validateSamplerDisposals()
         try engine.start()
     }
     func offlineBlock() throws -> AVAudioPCMBuffer {

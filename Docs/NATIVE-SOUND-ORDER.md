@@ -26,6 +26,20 @@ Pan is the last stereo stage; the fader scales both sides afterwards. Before
 this change the compressor ran after the EQ, which made an EQ boost reduce the
 output instead of raising it.
 
+## Imported sampler and Audio Unit host stages
+
+The host graph for imported samplers and Audio Units uses the same controllable
+order: source gain → compressor → Mod Filter → EQ → imported source-processing
+rack (when present) → three visible audio-effect slots → stereo pan → performance
+fader. Source gain, pan and fader are separate mixer nodes, so their relative
+order is explicit. The imported source rack is retained between EQ and the
+visible slots; its own parallel/serial topology remains as translated.
+
+An Audio Unit's internal processing is opaque to StageKeys. This order describes
+only the host-managed stages around the instrument, not its internal signal path.
+`Tests/ImportedSignalOrderTests` traverses the actual engine connections for the
+imported voice to guard the host order.
+
 ## Amplitude envelope
 
 Attack, Decay, Sustain and Release are exposed in Sound Settings for sounds that
@@ -50,12 +64,33 @@ saved, and the model still validates the pair.
 
 ## Conversion reporting
 
-MainStage source documents can carry envelope and filter parameters that this
-converter does not translate. The conversion report now names every retained
-key that looks like sound shaping (attack, decay, sustain, release, cutoff,
-resonance, filter, ADSR, envelope) and states that the destination keeps its own
-values. Nothing is silently replaced with a StageKeys default, and the original
-source document stays in the patch archive.
+MainStage source documents can carry envelope and filter parameters at channel
+scope. No observed channel record defines their unit or encoding, so translating
+them would be a guess; the converter preserves them as data instead.
+
+- Each field whose name looks like sound shaping (attack, decay, sustain,
+  release, cutoff, resonance, filter, ADSR, envelope) is reported individually
+  with its archived value, e.g. `Channel_filterCutoff = 2754: retained in the
+  source record and not translated`. Numbers keep their archived spelling and
+  containers are described by size rather than expanded. The already-translated
+  `Channel_filterSustainPedal` is not reported as untranslated shaping.
+- The values are stored in `MainStageSourceRecord.retainedShaping`, so they
+  survive library persistence, backup and setlist sharing (local paths in values
+  and in keys are redacted there) and remain reviewable after the conversion. A
+  hostile document is bounded to 32 retained fields, 64 stored fields, 96
+  characters per key and 160 per value; a key above the limit is reported with
+  its length and skipped rather than truncated or stored, so one oversized field
+  cannot invalidate the record and block the import.
+- The destination's own envelope and Mod Filter values are never replaced by a
+  source value, and the report says so. It also names where each control can
+  actually be changed: a converted sampler or hosted Audio Unit owns its
+  amplitude envelope, so Sound Settings hides the native envelope for that sound,
+  while the Mod Filter is a separate StageKeys stage and stays available there.
+
+A converted sampler instrument's own EXS amplitude envelope and low-pass filter
+are translated separately into the generated preset ([NATIVE-EXS-PLAYBACK.md](NATIVE-EXS-PLAYBACK.md));
+this section covers only the channel-scope fields that have no supported
+mapping. The original source document stays in the patch archive.
 
 ## Snapshots
 
@@ -65,13 +100,28 @@ envelope or Mod Filter settings, so recalling a snapshot cannot rewrite how a
 sound is shaped. `Tests/ModelTests` asserts the encoded snapshot state contains
 no channel-settings keys.
 
+## Transactional sound edits
+
+Confirming a sound edit keeps its audition active until a shaping-only commit succeeds, then replaces the document layer and re-applies the channel's shaping without clearing held notes or pedal ownership. A change that reloads the configured voice or reroutes MIDI releases its old notes first: a different native instrument, external sound or preset, MIDI destination or output channel, imported rack, plug-in state, or sampler attack minimum. Editing the envelope, Mod Filter, EQ, pan, gain or the three audio-effect slots of the same sound reaches the installed voice through `AudioController.configure`. If validation or installation fails, the editor's existing cleanup restores the previous layer; cancelling an edit still uses the normal audition cleanup. `Tests/HeldNoteSoundEditTests` exercises the editor preview/Confirm path with a sustained generated note, then asserts that replacing the instrument installs a distinct, audible voice on the edited channel.
+
+Hosted Audio Unit installs stay asynchronous: the document layer is committed only after the candidate is accepted, and a rejected candidate keeps the previous layer and voice. Panic is still the explicit way to clear a channel.
+
 ## Verification
 
+- `Tests/HeldNoteSoundEditTests` (hardware-free, offline render): the editor preview/Confirm path keeps a shaped held note, its pedal and the installed voice, while a replaced instrument stops the retired voice and plays in isolation.
 - `Tests/NativeSoundOrderTests` (C, in the default library gate): a post-
   compressor EQ boost must reach the output, the Mod Filter closes and opens,
   maximum resonance stays finite, a long attack is quiet then loud, zero source
   gain is silent with EQ/compressor enabled, and a hard-left pan preserves the
   stereo law.
+- `Tests/ImportedSignalOrderTests` follows the imported AVAudioEngine graph to
+  verify the host-managed source gain, compressor, Mod Filter, EQ, effects,
+  pan and fader order. `Tests/LiveSoundChangeTests` renders sustained
+  polyphony through editor preview, discard and confirm.
+- `Tests/EXSVoiceControlsTests` uses generated source data to verify supported
+  envelope/filter conversion and explicit unsupported-circuit reporting;
+  `Tests/MainStageProcessingTests` verifies unverified channel-shaping keys are
+  reported without substituting StageKeys defaults.
 - `Tests/ChannelSignalOrderTests` (hardware-free): exponential taper endpoints,
   geometric-mean midpoint, clamping of out-of-range and non-finite modulation,
   and envelope/filter validation bounds.

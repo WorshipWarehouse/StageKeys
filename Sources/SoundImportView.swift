@@ -33,9 +33,20 @@ struct SoundImportView:View {
                 Text("IMPORT FROM").font(StageTheme.font(11,weight:.bold)).tracking(1.2).foregroundStyle(.secondary)
                 LazyVGrid(columns:[GridItem(.flexible(),spacing:12),GridItem(.flexible(),spacing:12)],spacing:12) {
                     ImportSourceCard(icon:"pianokeys",title:"MainStage",detail:"Patch or channel strip · choose the effects that fill StageKeys’ visible slots",accent:StageTheme.selected){choice = .mainStage;choosing=true}
-                    ImportSourceCard(icon:"waveform.badge.plus",title:"Instrument File",detail:"StageKeys Sampler, EXS, AUPRESET, audio file or supported sound bank",accent:StageTheme.colors[1]){choice = .file;choosing=true}
+                    ImportSourceCard(icon:"waveform.badge.plus",title:"Instrument File",detail:"StageKeys Sampler, EXS, AUPRESET, experimental Nord NPNO, audio file or supported sound bank",accent:StageTheme.colors[1]){choice = .file;choosing=true}
                     ImportSourceCard(icon:"folder.badge.plus",title:"Sampler Folder",detail:"Scan a folder for EXS and AUPRESET instruments with their original samples",accent:StageTheme.colors[2]){choice = .library;choosing=true}
                     ImportSourceCard(icon:"shippingbox.fill",title:"Sound Pack",detail:"Install a personal StageKeys pack or a separately downloaded sound library",accent:StageTheme.colors[3]){choice = .backup;choosing=true}
+                }
+                if let preview=store.nordImportPreview {
+                    VStack(alignment:.leading,spacing:10) {
+                        Text("Nord Piano · "+preview.name).font(.headline)
+                        Text("Experimental attack-only conversion · \(ByteCountFormatter.string(fromByteCount:Int64(preview.pcmBytes),countStyle:.file)) decoded PCM").font(.subheadline)
+                        ForEach(Array(preview.notes.enumerated()),id:\.offset) {_,note in Text(note).font(.caption).foregroundStyle(.secondary)}
+                        HStack {
+                            Button("Convert Attack Recordings") {store.importNordSound()}.buttonStyle(StageButtonStyle())
+                            Button("Discard") {store.discardNordImport()}.buttonStyle(StageButtonStyle())
+                        }
+                    }.padding(18).background(StageTheme.panel,in:RoundedRectangle(cornerRadius:10))
                 }
                 HStack(spacing:10) {
                     Image(systemName:"arrow.down.doc").foregroundStyle(StageTheme.selected)
@@ -118,7 +129,8 @@ struct SoundImportView:View {
                 switch choice {
                 case .file:
                     if url.pathExtension.lowercased()=="stagekeyspack" {store.importLibraryBackup(url);status=nil}
-                    else if ["patch","cst"].contains(url.pathExtension.lowercased()) {store.importMainStageAutomatically(url);status=nil}
+                    else if url.pathExtension.lowercased()=="npno" {store.inspectNordSound(url);status=nil}
+                    else if ["patch","cst"].contains(url.pathExtension.lowercased()) {store.importMainStageAutomatically(url,convertAfterDiscovery:false);status=nil}
                     else if ["exs","aupreset"].contains(url.pathExtension.lowercased()) {
                         pending=url;status="Choose the folder containing this instrument’s samples. Imports preserve sample maps and translated rack effects, macros and MIDI settings. Conversion notes describe remaining approximations."
                         // Present the second picker after the first has dismissed.
@@ -132,7 +144,7 @@ struct SoundImportView:View {
                 case .mainStageSamples:
                     store.rememberMainStageSampleFolder(url);store.importMainStageSamplers(url);status=nil
                 case .mainStage:
-                    store.importMainStageAutomatically(url);status=nil
+                    store.importMainStageAutomatically(url,convertAfterDiscovery:false);status=nil
                 case .library:
                     store.importSamplerLibrary(url);status=store.message;store.message=nil
                 }
@@ -140,9 +152,9 @@ struct SoundImportView:View {
             }
         }.onDrop(of:[UTType.fileURL],isTargeted:nil){providers in
             guard let provider=providers.first else{return false}
-            _ = provider.loadObject(ofClass:URL.self){url,_ in guard let url,["patch","cst"].contains(url.pathExtension.lowercased()) else{return};DispatchQueue.main.async{store.importMainStageAutomatically(url)}}
+            _ = provider.loadObject(ofClass:URL.self){url,_ in guard let url,["patch","cst"].contains(url.pathExtension.lowercased()) else{return};DispatchQueue.main.async{store.importMainStageAutomatically(url,convertAfterDiscovery:false)}}
             return true
-        }.sheet(item:$effectRequest){request in MainStageEffectSelectionSheet(request:request).environmentObject(store)}
+        }.onDisappear {store.discardNordImport()}.sheet(item:$effectRequest){request in MainStageEffectSelectionSheet(request:request).environmentObject(store)}
     }
 
     private func importFile(_ url:URL,samples:URL?=nil){
@@ -208,7 +220,7 @@ struct MainStageEffectSelectionSheet:View {
             ScrollView {
                 VStack(alignment:.leading,spacing:14) {
                     Text("Source effects, in source order").font(StageTheme.font(15,weight:.semibold))
-                    Text("EQ and compressor map to the instrument controls. Choose up to three other effects for the visible audio slots. Unselected processing remains in the archived source; no effect rack is appended automatically.").font(.caption).foregroundStyle(.secondary)
+                    Text("EQ and compressor map to the instrument controls. Choose up to three other effects for the visible audio slots. Verified linear Smart Control CC mappings follow selected effects; unselected processing remains archived and inactive.").font(.caption).foregroundStyle(.secondary)
                     ForEach(Array(request.draft.effects.enumerated()),id:\.offset) {index,effect in effectRow(index,effect)}
                     if request.draft.effects.isEmpty {Text("No translated audio effects were found in this channel.").font(.caption).foregroundStyle(.secondary)}
                     Divider()

@@ -16,9 +16,10 @@ This increment covers output discovery/reconnect and loop prevention, controller
 
 ## Controller setup
 
-- Input acceptance moved into `MIDIControllerRules.accepts`, which encodes the documented meaning of the two slots: `-1` = any source/channel, `-2` = unused. The behaviour is unchanged, but it is now a pure rule with tests instead of an inline closure, so the "None" setting cannot silently start accepting events in a later edit.
+- Input acceptance uses `MIDIControllerRules.accepts`: `-1` = any source/channel, `-2` = unused. Primary input alone generates patch notes and selects patches by Program Change; the configured Secondary input can operate learned UI controls, but cannot create/release notes or invoke Program Change. Each slot's channel filter applies independently. Fixed CC 1 (modulation) and CC 64 (sustain) are Primary-only defaults; Primary ordinary CCs can also drive imported instrument macros, while Secondary ordinary CCs only act on learned assignments. Both slots remain eligible for Panic CC 120/123.
 - Velocity scaling moved into `MIDIControllerRules.velocity`. It clamps an inverted or out-of-range minimum/maximum instead of producing a reversed or negative response.
 - MIDI learn now reports conflicts instead of silently stealing a CC. `MIDIControllerRules.assigning` moves the controller from any previous target, keeps one CC per target, keeps the legacy CC→sound-level map and the named-control map exclusive, and returns the displaced owner so the store can show "CC 20 moved from Master Level to Next Patch". Reserved controllers (CC 1, 64, 120, 123) and invalid targets are rejected.
+- Learned UI targets include patch navigation, all available snapshot slots, Tonic level/brightness/shimmer, and active sound-effect bypass and parameter controls. Each control remains a labeled Learn/Clear button in the MIDI Learn view; effect parameter mapping follows the existing effect descriptor range and logarithmic frequency scaling. Assignments are persisted with the setlist and are available to either selected input slot.
 - **Reset All** in the MIDI Learn sheet clears every learned assignment, keeping the fixed modulation, sustain, panic and program-change routes so the keyboard remains usable.
 - Patch recall is Program Change opt-in only; see [PROGRAM-CHANGE-OPT-IN.md](PROGRAM-CHANGE-OPT-IN.md). An unconfigured patch ignores Program Change, including a keyboard's power-on PC 0, and Patch Settings shows the raw MIDI value (0–127) beside the 1–128 label some hardware uses.
 - Persistence: the metronome preference and the hardware buffer size are now written to `settings.json` and reapplied at launch. The buffer is only restored when the current device reports it as settable and different, and an unsupported size is dropped instead of failing startup. Settings written before these fields existed still decode.
@@ -26,9 +27,10 @@ This increment covers output discovery/reconnect and loop prevention, controller
 
 ## Tests
 
-- `Tests/MIDISetupTests.swift` (new, no hardware): velocity scaling endpoints/midpoint/narrowed/inverted ranges, primary/secondary acceptance including the unused `-2` slot, learn conflict displacement plus per-target exclusivity and reserved/invalid rejection, destination ordering with virtual/online/offline entries, loop and offline resolution, and session-settings round-trip plus legacy decode and out-of-range rejection.
+- `Tests/MIDISetupTests.swift` (no hardware): velocity scaling endpoints/midpoint/narrowed/inverted ranges, primary/secondary acceptance including the unused `-2` slot, learn conflict displacement plus per-target exclusivity and reserved/invalid rejection, destination ordering with virtual/online/offline entries, loop and offline resolution, and session-settings round-trip plus legacy decode and out-of-range rejection.
 - `Tests/ExternalMIDITests.swift` (requires Core MIDI, no external app): now also asserts the hosted port is listed first and stays virtual across a refresh, that channel 3 is carried in the status byte, that an unknown destination throws instead of dropping, and that the loop predicate rejects the app's own source.
-- `Tests/MIDIInputTests.swift` is unchanged and still covers plug-and-play input, two sources/channels, stable refresh, sustain, note-off, unplug and the surviving input.
+- `Tests/PlugAndPlayTests.swift` drives two generated CoreMIDI sources through the production Store and covers Primary-only notes and Program Change, independent channel filters, Secondary learned controls, Primary CC1/CC64 defaults, velocity mapping, five snapshots, patch navigation, Tonic/effect learning, reset and persisted source identity/channel assignments. This is synthetic CoreMIDI evidence, not external-app or physical-device qualification.
+- `Tests/MIDIInputTests.swift` covers plug-and-play input, two sources/channels, stable refresh, sustain, note-off, unplug and the surviving input.
 
 Run on a Mac:
 

@@ -76,5 +76,14 @@ void sk_metronome_enable(SKMetronome *m, int enabled);
 void sk_metronome_tempo(SKMetronome *m, float tempo);
 // Output gain: follow the performance master, or hold the click's own level.
 void sk_metronome_master(SKMetronome *m, float volume, int followsMaster);
+// Play a one-shot count-in. If the click was off it stops after the requested
+// bars; if it was already on the normal click continues in phase.
+void sk_metronome_count_in(SKMetronome *m, int bars);
+// External MIDI clock: 24 pulses per quarter note. While enabled the click
+// waits for Start/Continue and follows Stop. Events are timestamped with the
+// caller's monotonic seconds; the render thread applies them in order.
+void sk_metronome_clock_enabled(SKMetronome *m, int enabled);
+// event: 0 tick, 1 start, 2 continue, 3 stop.
+void sk_metronome_clock_event(SKMetronome *m, int event, double time);
 void sk_metronome_reset(SKMetronome *m);
 void sk_metronome_render(SKMetronome *m, float *left, float *right, uint32_t frames);
