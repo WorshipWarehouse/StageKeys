@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Size the workspace strip's sustain, layer-range and keyboard-range buttons from the audited hit-target minimum (44 pt on touch, 30 pt with the pointer) instead of a fixed 30 x 28 box, so the three smallest performer controls are reachable on iPad and iPhone (#19).
+
 - Stop completed AU loader callbacks from retaining the replaced sampler, and refuse forward, rollback and manual audio restart while a purged/truncated sampler is still retained; preserve the stopped recovery guard until release, with generated failure/retry coverage and a 96-switch live-output verification for #192.
 
 - Release a truncated or purged hosted sampler through one ownership registry and disposal order while the engine is stopped, commit the truncation into the rollback so a restored graph never references released nodes, and record the verified pre-restart release in the local support report (#192). The live macOS crash remains unreproduced and this is not a general rollback of released audio.

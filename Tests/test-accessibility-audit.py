@@ -25,6 +25,39 @@ DUPLICATED_PALETTE = re.compile(r'Color\(red:\s*0\.065|Color\(red:\s*0\.14,|'
                                 r'Color\(red:\s*0\.23,|Color\(red:\s*0\.64,')
 
 
+WORKSPACE_CONTROLS = ('Sustain pedal', 'Edit keyboard layers', 'Show keyboard ranges')
+
+
+def check_workspace_targets(source: Path, errors: list) -> None:
+    """The workspace strip must size its icon buttons from the audited target.
+
+    Those three buttons shipped as a literal 30 x 28 box: exactly the pointer
+    minimum and 14 pt short of the touch minimum. Asserting the constant instead
+    of the number keeps the split (44 touch / 30 pointer) in one place.
+    """
+    path = source / 'Sources/StageKeysApp.swift'
+    text = path.read_text()
+    block = re.search(r'private var workspaceButtons: some View \{.*?\n    \}', text, re.S)
+    if not block:
+        errors.append('Sources/StageKeysApp.swift has no workspaceButtons view to audit')
+        return
+    body = block.group(0)
+    if 'StageA11y.workspaceButtonTarget' not in text:
+        errors.append('workspaceButtons does not size its buttons from StageA11y.workspaceButtonTarget')
+    if not re.search(r'frame\(width: workspaceButtonBox, height: workspaceButtonBox\)', body):
+        errors.append('workspaceButtons does not apply the audited workspaceButtonBox')
+    for label in WORKSPACE_CONTROLS:
+        lines = [line for line in body.splitlines() if label in line]
+        if not lines:
+            errors.append(f'workspaceButtons no longer contains the {label!r} control')
+        elif not all('workspaceButtonBox' in line for line in lines):
+            errors.append(f'{label!r} is not sized from workspaceButtonBox')
+    literal = re.search(r'frame\(width: (\d+), height: (\d+)\)', body)
+    if literal:
+        errors.append('workspaceButtons still uses a literal '
+                      f'{literal.group(1)} x {literal.group(2)} box instead of the audited target')
+
+
 def main(source: Path) -> int:
     errors = []
     docs_path = source / 'Docs/ACCESSIBILITY.md'
@@ -83,6 +116,8 @@ def main(source: Path) -> int:
         errors.append('Sources/StageA11y.swift is missing')
     if not (source / 'Tests/StageA11yTests.swift').exists():
         errors.append('Tests/StageA11yTests.swift is missing')
+
+    check_workspace_targets(source, errors)
 
     if errors:
         for error in errors:

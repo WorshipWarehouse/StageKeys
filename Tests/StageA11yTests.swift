@@ -51,6 +51,20 @@ import Foundation
   assert(StageA11y.meetsHitTarget(width: 34, height: 45, pointer: true))
   assert(!StageA11y.meetsHitTarget(width: 27, height: 28, pointer: true))
   assert(StageA11y.meetsHitTarget(width: 28, height: 28, pointer: true))
+  // The workspace strip's sustain / layer-range / keyboard-range buttons shipped at
+  // 30 x 28: level with the pointer minimum and well below the touch one. The
+  // shipped box stays as the failing witness; the split targets must clear their
+  // own minimum.
+  assert(!StageA11y.meetsHitTarget(width: 30, height: 28, pointer: false))
+  assert(StageA11y.meetsHitTarget(width: 30, height: 28, pointer: true))
+  assert(StageA11y.workspaceButtonTarget(touch: true)==StageA11y.minimumTouchTarget)
+  assert(StageA11y.workspaceButtonTarget(touch: false)==30)
+  assert(StageA11y.workspaceButtonTarget(touch: true) > StageA11y.workspaceButtonTarget(touch: false))
+  for touch in [true, false] {
+   let box=StageA11y.workspaceButtonTarget(touch: touch)
+   assert(StageA11y.meetsHitTarget(width: box, height: box, pointer: !touch),
+          "the workspace box must clear its own minimum")
+  }
   // Layer identity hues: two of the five measure 3.03:1 (blue) and 3.41:1 (purple)
   // as text on a panel, so the text colour has to be derived, not reused raw. The
   // fills, borders and icons keep the original hue.

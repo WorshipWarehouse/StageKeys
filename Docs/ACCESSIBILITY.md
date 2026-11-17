@@ -15,6 +15,7 @@ physical devices — see [Not verified here](#not-verified-here).
 | Text as small as 8–10 pt in the mixer, transport, editors and import surface | Every themed size is clamped to **11 pt**; the 8–10 pt call sites were raised |
 | Piano octave marker at 40 % black on the 88 % key (**2.74:1**) | 60 % black (**5.26:1**); the failing value stays in the test as a witness |
 | No stated touch/pointer target, no record | 44 pt touch / 28 pt pointer constants, measured against the dense controls |
+| Workspace strip (sustain, layer ranges, keyboard ranges) at a literal **30 × 28** box | Sized from `StageA11y.workspaceButtonTarget`: **44 × 44** touch, **30 × 30** pointer |
 | Contrast unmeasured | 9 audited text/background pairs asserted in a gated test |
 
 ## Measured contrast
@@ -104,6 +105,14 @@ Measured from the source at the audited surfaces: the dense mixer icon buttons a
 photographic evidence for, so that change is deliberately left to the device pass rather than
 guessed at from Linux.
 
+The workspace strip's three icon buttons (sustain, edit layer ranges, show keyboard ranges) were the
+smallest interactive controls at a literal 30 × 28 box — exactly the pointer minimum and 14 pt short
+of the touch minimum. They are now sized from `StageA11y.workspaceButtonTarget`: 44 × 44 on
+iPhone/iPad and 30 × 30 with the pointer, with the glyph, selected fill and spacing unchanged. The
+strip sits beside a horizontally scrolling snapshot strip, so on a compact width the extra 42 pt
+narrows that scroll area instead of pushing the rack wider. Hosted `builds (simulator)` compiles it;
+the rendered result on a device is **not** viewed here.
+
 ## Reproduce
 
 ```bash
@@ -135,6 +144,8 @@ claimed as verified:
 - VoiceOver reading order and labels, keyboard focus order and `Tab` navigation, and Reduce
   Transparency/Increase Contrast behaviour.
 - Whether the 34–38 pt touch targets above need widening, with the resulting reflow.
+- The workspace strip's 44 pt touch boxes: no device or simulator screen was viewed, so the
+  resulting compact-width layout and the narrowed snapshot scroll area are unverified.
 
 ## macOS audit correction
 
