@@ -263,8 +263,18 @@ final class AudioController {
         return nil
         #endif
     }
+    /// Recovery re-applies a document whose plug-in state can differ from the live
+    /// unit's even when the cache matches. Each named channel reloads on its next
+    /// configure, which restores the document's state, nil included.
+    func forcePluginReload<S: Sequence>(channels: S) where S.Element == Int {
+        for channel in channels { externalStates[channel] = nil; forcedPluginReloads.insert(channel) }
+    }
     private var externalSounds: [Int: ExternalSound] = [:]
     private var externalStates: [Int: Data] = [:]
+    /// Channels that must take the load path on their next configure even when the
+    /// cached state compares equal. A plug-in editor edits the live unit without
+    /// updating `externalStates`, so only a reload can prove the document's state won.
+    private var forcedPluginReloads: Set<Int> = []
     private var samplerAttacks:[Int:Float]=[:]
     private var samplerHostCurves:[Int:Int]=[:]
     private var levels: [Int: Float] = [:]
@@ -664,7 +674,10 @@ final class AudioController {
         configurationRequests[index] = request
         externalRack?.cancelPendingLoad(index)
         let hostCurve = layer.importedRack?.mainStageAmplitudeVelocityCurve ?? layer.external?.nativeSampler?.rack.mainStageAmplitudeVelocityCurve
-        let changed = samplerHostCurves[index] != hostCurve || externalSounds[index] != layer.external ||
+        // A forced reload also covers a nil state: clearing the cache alone would
+        // compare equal and keep whatever the live unit holds.
+        let forced = forcedPluginReloads.remove(index) != nil
+        let changed = forced || samplerHostCurves[index] != hostCurve || externalSounds[index] != layer.external ||
             externalStates[index] != layer.pluginState || samplerAttacks[index] != layer.samplerAttackMinimum
         if changed, let sound = layer.external {
             guard let rack = externalRack else {

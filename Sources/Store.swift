@@ -440,6 +440,9 @@ final class PerformanceStore: ObservableObject {
         var isolatedLibrary = false
     }
     private var audition: Audition?
+    /// Set while a recovered document is being applied. Its plug-in states come from
+    /// the document, so a capture of the live units must not write over them.
+    private var applyingRecoveredDocument = false
     func saveEffectPreset(_ effect:AudioEffect,name:String) {
         var saved=effect
         if effect.usesCreamCoat {saved.reverbCore="creamcoat"}
@@ -1939,6 +1942,9 @@ final class PerformanceStore: ObservableObject {
         save()
     }
     func capturePluginStates() {
+        // A recovered document already holds the states it was saved with; capturing
+        // the live units here would overwrite them before the reload finishes.
+        guard !applyingRecoveredDocument else { return }
         for (i,l) in patch.layers.enumerated() where l.external?.kind == .audioUnit {
             if audition?.patchID == patch.id && audition?.index == i { continue }
             // A plug-in that is not installed or failed to load has no live state; keep
@@ -2811,6 +2817,13 @@ final class PerformanceStore: ObservableObject {
             message = nil
             panic(); cancelTransition()
             setlist = candidate; selected = 0; activeSnapshot = nil
+            // The recovered document's plug-in states are the ones to keep: reload
+            // every restored Audio Unit layer, including a layer whose state matches
+            // what the live unit was cached with, and keep the save from recapturing
+            // the live units before those reloads land.
+            applyingRecoveredDocument = true
+            defer { applyingRecoveredDocument = false }
+            if let recovered = setlist.patches.first { audio.forcePluginReload(channels: recovered.layers.indices) }
             applyPatch(); recallTonicPatch(); audio.clock(performedTempo, metronome)
             save()
             if message == nil { message = "Previous copy of \(descriptor.name) restored and opened. The damaged file was retained." }
