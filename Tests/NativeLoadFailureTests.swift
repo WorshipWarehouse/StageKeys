@@ -11,7 +11,9 @@ import AVFoundation
         store.captureSnapshot(0); store.save()
         let previous = store.patch.layers[0]
         let rack = store.audio.externalRack!
-        let unit = rack.unit(channel: 0)!
+        // Identity observation only: later tail purges must be able to release it.
+        weak var unit = rack.unit(channel: 0)
+        assert(unit != nil)
         let generation = rack.graphGeneration
         let encoder = JSONEncoder(); encoder.outputFormatting = .sortedKeys
         let original = try encoder.encode(store.setlist)
