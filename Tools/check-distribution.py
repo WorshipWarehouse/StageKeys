@@ -20,7 +20,7 @@ if not args.repo and not args.bundle:
  p.error('name --repo and/or --bundle: this gate checks nothing without a target')
 # Sampled audio (.aifc, .sd2 are AIFF-C and Sound Designer II), sampler instruments,
 # channel strips and host devices/sets.
-forbidden={'.caf','.wav','.aif','.aifc','.aiff','.sd2','.flac','.mp3','.m4a','.sf2','.dls','.exs','.aupreset','.cst','.alp','.adg','.als','.stagekeyspack','.stagekeyssetlist'}
+forbidden={'.caf','.wav','.aif','.aifc','.aiff','.sd2','.flac','.mp3','.m4a','.sf2','.dls','.exs','.npno','.nsmp','.nsmp3','.nsmp4','.aupreset','.cst','.alp','.adg','.als','.stagekeyspack','.stagekeyssetlist'}
 # MainStage documents are bundles, so match the path component as well as a plain file name.
 document_suffixes=('.patch','.concert','.stagekeyspack','.stagekeyssetlist')
 # Files the app writes into its own data directory for the user.
@@ -58,7 +58,7 @@ if args.bundle:
   raise SystemExit('Bundle has no application Info.plist')
  entries = list(args.bundle.rglob('*'))
  paths += [x.relative_to(args.bundle) for x in entries]
- for notice in ('StageKeys-MIT.txt','Airwindows-MIT.txt','EXS-Parser-MIT.md','StageKeys-Dense-Reverb-MIT.txt','OFL.txt'):
+ for notice in ('StageKeys-MIT.txt','Airwindows-MIT.txt','EXS-Parser-MIT.md','Drawbar-BSD-3-Clause.txt','StageKeys-Dense-Reverb-MIT.txt','OFL.txt'):
   if not any(x.is_file() and x.name == notice for x in entries):
    raise SystemExit('Required bundled license missing: '+notice)
 factory=[]

@@ -11,6 +11,7 @@ Refs #21. StageKeys-authored code/documentation is MIT-licensed by the owner’s
 | StageKeys-authored code/documentation | Owner-selected MIT, `LICENSE` / bundled `Licenses/StageKeys-MIT.txt` |
 | IBM Plex Sans fonts | IBM, SIL OFL 1.1, `Resources/Fonts/OFL.txt` |
 | CreamCoat-derived DSP | Airwindows / Chris Johnson, `Licenses/Airwindows-MIT.txt` |
+| Nord stroke parser/decoder and measured velocity selector | John Moore / drawbar `nord-format`, BSD-3-Clause, `Licenses/Drawbar-BSD-3-Clause.txt` |
 | EXS parser-derived implementation | Matt Allan and contributors, `Licenses/EXS-Parser-MIT.md` |
 | Independent dense reverb | StageKeys implementation, scoped `Licenses/StageKeys-Dense-Reverb-MIT.txt` |
 | StageKeys icon | Generated StageKeys artwork, `Tools/GenerateAppIcon.swift`; reference-brand assets excluded |
