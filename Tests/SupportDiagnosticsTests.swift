@@ -69,11 +69,13 @@ import Foundation
             latency: latency, midiSources: 1, loadedSlots: 2, limiterBypassed: false, recording: false,
             usableOutputPairs: FlexRouting.pairs(channels: 6).count)
         let pairJSON = try pairReport.json()
-        assert(try JSONDecoder().decode(SupportDiagnostics.self, from: Data(pairJSON.utf8)).usableOutputPairs == 3)
+        let decodedPairs = try JSONDecoder().decode(SupportDiagnostics.self, from: Data(pairJSON.utf8))
+        assert(decodedPairs.usableOutputPairs == 3)
         assert(report.usableOutputPairs == nil, "An unmeasured pair count must not be reported as zero")
         let boundedPairs = SupportDiagnostics(version: "test", build: "test", running: true, status: nil, latency: nil,
             midiSources: 0, loadedSlots: 0, limiterBypassed: false, recording: false, usableOutputPairs: 99)
-        assert(boundedPairs.usableOutputPairs == Optional(FlexOutputPair.maximumPairs))
+        let pairCap: Int? = FlexOutputPair.maximumPairs
+        assert(boundedPairs.usableOutputPairs == pairCap)
         print("PASS: diagnostics omit names/IDs/paths, distinguish unknown metrics and bound numeric data")
     }
 }
