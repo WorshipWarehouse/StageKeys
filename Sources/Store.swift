@@ -2263,7 +2263,7 @@ final class PerformanceStore: ObservableObject {
         librarySounds.removeAll{$0.id==id};refreshLibraryContent()
         do { librarySounds=try library.read();refreshLibraryContent() }
         catch {message="Removed \(removed.name) from My Sounds, but the catalog could not be re-read: \(error.localizedDescription). Its file stays in the library folder so saved patches keep playing.";return removed}
-        message="Removed \(removed.name) from My Sounds. Its file stays in the library folder so saved patches keep playing; importing it again restores the entry."
+        message="Removed \(removed.name) from My Sounds. Its file stays in the library folder so saved patches keep playing. Use Undo to restore the entry with its tags and settings."
         return removed
     }
     /// Undo one removal by appending the exact entry that removal reported. The
