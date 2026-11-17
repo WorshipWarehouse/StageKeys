@@ -109,9 +109,9 @@ import Foundation
 
   // Limits are enforced before any payload work.
   do {_ = try NordPiano.inspect(valid,limits:.init(maximumFileBytes:100,maximumStrokes:4096));fatalError("Oversized file accepted")}
-  catch let problem as NordPiano.Problem {assert(problem==.fileTooLarge(bytes:valid.count,maximum:100))}
+  catch let problem as NordPiano.Problem {assert(problem == .fileTooLarge(bytes:valid.count,maximum:100))}
   do {_ = try NordPiano.inspect(container(body(strokes:2)),limits:.init(maximumFileBytes:1<<20,maximumStrokes:1));fatalError("Stroke limit ignored")}
-  catch let problem as NordPiano.Problem {assert(problem==.invalidStrokeCount(2))}
+  catch let problem as NordPiano.Problem {assert(problem == .invalidStrokeCount(2))}
 
   let legacy=try NordPiano.inspect(container(body(),generation:0))
   assert(legacy.generation==0 && legacy.checksum == .unestablished)
