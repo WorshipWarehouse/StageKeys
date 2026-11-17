@@ -103,6 +103,20 @@ struct SoundLibrary {
                     if tags.types==nil {tags.types=voiced.tags?.types}
                     entries[index].tags=tags
                 }
+                // Migrate only the untouched generated Felt Room reverb. A
+                // user-edited effect, slot order, or parameter value remains
+                // exactly as authored.
+                if var existing=entries[index].layer,let measured=voiced.layer,
+                   existing.effects.indices.contains(1),measured.effects.indices.contains(1),
+                   existing.effects[1].kind==13,existing.effects[1].reverbCore=="creamcoat",
+                   existing.effects[1].parameters==measured.effects[1].parameters {
+                    existing.effects[1].reverbCore=measured.effects[1].reverbCore
+                    entries[index].layer=existing
+                    if let note=voiced.conversionNotes?.last,
+                       !(entries[index].conversionNotes ?? []).contains(note) {
+                        entries[index].conversionNotes=(entries[index].conversionNotes ?? [])+[note]
+                    }
+                }
             } else {entries.append(voiced)}
         }
         // Optional personal metadata, never a bundled catalog or sound asset.
