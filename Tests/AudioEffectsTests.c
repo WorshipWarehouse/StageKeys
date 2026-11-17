@@ -19,7 +19,7 @@ int main(void){
    case 2:sk_effect_parameter(s,0,0,0,.8);break;
    case 3:sk_effect_parameter(s,0,0,1,.25);break;
    case 4:sk_effect_parameter(s,0,0,0,4);break;
-   case 5:sk_effect_parameter(s,0,0,0,.68);break;
+   case 5:sk_effect_parameter(s,0,0,0,.65);break;
    case 6:sk_effect_parameter(s,0,0,5,1);break;
    case 7:sk_effect_parameter(s,0,0,7,12);break;
    case 8:sk_effect_parameter(s,0,0,0,.2);break;
