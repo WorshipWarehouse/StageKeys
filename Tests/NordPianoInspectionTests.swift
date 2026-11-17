@@ -63,6 +63,7 @@ import Foundation
    catch {fatalError("\(file):\(line): unexpected error \(error)")}
   }
 
+  assert(NordPiano.Problem.badMagic.localizedDescription == NordPiano.Problem.badMagic.description,"Import refusals must explain the failing field")
   let valid=container(body())
   let unchanged=valid
   let report=try NordPiano.inspect(valid)

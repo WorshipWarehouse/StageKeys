@@ -53,7 +53,8 @@ enum NordPiano {
         var notes: [String]
     }
 
-    enum Problem: Error, Equatable, CustomStringConvertible {
+    enum Problem: Error, Equatable, CustomStringConvertible, LocalizedError {
+        var errorDescription: String? { description }
         case empty
         case fileTooLarge(bytes: Int, maximum: Int)
         case truncatedHeader(bytes: Int, minimum: Int)
@@ -474,7 +475,7 @@ extension NordPiano {
                     throw DecodeFailure(reason: "Unsupported loop marks at stroke \(i).")
                 }
                 if index.report.streamVersion == 0x450, stroke.trim < 0 { throw DecodeFailure(reason: "Negative version-5 trim needs silent-zone translation.") }
-                let gain = index.report.streamVersion == 0x464 ? Double(min(108, libraryGain - stroke.trim)) / 10 : -Double(stroke.trim)
+                let gain = index.report.streamVersion == 0x464 ? Double(min(108, libraryGain - stroke.trim)) / 10 : Double(libraryGain) / 10 - Double(stroke.trim)
                 guard (-96...24).contains(gain) else { throw DecodeFailure(reason: "Stroke gain exceeds native limits.") }
                 result.append(Zone(stroke:i,key:key,velocityLow:low,velocityHigh:high,fineTuneCents:Double(index.fineTune[key])*0.7,gainDB:gain))
                 low = high + 1

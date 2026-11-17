@@ -31,6 +31,12 @@ import AVFoundation
   refuses(corrupt([0x732+4:1,0x732+118+4:2])) // no attack bank
   refuses(Data(bytes.dropLast()))
   var checksum=bytes;checksum[checksum.count-1] ^= 1;refuses(checksum)
+  let v5=try NordNative.preview(corrupt([5:0x50,0x61d:0x50,0x732+118+5:20,0x40c:20,0x732+0x35:2,0x732+118+0x35:2]))
+  for key in 59...61 {
+   let zones=v5.zones.filter{$0.key==key}
+   assert(zones.map(\.velocityLow)==[1,86] && zones.map(\.velocityHigh)==[85,127])
+   assert(zones.allSatisfy{$0.gainDB==0},"V5 library gain is tenths dB; stroke trim is whole dB")
+  }
   let template=try NordNative.template()
   let managed=root.appendingPathComponent("scratch");try FileManager.default.createDirectory(at:managed,withIntermediateDirectories:true)
   let before=try FileManager.default.contentsOfDirectory(atPath:managed.path)

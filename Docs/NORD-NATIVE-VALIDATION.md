@@ -36,7 +36,7 @@ is outstanding. Mac-prepared packs are the initial portable path.
 | Keys / roots | Each covered MIDI key uses the stored root map; uncovered keys stay silent |
 | Velocity layers | V6 stored thresholds; V5 midpoint thresholds on the five-times scale; selection uses upstream Electro 5 Touch 0 measurements and interpolation, approximately ±2 MIDI velocities |
 | Tuning | Signed per-key units × 0.7 cents; upstream measured estimate, not individual Nord hardware calibration |
-| Gain | V6 library gain minus stroke trim, tenths dB, boost capped at 10.8 dB; V5 nonnegative integer dB trim; native limits refuse extreme values |
+| Gain | V6 library gain minus stroke trim, tenths dB, boost capped at 10.8 dB; V5 library gain in tenths dB minus nonnegative integer dB trim; native limits refuse extreme values |
 | Loops | Source start plus length becomes inclusive native end; out-of-frame loops refuse conversion |
 | Pedal resonance / release banks | Counted and disclosed, not rendered in this attack-only conversion |
 | Pedals / decay / note-off | Native sustain and 100 ms release substitute; source damper range, decay ladders, note-off fades, sympathetic resonance, crossfades, Nord effects and exact continuous velocity dynamics are not translated |
@@ -104,6 +104,9 @@ was available. These checks use offline output, not an audible physical route.
   private PianoHeldNote fixture also remains unexercised by the default run.
 - Optimized current core, with assertions enabled in the test programs:
   **NordPianoDecodeTests and NordNativeImportTests passed**, zero skips/failures.
+- Follow-up generated checks: all three Nord programs passed after the V5
+  library-gain correction; the bounded reader also directly passed its localized
+  refusal-message assertion. V6 decoding/playback is unchanged by those fixes.
 - Universal unsigned Mac and unsigned iOS Simulator Release artifact gates passed;
   distribution/content/document gates and the simulator icon gate passed. Both
   bundles include the BSD notice. Test registration and distribution refusal tests
