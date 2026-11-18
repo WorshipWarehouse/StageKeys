@@ -99,6 +99,12 @@ import Foundation
         var legacyState = SnapshotSoundState(sourceLayer); legacyState.external = nil
         assert(legacyState.belongs(to: targetLayer.external),
                "A state saved before identity existed keeps the legacy restore path")
+        let sample=TestFixtures.layer()
+        let capturedSample=SnapshotSoundState(sample)
+        assert(capturedSample.external?.nativeSampler==nil && capturedSample.external?.fileName==nil,"Snapshot identity must not duplicate sampler sample maps or private conversion metadata")
+        assert(!capturedSample.belongs(to:targetLayer.external),"A captured non-AU must not inherit the legacy unknown-owner AU restore path")
+        let portableIdentity=SnapshotSoundState(sourceLayer).external!
+        assert(portableIdentity.nativeSampler==nil && portableIdentity.fileName==nil)
         print("PASS: Audio Unit legacy decode, identity stability, metadata round-trip, ordering, availability, vendor search and snapshot state compatibility")
     }
 }

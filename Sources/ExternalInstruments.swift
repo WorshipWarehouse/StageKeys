@@ -1003,6 +1003,7 @@ final class ExternalInstrumentRack {
                 (voice.unit as? AVAudioUnitSampler)?.sendController(UInt8(controller),withValue:UInt8(value),onChannel:0)
                 voice.parallel.forEach{$0.control(UInt8(controller),UInt8(value))}
             }
+            applyPitchBend(channel)
         }
     }
     /// Enumerate our nodes only: querying engine.attachedNodes can instantiate
@@ -1132,6 +1133,7 @@ final class ExternalInstrumentRack {
                 voices[channel]?.parallel.forEach { $0.control(UInt8(controller), UInt8(value)) }
                 midi(channel, 0xB0, UInt8(controller), UInt8(value))
             }
+            applyPitchBend(channel)
             for (key, note) in notes.sorted(by: { $0.key < $1.key }) {
                 noteOn(channel: channel, key: key, pitch: note.pitch, velocity: note.velocity, sourceID: note.source)
                 if note.released { noteOff(channel: channel, key: key) }
@@ -1443,6 +1445,7 @@ final class ExternalInstrumentRack {
             voices[channel] = voice
             soundMeters.attach(meterMixer, channel: channel)
             try ready?()
+            applyPitchBend(channel)
             #if DEBUG
             if let sampler = unit as? AVAudioUnitSampler {
                 samplerRegistry.record(.attached, channel: channel, generation: graphGeneration,
@@ -1571,13 +1574,17 @@ final class ExternalInstrumentRack {
     func sustain(channel: Int, on: Bool) { control(channel: channel, controller: 64, value: on ? 127 : 0) }
     /// Wheel position for every installed voice, including parallel imported
     /// branches. Instruments without a bend range simply ignore the message.
+    private var pitchBendPosition:Float=0
+    private func applyPitchBend(_ channel:Int) {
+        guard (0..<15).contains(channel) else{return}
+        let bytes=MIDIPitchBend.bytes(normalized:pitchBendPosition)
+        voices[channel]?.parallel.forEach{$0.pitchBend(bytes.lsb,bytes.msb)}
+        midi(channel,0xE0,bytes.lsb,bytes.msb)
+    }
     func pitchBend(_ normalized: Float) {
         precondition(Thread.isMainThread)
-        let bytes = MIDIPitchBend.bytes(normalized: normalized)
-        for channel in Array(voices.keys) {
-            voices[channel]?.parallel.forEach { $0.pitchBend(bytes.lsb, bytes.msb) }
-            midi(channel, 0xE0, bytes.lsb, bytes.msb)
-        }
+        pitchBendPosition=normalized.isFinite ? min(1,max(-1,normalized)):0
+        for channel in Array(voices.keys) {applyPitchBend(channel)}
     }
     func volume(channel: Int, gain: Float, pan: Float) {
         precondition(Thread.isMainThread)

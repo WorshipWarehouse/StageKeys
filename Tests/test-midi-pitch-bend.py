@@ -77,14 +77,15 @@ if 'func pitchBend(_ normalized: Float) { externalRack?.pitchBend(normalized) }'
     fail('AudioController no longer forwards the wheel to the hosted rack')
 
 rack = re.search(r'func pitchBend\(_ normalized: Float\) \{(.*?)\n    \}', instruments, re.S)
-if not rack:
-    fail('ExternalInstrumentRack.pitchBend(normalized:) is missing')
-else:
-    body = rack.group(1)
-    if 'midi(channel, 0xE0, bytes.lsb, bytes.msb)' not in body:
-        fail('the wheel is no longer delivered to the hosted Audio Unit as a 0xE0 event')
-    if 'voices[channel]?.parallel.forEach { $0.pitchBend(bytes.lsb, bytes.msb) }' not in body:
-        fail('parallel imported branches no longer receive the wheel')
+helper = re.search(r'private func applyPitchBend\(_ channel:Int\) \{(.*?)\n    \}', instruments, re.S)
+if not rack or 'applyPitchBend(channel)' not in rack.group(1):
+    fail('the rack no longer applies the current bend to its installed voices')
+if not helper or 'midi(channel,0xE0,bytes.lsb,bytes.msb)' not in helper.group(1):
+    fail('the wheel is no longer delivered as an actual 0xE0 event')
+if not helper or 'parallel.forEach' not in helper.group(1):
+    fail('parallel imported branches no longer receive the wheel')
+if 'if pitchBendSource == source' not in store:
+    fail('the disconnected bend owner is no longer released')
 if 'func pitchBend(_ lsb:UInt8,_ msb:UInt8)' not in instruments:
     fail('an imported branch no longer forwards the wheel to its sampler')
 

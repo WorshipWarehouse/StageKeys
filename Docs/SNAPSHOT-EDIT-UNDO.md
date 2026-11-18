@@ -37,3 +37,5 @@ strip.
   it does not re-run a recall or change the active mix until the user recalls the
   restored slot.
 - The strip was not viewed in a running app from the implementation workspace.
+
+New snapshots retain a compact instrument-kind/name token and Audio Unit component identity for state ownership. They do not copy native sampler maps or private conversion metadata into every scene. Legacy snapshots without an identity retain their documented compatibility behavior; no new schema version is required for the optional identity.

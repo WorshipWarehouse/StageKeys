@@ -17,12 +17,13 @@ Now:
 - `Store.handleMIDI` accepts `0xE0` from the **primary** controller only. A
   secondary controller owns no notes, so it cannot bend them either. The
   accepted position is published as `store.pitchBend` in `-1...1`.
-- `AudioController` forwards the position to every installed hosted voice,
-  including parallel imported branches. The rack re-encodes it and sends a real
+- `AudioController` forwards the position to installed performance voices (slots 0–14),
+  including parallel imported branches. The independent Tonic Pad is unchanged. The rack re-encodes it and sends a real
   `0xE0` message to the Audio Unit or sampler.
 - `Panic` (CC120/123, the Panic action, Stop Audio and the audio-failure
   panics) recentres the wheel: the published value returns to `0` and a centred
   `0xE0` is sent, so a discarded bend cannot transpose the next chord.
+- The last accepted source owns the bend. Disconnecting it recentres the instruments; disconnecting another source preserves the current owner. Replacement and graph restoration reapply the held wheel position.
 - Out-of-range and non-finite positions clamp or recentre; they never wrap
   around the wheel.
 
@@ -37,11 +38,7 @@ StageKeys does not claim to change it.
   synth layer would ignore the wheel. Product notes come from hosted samplers
   and Audio Units, which is the path this change covers; a native-synth bend
   needs a DSP change and is not claimed here.
-- A bend is not re-sent after a patch change or graph rebuild: the replacement
-  instrument starts centred. Most controllers send the wheel only when it
-  moves, so a held bend after a patch change returns on the next wheel move.
-  Recentring on Panic is deliberate and tested; continuous re-application
-  across a graph edit is not.
+- Patch selection deliberately recentres through Panic. Instrument replacement and graph restoration within the current patch reapply the held wheel position before replaying notes.
 - No physical wheel, keyboard or plug-in was exercised in this workspace. The
   hosted macOS `library` job proves the decoding, the primary-only dispatch,
   the forwarded bytes and the recentred wheel on the production store; the

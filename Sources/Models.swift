@@ -455,7 +455,7 @@ struct SnapshotSoundState: Codable {
     /// different Audio Unit must not receive it; nil in states saved before this
     /// field existed, which keeps the legacy restore path.
     var external: ExternalSound?
-    init(_ layer: Layer) { importedRack=layer.importedRack; effects=layer.effects; midiProgram=layer.midiProgram; midiEffectEnabled=layer.midiEffectEnabled; pan=layer.pan; pluginState=layer.pluginState; external=layer.external }
+    init(_ layer: Layer) { importedRack=layer.importedRack; effects=layer.effects; midiProgram=layer.midiProgram; midiEffectEnabled=layer.midiEffectEnabled; pan=layer.pan; pluginState=layer.pluginState; external=layer.external.map {sound in ExternalSound(kind:sound.kind,name:sound.name,component:sound.component)} }
     /// Whether the captured state belongs to the instrument now in the layer.
     func belongs(to sound: ExternalSound?) -> Bool {
         guard let external else { return true }

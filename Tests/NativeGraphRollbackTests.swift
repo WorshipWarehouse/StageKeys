@@ -176,12 +176,17 @@ import AVFoundation
         // node or tail leaks, and the previous graph still plays a new note (#123
         // acceptance: notes, sustain, Tonic Pad and metronome stay consistent after an
         // injected failure).
+        store.tonicSound=TestFixtures.padSound();store.toggleTonic(0)
         store.metronome = true
         store.tonicGain = 0.25; store.tonicBrightness = 0.4
+        let tonicIntents=rack.debugNoteIntentCount(15)
+        assert(store.tonic==0 && tonicIntents>0)
+        store.save()
         let documentBefore = try Data(contentsOf: document)
         let nodesBefore = rack.debugOwnedNodeCount, tailsBefore = rack.debugRetiredTailCount
+        var consistencyRestarts=0
         rack.debugGraphFault = { point in
-            if case .restartEngine = point { return NSError(domain: NSOSStatusErrorDomain, code: 804) }
+            if case .restartEngine = point {consistencyRestarts+=1;if consistencyRestarts==1 {return NSError(domain:NSOSStatusErrorDomain,code:804)}}
             return nil
         }
         _ = store.audio.configure(0, TestFixtures.layer(1))
@@ -193,15 +198,18 @@ import AVFoundation
         assert(rack.debugOwnedNodeCount == nodesBefore && rack.debugRetiredTailCount == tailsBefore,
                "A rejected edit must not leak nodes or tails")
         assert(rack.debugNoteIntentCount(0) == 0, "A rejected edit must not invent note ownership")
-        // A failed engine restart stops audio on purpose - that is the documented
-        // recovery state - so the invariant is that the performer state survives the
-        // stop and the previous sound is what comes back with the explicit restart.
+        assert(rack.lastGraphFailure?.rollbackSucceeded==true,"The one-shot fault must permit graph rollback")
+        assert(store.audio.running,"The restored graph must keep rendering before an explicit retry")
         store.start()
         assert(store.started && store.audio.running, "Audio must recover after a rejected edit")
         assert(store.audio.loadedUnit(channel: 0, sound: oldLayer.external) != nil,
                "The previous sound must be the one that recovers")
         assert(store.metronome, "The metronome must survive the recovery restart")
+        assert(store.tonic==0 && rack.debugNoteIntentCount(15)==tonicIntents,"An active Tonic root and its note ownership must survive rollback")
+        store.metronome=false;store.toggleTonic(0);rack.panic(15)
+        _ = try energy() // discard the pad/click before measuring the instrument alone
         rack.noteOn(channel: 0, key: 60, pitch: 60, velocity: 0.7, sourceID: 47)
+        store.metronome = false
         assert((try! energy()) > 0.01, "The previous graph must keep rendering after a rejected edit")
         rack.noteOff(channel: 0, key: 60)
         rack.panic()

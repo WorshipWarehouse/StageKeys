@@ -1,5 +1,15 @@
 # StageKeys public release checklist
 
+## Platform scope — 17 November 2026
+
+Physical iPad acceptance is deferred at the owner's request to the
+[Later milestone](https://github.com/WorshipWarehouse/StageKeys/milestone/1).
+See [the ownership map](DEFERRED-IPAD-ACCEPTANCE.md). Active software/Mac issues
+can close independently; physical iPhone requirements are deferred in #242.
+Shared-code and iOS Simulator gates remain active. An iPad release is not qualified
+by this scope change; its later hardware criteria must pass first.
+
+
 Updated 23 October 2026. All remaining gates are tracked in [RELEASE-ISSUES.md](RELEASE-ISSUES.md). StageKeys is a development build, not ready for a public reliability or complete MainStage-compatibility claim. This is the release gate list, not a list of completed features. Current implementation evidence lives in PARITY-STATUS.md, MAINSTAGE-NATIVE.md, REVERB-REFERENCE.md and Calibrations/. Historical version documents are not current coverage totals. Native response v6 now passes the dry Steinway calibration at three pitches and five velocities (two passes), within 0.04 dB after the intentional output headroom; this does not close the broader audio gate. See [sampler response evidence](SAMPLER-RESPONSE-v48.md).
 
 ## Product scope and release sequence
@@ -20,7 +30,7 @@ Aim for familiar, fast performance workflows and equivalent useful behavior. Bef
 - [ ] Prove bounded headroom for dense chords, maximum polyphony, sustain, stacked layers and reverb tails. Meter the actual output and expose limiter/gain-reduction behavior clearly; no automatic gain change that hides a conversion error.
 - [ ] Stress streaming and preload: slow/external storage, missing/offline files, rapid patch changes, overlapping release tails and memory pressure. No disk reads, allocation, locks or graph rebuilds on the audio render thread.
 - [ ] Verify note ownership, repeated same-pitch notes, sustain/sostenuto/half-pedal where supported, pitch bend, CC1/7/11, disconnect/reconnect and Panic across native instruments and hosted plugins.
-- [ ] Pass a proposed eight-hour scripted performance soak on each supported hardware class: no crash, stuck notes, invalid output or unbounded memory/CPU growth. Record underruns and worst render duration, not just average CPU.
+- [ ] Pass a proposed eight-hour scripted performance soak on each declared supported Mac hardware class (physical iPad classes are deferred in #236): no crash, stuck notes, invalid output or unbounded memory/CPU growth. Record underruns and worst render duration, not just average CPU.
 - [ ] Recover from audio-device unplug/replug, sample-rate/buffer changes, sleep/wake and interruption without losing the saved session. Restore audibility deliberately and display actionable failures.
 
 ## P0 — easy, honest MainStage conversion
@@ -55,7 +65,7 @@ The code has an Audio Unit instrument-hosting foundation and external MIDI suppo
 - [ ] Open plugin editors reliably; expose a usable generic parameter editor when no custom editor exists. Preserve plugin identity, full state, MIDI routing and automation through save/reload, duplicate, snapshot, preset and patch switch.
 - [ ] Define and test hosted-plugin crash/hang isolation, loading timeouts, quarantine/skip behavior and recovery. A broken plugin must not corrupt the session or prevent the next launch.
 - [ ] Validate mono/stereo/multi-output handling, sample rate/block-size changes, latency compensation, sustain and patch transitions with a published real-plugin test matrix.
-- [ ] Complete AUv3 instrument hosting and editor lifecycle on physical iPad/iPhone; clearly distinguish plugin availability per device. Do not promise that a Mac plugin binary/library works on iOS.
+- [ ] Clearly distinguish plugin availability per device. Physical iPhone AUv3 hosting/editor qualification is deferred in #242; physical iPad qualification is deferred in #238. Do not promise that a Mac plugin binary/library works on iOS.
 - [ ] Decide whether direct VST3 hosting is a release requirement or later milestone. Current AU hosting does not provide VST3 support. If added, implement the host, scanning, state/editor integration and crash handling separately; publish architecture/platform support.
 - [ ] Explain Kontakt and other proprietary library dependencies: host an installed compatible plugin where available; do not present their sample containers as supported native imports without a verified reader.
 - [ ] Finish external MIDI destination/virtual-port setup, channel mapping, persistence, reconnect and loop prevention; test with real external apps/devices.
@@ -77,14 +87,14 @@ The code has an Audio Unit instrument-hosting foundation and external MIDI suppo
 - [ ] Finish library modal dimensions/column behavior, scrolling, filter chips, empty/loading/error states, preview/add flow and dismissal without losing edits.
 - [ ] Establish StageKeys' own release visual identity and assets while preserving the validated workflow. Audit contrast, readable minimum text size, keyboard navigation, VoiceOver labels, touch targets, focus and scaling.
   - Measured baseline: `Docs/ACCESSIBILITY.md` records the single palette, the 11 pt floor, 9 audited contrast pairs, the accent-text derivation and the touch/pointer targets, asserted by `Tests/StageA11yTests.swift`. Keyboard, VoiceOver, Dynamic Type and device-layout evidence are still outstanding; the box stays unchecked.
-- [ ] Verify Mac resizable/full-screen behavior and physical iPad landscape/portrait, split view and iPhone compact layouts. No clipped controls or hidden essential actions.
+- [ ] Verify Mac resizable/full-screen behavior. Physical iPhone compact-layout/accessibility qualification is deferred in #242. Physical iPad landscape/portrait and split view are deferred in #237. No clipped controls or hidden essential actions.
 
 ## P0/P1 — persistence, distribution and support
 
 - [ ] Atomic saves, schema-version migrations, recovery from interrupted writes, autosave/undo and recoverable backups tested with old and deliberately damaged sessions. Never silently replace a failed load with defaults.
 - [ ] Restore a portable library and setlist on a clean device; preserve identities, original sample hashes, effects, plugin references, tags and edits. Private backup is not redistribution permission.
 - [ ] Complete a release content/asset/dependency provenance review and retain required notices. Ship only assets with established redistribution rights; keep user/private vendor libraries out of app binaries and public fixtures.
-- [ ] Sign and notarize the Mac distribution, verify clean-machine install/update/rollback, and complete iOS signing/TestFlight/App Store preparation for intended targets. Current local ad-hoc signing is not public distribution readiness.
+- [ ] Sign and notarize the Mac distribution, verify clean-machine install/update/rollback, with required Mac provenance evidence. iPhone signing/distribution is deferred in #242 and iPad qualification in #241. Current local ad-hoc signing is not public distribution readiness.
 - [ ] Publish supported OS/hardware/storage/plugin/conversion versions and release notes. Set explicit beta limitations; no blanket 1:1, all-MainStage or crash-proof claims.
 - [ ] Add repeatable CI builds, parser/processing tests, portable fixtures, package-content checks, sanitizer checks and release artifact validation. Extend to hardware/audio regression where automation alone is insufficient.
 - [ ] Provide opt-in diagnostics with device/buffer/underrun information, user-controlled audio checks, actionable logs and privacy documentation. No credentials, private samples, setlists or plugin state in automatic reports.

@@ -165,3 +165,116 @@ polyphony, patch changes, interruption/background/resume, corrupt pack, cancella
 and storage-full rollback. Record memory ceiling and rejection behavior before
 claiming a supported piano/device combination. Existing #4/#105/#113 gates still
 apply. Both issues remain open until those measured, audible checks exist.
+
+## Decoder proof follow-up — 17 November 2026 (#212)
+
+The follow-up uses the current production reader/decoder without changing it.
+`Sources/NordPiano.swift` SHA256 is
+`90bbb49ba26839619d19f073bbce5d7c3bf9d101710fd03a55e3f69cf1451f18`;
+its bytes match the reviewed `a09f3af` decoder. `Tools/NordDecoderProof.swift`
+reads each owner-selected source, validates the complete preview, decodes **every
+stored middle-C attack layer twice**, checks exact interleaved integer frame
+counts/equality, and writes private PCM plus a local JSON proof. It also checks
+that velocities 20/64/110 each choose exactly one source recording.
+
+| Input | Original source SHA256 | C4 attack layers | Summed per-channel frames | Channels | Selected stroke at velocity 20 / 64 / 110 |
+| --- | --- | ---: | ---: | ---: | --- |
+| Astoria Grand XL 6.1 | `6b43e12ce6345ec9a45c546fb30aff0970d13742d1016fe28fd593f34fd6b57c` | 11 | 1,663,716 | 2 | 810 / 807 / 801 |
+| EP9 Stockholm XL 6.0 | `5e72678d8cc2c760aa6485e9bb9b760013e5f09c2198c19ff37837490fa842ae` | 20 | 2,606,086 | 1 | 1188 / 1183 / 1170 |
+
+Source hashes match the previous all-bank audit and remain unchanged after this
+run. Every C4 layer is represented in the private report, including the actual
+velocity intervals; the three input velocities are not presented as complete
+coverage of eleven/twenty layers. All thirty-one stored layers decode repeatedly
+with identical PCM, including Astoria's separate stereo channels.
+
+`Tools/measure-pcm-pitch.py` measures each decoded channel in windows starting at
+0.08, 0.3 and 0.6 seconds, using a bounded cumulative-mean normalized difference
+(YIN) estimator over 80–1200 Hz. Original generated sine/harmonic fixtures at
+35002/44100/48000 Hz verify tones/octaves; silence, noise and insufficient input
+are refused. The metric is an offline diagnostic, not a reference-host null test.
+All channel/layer medians fall within 50 cents of the declared C4 root, with:
+
+| Input | Median-window raw frequency range | Raw cents relative to C4 | Stored per-key tuning | After the existing 0.7-cent/unit mapping (inferred, not a hardware result) |
+| --- | --- | --- | --- | --- |
+| Astoria | 263.931–265.858 Hz | +15.19…+27.79 | −17 units | +3.29…+15.89 cents |
+| Stockholm | 260.639–260.832 Hz | −6.54…−5.26 | +6 units | −2.34…−1.06 cents |
+
+These measurements validate plausible declared pitch/rate and disclose the
+remaining tuning differences; they do not establish exact Nord tuning, dynamics
+or hardware equivalence. No authorized Nord hardware/reference render was
+available. The upstream decoder shares implementation ancestry and is not an
+independent Nord reference. Public codec tests instead specify expected integer
+PCM independently, including signed/stereo fields, predictors 0–4, widths,
+block-overlap/frame checks, malformed bounds/clipping and cancellation.
+
+Executed proof commands (private input paths substituted; exact local commands,
+PCM hashes and complete results are retained only in the private output directory):
+
+```sh
+python3 Tests/run-local-library.py . /private/tmp/stagekeys-next-pr-focused \
+  SnapshotSlotTests SnapshotProcessingTests NativeGraphRollbackTests PlugAndPlayTests \
+  MIDIPitchBendTests LibraryOrderPersistenceTests AudioUnitCatalogTests SetlistShareTests
+xcrun swiftc -parse-as-library \
+  -module-cache-path /private/tmp/stagekeys-next-pr-focused/modules \
+  -I /private/tmp/stagekeys-next-pr-focused -L /private/tmp/stagekeys-next-pr-focused \
+  -lStageKeysVerificationCore -Xlinker -rpath -Xlinker /private/tmp/stagekeys-next-pr-focused \
+  -import-objc-header Sources/Bridge.h -disable-bridging-pch \
+  Tools/NordDecoderProof.swift -o /private/tmp/stagekeys-nord-decoder-proof
+/private/tmp/stagekeys-nord-decoder-proof /private/tmp/NEW-PRIVATE-NORD-PROOF \
+  '/path/to/authorized/Astoria Grand XL 6.1.npno' \
+  '/path/to/authorized/EP9 Stockholm XL 6.0.npno'
+python3 Tests/test-pcm-pitch-evidence.py
+python3 Tools/measure-pcm-pitch.py '/path/to/private/decoded-stroke.wav' --note 60
+```
+
+The output directory is mode 0700 and remains outside the checkout; no private
+source, decoded sample or recording is a public fixture. Decoding bounds remain
+512 MiB input, 4096 strokes, 180 seconds/stroke, 1.5 GB aggregate PCM, one stroke
+allocated at a time and per-block cancellation/overlap checks. This closes only
+the declared decoder proof when merged; musical mapping is #213 and audible Mac
+release qualification is #215. Physical iPad work is deferred in #216 and the
+[Later milestone](https://github.com/WorshipWarehouse/StageKeys/milestone/1).
+
+## Native mapping acceptance follow-up — 17 November 2026 (#213)
+
+`NordNativeMappingTests` adds an original encoded stereo sine instrument with
+independently calculated integer PCM. It verifies exact managed WAV bytes/frame
+counts, low/middle/high keys 36/60/96, both sides of the stored 57/58 velocity
+boundary, 14-cent translated tuning, repeated sustain/release, held loops beyond
+the source recording length, finite output and silence for uncovered keys. The
+actual production offline sampler output stays within 8 cents of the generated
+expected frequency; the velocity boundary changes the played recording level by
+more than 3×. Existing `NordNativeImportTests` additionally cover managed
+installation/restart, portable relocation, duplicate identity and cancellation.
+
+The private all-bank/import/render audit was repeated using the reviewed
+integration's optimized core and `Tools/NordPrivateAudit.swift`. Both inputs
+passed. The original source hashes and all-bank PCM digests match the previous
+audit exactly. No vendor input or derived audio is checked in.
+
+| Input | Mapped zones | Converted PCM bytes | All-bank native-endian PCM SHA256 | Import seconds | Offline render seconds |
+| --- | ---: | ---: | --- | ---: | ---: |
+| Astoria Grand XL 6.1 | 995 | 352,098,600 | `8499bc69f4a804e36ab6f88ef15680feb556d71c2068a32a2f4440892a003fdb` | 5.894 | 1.197 |
+| EP9 Stockholm XL 6.0 | 1,860 | 423,086,208 | `cf931a23e2323b2861e17f2d71363621a4203d15e095150590ebdf0083f65c8d` | 6.694 | 1.697 |
+
+For each input, the Store/catalog import and actual offline rack rendered keys
+36/60/96 at velocities 20/57/58/100/127, including release blocks. Every case
+produced finite, nonzero output. These velocities sample the two private
+instruments; their actual per-key boundaries differ from the synthetic 57/58
+boundary. The process peak RSS was 2,240,692,224 bytes across this complete
+decode/import/render audit; it is not a realtime residency or iPad budget.
+Preparation timings use an optimized core and are not cold-disk benchmarks.
+
+The declared conversion remains explicitly **experimental attack-only**. The
+complete compatibility report inventories pedal/resonance and release banks,
+unused recordings and inferred tuning/velocity/gain rules. It does not implement
+Nord decay ladders, native release/pedal recordings, sympathetic resonance,
+crossfades or effects. Native sustain and a fixed release substitute only after
+the user explicitly selects the disclosed partial conversion. Unsupported or
+ambiguous required mappings are refused; no generic fallback tone is installed.
+All decode/file preparation remains outside render callbacks, using the existing
+managed-resource and graph transaction paths. This evidence supports closure of
+#213 for the declared subset after merge; #214 workflow and #215 intended-rig
+qualification remain independent. No hardware-equivalence or release-readiness
+claim follows.
