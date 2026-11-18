@@ -20,3 +20,5 @@ Nord #212/#213 have a separate criterion-by-criterion proof in `NORD-NATIVE-VALI
 Physical iPad and iPhone acceptance is deferred to the owner's Later milestone, as recorded in `DEFERRED-IPAD-ACCEPTANCE.md`; no device result is marked passed. Simulator/shared-code gates remain required. No private sample, decoded audio, source session or plugin state is included in this integration.
 
 The follow-up review also verifies saved sort direction/favorites navigation, invalidates Undo on sound-source replacement, preserves unrelated snapshot transitions, gates AU state preflight by component ownership, and bounds proof-tool reads before hashing. The pitch estimator uses original-rate samples and rejects out-of-range tones; private C4 measurements were repeated and the sanitized table updated.
+
+The Xcode hosted artifact gate exposed a SwiftUI type-checking timeout after adding the direction observer. The library frame, import modifiers and preference modifiers are split into opaque computed views, retaining modifier order and behavior. Both platform artifact gates remain required.

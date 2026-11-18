@@ -91,7 +91,7 @@ struct SoundBrowser: View {
     private var emptyState:LibraryEmptyState {
         LibraryEmptyState.resolve(catalogUnreadable:store.libraryRecoveryRequired,searching:!query.search.isEmpty,filtering:!query.filters.isEmpty || query.favoritesOnly)
     }
-    var body:some View {
+    private var browserFrame:some View {
         EditorFrame(title:"Library",width:960,height:650,showsHeader:false) {
             header
             // One recovery control at a time: with no result rows the empty state
@@ -112,7 +112,10 @@ struct SoundBrowser: View {
                 }
             }
             footer
-        }.sheet(isPresented:$importHub){SoundImportView().environmentObject(store)}
+        }
+    }
+    private var browserImports:some View {
+        browserFrame.sheet(isPresented:$importHub){SoundImportView().environmentObject(store)}
         .fileImporter(isPresented:$locating,allowedContentTypes:[.data]) { result in
             defer {locateTarget=nil}
             guard case .success(let url)=result,let id=locateTarget else{return}
@@ -128,7 +131,9 @@ struct SoundBrowser: View {
             // pending removal Undo.
             if let message=store.message {repairNotice=message;store.message=nil}
         }
-        .onAppear {
+    }
+    private var browserPreferences:some View {
+        browserImports.onAppear {
             store.refreshLibraryContent()
             query=LibraryQuery(storedOrder:savedOrder,storedSeed:UInt64(savedSeed),storedAscending:Bool(savedAscending))
             let restored=savedFacets.split(separator:"|").compactMap{LibraryFacet(rawValue:String($0))}
@@ -138,7 +143,9 @@ struct SoundBrowser: View {
         .onChange(of:query.ordering){savedOrder=$0.rawValue}
         .onChange(of:query.ascending){savedAscending=String($0)}
         .onChange(of:query.shuffleSeed){savedSeed=$0 == 0 ? "":String($0)}
-        .onDisappear {endPreview()}
+    }
+    var body:some View {
+        browserPreferences.onDisappear {endPreview()}
         .onChange(of:selectedID){_ in previewRange();if auditionToken != nil {auditionSelection()}}
         .onChange(of:collection){_ in selectedID=nil;query.filters=[:];removalFeedback.dismiss()}
         .onChange(of:query.search){_ in clearHiddenSelection()}
