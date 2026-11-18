@@ -27,22 +27,13 @@ Discard, native conversion and restart. The focused bundle/import/rollback suite
 passed 3 tests, with no skips or failures. Distribution tests also passed and
 reject `.ns4p`/`.ns4pbundle` vendor content from app artifacts.
 
-The user-selected Danny Lopez bundle contains 32 programs, nine pianos and three
-sample instruments. Private production-reader inspection validated the manifest
-and all 32 program containers and all nine piano mappings. A separate private
-qualification helper explicitly selected, decoded and installed each piano,
-then rendered keys 36, 60 and 84 at velocities 20, 57, 58, 100 and 127 through
-the native offline audio graph. All nine produced finite, nonzero output in all
-135 sampled cases. A fresh Store retained all nine catalog entries. The source
-SHA256 remained
-`6203b01e965d4ad986cfb130112eed286ddf5eadffd731af2977055c436ff624`.
-Private reports, source bytes, decoded audio and installed assets remain outside
-the repository. The helper used the optimized test core with the same bundle
-parser and conversion code; it does not qualify subsequent UI-only changes.
+Private user-selected content was also exercised locally. Source identities,
+asset inventories, detailed conversion results and reports are deliberately
+omitted from this public record. No private source or decoded asset is committed.
 
-These are bounded conversion/playback checks on an M4 Mac with macOS 27.2.
-They do not establish Nord hardware sound equivalence, a listening comparison,
+These are bounded conversion/playback checks on a development Mac. They do not
+establish Nord hardware sound equivalence, a listening comparison,
 release/resonance/pedal equivalence, all-key coverage, hardware latency, memory
 headroom, an eight-hour soak, visible UI qualification, or other Mac models.
-The three NSMP4 instruments and the synth/organ/effects/layering/program behavior
-are untranslated. Full artist-bank playback remains unavailable.
+NSMP4 instruments and synth/organ/effects/layering/program behavior are
+untranslated. Full artist-bank playback remains unavailable.
