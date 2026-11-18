@@ -30,3 +30,13 @@ for sample_rate in (44100,48000,96000):
     fit=m.estimate([samples],sample_rate,1000)
     assert fit['status']=='estimated' and abs(fit['t20EstimatedT60Seconds']/t60-1)<.05,fit
 print('PASS octave decay sample rates: 44.1/48/96 kHz')
+# A recording cut short and then padded with zeros is still truncated.
+padded=[.3*math.sin(2*math.pi*1000*i/rate)*10**(-3*i/rate/1.4) for i in range(round(rate*.7))]+[0.0]*(rate*2)
+assert m.estimate([padded],rate,1000)['status']!='estimated','Padded silence hid an abrupt cutoff'
+# A one-dB run is not a measured T20 even if six points are perfectly linear.
+assert m.fit_decay([(i*.02,-6-i*.2) for i in range(6)])[0] is None
+assert abs(m.fit_decay([(i*.01,-5-i) for i in range(21)])[0]-.6)<1e-10
+sparse=[.002*math.sin(2*math.pi*1000*i/rate) for i in range(rate)]
+sparse[0]=1;sparse[rate//2]=.5;sparse += [0.0]*rate
+assert m.estimate([sparse],rate,1000)['status']!='estimated'
+print('PASS padded cutoff, narrow fit interval and separated weak-background reflections rejected')

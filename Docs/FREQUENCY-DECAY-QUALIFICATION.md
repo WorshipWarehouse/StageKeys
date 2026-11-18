@@ -7,9 +7,12 @@ listening result about clicking does not establish matching EQ, decay or release
 T60 estimates for matched wet impulse responses. For each band it retains both
 responses, the estimated time difference and energy-gain difference. It sums
 stereo power rather than downmixing, so anti-phase output cannot disappear.
-Silent, unsettled/noise-limited, too-short and non-exponential measurements do
+Silent, unsettled/noise-limited, detected abrupt cutoffs (including padded
+silence), sparse late tails, too-short and non-exponential measurements do
 not receive an estimated decay. These are diagnostic estimates, not certified
-room-acoustics measurements or an automatic parity verdict.
+room-acoustics measurements or an automatic parity verdict. A smooth artificial
+fade can be indistinguishable from genuine decay in the supplied PCM; capture
+provenance and an adequately long original recording are still required.
 
 Before collecting references, record app/version, source program/processor,
 exact parameters, bypass/active state, routing, mono/stereo layout, sample rate,

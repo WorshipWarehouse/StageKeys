@@ -41,7 +41,7 @@ def estimate(channels, rate, frequency):
         for i, value in enumerate(bandpass(channel, rate, frequency)):
             energy[i] += value * value
     # Power addition preserves stereo anti-phase responses instead of cancelling.
-    step = max(1, round(rate * .02))
+    step = max(1, round(rate * .005))
     bins = [sum(energy[i:i + step]) for i in range(0, len(energy), step)]
     total, peak = sum(bins), max(bins)
     result = {'energy': total / rate, 't20EstimatedT60Seconds': None,
@@ -57,28 +57,45 @@ def estimate(channels, rate, frequency):
     if result['terminalToPeakDB'] > -60:
         result['status'] = 'unsettled or noise limited'
         return result
+    # Digital padding can follow a cut-off before the final 100 ms. A sharp
+    # late power drop above the established floor is not evidence of settling.
+    # Reject conservatively; a sparse tail may need a different capture/probe.
+    power_step = max(1, round(rate * .02))
+    power_bins = [sum(energy[i:i + power_step]) for i in range(0, len(energy), power_step)]
+    power_peak = max(power_bins)
+    for before, after in zip(power_bins[1:], power_bins[2:]):
+        if before > power_peak * 1e-6 and after < before * 10 ** (-12 / 10):
+            result['status'] = 'abrupt cutoff or sparse tail'
+            return result
     integrated, tail = [], 0.0
     for value in reversed(bins):
         tail += value
         integrated.append(tail)
     integrated.reverse()
     points = [(i * step / rate, 10 * math.log10(max(v / total, 1e-30))) for i, v in enumerate(integrated)]
-    fit = [(t, db) for t, db in points if -25 <= db <= -5]
-    if len(fit) < 6:
+    duration, quality = fit_decay(points)
+    result['fitR2'] = quality
+    if duration is None:
+        result['status'] = 'insufficient coverage or non-exponential fit'
         return result
+    result.update(t20EstimatedT60Seconds=duration, status='estimated')
+    return result
+
+
+def fit_decay(points):
+    fit = [(t, db) for t, db in points if -25 <= db <= -5]
+    # A T20 estimate needs observations near both ends, not six points
+    # concentrated in a tiny part of the intended 20 dB interval.
+    if len(fit) < 6 or fit[0][1] < -6 or fit[-1][1] > -24 or fit[0][1] - fit[-1][1] < 18:
+        return None, None
     tx, ty = sum(t for t, _ in fit) / len(fit), sum(db for _, db in fit) / len(fit)
     xx = sum((t - tx) ** 2 for t, _ in fit)
     yy = sum((db - ty) ** 2 for _, db in fit)
     xy = sum((t - tx) * (db - ty) for t, db in fit)
     if xx <= 0 or yy <= 0:
-        return result
+        return None, None
     slope, r2 = xy / xx, xy * xy / (xx * yy)
-    result['fitR2'] = r2
-    if slope >= 0 or r2 < .98:
-        result['status'] = 'non-exponential or insufficient fit'
-        return result
-    result.update(t20EstimatedT60Seconds=-60 / slope, status='estimated')
-    return result
+    return (-60 / slope if slope < 0 and r2 >= .98 else None), r2
 
 
 def compare(reference, candidate, tail_start):
