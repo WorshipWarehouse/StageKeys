@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Forward an incoming MIDI pitch wheel to hosted samplers and Audio Units instead of dropping it: `Store.handleMIDI` now accepts 14-bit `0xE0` from the primary controller, publishes the position, sends it to every hosted voice (parallel imported branches included), and recentres the wheel on Panic and Stop so a discarded bend cannot transpose the next chord. The instrument keeps its own bend range; the native `Synth.c` voice core ignores the wheel and is documented as such (#3).
+
 - Keep a channel that is already installed in the library reported as a duplicate, with the reason it was skipped, when a later channel or the catalog commit fails or the import is cancelled; only outcomes still waiting to commit are closed, so a refused batch no longer turns an installed channel into a failure (#5).
 
 - Name the saved-session schema a build reads (1–4) and refuse a session saved by a newer StageKeys version with its own message instead of "unsupported or invalid settings"; autosave and Recover Previous Session no longer replace that session with an older copy, and a damaged session keeps the existing recovery path (#20).

@@ -871,6 +871,9 @@ final class AudioController {
         sk_metronome_enable(metronomeEngine, enabled ? 1 : 0)
         if changed { for (index,chain) in effects { configureEffects(index,chain,force:true) }; for (index,rack) in importedRacks {configureImported(index,rack)} }
     }
+    /// Forward the wheel to every hosted instrument. The Audio Unit or sampler
+    /// keeps its own bend range, so StageKeys sends the position unchanged.
+    func pitchBend(_ normalized: Float) { externalRack?.pitchBend(normalized) }
     func releaseSource(_ source:Int32){externalRack?.releaseSource(source)}
     func sustain(_ on: Bool, layers: [Layer]) { sk_sustain(synth, on ? 1 : 0); for (i,l) in layers.enumerated() { externalRack?.sustain(channel: i, on: on && !l.blockSustain) } }
     func panic() { sk_panic(synth); sk_metronome_reset(metronomeEngine); externalRack?.panic(); reverb.auAudioUnit.reset(); outputLimiter.auAudioUnit.reset() }

@@ -166,6 +166,8 @@ final class PerformanceStore: ObservableObject {
     private var screenSustain = false
     @Published var held: Set<Int> = []
     @Published var sustain = false
+    /// Last accepted wheel position, -1...1. Zero means centred.
+    @Published var pitchBend: Float = 0
     @Published var tonic: Int?
     @Published var tonicLastRoot=0
     @Published var tonicTimbre=0 {didSet{if oldValue != tonicTimbre {restartTonic()}}}
@@ -1217,7 +1219,10 @@ final class PerformanceStore: ObservableObject {
         if audio.running { playTonicNotes(root) }
         else { resumeTonicAfterAudioRecovery = true }
     }
-    func panic(preserveTonic:Bool=false,preserveEffectTails:Bool=false) { hardwareNotes.removeAll(); pedalSources.removeAll(); mappedPedals.removeAll(); screenSustain = false; midiFX.panic();
+    func panic(preserveTonic:Bool=false,preserveEffectTails:Bool=false) { hardwareNotes.removeAll(); pedalSources.removeAll(); mappedPedals.removeAll(); screenSustain = false; midiFX.panic()
+        // Panic returns the wheel to centre as well as releasing notes, so a
+        // discarded bend cannot leave the next chord transposed.
+        pitchBend = 0; audio.pitchBend(0)
         audio.cancelCountIn()
         for l in patch.layers { if let d = l.midiDestinationID { for cc: UInt8 in [64,123,120] { sendMIDI(d, 0xb0 | UInt8(l.midiOutputChannel), cc, 0) } } }
         outputNotes.removeAll(); held.removeAll(); sustain = false; metronome = false; if preserveTonic {audio.sustain(false,layers:patch.layers);for channel in 0..<15 {audio.panic(channel:channel,preserveEffectTails:preserveEffectTails)}} else {tonic = nil;audio.panic()} }
@@ -1871,6 +1876,12 @@ final class PerformanceStore: ObservableObject {
         case 0x80:
             guard isPrimary else { return }
             hardwareOff(source: source, channel: channel, note: Int(a))
+        case 0xe0:
+            guard isPrimary else { return }
+            // A is the least-significant byte and B the most significant. The
+            // hosted instrument keeps its own bend range; Panic and Stop recentre it.
+            pitchBend = MIDIPitchBend.normalized(lsb: a, msb: b)
+            audio.pitchBend(pitchBend)
         case 0xb0:
             // A reserved controller keeps its fixed route. Refuse the learn before
             // the fixed-route branches below act, and before any target assignment
