@@ -10,17 +10,19 @@ import CryptoKit
         }
         let source=URL(fileURLWithPath:CommandLine.arguments[1]),output=URL(fileURLWithPath:CommandLine.arguments[2])
         guard !FileManager.default.fileExists(atPath:output.path) else{fatalError("Choose a new report path")}
-        let preview=try NordBundle.inspect(source)
+        let properties=try source.resourceValues(forKeys:[.isRegularFileKey,.isSymbolicLinkKey,.fileSizeKey])
+        guard properties.isRegularFile==true,properties.isSymbolicLink != true,let expectedBytes=properties.fileSize,expectedBytes>=22,expectedBytes<=NordBundle.fileLimit else {throw NordBundle.Failure(reason:"Choose a bounded regular bundle.")}
         func boundedHash() throws -> String {
             let handle=try FileHandle(forReadingFrom:source);defer{try? handle.close()}
             var digest=SHA256(),count=0
             while let chunk=try handle.read(upToCount:1<<20),!chunk.isEmpty {
                 count+=chunk.count;guard count<=NordBundle.fileLimit else{throw NordBundle.Failure(reason:"Source grew beyond its admission limit.")};digest.update(data:chunk)
             }
-            guard count==preview.sourceBytes else{throw NordBundle.Failure(reason:"Source changed size during inspection.")}
+            guard count==expectedBytes else{throw NordBundle.Failure(reason:"Source changed size during inspection.")}
             return digest.finalize().map{String(format:"%02x",$0)}.joined()
         }
         let before=try boundedHash()
+        let preview=try NordBundle.inspect(source)
         var pianos:[[String:Any]]=[]
         if CommandLine.arguments.count==4 {
             guard CommandLine.arguments[3]=="--pianos" else{fatalError("Unknown option")}

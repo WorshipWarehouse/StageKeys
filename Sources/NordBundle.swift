@@ -35,12 +35,13 @@ enum NordBundle {
     }
     private final class Reader {
         let handle:FileHandle,size:Int
+        let sourceName:String
         let cancelled:()->Bool
         init(_ url:URL,cancelled:@escaping ()->Bool)throws {
             var current=url;current.removeAllCachedResourceValues()
             let values=try current.resourceValues(forKeys:[.isRegularFileKey,.isSymbolicLinkKey,.fileSizeKey])
             guard values.isRegularFile==true,values.isSymbolicLink != true,let bytes=values.fileSize,bytes>=22,bytes<=fileLimit else{try fail("Choose a regular bundle no larger than 2 GB.")}
-            size=bytes;self.cancelled=cancelled;handle=try FileHandle(forReadingFrom:url)
+            size=bytes;sourceName=url.lastPathComponent;self.cancelled=cancelled;handle=try FileHandle(forReadingFrom:url)
         }
         deinit {try? handle.close()}
         func read(_ at:Int,_ count:Int)throws->Data {
@@ -146,7 +147,11 @@ enum NordBundle {
         func parser(_ parser:XMLParser,foundCharacters string:String){if !string.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty {reject(parser,"Unexpected bundle metadata text.")}}
     }
     static func inspect(_ url:URL,cancelled:@escaping ()->Bool={false})throws->Preview {
-        let reader=try Reader(url,cancelled:cancelled),dir=try directory(reader)
+        let reader=try Reader(url,cancelled:cancelled)
+        return try inspect(reader).0
+    }
+    private static func inspect(_ reader:Reader)throws->(Preview,Directory) {
+        let dir=try directory(reader)
         guard let meta=dir.entries.first(where:{$0.name=="meta.xml"}),meta.bytes<=64<<10 else{try fail("Missing or oversized bundle manifest.")}
         let spans=try dir.entries.map{try reader.layout($0,before:dir.offset).1}.sorted{$0.lowerBound<$1.lowerBound}
         for i in spans.indices.dropFirst() {guard spans[i-1].upperBound<=spans[i].lowerBound else{try fail("ZIP entry spans overlap.")}}
@@ -164,12 +169,12 @@ enum NordBundle {
         }
         guard Set(dir.entries.filter{$0.name.lowercased().hasSuffix(".ns4p")}.map(\.name))==seen else{try fail("A program is omitted from the manifest.")}
         let identity=AssetDigest.sha256(dir.bytes+data+Data(String(reader.size).utf8))
-        return Preview(sourceName:url.lastPathComponent,identity:identity,sourceBytes:reader.size,entries:dir.entries,programs:manifest.programs)
+        return (Preview(sourceName:reader.sourceName,identity:identity,sourceBytes:reader.size,entries:dir.entries,programs:manifest.programs),dir)
     }
     static func piano(_ name:String,from url:URL,preview:Preview,cancelled:@escaping ()->Bool={false})throws->Data {
-        let current=try inspect(url,cancelled:cancelled)
+        let reader=try Reader(url,cancelled:cancelled)
+        let (current,dir)=try inspect(reader)
         guard current.identity==preview.identity,let entry=current.pianos.first(where:{$0.name==name}) else{try fail("The bundle changed or the selected piano is missing. Inspect it again.")}
-        let reader=try Reader(url,cancelled:cancelled),dir=try directory(reader)
         return try reader.payload(entry,before:dir.offset)
     }
 }

@@ -53,6 +53,21 @@ import zlib
         assert(embedded==piano)
         assert(try! Data(contentsOf:source)==bytes)
         let converted=try NordNative.preview(embedded);assert(converted.zones.count==6)
+        // Atomically replacing the URL after validation must not switch the open
+        // reader to different bytes while retaining the earlier fingerprint.
+        var inspectionCalls=0
+        _ = try NordBundle.inspect(source,cancelled:{inspectionCalls+=1;return false})
+        var replacement=files;replacement[2].data[50] ^= 1
+        let replacementBytes=zip(replacement)
+        var calls=0
+        let pinned=try NordBundle.piano("Piano/Original.npno",from:source,preview:preview,cancelled:{
+            calls+=1
+            if calls==inspectionCalls {try! replacementBytes.write(to:source,options:.atomic)}
+            return false
+        })
+        assert(pinned==piano && (try! Data(contentsOf:source))==replacementBytes)
+        try bytes.write(to:source)
+
         var compressed=files;compressed[2].method=8
         try zip(compressed).write(to:source)
         let compressedPreview=try NordBundle.inspect(source)
