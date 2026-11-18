@@ -40,7 +40,10 @@ struct SoundImportView:View {
                 if let preview=store.nordImportPreview {
                     VStack(alignment:.leading,spacing:10) {
                         Text("Nord Piano · "+preview.name).font(.headline)
+                        Text(preview.sourceVersion).font(.caption).foregroundStyle(.secondary)
                         Text("Experimental attack-only conversion · \(ByteCountFormatter.string(fromByteCount:Int64(preview.pcmBytes),countStyle:.file)) decoded PCM").font(.subheadline)
+                        Text("Minimum managed audio storage: \(ByteCountFormatter.string(fromByteCount:Int64(preview.minimumAssetBytes),countStyle:.file)); preset/catalog overhead is additional. Personal export needs another copy.").font(.caption).foregroundStyle(.secondary)
+                        Text(preview.targetEligibility).font(.caption).foregroundStyle(.secondary)
                         ForEach(Array(preview.notes.enumerated()),id:\.offset) {_,note in Text(note).font(.caption).foregroundStyle(.secondary)}
                         HStack {
                             Button("Convert Attack Recordings") {store.importNordSound()}.buttonStyle(StageButtonStyle())
