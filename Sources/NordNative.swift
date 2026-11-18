@@ -15,6 +15,15 @@ enum NordNative {
         let index: NordPiano.Index
         let zones: [NordPiano.Zone]
         let notes: [String]
+        var sourceVersion: String {
+            "Content revision \(index.report.contentVersion) · container \(index.report.generation) · stream 0x"+String(index.report.streamVersion,radix:16)
+        }
+        var minimumAssetBytes: Int {
+            pcmBytes + Set(zones.map(\.stroke)).count * 44
+        }
+        var targetEligibility: String {
+            "Mac: experimental native attack-only conversion. Personal-pack export is eligible subject to content permission, the 2 GB pack limit and destination capacity. iPad/iPhone playback has not been verified."
+        }
         var pcmBytes: Int {
             Set(zones.map(\.stroke)).reduce(0) { $0 + index.strokes[$1].frames * index.report.channels * 2 }
         }

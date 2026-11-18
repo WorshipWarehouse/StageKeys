@@ -791,6 +791,9 @@ final class PerformanceStore: ObservableObject {
     private var nordInspecting=false
     private var nordImportBytes:Data?
     private var nordImportCancellation:NordNative.Cancellation?
+    #if DEBUG
+    var debugNordImportBeforeCommit:(() throws -> Void)?
+    #endif
     private func checkLibraryImportCancellation()throws {
         if libraryImportCancelRequested {throw MainStagePatch.Failure.invalid("Import cancelled. No prepared catalog entries were committed.")}
     }
@@ -2176,6 +2179,9 @@ final class PerformanceStore: ObservableObject {
                     try NordNative.prepare(bytes,preview:preview,library:destination,template:template,cancelled:{cancellation.requested})
                 }.value
                 prepared=candidate
+                #if DEBUG
+                try debugNordImportBeforeCommit?()
+                #endif
                 try checkLibraryImportCancellation()
                 var layer=Layer(name:candidate.sound.name,instrument:-1,gain:0.65)
                 layer.external=candidate.sound;layer.importedRack=candidate.sound.nativeSampler?.rack
