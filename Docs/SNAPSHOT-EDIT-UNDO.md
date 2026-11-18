@@ -43,3 +43,5 @@ New snapshots retain a compact instrument-kind/name token and Audio Unit compone
 A successful whole-document activation (local open/new, file/share import or previous-copy recovery) also clears the pending Undo, even when the loaded patch retains the same UUID. Rejected activation preserves the current document and its Undo. Generated regressions reproduce same-identity import and cover rejected/successful recovery.
 
 Changing a sound source invalidates Undo before updating snapshot processing, so old sound settings cannot be restored over a replacement. Undoing an edit to another slot leaves its currently recalled snapshot and in-flight transition running. AU recall preflight checks component ownership before requiring a loaded unit; state belonging to a replaced component is skipped, while matching state still requires readiness.
+
+Replacing an effect kind also invalidates pending snapshot Undo before updating existing scenes, so a restored cleared slot cannot reinstall the superseded processor. Parameter edits of the same processor retain their existing scene behavior.

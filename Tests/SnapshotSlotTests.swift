@@ -101,6 +101,11 @@ import AVFoundation
         let deadline=Date().addingTimeInterval(2)
         while abs(store.patch.layers[0].gain-0.23)>0.001 && Date()<deadline {RunLoop.current.run(until:Date().addingTimeInterval(0.01))}
         assert(store.activeSnapshot==fading.id && abs(store.patch.layers[0].gain-0.23)<0.001,"Undoing another slot must not cancel its in-flight recall")
+        store.captureSnapshot(0);store.clearSnapshot(0)
+        assert(store.snapshotUndo != nil)
+        let replacement=AudioEffect.factoryDefault(kind:store.patch.layers[0].effects[0].kind==1 ? 2:1)
+        assert(store.setEffect(0,0,replacement))
+        assert(store.snapshotUndo==nil,"Changing effect kind must not leave Undo able to restore the replaced processor")
         store.panic()
         print("PASS: sparse capture, stable cleared slots, empty recall guard, index bounds and legacy/session round trips")
         print("PASS: a capture over a populated slot and a clear each keep one-step undo, scoped to their patch")

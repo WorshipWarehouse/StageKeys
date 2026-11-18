@@ -1612,6 +1612,7 @@ final class PerformanceStore: ObservableObject {
         cancelTransition()
         let changedKind = patch.layers[index].effects[slot].kind != effect.kind
         if changedKind {
+            snapshotUndo = nil
             let staleAssignments = setlist.controlAssignments?.compactMap { cc, target -> Int? in
                 switch target {
                 case .effectEnabled(let layer, let effectSlot, _),
