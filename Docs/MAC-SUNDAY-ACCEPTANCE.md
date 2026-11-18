@@ -69,7 +69,10 @@ implementation is published. A clean build alone does not make Sunday ready.
   source routing/effects/MIDI cannot silently disappear. Private metadata and
   complete parser reports are outside the checkout.
 
-The unsigned Mac candidate artifact/content gate passed. The candidate uses an
+The local unsigned Mac candidate artifact/content gate passed at `932afb1`,
+before the preview view extraction. Hosted Mac and simulator gates subsequently
+passed on published head `fbb8e6e` (Actions run `44377899497`). These are build
+and artifact checks, not live-performance qualification. The candidate uses an
 isolated data/profile bundle for UI validation, preserving the installed session.
 CUA repeatedly failed to attach with an expired continuation; the visible private
 piano workflow is therefore **unverified**, not passed from Store tests.
