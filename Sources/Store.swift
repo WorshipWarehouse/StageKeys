@@ -788,6 +788,8 @@ final class PerformanceStore: ObservableObject {
     private var libraryImportCancelRequested=false
     func cancelLibraryImport(){libraryImportCancelRequested=true;nordImportCancellation?.cancel()}
     @Published var nordImportPreview:NordNative.Preview?
+    @Published var nordBundlePreview:NordBundle.Preview?
+    private var nordBundleURL:URL?
     private var nordInspecting=false
     private var nordImportBytes:Data?
     private var nordImportCancellation:NordNative.Cancellation?
@@ -2131,12 +2133,45 @@ final class PerformanceStore: ObservableObject {
     }
     func discardNordImport() {
         if nordInspecting {nordImportCancellation?.cancel();libraryImportCancelRequested=true}
-        guard !libraryImportBusy else{return}
-        nordImportPreview=nil;nordImportBytes=nil
+        nordImportPreview=nil;nordImportBytes=nil;nordBundlePreview=nil;nordBundleURL=nil
     }
     func inspectNordSound(_ url:URL) {
         guard !libraryImportBusy else{return}
         discardNordImport()
+        inspectNordCandidate(url) { cancellation in
+            let bytes=try NordPiano.read(url)
+            if cancellation.requested {throw CancellationError()}
+            return (bytes,try NordNative.preview(bytes))
+        }
+    }
+    func inspectNordBundle(_ url:URL) {
+        guard !libraryImportBusy else{return}
+        discardNordImport()
+        libraryImportBusy=true;libraryImportCancelRequested=false;nordInspecting=true
+        let cancellation=NordNative.Cancellation();nordImportCancellation=cancellation
+        libraryImportProgress="Inspecting Nord artist bundle…"
+        Task { @MainActor in
+            let access=url.startAccessingSecurityScopedResource()
+            defer {if access{url.stopAccessingSecurityScopedResource()};libraryImportBusy=false;nordImportCancellation=nil;nordInspecting=false}
+            do {
+                let candidate=try await Task.detached {try NordBundle.inspect(url,cancelled:{cancellation.requested})}.value
+                try checkLibraryImportCancellation()
+                nordBundleURL=url;nordBundlePreview=candidate
+                libraryImportProgress="Bundle inspected. Programs remain untranslated; embedded pianos can be inspected individually."
+            } catch {libraryImportProgress="Nord bundle inspection failed: "+error.localizedDescription}
+        }
+    }
+    func inspectNordBundlePiano(_ name:String) {
+        guard !libraryImportBusy,let url=nordBundleURL,let bundle=nordBundlePreview else{return}
+        nordImportPreview=nil;nordImportBytes=nil
+        inspectNordCandidate(url) { cancellation in
+            let bytes=try NordBundle.piano(name,from:url,preview:bundle,cancelled:{cancellation.requested})
+            let piano=try NordNative.preview(bytes)
+            let notes=piano.notes+["Selected piano from "+bundle.sourceName+". Bundle directory fingerprint: "+bundle.identity+". This standalone piano does not recreate an artist program."]
+            return (bytes,NordNative.Preview(name:piano.name,identity:piano.identity,index:piano.index,zones:piano.zones,notes:notes))
+        }
+    }
+    private func inspectNordCandidate(_ url:URL,prepare:@escaping (NordNative.Cancellation)throws->(Data,NordNative.Preview)) {
         libraryImportBusy=true;libraryImportCancelRequested=false
         let cancellation=NordNative.Cancellation();nordImportCancellation=cancellation
         nordInspecting=true
@@ -2145,11 +2180,7 @@ final class PerformanceStore: ObservableObject {
             let access=url.startAccessingSecurityScopedResource()
             defer {if access{url.stopAccessingSecurityScopedResource()};libraryImportBusy=false;nordImportCancellation=nil;nordInspecting=false}
             do {
-                let candidate=try await Task.detached { () throws -> (Data,NordNative.Preview) in
-                    let bytes=try NordPiano.read(url)
-                    if cancellation.requested {throw CancellationError()}
-                    return (bytes,try NordNative.preview(bytes))
-                }.value
+                let candidate=try await Task.detached {try prepare(cancellation)}.value
                 try checkLibraryImportCancellation()
                 nordImportBytes=candidate.0;nordImportPreview=candidate.1
                 libraryImportProgress="Review the supported features and differences before converting."
