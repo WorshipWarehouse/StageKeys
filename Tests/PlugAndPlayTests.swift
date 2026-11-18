@@ -140,7 +140,11 @@ import CoreMIDI
     assert(store.message == "CC 32 moved from Sustain Pedal to Modulation Wheel.",store.message ?? "Missing rebind feedback")
     store.message = nil // Acknowledge expected feedback; later errors must still fail.
     store.beginMIDILearn(.sustain);send(a,0xb0,35,127);wait { store.sustain }
-    send(a,0xb0,35,0);store.clearMIDILearn(.sustain);wait { !store.sustain }
+    // Wait for the pedal release itself: clearMIDILearn already drops sustain, so a
+    // bare !sustain wait can pass while CC35 is still queued and silently learn into
+    // the next listening target.
+    send(a,0xb0,35,0);wait { store.midiLog.first?.contains("Ch 01 · B0 · 35 · 0") == true }
+    store.clearMIDILearn(.sustain);wait { !store.sustain }
     store.save();let learned=PerformanceStore()
     assert(learned.assignedCC(.master)==30 && learned.assignedCC(.nextPatch)==31)
     assert(learned.assignedCC(.previousPatch)==34 && (0..<5).allSatisfy{learned.assignedCC(.snapshot($0))==40+$0})
