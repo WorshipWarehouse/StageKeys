@@ -795,8 +795,10 @@ final class AudioController {
                 guard (0..<15).contains(index), state.effects.count == 3,
                       state.effects.allSatisfy({ $0.validate() }), state.pan.isFinite, (-1...1).contains(state.pan),
                       state.importedRack?.validate() ?? true else { throw ExternalInstrumentError.unsupportedFormat }
+                // A state captured from a different Audio Unit would load one plug-in's
+                // settings into another, so it is skipped rather than restored.
                 if restorePluginStates, let data = state.pluginState, externalSounds[index]?.kind == .audioUnit,
-                   externalStates[index] != data {
+                   state.belongs(to: externalSounds[index]), externalStates[index] != data {
                     guard loadedUnit(channel: index, sound: externalSounds[index]) != nil, data.count <= 2_000_000,
                           (try PropertyListSerialization.propertyList(from: data, options: [], format: nil)) is [String: Any] else {
                         throw ExternalInstrumentError.unsupportedFormat

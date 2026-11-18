@@ -94,11 +94,15 @@ struct ExternalAUIdentity: Codable, Hashable, Identifiable {
         }
         return unavailableReason
     }
+    /// Core Audio identifies a component by its type, subtype and manufacturer, so
+    /// those three decide a match. A plug-in that only renames itself keeps its
+    /// identity: saved snapshot state and catalog lookups must still resolve it,
+    /// while the display name stays presentation.
     static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.type == rhs.type && lhs.subtype == rhs.subtype && lhs.manufacturer == rhs.manufacturer && lhs.name == rhs.name
+        lhs.type == rhs.type && lhs.subtype == rhs.subtype && lhs.manufacturer == rhs.manufacturer
     }
     func hash(into hasher: inout Hasher) {
-        hasher.combine(type); hasher.combine(subtype); hasher.combine(manufacturer); hasher.combine(name)
+        hasher.combine(type); hasher.combine(subtype); hasher.combine(manufacturer)
     }
 }
 
