@@ -8,6 +8,10 @@ struct SoundBrowser: View {
     @State private var collection="All Sounds"
     @State private var query=LibraryQuery()
     @AppStorage("library.filterColumns") private var savedFacets="Note Range|Type|Timbre|Articulation"
+    /// The chosen order is a view preference like the facet columns. The Random seed
+    /// travels with it so a relaunch reproduces the list the performer was reading.
+    @AppStorage("library.order") private var savedOrder=LibrarySort.name.rawValue
+    @AppStorage("library.shuffleSeed") private var savedSeed=""
     @State private var facets:[LibraryFacet]=[.noteRange,.type,.timbre,.articulation]
     @State private var selectedID:String?
     @State private var importHub=false
@@ -125,10 +129,13 @@ struct SoundBrowser: View {
         }
         .onAppear {
             store.refreshLibraryContent()
+            query=LibraryQuery(storedOrder:savedOrder,storedSeed:UInt64(savedSeed))
             let restored=savedFacets.split(separator:"|").compactMap{LibraryFacet(rawValue:String($0))}
             if restored.count==4 && Set(restored).count==4 {facets=restored}
         }
         .onChange(of:facets){savedFacets=$0.map(\.rawValue).joined(separator:"|")}
+        .onChange(of:query.ordering){savedOrder=$0.rawValue}
+        .onChange(of:query.shuffleSeed){savedSeed=$0 == 0 ? "":String($0)}
         .onDisappear {endPreview()}
         .onChange(of:selectedID){_ in previewRange();if auditionToken != nil {auditionSelection()}}
         .onChange(of:collection){_ in selectedID=nil;query.filters=[:];removalFeedback.dismiss()}
@@ -214,6 +221,14 @@ struct SoundBrowser: View {
         removalFeedback.restoration(succeeded:restored,message:store.message ?? (restored ? "Restored \(removed.name).":"Could not restore \(removed.name)."))
         if restored {selectedID=removed.id}
         store.message=nil
+    }
+    /// Leaving the browser empties the search and filters but keeps the ordering,
+    /// direction and Random seed: those observers persist the performer's saved
+    /// preference, so a navigation action must not overwrite it.
+    private func clearTransientQuery() {
+        query.search=""
+        query.filters=[:]
+        clearHiddenSelection()
     }
     private var filterBar:some View {
         ScrollView(.horizontal,showsIndicators:false) {
@@ -337,8 +352,8 @@ struct SoundBrowser: View {
                             if !query.search.isEmpty || !query.filters.isEmpty {Button("Clear Filters"){query.filters=[:];query.search=""}}
                             if emptyState.offersImport {
                                 Button("Import Samples"){importHub=true}.buttonStyle(StageButtonStyle())
-                                Button("Add Audio Unit"){collection="Audio Units";query=LibraryQuery()}.buttonStyle(StageButtonStyle())
-                                Button("MIDI Routing"){collection="External MIDI";query=LibraryQuery()}.buttonStyle(StageButtonStyle())
+                                Button("Add Audio Unit"){collection="Audio Units";clearTransientQuery()}.buttonStyle(StageButtonStyle())
+                                Button("MIDI Routing"){collection="External MIDI";clearTransientQuery()}.buttonStyle(StageButtonStyle())
                             } else {
                                 Button("Recover Previous Sound Catalog"){store.recoverPreviousLibrary()}.buttonStyle(StageButtonStyle())
                                     .accessibilityLabel("Recover the previous sound catalog")
