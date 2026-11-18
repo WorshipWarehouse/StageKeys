@@ -1837,6 +1837,11 @@ final class PerformanceStore: ObservableObject {
             guard isPrimary else { return }
             hardwareOff(source: source, channel: channel, note: Int(a))
         case 0xb0:
+            // A reserved controller keeps its fixed route. Refuse the learn before
+            // the fixed-route branches below act, and before any target assignment
+            // is touched; they still handle this message, so sustain, the mod wheel
+            // and panic keep working while a learn is listening.
+            _ = refuseReservedLearn(Int(a))
             if isPrimary && learningTarget == nil && learning == nil {
                 applyImportedController(Int(a), value: b, channel: channel)
             }
@@ -1856,10 +1861,10 @@ final class PerformanceStore: ObservableObject {
                 let rising=down && !(pressedCCs[key] ?? false); pressedCCs[key]=down
                 if let target = learningTarget ?? learning.map({ MIDIControlTarget.soundLevel($0) }) {
                     guard target.valid else { learningTarget=nil; learning=nil; return }
+                    let learned=MIDIControllerRules.assigning(cc,to:target,assignments:setlist.controlAssignments ?? [:],soundLevels:setlist.assignments)
+                    if refuseReservedLearn(cc) { return }
                     clearMIDILearn(target,saveChanges:false)
                     mappedPedals=mappedPedals.filter{$0.cc != cc}; applySustain()
-                    let learned=MIDIControllerRules.assigning(cc,to:target,assignments:setlist.controlAssignments ?? [:],soundLevels:setlist.assignments)
-                    guard !learned.reserved else { learningTarget=nil; learning=nil; return }
                     setlist.controlAssignments = learned.assignments.isEmpty ? nil : learned.assignments
                     setlist.assignments = learned.soundLevels
                     if let displaced=learned.displaced { message = "CC \(cc) moved from \(displaced.title) to \(target.title)." }
@@ -1885,6 +1890,17 @@ final class PerformanceStore: ObservableObject {
         learning = nil; learningTarget = nil
         message = "MIDI learn assignments cleared. Fixed modulation, sustain, panic and program-change routes remain."
         save()
+    }
+    /// Refuses a learn aimed at a fixed-route controller. The decision comes from
+    /// the pure rules and happens before the target is touched, so a refused learn
+    /// cannot unlearn the control it was aimed at. Returns whether it refused.
+    @discardableResult
+    private func refuseReservedLearn(_ cc:Int) -> Bool {
+        guard let target = learningTarget ?? learning.map({ MIDIControlTarget.soundLevel($0) }),
+              MIDIControlTarget.reservedCCs.contains(cc) else { return false }
+        learningTarget=nil; learning=nil
+        message = "CC \(cc) keeps its fixed route; choose another controller for \(target.title)."
+        return true
     }
     func beginMIDILearn(_ target:MIDIControlTarget) {
         guard target.valid else { return }; learning=nil; learningTarget = learningTarget == target ? nil : target

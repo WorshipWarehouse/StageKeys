@@ -11,12 +11,12 @@ import CoreMIDI
     assert(MIDISourceCreate(client,"Test Keyboard A" as CFString,&a)==noErr)
     assert(MIDISourceCreate(client,"Test Keyboard B" as CFString,&b)==noErr)
     var waitIndex=0
-    func wait(_ predicate:()->Bool) {
+    func wait(seconds:TimeInterval=3,line:Int=#line,_ predicate:()->Bool) {
         waitIndex += 1
-        let end=Date().addingTimeInterval(3)
+        let end=Date().addingTimeInterval(seconds)
         while !predicate() && Date()<end { RunLoop.current.run(until:Date().addingTimeInterval(0.01)) }
         let discovered=store.midiSources.map{String(describing:$0.endpoint)+":"+$0.name}
-        assert(predicate(),"Timed out at wait \(waitIndex); endpoints \(a), \(b), discovered \(discovered), CoreMIDI source count: \(MIDIGetNumberOfSources())")
+        assert(predicate(),"Timed out at wait \(waitIndex) (\(line)); endpoints \(a), \(b), discovered \(discovered), CoreMIDI source count: \(MIDIGetNumberOfSources()), selected \(store.selected), patch lock \(store.patchLock), started \(store.started), learning \(String(describing:store.learningTarget)), assignments \(String(describing:store.setlist.controlAssignments)), levels \(String(describing:store.setlist.assignments)), log \(store.midiLog.first ?? "none"), message \(store.message ?? "none")")
     }
     wait { store.midiSources.contains(where:{$0.name=="Test Keyboard A"}) && store.midiSources.contains(where:{$0.name=="Test Keyboard B"}) }
     store.primarySourceID=store.midiSources.first{$0.name=="Test Keyboard A"}!.id;store.midiChannel=0
@@ -147,7 +147,11 @@ import CoreMIDI
     assert(store.message == "CC 32 moved from Sustain Pedal to Modulation Wheel.",store.message ?? "Missing rebind feedback")
     store.message = nil // Acknowledge expected feedback; later errors must still fail.
     store.beginMIDILearn(.sustain);send(a,0xb0,35,127);wait { store.sustain }
-    send(a,0xb0,35,0);store.clearMIDILearn(.sustain);wait { !store.sustain }
+    // Wait for the pedal release itself: clearMIDILearn already drops sustain, so a
+    // bare !sustain wait can pass while CC35 is still queued and silently learn into
+    // the next listening target.
+    send(a,0xb0,35,0);wait { store.midiLog.first?.contains("Ch 01 · B0 · 35 · 0") == true }
+    store.clearMIDILearn(.sustain);wait { !store.sustain }
     store.save();let learned=PerformanceStore()
     assert(learned.assignedCC(.master)==30 && learned.assignedCC(.nextPatch)==31)
     assert(learned.assignedCC(.previousPatch)==34 && (0..<5).allSatisfy{learned.assignedCC(.snapshot($0))==40+$0})
@@ -165,16 +169,35 @@ import CoreMIDI
     assert(store.assignedCC(.master)==nil && store.assignedCC(bypass)==nil)
     assert(store.message=="MIDI learn assignments cleared. Fixed modulation, sustain, panic and program-change routes remain.")
     store.message=nil
+    // Reset cleared every learned assignment, Master and Next Patch included, so
+    // learn them again: the reserved-CC scenario below proves a refused learn keeps
+    // them, and the reload assertion expects them on disk.
+    store.beginMIDILearn(.master);send(a,0xb0,30,127);wait { store.assignedCC(.master)==30 }
+    store.beginMIDILearn(.nextPatch);send(a,0xb0,31,127);wait { store.assignedCC(.nextPatch)==31 }
+    assert(store.assignedCC(.master)==30 && store.assignedCC(.nextPatch)==31,
+           "The reserved-CC scenario needs Master and Next Patch learned first")
+    store.message=nil
     store.modWheel=0.25;send(b,0xb2,1,127);assert(abs(store.modWheel-0.25)<0.001)
     store.midiLog=[];send(a,0xb0,1,127);wait { store.midiLog.first?.contains("Ch 01 · B0 · 1 · 127") == true }
     assert(store.modWheel==1)
     store.midiLog=[];send(a,0xb0,64,127);wait { store.midiLog.first?.contains("Ch 01 · B0 · 64 · 127") == true }
     assert(store.sustain,"Primary CC64 must remain active after Reset All")
     send(a,0xb0,64,0);wait { !store.sustain }
+    // A reserved controller cannot be learned, and the refused learn must leave
+    // the listening target's existing assignment intact rather than unlearning it.
+    store.beginMIDILearn(.master);send(a,0xb0,64,127)
+    wait { store.learningTarget == nil }
+    assert(store.assignedCC(.master) == 30,"A reserved CC must not unlearn the listening target")
+    assert(store.learningTarget == nil,"A refused learn stops listening")
+    assert(store.message?.contains("fixed route") == true,"A refused learn explains the reserved route")
+    store.message = nil
+    send(a,0xb0,64,0);wait { !store.sustain }
     store.setlist.patches[0].programChangeEnabled=true;store.setlist.patches[0].programChangeNumber=99
     store.choose(1);send(b,0xc2,99,0);wait { store.midiLog.first?.contains("Ch 03 · C0 · 99 · 0") == true }
     assert(store.selected==1,"Secondary Program Change must not select a patch")
-    send(a,0xc0,99,0);wait {store.selected==0}
+    // Patch activation revalidates every layer before selecting, which can run past
+    // the default bound on a loaded runner; the change is expected, not instant.
+    send(a,0xc0,99,0);wait(seconds:15) {store.selected==0}
     store.setlist.patches[0].programChangeEnabled=false;store.choose(1)
     send(a,0xc0,99,0);RunLoop.current.run(until:Date().addingTimeInterval(0.1));assert(store.selected==1)
     MIDIEndpointDispose(b); b=0
@@ -182,6 +205,11 @@ import CoreMIDI
     send(a,0x90,67,100);wait { store.isNoteHeld(67) }
     store.panic();try store.setlist.validate()
     assert(store.message == nil,store.message ?? "")
-    print("PASS: Primary-only note/Program Change, filtered Primary/Secondary controls, CC1/64 ownership, velocity scaling, learned Tonic/effect/snapshot/navigation routes, assignment and source/channel persistence, hot-plug and output safety")
+    // Reload last: a second store starts MIDI and audio work, and creating it beside
+    // the program-change assertions starved the patch activation that follows.
+    store.save();let relearned=PerformanceStore()
+    assert(relearned.assignedCC(.master)==30 && relearned.assignedCC(.nextPatch)==31,
+           "A refused reserved-CC learn must keep the saved assignment")
+    print("PASS: Primary-only note/Program Change, filtered Primary/Secondary controls, CC1/64 ownership, velocity scaling, learned Tonic/effect/snapshot/navigation routes, assignment and source/channel persistence, hot-plug, output safety and reserved-CC learn refusal")
  }
 }
