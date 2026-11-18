@@ -72,6 +72,24 @@ import AVFoundation
         assert(store.snapshotUndo != nil)
         store.moveLayer(0, 1)
         assert(store.snapshotUndo == nil, "Moving a layer must drop the pending snapshot undo")
+        // Import/recovery may retain the same patch UUID. Undo must still belong
+        // to the outgoing document rather than overwrite its newly loaded copy.
+        store.captureSnapshot(0)
+        assert(store.snapshotUndo != nil)
+        let root=URL(fileURLWithPath:ProcessInfo.processInfo.environment["STAGEKEYS_DATA_DIR"]!)
+        let invalid=root.appendingPathComponent("snapshot-undo-invalid.json")
+        try Data("invalid".utf8).write(to:invalid)
+        store.load(invalid)
+        assert(store.snapshotUndo != nil,"A refused load must keep the current document's undo")
+        var incoming=Setlist();incoming.patches=[store.patch]
+        incoming.patches[0].snapshots[0].name="Imported same-identity snapshot"
+        let imported=root.appendingPathComponent("snapshot-undo-same-patch.json")
+        try encoder.encode(incoming).write(to:imported)
+        store.load(imported)
+        assert(store.patch.id==incoming.patches[0].id)
+        assert(store.snapshotUndo==nil,"Replacing a document must invalidate Undo even when patch UUIDs match")
+        store.undoSnapshotChange()
+        assert(store.patch.snapshots[0].name=="Imported same-identity snapshot")
         store.panic()
         print("PASS: sparse capture, stable cleared slots, empty recall guard, index bounds and legacy/session round trips")
         print("PASS: a capture over a populated slot and a clear each keep one-step undo, scoped to their patch")

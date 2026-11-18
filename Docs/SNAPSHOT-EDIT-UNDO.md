@@ -39,3 +39,5 @@ strip.
 - The strip was not viewed in a running app from the implementation workspace.
 
 New snapshots retain a compact instrument-kind/name token and Audio Unit component identity for state ownership. They do not copy native sampler maps or private conversion metadata into every scene. Legacy snapshots without an identity retain their documented compatibility behavior; no new schema version is required for the optional identity.
+
+A successful whole-document activation (local open/new, file/share import or previous-copy recovery) also clears the pending Undo, even when the loaded patch retains the same UUID. Rejected activation preserves the current document and its Undo. Generated regressions reproduce same-identity import and cover rejected/successful recovery.

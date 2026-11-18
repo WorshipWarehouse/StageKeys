@@ -6,4 +6,6 @@ The browser states the current platform scope. A known third-party macOS AUv2 id
 
 Editor view requests now carry an active generation. Dismissed/replaced requests cannot attach a view or parameter observer after teardown. Mobile editors use the available sheet viewport with scrolling instead of a mandatory desktop-width frame.
 
-Physical iPad/iPhone qualification is still required: install a supported AUv3, load/state-recall it, open/close its editor repeatedly, rotate/split-view, background/foreground, route-change and recover audio. Simulator compilation and Mac AU tests cannot close this gate. TestFlight/App Store signing and runtime plugin isolation remain separate issues.
+Physical iPad/iPhone qualification is deferred at the owner’s request to #238 and #242. It remains required before a mobile release, independently of completed software/Mac scope #14: install a supported AUv3, load/state-recall it, open/close its editor repeatedly, rotate/split-view, background/foreground, route-change and recover audio. Simulator compilation and Mac AU tests cannot close this gate. TestFlight/App Store signing and runtime plugin isolation remain separate issues.
+
+Kontakt and other proprietary libraries are used through an installed compatible Audio Unit instrument, with separately authorized content. StageKeys does not import Kontakt library containers as native sounds or include those plugins/libraries. The unsupported-format message directs users to a compatible AU. Actual installed-plugin editor, state and failure compatibility remains governed by #12/#13.

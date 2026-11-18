@@ -4,7 +4,7 @@ This integration starts at merged #229 (`a09f3af94d9fdb3a9a237356e3c31d1e5607d73
 
 | Original PR | Reviewed head | Disposition in this integration |
 | --- | --- | --- |
-| #230 | `537c2d6c79e9b55824cb05fee039dba8f6875a48` | Snapshot one-step Undo and AU ownership; compact captured identity avoids duplicating sampler maps/private metadata |
+| #230 | `537c2d6c79e9b55824cb05fee039dba8f6875a48` | Snapshot one-step Undo and AU ownership; compact captured identity avoids duplicating sampler maps/private metadata; document import/recovery invalidates outgoing Undo even when patch UUIDs match |
 | #231 | `eef483219afdf9d09b824c9265b94a22c057805e` | Reject reserved MIDI learn before unlearning; preserve learn-release ordering and existing gates |
 | #232 | `35090a782d4d2e2db211bf68fbf1d2d0798696ee` | Persist library order/random seed while retaining content repair/removal controls |
 | #233 | `7996af74dca32e3a1490d4af1e65581a7929dc88` | One-shot restart fault proves graph remains running before retry; active Tonic ownership survives; remove click/pad energy before fresh-note proof |

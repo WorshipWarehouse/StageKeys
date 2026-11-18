@@ -2927,7 +2927,7 @@ final class PerformanceStore: ObservableObject {
                 }
                 let recovered = try JSONDecoder().decode(Setlist.self, from: data).upgraded()
                 panic(); cancelAudition(); cancelTransition()
-                setlist = recovered; selected = 0; activeSnapshot = nil; currentSetlistID = nil
+                setlist = recovered; selected = 0; activeSnapshot = nil; snapshotUndo = nil; currentSetlistID = nil
                 sessionRecoveryRequired = false
                 sessionSavedByNewerVersion = false
                 if started { applyPatch(); recallTonicPatch(); audio.clock(performedTempo, metronome) }
@@ -3014,7 +3014,7 @@ final class PerformanceStore: ObservableObject {
             let loaded = try localSetlistLibrary().load(id:id)
             try prepareSetlistActivation(loaded)
             try preserveCurrentSetlist()
-            panic(); cancelTransition(); setlist = loaded; currentSetlistID = id; selected = 0; activeSnapshot = nil
+            panic(); cancelTransition(); setlist = loaded; currentSetlistID = id; selected = 0; activeSnapshot = nil; snapshotUndo = nil
             applyPatch(); recallTonicPatch(); audio.clock(performedTempo,metronome); save()
             recordRecentSetlist(id)
         } catch { message = error.localizedDescription }
@@ -3025,7 +3025,7 @@ final class PerformanceStore: ObservableObject {
             try preserveCurrentSetlist()
             var fresh = Setlist(); fresh.name = "New Setlist"; fresh.patches = [Patch(name:"New Patch",layers:(0..<15).map { _ in Layer.empty() },snapshots:[])]
             let id = try localSetlistLibrary().save(fresh).id
-            panic(); cancelTransition(); setlist = fresh; currentSetlistID = id; selected = 0; activeSnapshot = nil
+            panic(); cancelTransition(); setlist = fresh; currentSetlistID = id; selected = 0; activeSnapshot = nil; snapshotUndo = nil
             applyPatch(); recallTonicPatch(); audio.clock(performedTempo,metronome); save()
             recordRecentSetlist(id)
         } catch { message = error.localizedDescription }
@@ -3139,7 +3139,7 @@ final class PerformanceStore: ObservableObject {
                 try prepareSetlistActivation(plan.setlist)
                 try preserveCurrentSetlist()
                 let id = try SetlistShare.saveToLibrary(plan, library: library)
-                panic(); cancelTransition(); setlist = plan.setlist; currentSetlistID = id; selected = 0; activeSnapshot = nil
+                panic(); cancelTransition(); setlist = plan.setlist; currentSetlistID = id; selected = 0; activeSnapshot = nil; snapshotUndo = nil
                 applyPatch(); recallTonicPatch(); audio.clock(performedTempo, metronome); save(); refreshSetlists()
                 recordRecentSetlist(id)
             }
@@ -3206,7 +3206,7 @@ final class PerformanceStore: ObservableObject {
             // recovered layer as the audition's original and write the live state
             // over the recovered plug-in state.
             cancelAudition()
-            setlist = candidate; selected = 0; activeSnapshot = nil
+            setlist = candidate; selected = 0; activeSnapshot = nil; snapshotUndo = nil
             if started || audio.running {
                 // Even a matching cached state must replace editor-mutated live
                 // state. A nil source state gets a fresh default AU instance.
@@ -3227,7 +3227,7 @@ final class PerformanceStore: ObservableObject {
             let loaded = try JSONDecoder().decode(Setlist.self, from: Data(contentsOf: url)); let upgraded = try loaded.upgraded()
             try prepareSetlistActivation(upgraded)
             try preserveCurrentSetlist()
-            panic(); cancelTransition(); setlist = upgraded; currentSetlistID = nil; selected = 0; activeSnapshot = nil
+            panic(); cancelTransition(); setlist = upgraded; currentSetlistID = nil; selected = 0; activeSnapshot = nil; snapshotUndo = nil
             applyPatch(); recallTonicPatch(); audio.clock(performedTempo,metronome); save()
         } catch { message = "Could not import: \(error.localizedDescription)" }
     }

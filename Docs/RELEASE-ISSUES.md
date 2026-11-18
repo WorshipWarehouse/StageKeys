@@ -15,7 +15,6 @@ Created 23 October 2026. These issues cover all 56 unchecked gates in PUBLIC-REL
 - [[P1] Complete native effect controls, presets and preview lifecycle](https://github.com/WorshipWarehouse/StageKeys/issues/11)
 - [[P1] Finish Audio Unit discovery, editors and saved state](https://github.com/WorshipWarehouse/StageKeys/issues/12)
 - [[P0] Isolate hosted plugin failures and validate audio/MIDI topology](https://github.com/WorshipWarehouse/StageKeys/issues/13)
-- [[P1] Define supported plugin-format scope and availability](https://github.com/WorshipWarehouse/StageKeys/issues/14)
 - [[P1] Finish external MIDI routing and controller setup](https://github.com/WorshipWarehouse/StageKeys/issues/15)
 - [[P1] Verify all sound slots, patches, snapshots and Tonic Pad](https://github.com/WorshipWarehouse/StageKeys/issues/16)
 - [[P1] Finish library tags, sorting, filters and import workflows](https://github.com/WorshipWarehouse/StageKeys/issues/17)
@@ -48,3 +47,5 @@ See [PR readiness and remaining acceptance gates](PR-READINESS-2026-10-24.md) fo
 The owner has no iPad available. [Milestone 1](https://github.com/WorshipWarehouse/StageKeys/milestone/1) owns #105, #113, #216 and #236–#241. [The platform ownership map](DEFERRED-IPAD-ACCEPTANCE.md) separates these device checks from active software/Mac closure criteria; no physical iPad pass or release readiness is claimed.
 
 Physical iPhone acceptance is deferred in [#242](https://github.com/WorshipWarehouse/StageKeys/issues/242), alongside the separate iPad issues in the [Later milestone](https://github.com/WorshipWarehouse/StageKeys/milestone/1). Software/Mac issue closure does not require those device results.
+
+Completed platform-scope issue [#14](https://github.com/WorshipWarehouse/StageKeys/issues/14) is closed on its merged Mac/plugin disclosures and existing direct-VST3 deferral. Actual Mac AU compatibility stays in #12/#13, and physical mobile qualification stays deferred.
