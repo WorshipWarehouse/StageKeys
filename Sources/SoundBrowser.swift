@@ -132,17 +132,21 @@ struct SoundBrowser: View {
             if let message=store.message {repairNotice=message;store.message=nil}
         }
     }
+    private func restoreBrowserPreferences() {
+        store.refreshLibraryContent()
+        query=LibraryQuery(storedOrder:savedOrder,storedSeed:UInt64(savedSeed),storedAscending:Bool(savedAscending))
+        let restored=savedFacets.split(separator:"|").compactMap{LibraryFacet(rawValue:String($0))}
+        if restored.count==4 && Set(restored).count==4 {facets=restored}
+    }
+    private var browserAppearance:some View {
+        browserImports.onAppear(perform:restoreBrowserPreferences)
+    }
     private var browserPreferences:some View {
-        browserImports.onAppear {
-            store.refreshLibraryContent()
-            query=LibraryQuery(storedOrder:savedOrder,storedSeed:UInt64(savedSeed),storedAscending:Bool(savedAscending))
-            let restored=savedFacets.split(separator:"|").compactMap{LibraryFacet(rawValue:String($0))}
-            if restored.count==4 && Set(restored).count==4 {facets=restored}
-        }
-        .onChange(of:facets){savedFacets=$0.map(\.rawValue).joined(separator:"|")}
-        .onChange(of:query.ordering){savedOrder=$0.rawValue}
-        .onChange(of:query.ascending){savedAscending=String($0)}
-        .onChange(of:query.shuffleSeed){savedSeed=$0 == 0 ? "":String($0)}
+        browserAppearance
+        .onChange(of:facets){(values:[LibraryFacet]) in savedFacets=values.map(\.rawValue).joined(separator:"|")}
+        .onChange(of:query.ordering){(value:LibrarySort) in savedOrder=value.rawValue}
+        .onChange(of:query.ascending){(value:Bool) in savedAscending=value ? "true":"false"}
+        .onChange(of:query.shuffleSeed){(value:UInt64) in savedSeed=value == 0 ? "":String(value)}
     }
     var body:some View {
         browserPreferences.onDisappear {endPreview()}
