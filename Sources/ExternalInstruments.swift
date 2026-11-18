@@ -84,6 +84,7 @@ private final class ImportedBranchVoice {
         for child in children{child.midi.noteOff(channel:0,key:key,force:force)}
     }
     func control(_ controller:UInt8,_ value:UInt8){controllers[Int(controller)]=Int(value);sampler?.sendController(controller,withValue:value,onChannel:0);children.forEach{$0.control(controller,value)}}
+    func pitchBend(_ lsb:UInt8,_ msb:UInt8){sampler?.sendMIDIEvent(0xE0,data1:lsb,data2:msb);children.forEach{$0.pitchBend(lsb,msb)}}
     func releaseSource(_ source:Int32){midi.releaseSource(source);children.forEach{$0.releaseSource(source)}}
     func advance(_ time:Double){midi.advance(to:time);children.forEach{$0.advance(time)}}
     func prepareOffline()throws {if let sampler{try SamplerRendering.configure(sampler,offline:true)};for child in children{try child.prepareOffline()}}
@@ -1002,6 +1003,7 @@ final class ExternalInstrumentRack {
                 (voice.unit as? AVAudioUnitSampler)?.sendController(UInt8(controller),withValue:UInt8(value),onChannel:0)
                 voice.parallel.forEach{$0.control(UInt8(controller),UInt8(value))}
             }
+            applyPitchBend(channel)
         }
     }
     /// Enumerate our nodes only: querying engine.attachedNodes can instantiate
@@ -1131,6 +1133,7 @@ final class ExternalInstrumentRack {
                 voices[channel]?.parallel.forEach { $0.control(UInt8(controller), UInt8(value)) }
                 midi(channel, 0xB0, UInt8(controller), UInt8(value))
             }
+            applyPitchBend(channel)
             for (key, note) in notes.sorted(by: { $0.key < $1.key }) {
                 noteOn(channel: channel, key: key, pitch: note.pitch, velocity: note.velocity, sourceID: note.source)
                 if note.released { noteOff(channel: channel, key: key) }
@@ -1442,6 +1445,7 @@ final class ExternalInstrumentRack {
             voices[channel] = voice
             soundMeters.attach(meterMixer, channel: channel)
             try ready?()
+            applyPitchBend(channel)
             #if DEBUG
             if let sampler = unit as? AVAudioUnitSampler {
                 samplerRegistry.record(.attached, channel: channel, generation: graphGeneration,
@@ -1568,6 +1572,20 @@ final class ExternalInstrumentRack {
     }
     func control(channel: Int, controller: UInt8, value: UInt8) { precondition(Thread.isMainThread); guard controller < 128, value < 128 else { return };controllerValues[channel,default:[:]][Int(controller)]=Int(value);if controller == 64 && value < 64 {noteIntents[channel] = noteIntents[channel]?.filter { !$0.value.released }};if controller == 120 || controller == 123 {noteIntents[channel] = nil};voices[channel]?.parallel.forEach{$0.control(controller,value)}; midi(channel, 0xB0, controller, value) }
     func sustain(channel: Int, on: Bool) { control(channel: channel, controller: 64, value: on ? 127 : 0) }
+    /// Wheel position for every installed voice, including parallel imported
+    /// branches. Instruments without a bend range simply ignore the message.
+    private var pitchBendPosition:Float=0
+    private func applyPitchBend(_ channel:Int) {
+        guard (0..<15).contains(channel) else{return}
+        let bytes=MIDIPitchBend.bytes(normalized:pitchBendPosition)
+        voices[channel]?.parallel.forEach{$0.pitchBend(bytes.lsb,bytes.msb)}
+        midi(channel,0xE0,bytes.lsb,bytes.msb)
+    }
+    func pitchBend(_ normalized: Float) {
+        precondition(Thread.isMainThread)
+        pitchBendPosition=normalized.isFinite ? min(1,max(-1,normalized)):0
+        for channel in Array(voices.keys) {applyPitchBend(channel)}
+    }
     func volume(channel: Int, gain: Float, pan: Float) {
         precondition(Thread.isMainThread)
         voices[channel]?.mixer.outputVolume = max(0, min(4, gain))

@@ -249,6 +249,25 @@ struct LibraryQuery {
     }
 }
 
+extension LibraryQuery {
+    /// Restores the order the performer last chose. The browsing view is not
+    /// persisted, so without this the list silently returned to Name and a Random
+    /// order reshuffled on the next launch. A stored random order keeps the seed it
+    /// was shown with; an absent or zero sentinel seed draws one, and the view then
+    /// stores it so the next launch reproduces the same list.
+    init(storedOrder: String?, storedSeed: UInt64?, storedAscending: Bool? = nil) {
+        self.init()
+        let order = storedOrder.flatMap(LibrarySort.init(rawValue:)) ?? .name
+        ordering = order
+        sort = nil
+        ascending = storedAscending ?? (order == .name || order == .recommended)
+        if order == .random {
+            let seed = storedSeed ?? 0
+            shuffleSeed = seed == 0 ? UInt64.random(in: 1...UInt64.max) : seed
+        }
+    }
+}
+
 /// What the library shows when it has no result rows. An unreadable catalog is
 /// an error with its own recovery action, never an "install without sounds"
 /// empty state that invites importing over the preserved catalog.

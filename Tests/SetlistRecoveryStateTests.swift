@@ -6,6 +6,8 @@ import AVFoundation
         let root=URL(fileURLWithPath:ProcessInfo.processInfo.environment["STAGEKEYS_DATA_DIR"]!)
         let store=PerformanceStore();store.setlist=TestFixtures.setlist()
         try store.audio.prepareOffline();store.start();defer{store.stopAudio()}
+        store.captureSnapshot(0);store.captureSnapshot(0)
+        assert(store.snapshotUndo != nil)
         store.save()
         let id=store.currentSetlistID!,library=try SetlistLibrary(root:root.appendingPathComponent("Setlists"))
         let primary=library.root.appendingPathComponent(id.uuidString+".json")
@@ -20,6 +22,7 @@ import AVFoundation
         let patchID=store.patch.id
         store.recoverPreviousSetlist(id)
         assert(store.patch.id==patchID && store.held.contains(60),"Rejected recovery must retain live intent")
+        assert(store.snapshotUndo != nil,"Rejected recovery must retain the active document undo")
         assert((try! Data(contentsOf:primary))==before,"Admission must precede recovery publication")
         store.save() // Settings Done must not erase the still-recoverable source.
         assert((try! Data(contentsOf:previous))==missingBytes)
@@ -56,6 +59,7 @@ import AVFoundation
         assert((try! Data(contentsOf:primary))==Data("damaged primary".utf8),"Opening/closing the browser must not autosave over a damaged active document")
         assert(store.setlistLibraryIssues.contains{$0.fileID==id && $0.recoverable})
         store.recoverPreviousSetlist(id)
+        assert(store.snapshotUndo==nil,"Recovery must invalidate outgoing snapshot Undo even for matching patch identities")
         completeLoad()
         assert(abs((rack.unit(channel:0) as! AVAudioUnitSampler).masterGain+7)<0.01,"Recovered authored state must replace editor-mutated state")
         store.save()

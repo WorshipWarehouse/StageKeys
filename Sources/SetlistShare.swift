@@ -234,7 +234,14 @@ enum SetlistShare {
             }
             for s in setlist.patches[p].snapshots.indices {
                 if var sounds = setlist.patches[p].snapshots[s].sounds {
-                    for i in sounds.indices { sounds[i].pluginState = nil }
+                    for i in sounds.indices {
+                        sounds[i].pluginState = nil
+                        // A captured sound names the instrument its state belongs to,
+                        // so it travels in the package. Give it the same portable form
+                        // as a layer's sound, or local paths in sampler notes leak out
+                        // through the snapshot instead of the layer.
+                        if let sound = sounds[i].external { sounds[i].external = portable(sound) }
+                    }
                     setlist.patches[p].snapshots[s].sounds = sounds
                 }
             }

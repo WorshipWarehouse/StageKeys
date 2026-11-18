@@ -363,7 +363,7 @@ struct PerformanceView: View {
                         .contextMenu {
                             if populated {
                                 Button("Customize…") { sheet = .snapshot(i) }
-                                if i > 0 { Button("Move Left") { store.setlist.patches[store.selected].snapshots.swapAt(i, i-1); store.save() } }
+                                if i > 0 { Button("Move Left") { store.moveSnapshot(i, i - 1) } }
                                 Button("Clear", role: .destructive) { store.clearSnapshot(i) }
                             }
                             Button("Capture Current Mix") { store.captureSnapshot(i) }
@@ -373,6 +373,11 @@ struct PerformanceView: View {
                     ForEach(0..<max(5, store.patch.snapshots.count), id: \.self) { i in Button("Capture into Slot \(i + 1)") { store.captureSnapshot(i) } }
                     Button("Next Empty Slot") { store.saveSnapshot() }
                 } label: { Image(systemName: "square.and.arrow.down").padding(10) }.accessibilityLabel("Capture Snapshot")
+                if let undo = store.snapshotUndo {
+                    Button("Undo \(undo.action)") { store.undoSnapshotChange() }.buttonStyle(StageButtonStyle())
+                        .accessibilityLabel("Undo \(undo.action)")
+                        .help("Restore the snapshot that the last capture or clear replaced.")
+                }
             }
         }.frame(height: 54)
     }

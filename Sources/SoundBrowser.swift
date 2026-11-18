@@ -8,6 +8,11 @@ struct SoundBrowser: View {
     @State private var collection="All Sounds"
     @State private var query=LibraryQuery()
     @AppStorage("library.filterColumns") private var savedFacets="Note Range|Type|Timbre|Articulation"
+    /// The chosen order is a view preference like the facet columns. The Random seed
+    /// travels with it so a relaunch reproduces the list the performer was reading.
+    @AppStorage("library.order") private var savedOrder=LibrarySort.name.rawValue
+    @AppStorage("library.shuffleSeed") private var savedSeed=""
+    @AppStorage("library.ascending") private var savedAscending=""
     @State private var facets:[LibraryFacet]=[.noteRange,.type,.timbre,.articulation]
     @State private var selectedID:String?
     @State private var importHub=false
@@ -86,7 +91,7 @@ struct SoundBrowser: View {
     private var emptyState:LibraryEmptyState {
         LibraryEmptyState.resolve(catalogUnreadable:store.libraryRecoveryRequired,searching:!query.search.isEmpty,filtering:!query.filters.isEmpty || query.favoritesOnly)
     }
-    var body:some View {
+    private var browserFrame:some View {
         EditorFrame(title:"Library",width:960,height:650,showsHeader:false) {
             header
             // One recovery control at a time: with no result rows the empty state
@@ -107,7 +112,10 @@ struct SoundBrowser: View {
                 }
             }
             footer
-        }.sheet(isPresented:$importHub){SoundImportView().environmentObject(store)}
+        }
+    }
+    private var browserImports:some View {
+        browserFrame.sheet(isPresented:$importHub){SoundImportView().environmentObject(store)}
         .fileImporter(isPresented:$locating,allowedContentTypes:[.data]) { result in
             defer {locateTarget=nil}
             guard case .success(let url)=result,let id=locateTarget else{return}
@@ -123,13 +131,25 @@ struct SoundBrowser: View {
             // pending removal Undo.
             if let message=store.message {repairNotice=message;store.message=nil}
         }
-        .onAppear {
-            store.refreshLibraryContent()
-            let restored=savedFacets.split(separator:"|").compactMap{LibraryFacet(rawValue:String($0))}
-            if restored.count==4 && Set(restored).count==4 {facets=restored}
-        }
-        .onChange(of:facets){savedFacets=$0.map(\.rawValue).joined(separator:"|")}
-        .onDisappear {endPreview()}
+    }
+    private func restoreBrowserPreferences() {
+        store.refreshLibraryContent()
+        query=LibraryQuery(storedOrder:savedOrder,storedSeed:UInt64(savedSeed),storedAscending:Bool(savedAscending))
+        let restored=savedFacets.split(separator:"|").compactMap{LibraryFacet(rawValue:String($0))}
+        if restored.count==4 && Set(restored).count==4 {facets=restored}
+    }
+    private var browserAppearance:some View {
+        browserImports.onAppear(perform:restoreBrowserPreferences)
+    }
+    private var browserPreferences:some View {
+        browserAppearance
+        .onChange(of:facets){(values:[LibraryFacet]) in savedFacets=values.map(\.rawValue).joined(separator:"|")}
+        .onChange(of:query.ordering){(value:LibrarySort) in savedOrder=value.rawValue}
+        .onChange(of:query.ascending){(value:Bool) in savedAscending=value ? "true":"false"}
+        .onChange(of:query.shuffleSeed){(value:UInt64) in savedSeed=value == 0 ? "":String(value)}
+    }
+    var body:some View {
+        browserPreferences.onDisappear {endPreview()}
         .onChange(of:selectedID){_ in previewRange();if auditionToken != nil {auditionSelection()}}
         .onChange(of:collection){_ in selectedID=nil;query.filters=[:];removalFeedback.dismiss()}
         .onChange(of:query.search){_ in clearHiddenSelection()}
@@ -214,6 +234,15 @@ struct SoundBrowser: View {
         removalFeedback.restoration(succeeded:restored,message:store.message ?? (restored ? "Restored \(removed.name).":"Could not restore \(removed.name)."))
         if restored {selectedID=removed.id}
         store.message=nil
+    }
+    /// Leaving the browser empties the search and filters but keeps the ordering,
+    /// direction and Random seed: those observers persist the performer's saved
+    /// preference, so a navigation action must not overwrite it.
+    private func clearTransientQuery() {
+        query.search=""
+        query.filters=[:]
+        query.favoritesOnly=false
+        clearHiddenSelection()
     }
     private var filterBar:some View {
         ScrollView(.horizontal,showsIndicators:false) {
@@ -337,8 +366,8 @@ struct SoundBrowser: View {
                             if !query.search.isEmpty || !query.filters.isEmpty {Button("Clear Filters"){query.filters=[:];query.search=""}}
                             if emptyState.offersImport {
                                 Button("Import Samples"){importHub=true}.buttonStyle(StageButtonStyle())
-                                Button("Add Audio Unit"){collection="Audio Units";query=LibraryQuery()}.buttonStyle(StageButtonStyle())
-                                Button("MIDI Routing"){collection="External MIDI";query=LibraryQuery()}.buttonStyle(StageButtonStyle())
+                                Button("Add Audio Unit"){collection="Audio Units";clearTransientQuery()}.buttonStyle(StageButtonStyle())
+                                Button("MIDI Routing"){collection="External MIDI";clearTransientQuery()}.buttonStyle(StageButtonStyle())
                             } else {
                                 Button("Recover Previous Sound Catalog"){store.recoverPreviousLibrary()}.buttonStyle(StageButtonStyle())
                                     .accessibilityLabel("Recover the previous sound catalog")

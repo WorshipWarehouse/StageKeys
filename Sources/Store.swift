@@ -166,6 +166,9 @@ final class PerformanceStore: ObservableObject {
     private var screenSustain = false
     @Published var held: Set<Int> = []
     @Published var sustain = false
+    /// Last accepted wheel position, -1...1. Zero means centred.
+    @Published var pitchBend: Float = 0
+    private var pitchBendSource:Int32?
     @Published var tonic: Int?
     @Published var tonicLastRoot=0
     @Published var tonicTimbre=0 {didSet{if oldValue != tonicTimbre {restartTonic()}}}
@@ -195,6 +198,11 @@ final class PerformanceStore: ObservableObject {
     @Published var reverb: Float = 22 { didSet { audio.space(reverb) } }
     @Published var transition: Float = 1.5
     @Published var activeSnapshot: UUID?
+    /// One-step undo for the last destructive snapshot edit. It is bound to the
+    /// patch that recorded it, so a later patch change can never restore another
+    /// patch's snapshot into the current one.
+    struct SnapshotUndo { var patchID: UUID; var action: String; var index: Int; var snapshot: Snapshot }
+    @Published var snapshotUndo: SnapshotUndo?
     @Published var learning: Int?
     @Published var learningTarget: MIDIControlTarget?
     @Published var midiActivity = false
@@ -1180,6 +1188,7 @@ final class PerformanceStore: ObservableObject {
     }
     private func releaseKey(_ key: Int) { held.remove(key); for i in patch.layers.indices { midiFX.noteOff(channel: i, key: key) } }
     private func disconnectMIDI(_ source: Int32) {
+        if pitchBendSource == source {pitchBendSource=nil;pitchBend=0;audio.pitchBend(0)}
         if source == midiClockSource { stopFollowingMIDIClock() }
         midiFX.releaseSource(source);audio.releaseSource(source)
         for input in Array(hardwareNotes.keys) where input.source == source {
@@ -1212,7 +1221,10 @@ final class PerformanceStore: ObservableObject {
         if audio.running { playTonicNotes(root) }
         else { resumeTonicAfterAudioRecovery = true }
     }
-    func panic(preserveTonic:Bool=false,preserveEffectTails:Bool=false) { hardwareNotes.removeAll(); pedalSources.removeAll(); mappedPedals.removeAll(); screenSustain = false; midiFX.panic();
+    func panic(preserveTonic:Bool=false,preserveEffectTails:Bool=false) { hardwareNotes.removeAll(); pedalSources.removeAll(); mappedPedals.removeAll(); screenSustain = false; midiFX.panic()
+        // Panic returns the wheel to centre as well as releasing notes, so a
+        // discarded bend cannot leave the next chord transposed.
+        pitchBendSource=nil; pitchBend = 0; audio.pitchBend(0)
         audio.cancelCountIn()
         for l in patch.layers { if let d = l.midiDestinationID { for cc: UInt8 in [64,123,120] { sendMIDI(d, 0xb0 | UInt8(l.midiOutputChannel), cc, 0) } } }
         outputNotes.removeAll(); held.removeAll(); sustain = false; metronome = false; if preserveTonic {audio.sustain(false,layers:patch.layers);for channel in 0..<15 {audio.panic(channel:channel,preserveEffectTails:preserveEffectTails)}} else {tonic = nil;audio.panic()} }
@@ -1227,6 +1239,7 @@ final class PerformanceStore: ObservableObject {
             catch { message = error.localizedDescription; return }
         }
         cancelAudition(); cancelTransition(); panic(preserveTonic:true,preserveEffectTails:!setlist.patches[index].silencePrevious); capturePluginStates(); selected = index; activeSnapshot = nil
+        snapshotUndo = nil
         if patch.silencePrevious { panic(preserveTonic:true) }
         if patch.visualMode != 0 { notesMode = patch.visualMode == 2 }
         // A locked patch recalls its own tempo without overwriting the shared
@@ -1332,6 +1345,8 @@ final class PerformanceStore: ObservableObject {
         if let controls=setlist.controlAssignments {
             for (cc,target) in controls { if case .soundLevel(let old)=target { if old == index { setlist.controlAssignments?[cc] = .soundLevel(destination) } else if old == destination { setlist.controlAssignments?[cc] = .soundLevel(index) } } }
         }
+        // The pending undo holds gains and sound states in the old layer order.
+        snapshotUndo = nil
         applyPatch(); save()
     }
     func reorderLayer(_ source: Int, _ destination: Int) {
@@ -1348,6 +1363,8 @@ final class PerformanceStore: ObservableObject {
         if let controls=setlist.controlAssignments {
             for (cc,target) in controls { if case .soundLevel(let previous)=target, let position=order.firstIndex(of:previous) { setlist.controlAssignments?[cc] = .soundLevel(position) } }
         }
+        // The pending undo holds gains and sound states in the old layer order.
+        snapshotUndo = nil
         applyPatch(); save()
     }
     func setGain(_ index: Int, _ value: Float) {
@@ -1433,7 +1450,7 @@ final class PerformanceStore: ObservableObject {
             return
         }
         if let states = snapshot.sounds {
-            for (i, state) in states.enumerated() where patch.layers[i].external?.kind == .audioUnit && state.pluginState != nil && state.pluginState != patch.layers[i].pluginState {
+            for (i, state) in states.enumerated() where patch.layers[i].external?.kind == .audioUnit && state.belongs(to: patch.layers[i].external) && state.pluginState != nil && state.pluginState != patch.layers[i].pluginState {
                 guard audio.loadedUnit(channel: i, sound: patch.layers[i].external) != nil else {
                     message = "Wait for the Audio Unit to finish loading before recalling its saved state."
                     return
@@ -1456,7 +1473,8 @@ final class PerformanceStore: ObservableObject {
                 setlist.patches[selected].layers[i].pan = state.pan
                 setlist.patches[selected].layers[i].midiProgram = state.midiProgram
                 setlist.patches[selected].layers[i].midiEffectEnabled = state.midiEffectEnabled
-                if let data = state.pluginState, patch.layers[i].external?.kind == .audioUnit {
+                if let data = state.pluginState, patch.layers[i].external?.kind == .audioUnit,
+                   state.belongs(to: patch.layers[i].external) {
                     setlist.patches[selected].layers[i].pluginState = data
                 }
                 configureMIDI(i, patch.layers[i])
@@ -1566,6 +1584,7 @@ final class PerformanceStore: ObservableObject {
     private func finishLayerCommit(_ index: Int, _ layer: Layer, previous: Layer, preserveHeldNotes: Bool = false) {
         let sourceChanged = previous.instrument != layer.instrument || previous.external != layer.external || previous.midiDestinationID != layer.midiDestinationID
         if sourceChanged {
+            snapshotUndo = nil
             for s in patch.snapshots.indices {
                 if setlist.patches[selected].snapshots[s].sounds != nil { setlist.patches[selected].snapshots[s].sounds![index] = SnapshotSoundState(layer) }
                 if !layer.loaded { setlist.patches[selected].snapshots[s].gains[index] = 0 }
@@ -1593,6 +1612,7 @@ final class PerformanceStore: ObservableObject {
         cancelTransition()
         let changedKind = patch.layers[index].effects[slot].kind != effect.kind
         if changedKind {
+            snapshotUndo = nil
             let staleAssignments = setlist.controlAssignments?.compactMap { cc, target -> Int? in
                 switch target {
                 case .effectEnabled(let layer, let effectSlot, _),
@@ -1626,14 +1646,24 @@ final class PerformanceStore: ObservableObject {
         midiEffectSaveWork = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: work)
     }
+    /// Move a snapshot slot. The pending undo names a slot by index, so a move
+    /// invalidates it instead of letting it overwrite whatever now sits there.
+    func moveSnapshot(_ index: Int, _ destination: Int) {
+        guard patch.snapshots.indices.contains(index), patch.snapshots.indices.contains(destination), index != destination else { return }
+        snapshotUndo = nil
+        setlist.patches[selected].snapshots.swapAt(index, destination)
+        save()
+    }
     func clearSnapshot(_ index: Int) {
         guard patch.snapshots.indices.contains(index) else { return }
         cancelTransition()
         let oldID = patch.snapshots[index].id
+        let replaced = patch.snapshots[index]
         var empty = Snapshot(name: "Snapshot \(index + 1)", gains: patch.layers.map { _ in 0 })
         empty.emptySlot = true
         setlist.patches[selected].snapshots[index] = empty
         if activeSnapshot == oldID { activeSnapshot = nil }
+        snapshotUndo = replaced.isEmptySlot ? nil:SnapshotUndo(patchID: patch.id, action: "Clear Snapshot \(index + 1)", index: index, snapshot: replaced)
         save()
     }
     func captureSnapshot(_ index: Int) {
@@ -1647,6 +1677,7 @@ final class PerformanceStore: ObservableObject {
             empty.emptySlot = true
             setlist.patches[selected].snapshots.append(empty)
         }
+        let replaced = patch.snapshots[index]
         setlist.patches[selected].snapshots[index].emptySlot = nil
         setlist.patches[selected].snapshots[index].gains = gains
         activeSnapshot = patch.snapshots[index].id
@@ -1660,6 +1691,20 @@ final class PerformanceStore: ObservableObject {
             setlist.patches[selected].snapshots[snapshotIndex].tonicShimmer = tonicShimmer
             setlist.patches[selected].snapshots[snapshotIndex].tonicTimbre = tonicTimbre
         }
+        snapshotUndo = replaced.isEmptySlot ? nil:SnapshotUndo(patchID: patch.id, action: "Capture over Snapshot \(index + 1)", index: index, snapshot: replaced)
+        save()
+    }
+    /// Restore the slot the last capture or clear replaced. The undo is consumed
+    /// even when it belongs to another patch, so a stale entry can never be
+    /// applied to the document that replaced it.
+    func undoSnapshotChange() {
+        guard let undo=snapshotUndo else{return}
+        snapshotUndo=nil
+        guard undo.patchID==patch.id,patch.snapshots.indices.contains(undo.index) else{return}
+        if activeSnapshot == patch.snapshots[undo.index].id {
+            cancelTransition(); activeSnapshot=nil
+        }
+        setlist.patches[selected].snapshots[undo.index]=undo.snapshot
         save()
     }
     func updateTempo(_ value: Double) {
@@ -1836,7 +1881,19 @@ final class PerformanceStore: ObservableObject {
         case 0x80:
             guard isPrimary else { return }
             hardwareOff(source: source, channel: channel, note: Int(a))
+        case 0xe0:
+            guard isPrimary else { return }
+            // A is the least-significant byte and B the most significant. The
+            // hosted instrument keeps its own bend range; Panic and Stop recentre it.
+            pitchBendSource=source
+            pitchBend = MIDIPitchBend.normalized(lsb: a, msb: b)
+            audio.pitchBend(pitchBend)
         case 0xb0:
+            // A reserved controller keeps its fixed route. Refuse the learn before
+            // the fixed-route branches below act, and before any target assignment
+            // is touched; they still handle this message, so sustain, the mod wheel
+            // and panic keep working while a learn is listening.
+            _ = refuseReservedLearn(Int(a))
             if isPrimary && learningTarget == nil && learning == nil {
                 applyImportedController(Int(a), value: b, channel: channel)
             }
@@ -1856,10 +1913,10 @@ final class PerformanceStore: ObservableObject {
                 let rising=down && !(pressedCCs[key] ?? false); pressedCCs[key]=down
                 if let target = learningTarget ?? learning.map({ MIDIControlTarget.soundLevel($0) }) {
                     guard target.valid else { learningTarget=nil; learning=nil; return }
+                    let learned=MIDIControllerRules.assigning(cc,to:target,assignments:setlist.controlAssignments ?? [:],soundLevels:setlist.assignments)
+                    if refuseReservedLearn(cc) { return }
                     clearMIDILearn(target,saveChanges:false)
                     mappedPedals=mappedPedals.filter{$0.cc != cc}; applySustain()
-                    let learned=MIDIControllerRules.assigning(cc,to:target,assignments:setlist.controlAssignments ?? [:],soundLevels:setlist.assignments)
-                    guard !learned.reserved else { learningTarget=nil; learning=nil; return }
                     setlist.controlAssignments = learned.assignments.isEmpty ? nil : learned.assignments
                     setlist.assignments = learned.soundLevels
                     if let displaced=learned.displaced { message = "CC \(cc) moved from \(displaced.title) to \(target.title)." }
@@ -1885,6 +1942,17 @@ final class PerformanceStore: ObservableObject {
         learning = nil; learningTarget = nil
         message = "MIDI learn assignments cleared. Fixed modulation, sustain, panic and program-change routes remain."
         save()
+    }
+    /// Refuses a learn aimed at a fixed-route controller. The decision comes from
+    /// the pure rules and happens before the target is touched, so a refused learn
+    /// cannot unlearn the control it was aimed at. Returns whether it refused.
+    @discardableResult
+    private func refuseReservedLearn(_ cc:Int) -> Bool {
+        guard let target = learningTarget ?? learning.map({ MIDIControlTarget.soundLevel($0) }),
+              MIDIControlTarget.reservedCCs.contains(cc) else { return false }
+        learningTarget=nil; learning=nil
+        message = "CC \(cc) keeps its fixed route; choose another controller for \(target.title)."
+        return true
     }
     func beginMIDILearn(_ target:MIDIControlTarget) {
         guard target.valid else { return }; learning=nil; learningTarget = learningTarget == target ? nil : target
@@ -2862,7 +2930,7 @@ final class PerformanceStore: ObservableObject {
                 }
                 let recovered = try JSONDecoder().decode(Setlist.self, from: data).upgraded()
                 panic(); cancelAudition(); cancelTransition()
-                setlist = recovered; selected = 0; activeSnapshot = nil; currentSetlistID = nil
+                setlist = recovered; selected = 0; activeSnapshot = nil; snapshotUndo = nil; currentSetlistID = nil
                 sessionRecoveryRequired = false
                 sessionSavedByNewerVersion = false
                 if started { applyPatch(); recallTonicPatch(); audio.clock(performedTempo, metronome) }
@@ -2949,7 +3017,7 @@ final class PerformanceStore: ObservableObject {
             let loaded = try localSetlistLibrary().load(id:id)
             try prepareSetlistActivation(loaded)
             try preserveCurrentSetlist()
-            panic(); cancelTransition(); setlist = loaded; currentSetlistID = id; selected = 0; activeSnapshot = nil
+            panic(); cancelTransition(); setlist = loaded; currentSetlistID = id; selected = 0; activeSnapshot = nil; snapshotUndo = nil
             applyPatch(); recallTonicPatch(); audio.clock(performedTempo,metronome); save()
             recordRecentSetlist(id)
         } catch { message = error.localizedDescription }
@@ -2960,7 +3028,7 @@ final class PerformanceStore: ObservableObject {
             try preserveCurrentSetlist()
             var fresh = Setlist(); fresh.name = "New Setlist"; fresh.patches = [Patch(name:"New Patch",layers:(0..<15).map { _ in Layer.empty() },snapshots:[])]
             let id = try localSetlistLibrary().save(fresh).id
-            panic(); cancelTransition(); setlist = fresh; currentSetlistID = id; selected = 0; activeSnapshot = nil
+            panic(); cancelTransition(); setlist = fresh; currentSetlistID = id; selected = 0; activeSnapshot = nil; snapshotUndo = nil
             applyPatch(); recallTonicPatch(); audio.clock(performedTempo,metronome); save()
             recordRecentSetlist(id)
         } catch { message = error.localizedDescription }
@@ -3074,7 +3142,7 @@ final class PerformanceStore: ObservableObject {
                 try prepareSetlistActivation(plan.setlist)
                 try preserveCurrentSetlist()
                 let id = try SetlistShare.saveToLibrary(plan, library: library)
-                panic(); cancelTransition(); setlist = plan.setlist; currentSetlistID = id; selected = 0; activeSnapshot = nil
+                panic(); cancelTransition(); setlist = plan.setlist; currentSetlistID = id; selected = 0; activeSnapshot = nil; snapshotUndo = nil
                 applyPatch(); recallTonicPatch(); audio.clock(performedTempo, metronome); save(); refreshSetlists()
                 recordRecentSetlist(id)
             }
@@ -3141,7 +3209,7 @@ final class PerformanceStore: ObservableObject {
             // recovered layer as the audition's original and write the live state
             // over the recovered plug-in state.
             cancelAudition()
-            setlist = candidate; selected = 0; activeSnapshot = nil
+            setlist = candidate; selected = 0; activeSnapshot = nil; snapshotUndo = nil
             if started || audio.running {
                 // Even a matching cached state must replace editor-mutated live
                 // state. A nil source state gets a fresh default AU instance.
@@ -3162,7 +3230,7 @@ final class PerformanceStore: ObservableObject {
             let loaded = try JSONDecoder().decode(Setlist.self, from: Data(contentsOf: url)); let upgraded = try loaded.upgraded()
             try prepareSetlistActivation(upgraded)
             try preserveCurrentSetlist()
-            panic(); cancelTransition(); setlist = upgraded; currentSetlistID = nil; selected = 0; activeSnapshot = nil
+            panic(); cancelTransition(); setlist = upgraded; currentSetlistID = nil; selected = 0; activeSnapshot = nil; snapshotUndo = nil
             applyPatch(); recallTonicPatch(); audio.clock(performedTempo,metronome); save()
         } catch { message = "Could not import: \(error.localizedDescription)" }
     }

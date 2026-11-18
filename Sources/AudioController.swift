@@ -795,8 +795,10 @@ final class AudioController {
                 guard (0..<15).contains(index), state.effects.count == 3,
                       state.effects.allSatisfy({ $0.validate() }), state.pan.isFinite, (-1...1).contains(state.pan),
                       state.importedRack?.validate() ?? true else { throw ExternalInstrumentError.unsupportedFormat }
+                // A state captured from a different Audio Unit would load one plug-in's
+                // settings into another, so it is skipped rather than restored.
                 if restorePluginStates, let data = state.pluginState, externalSounds[index]?.kind == .audioUnit,
-                   externalStates[index] != data {
+                   state.belongs(to: externalSounds[index]), externalStates[index] != data {
                     guard loadedUnit(channel: index, sound: externalSounds[index]) != nil, data.count <= 2_000_000,
                           (try PropertyListSerialization.propertyList(from: data, options: [], format: nil)) is [String: Any] else {
                         throw ExternalInstrumentError.unsupportedFormat
@@ -869,6 +871,9 @@ final class AudioController {
         sk_metronome_enable(metronomeEngine, enabled ? 1 : 0)
         if changed { for (index,chain) in effects { configureEffects(index,chain,force:true) }; for (index,rack) in importedRacks {configureImported(index,rack)} }
     }
+    /// Forward the wheel to every hosted instrument. The Audio Unit or sampler
+    /// keeps its own bend range, so StageKeys sends the position unchanged.
+    func pitchBend(_ normalized: Float) { externalRack?.pitchBend(normalized) }
     func releaseSource(_ source:Int32){externalRack?.releaseSource(source)}
     func sustain(_ on: Bool, layers: [Layer]) { sk_sustain(synth, on ? 1 : 0); for (i,l) in layers.enumerated() { externalRack?.sustain(channel: i, on: on && !l.blockSustain) } }
     func panic() { sk_panic(synth); sk_metronome_reset(metronomeEngine); externalRack?.panic(); reverb.auAudioUnit.reset(); outputLimiter.auAudioUnit.reset() }

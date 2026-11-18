@@ -451,7 +451,18 @@ struct SnapshotSoundState: Codable {
     /// Serialized Audio Unit document state, so a scene recalls the plug-in
     /// exactly as captured. Absent in older setlists and for non-AU sounds.
     var pluginState: Data?
-    init(_ layer: Layer) { importedRack=layer.importedRack; effects=layer.effects; midiProgram=layer.midiProgram; midiEffectEnabled=layer.midiEffectEnabled; pan=layer.pan; pluginState=layer.pluginState }
+    /// The instrument this state was captured from. A layer that now holds a
+    /// different Audio Unit must not receive it; nil in states saved before this
+    /// field existed, which keeps the legacy restore path.
+    var external: ExternalSound?
+    init(_ layer: Layer) { importedRack=layer.importedRack; effects=layer.effects; midiProgram=layer.midiProgram; midiEffectEnabled=layer.midiEffectEnabled; pan=layer.pan; pluginState=layer.pluginState; external=layer.external.map {sound in ExternalSound(kind:sound.kind,name:sound.name,component:sound.component)} }
+    /// Whether the captured state belongs to the instrument now in the layer.
+    func belongs(to sound: ExternalSound?) -> Bool {
+        guard let external else { return true }
+        guard let sound else { return false }
+        if let captured = external.component, let current = sound.component { return captured == current }
+        return external == sound
+    }
 }
 struct Snapshot: Codable, Identifiable {
     /// Nil in legacy sessions means a populated snapshot. Empty slots keep their index.
