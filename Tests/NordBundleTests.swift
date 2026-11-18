@@ -27,6 +27,9 @@ import zlib
             }
             let localFields:[Data]=[number(0x04034b50,4),number(20,2),number(f.flags,2),number(f.method,2),number(0,4),number(checksum,4),number(packed.count,4),number(f.declared ?? f.data.count,4),number(name.count,2),number(0,2),name,packed]
             for field in localFields {local.append(field)}
+            if f.flags&8 != 0 {
+                for field in [number(0x08074b50,4),number(checksum,4),number(packed.count,4),number(f.declared ?? f.data.count,4)] {local.append(field)}
+            }
             let centralFields:[Data]=[number(0x02014b50,4),number(20,2),number(20,2),number(f.flags,2),number(f.method,2),number(0,4),number(checksum,4),number(packed.count,4),number(f.declared ?? f.data.count,4),number(name.count,2),number(0,2),number(0,2),number(0,2),number(0,2),number(0,4),number(start,4),name]
             for field in centralFields {directory.append(field)}
         }
@@ -62,6 +65,26 @@ import zlib
         try refuses(files+[File(name:"../escape",data:Data())])
         try refuses(files+[File(name:"/absolute",data:Data())])
         try refuses(files+[File(name:"Piano/ORIGINAL.NPNO",data:piano)])
+        var descriptor=files;descriptor[2].flags=8
+        try zip(descriptor).write(to:source)
+        let descriptorPreview=try NordBundle.inspect(source)
+        assert(try! NordBundle.piano("Piano/Original.npno",from:source,preview:descriptorPreview)==piano)
+        var badDescriptor=zip(descriptor)
+        let signature=badDescriptor.range(of:Data([0x50,0x4b,0x07,0x08]))!
+        badDescriptor[signature.lowerBound+4] ^= 1
+        try badDescriptor.write(to:source)
+        do {_ = try NordBundle.inspect(source);fatalError("Bad descriptor accepted")}catch{}
+        var linked=bytes
+        let central=linked.range(of:Data([0x50,0x4b,0x01,0x02]))!.lowerBound
+        linked[central+40]=0;linked[central+41]=0xa0
+        try linked.write(to:source)
+        do {_ = try NordBundle.inspect(source);fatalError("Symbolic-link entry accepted")}catch{}
+        var zip64=bytes
+        let end=zip64.count-22
+        for i in 0..<4 {zip64[end+16+i]=255}
+        try zip64.write(to:source)
+        do {_ = try NordBundle.inspect(source);fatalError("ZIP64 sentinel accepted")}catch{}
+        var unsupported=files;unsupported[2].method=99;try refuses(unsupported)
         var encrypted=files;encrypted[1].flags=1;try refuses(encrypted)
         var oversized=files;oversized[2].declared=NordBundle.entryLimit+1;try refuses(oversized)
         var missing=files;missing.removeLast();try refuses(missing)
