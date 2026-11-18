@@ -90,6 +90,17 @@ import AVFoundation
         assert(store.snapshotUndo==nil,"Replacing a document must invalidate Undo even when patch UUIDs match")
         store.undoSnapshotChange()
         assert(store.patch.snapshots[0].name=="Imported same-identity snapshot")
+        store.captureSnapshot(0)
+        assert(store.snapshotUndo != nil)
+        store.commitLayer(0,TestFixtures.layer(2))
+        assert(store.snapshotUndo==nil,"Replacing a sound must invalidate Undo carrying its old processing")
+        store.captureSnapshot(0);store.captureSnapshot(1);store.clearSnapshot(0)
+        var fading=store.patch.snapshots[1];fading.seconds=0.2;fading.gains[0]=0.23
+        store.recall(fading)
+        store.undoSnapshotChange()
+        let deadline=Date().addingTimeInterval(2)
+        while abs(store.patch.layers[0].gain-0.23)>0.001 && Date()<deadline {RunLoop.current.run(until:Date().addingTimeInterval(0.01))}
+        assert(store.activeSnapshot==fading.id && abs(store.patch.layers[0].gain-0.23)<0.001,"Undoing another slot must not cancel its in-flight recall")
         store.panic()
         print("PASS: sparse capture, stable cleared slots, empty recall guard, index bounds and legacy/session round trips")
         print("PASS: a capture over a populated slot and a clear each keep one-step undo, scoped to their patch")

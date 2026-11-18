@@ -1450,7 +1450,7 @@ final class PerformanceStore: ObservableObject {
             return
         }
         if let states = snapshot.sounds {
-            for (i, state) in states.enumerated() where patch.layers[i].external?.kind == .audioUnit && state.pluginState != nil && state.pluginState != patch.layers[i].pluginState {
+            for (i, state) in states.enumerated() where patch.layers[i].external?.kind == .audioUnit && state.belongs(to: patch.layers[i].external) && state.pluginState != nil && state.pluginState != patch.layers[i].pluginState {
                 guard audio.loadedUnit(channel: i, sound: patch.layers[i].external) != nil else {
                     message = "Wait for the Audio Unit to finish loading before recalling its saved state."
                     return
@@ -1584,6 +1584,7 @@ final class PerformanceStore: ObservableObject {
     private func finishLayerCommit(_ index: Int, _ layer: Layer, previous: Layer, preserveHeldNotes: Bool = false) {
         let sourceChanged = previous.instrument != layer.instrument || previous.external != layer.external || previous.midiDestinationID != layer.midiDestinationID
         if sourceChanged {
+            snapshotUndo = nil
             for s in patch.snapshots.indices {
                 if setlist.patches[selected].snapshots[s].sounds != nil { setlist.patches[selected].snapshots[s].sounds![index] = SnapshotSoundState(layer) }
                 if !layer.loaded { setlist.patches[selected].snapshots[s].gains[index] = 0 }
@@ -1699,9 +1700,10 @@ final class PerformanceStore: ObservableObject {
         guard let undo=snapshotUndo else{return}
         snapshotUndo=nil
         guard undo.patchID==patch.id,patch.snapshots.indices.contains(undo.index) else{return}
-        cancelTransition()
+        if activeSnapshot == patch.snapshots[undo.index].id {
+            cancelTransition(); activeSnapshot=nil
+        }
         setlist.patches[selected].snapshots[undo.index]=undo.snapshot
-        activeSnapshot=nil
         save()
     }
     func updateTempo(_ value: Double) {

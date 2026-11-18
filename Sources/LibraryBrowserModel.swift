@@ -255,12 +255,12 @@ extension LibraryQuery {
     /// order reshuffled on the next launch. A stored random order keeps the seed it
     /// was shown with; an absent or zero sentinel seed draws one, and the view then
     /// stores it so the next launch reproduces the same list.
-    init(storedOrder: String?, storedSeed: UInt64?) {
+    init(storedOrder: String?, storedSeed: UInt64?, storedAscending: Bool? = nil) {
         self.init()
         let order = storedOrder.flatMap(LibrarySort.init(rawValue:)) ?? .name
         ordering = order
         sort = nil
-        ascending = order == .name || order == .recommended
+        ascending = storedAscending ?? (order == .name || order == .recommended)
         if order == .random {
             let seed = storedSeed ?? 0
             shuffleSeed = seed == 0 ? UInt64.random(in: 1...UInt64.max) : seed

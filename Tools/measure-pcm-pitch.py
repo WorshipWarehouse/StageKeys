@@ -10,10 +10,11 @@ import sys
 
 def estimate(samples, rate):
     """Cumulative-mean normalized difference (YIN), bounded 80–1200 Hz."""
-    stride=max(1,round(rate/9000))
-    signal=samples[::stride][:4096]
-    rate=rate/stride
-    low=max(2,int(rate/1200));high=int(rate/80)
+    # Preserve the original rate: stride-only decimation aliases upper harmonics.
+    # Search the first credible period, including above the admitted pitch range,
+    # so an out-of-range pure tone is refused instead of folded to a subharmonic.
+    signal=samples[:4096]
+    low=2;high=int(rate/80)
     count=min(2048,len(signal)-high)
     if count<512 or sum(x*x for x in signal[:count])/count<1e-10:
         return None
@@ -31,7 +32,10 @@ def estimate(samples, rate):
             left,centre,right=normalized[lag-1:lag+2]
             curvature=left-2*centre+right
             fraction=(left-right)/(2*curvature) if abs(curvature)>1e-12 else 0.0
-            return {"frequencyHz":rate/(lag+max(-.5,min(.5,fraction))),"confidence":1-centre}
+            frequency=rate/(lag+max(-.5,min(.5,fraction)))
+            if not 80<=frequency<=1200:
+                return None
+            return {"frequencyHz":frequency,"confidence":1-centre}
         lag+=1
     return None
 

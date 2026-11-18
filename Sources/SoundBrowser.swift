@@ -12,6 +12,7 @@ struct SoundBrowser: View {
     /// travels with it so a relaunch reproduces the list the performer was reading.
     @AppStorage("library.order") private var savedOrder=LibrarySort.name.rawValue
     @AppStorage("library.shuffleSeed") private var savedSeed=""
+    @AppStorage("library.ascending") private var savedAscending=""
     @State private var facets:[LibraryFacet]=[.noteRange,.type,.timbre,.articulation]
     @State private var selectedID:String?
     @State private var importHub=false
@@ -129,12 +130,13 @@ struct SoundBrowser: View {
         }
         .onAppear {
             store.refreshLibraryContent()
-            query=LibraryQuery(storedOrder:savedOrder,storedSeed:UInt64(savedSeed))
+            query=LibraryQuery(storedOrder:savedOrder,storedSeed:UInt64(savedSeed),storedAscending:Bool(savedAscending))
             let restored=savedFacets.split(separator:"|").compactMap{LibraryFacet(rawValue:String($0))}
             if restored.count==4 && Set(restored).count==4 {facets=restored}
         }
         .onChange(of:facets){savedFacets=$0.map(\.rawValue).joined(separator:"|")}
         .onChange(of:query.ordering){savedOrder=$0.rawValue}
+        .onChange(of:query.ascending){savedAscending=String($0)}
         .onChange(of:query.shuffleSeed){savedSeed=$0 == 0 ? "":String($0)}
         .onDisappear {endPreview()}
         .onChange(of:selectedID){_ in previewRange();if auditionToken != nil {auditionSelection()}}
@@ -228,6 +230,7 @@ struct SoundBrowser: View {
     private func clearTransientQuery() {
         query.search=""
         query.filters=[:]
+        query.favoritesOnly=false
         clearHiddenSelection()
     }
     private var filterBar:some View {

@@ -31,14 +31,14 @@ changelog = (repo / 'CHANGELOG.md').read_text()
 if 'var ordering:LibrarySort = .name' not in model:
     fail('Sources/LibraryBrowserModel.swift no longer defaults the library order to Name')
 
-restore = re.search(r'init\(storedOrder: String\?, storedSeed: UInt64\?\) \{(.*?)\n    \}', model, re.S)
+restore = re.search(r'init\(storedOrder: String\?, storedSeed: UInt64\?, storedAscending: Bool\? = nil\) \{(.*?)\n    \}', model, re.S)
 if not restore:
     fail('LibraryQuery no longer restores a stored order and seed')
 else:
     body = restore.group(1)
     if 'flatMap(LibrarySort.init(rawValue:))' not in body:
         fail('an unknown persisted order no longer falls back to Name')
-    if 'ascending = order == .name || order == .recommended' not in body:
+    if 'ascending = storedAscending ?? (order == .name || order == .recommended)' not in body:
         fail('a restored order no longer restores its direction')
     if 'sort = nil' not in body:
         fail('a restored order no longer clears a manual facet sort')
@@ -51,14 +51,16 @@ if 'shuffleSeed=UInt64.random(in:1...UInt64.max)' not in model.replace(' ', ''):
     fail('choosing Random no longer generates a non-zero shuffle seed')
 
 # The view must store both halves of the preference and hand them back on open.
-for fragment in ['@AppStorage("library.order")', '@AppStorage("library.shuffleSeed")',
-                 'query=LibraryQuery(storedOrder:savedOrder,storedSeed:UInt64(savedSeed))']:
+for fragment in ['@AppStorage("library.order")', '@AppStorage("library.shuffleSeed")', '@AppStorage("library.ascending")',
+                 'query=LibraryQuery(storedOrder:savedOrder,storedSeed:UInt64(savedSeed),storedAscending:Bool(savedAscending))']:
     if fragment not in browser.replace(' ', ''):
         fail(f'Sources/SoundBrowser.swift no longer persists the library order: {fragment!r} missing')
 if '.onChange(of:query.ordering)' not in browser.replace(' ', ''):
     fail('a changed library order is not stored')
 if '.onChange(of:query.shuffleSeed)' not in browser.replace(' ', ''):
     fail('the Random seed is not stored with the order')
+if '.onChange(of:query.ascending)' not in browser.replace(' ', ''):
+    fail('the chosen sort direction is not persisted')
 if re.search(r'@AppStorage\("library\.shuffleSeed"\)[^\n]*UInt64', browser):
     fail('@AppStorage cannot store a UInt64 seed; persist it as text')
 
@@ -73,6 +75,8 @@ if not clear:
     fail('Sources/SoundBrowser.swift no longer clears transient library state separately')
 else:
     body = clear.group(1)
+    if 'query.favoritesOnly=false' not in body.replace(' ', ''):
+        fail('navigation must clear favorites-only along with search/facets')
     if 'query.ordering' in body or 'query.shuffleSeed' in body:
         fail('the transient clear rewrites the saved library order')
     if 'LibraryQuery()' in body:

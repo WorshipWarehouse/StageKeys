@@ -10,11 +10,12 @@ deterministic order survive a restart.
 - The chosen order is a view preference, stored beside the facet columns as
   `library.order` (the `LibrarySort` name: Name, Recommended, Rating,
   Recently Added, Random).
+- The chosen direction is stored as optional Boolean text in `library.ascending`. Missing or invalid text retains the mode default; a reversed Random/Rating order is restored explicitly.
 - `Random` also stores the seed it was shown with as `library.shuffleSeed`. The
   list is ordered by a stable hash of the sound identity and that seed, so a
   relaunch reproduces the exact order instead of drawing a new one.
-- `LibraryQuery(storedOrder:storedSeed:)` restores the mode, clears any manual
-  facet sort, restores the mode's own direction (Name and Recommended ascending,
+- `LibraryQuery(storedOrder:storedSeed:storedAscending:)` restores the mode, clears any manual
+  facet sort, restores the saved direction or the mode default (Name and Recommended ascending,
   the others descending) and reuses the stored seed. A missing, empty or zero
   seed draws a new one, which the view then stores; zero is never persisted as a
   live seed.
@@ -44,3 +45,5 @@ fails when the restore path, the stored keys, the program registration or the
 
 Both run on hosted macOS CI; the library panel itself was not viewed in a running
 app from the implementation environment.
+
+Empty-state Add Audio Unit and MIDI Routing navigation also clears favorites-only, search and facets without overwriting saved ordering/direction/seed.

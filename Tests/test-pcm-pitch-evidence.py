@@ -11,6 +11,10 @@ for rate in [35002,44100,48000]:
         result=m.estimate(samples,rate)
         assert result is not None
         assert abs(1200*math.log2(result['frequencyHz']/frequency))<20,(rate,frequency,result)
+for rate in [35002,44100,48000]:
+    for frequency in [1250,2000,8000,9500]:
+        samples=[.3*math.sin(2*math.pi*frequency*i/rate) for i in range(round(rate*.5))]
+        assert m.estimate(samples,rate) is None,(rate,frequency)
 assert m.estimate([0.0]*24000,48000) is None
 rng=random.Random(721)
 assert m.estimate([rng.uniform(-.3,.3) for _ in range(24000)],48000) is None

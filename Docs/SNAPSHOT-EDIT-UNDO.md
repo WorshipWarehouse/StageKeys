@@ -41,3 +41,5 @@ strip.
 New snapshots retain a compact instrument-kind/name token and Audio Unit component identity for state ownership. They do not copy native sampler maps or private conversion metadata into every scene. Legacy snapshots without an identity retain their documented compatibility behavior; no new schema version is required for the optional identity.
 
 A successful whole-document activation (local open/new, file/share import or previous-copy recovery) also clears the pending Undo, even when the loaded patch retains the same UUID. Rejected activation preserves the current document and its Undo. Generated regressions reproduce same-identity import and cover rejected/successful recovery.
+
+Changing a sound source invalidates Undo before updating snapshot processing, so old sound settings cannot be restored over a replacement. Undoing an edit to another slot leaves its currently recalled snapshot and in-flight transition running. AU recall preflight checks component ownership before requiring a loaded unit; state belonging to a replaced component is skipped, while matching state still requires readiness.

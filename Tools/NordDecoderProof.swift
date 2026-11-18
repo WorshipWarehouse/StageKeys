@@ -12,8 +12,9 @@ import CryptoKit
         try manager.createDirectory(at:root,withIntermediateDirectories:false,attributes:[.posixPermissions:0o700])
         var reports:[[String:Any]]=[]
         for (number,path) in CommandLine.arguments.dropFirst(2).enumerated() {
-            let source=URL(fileURLWithPath:path),before=try AssetDigest.sha256(source)
-            let bytes=try NordPiano.read(source),preview=try NordNative.preview(bytes),index=preview.index
+            let source=URL(fileURLWithPath:path)
+            let bytes=try NordPiano.read(source),before=AssetDigest.sha256(bytes)
+            let preview=try NordNative.preview(bytes),index=preview.index
             let key=60,rootNote=index.keyMap[key]
             guard rootNote != 255 else{fatalError("The declared key is uncovered")}
             var records:[[String:Any]]=[]
@@ -35,7 +36,7 @@ import CryptoKit
                 guard selected.count==1 else{fatalError("Missing or ambiguous declared velocity selection")}
                 velocityChecks.append(["velocity":velocity,"stroke":selected[0].stroke,"low":selected[0].velocityLow,"high":selected[0].velocityHigh])
             }
-            guard try AssetDigest.sha256(source)==before,!records.isEmpty else{fatalError("Source changed or no declared attacks")}
+            guard try AssetDigest.sha256(NordPiano.read(source))==before,!records.isEmpty else{fatalError("Source changed or no declared attacks")}
             reports.append(["source":source.lastPathComponent,"sourceSHA256":before,"requestedKey":key,"storedRoot":rootNote,
                             "fineTuneUnits":index.fineTune[key],"storedAttackLayers":records,"velocityChecks":velocityChecks,
                             "scope":"attack PCM decoder proof only; native mapping and hardware equivalence are separate"])

@@ -190,17 +190,17 @@ with identical PCM, including Astoria's separate stereo channels.
 
 `Tools/measure-pcm-pitch.py` measures each decoded channel in windows starting at
 0.08, 0.3 and 0.6 seconds, using a bounded cumulative-mean normalized difference
-(YIN) estimator over 80–1200 Hz. Original generated sine/harmonic fixtures at
-35002/44100/48000 Hz verify tones/octaves; silence, noise and insufficient input
+(YIN) estimator over 80–1200 Hz. The estimator now uses original-rate samples rather than unfiltered stride decimation, searches the first credible period before enforcing the declared range, and refuses out-of-range tones instead of folding them into subharmonics. Original generated sine/harmonic fixtures at
+35002/44100/48000 Hz verify tones/octaves; silence, noise, 1250/2000/8000/9500 Hz out-of-range tones and insufficient input
 are refused. The metric is an offline diagnostic, not a reference-host null test.
 All channel/layer medians fall within 50 cents of the declared C4 root, with:
 
 | Input | Median-window raw frequency range | Raw cents relative to C4 | Stored per-key tuning | After the existing 0.7-cent/unit mapping (inferred, not a hardware result) |
 | --- | --- | --- | --- | --- |
-| Astoria | 263.931–265.858 Hz | +15.19…+27.79 | −17 units | +3.29…+15.89 cents |
-| Stockholm | 260.639–260.832 Hz | −6.54…−5.26 | +6 units | −2.34…−1.06 cents |
+| Astoria | 263.818–267.347 Hz | +14.45…+37.45 | −17 units | +2.55…+25.55 cents |
+| Stockholm | 260.622–260.806 Hz | −6.65…−5.43 | +6 units | −2.45…−1.23 cents |
 
-These measurements validate plausible declared pitch/rate and disclose the
+The table reports the repeated bounded-read proof with the corrected original-rate estimator and supersedes the initial stride-decimated measurements. Each window uses at most 4096 original-rate frames and 2048 comparison frames. All declared channels/layers retain at least one confident window. These measurements validate plausible declared pitch/rate and disclose the
 remaining tuning differences; they do not establish exact Nord tuning, dynamics
 or hardware equivalence. No authorized Nord hardware/reference render was
 available. The upstream decoder shares implementation ancestry and is not an

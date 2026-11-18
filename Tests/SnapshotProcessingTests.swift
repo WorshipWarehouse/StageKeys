@@ -172,6 +172,22 @@ import AVFoundation
         let savedPatch = reloaded.patches.first { $0.id == store.patch.id }!
         assert(savedPatch.layers[editorChannel].channelSettings == edited,
                "Per-sound shaping values must survive a save and reload")
+        // A stopped replacement AU must not block a scene whose state belongs
+        // to the old component. Matching state must still require a loaded unit.
+        store.stopAudio()
+        var other=store.patch.layers[3]
+        var otherIdentity=identity;otherIdentity.subtype+=1
+        other.external=ExternalSound(kind:.audioUnit,name:"Stopped replacement",component:otherIdentity)
+        other.pluginState=nil
+        store.commitLayer(3,other)
+        var stoppedTarget=auTarget;stoppedTarget.seconds=0
+        stoppedTarget.sounds![4].pluginState=nil
+        store.message=nil;store.recall(stoppedTarget)
+        assert(store.activeSnapshot==stoppedTarget.id && store.patch.layers[3].pluginState==nil,"A different captured component must be skipped before loaded-state admission")
+        var matching=stoppedTarget
+        matching.id=UUID();matching.sounds![3].external=other.external
+        store.message=nil;store.recall(matching)
+        assert(store.activeSnapshot != matching.id && store.message?.contains("finish loading")==true,"Matching saved AU state still requires its loaded component")
         print("PASS snapshot processing: cross-layer rollback, held audio, saved bytes, retry, effect edits, malformed recall and shaping ownership")
     }
 }

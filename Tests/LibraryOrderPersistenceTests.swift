@@ -17,11 +17,16 @@ import Foundation
   var chosen=LibraryQuery();chosen.order(by:.random)
   let chosenSeed=chosen.shuffleSeed
   assert(chosenSeed != 0,"Choosing Random stores a non-zero seed")
+  chosen.ascending.toggle()
   let shown=chosen.results(sounds).map(\.id)
-  let relaunched=LibraryQuery(storedOrder:"Random",storedSeed:chosenSeed)
+  let relaunched=LibraryQuery(storedOrder:"Random",storedSeed:chosenSeed,storedAscending:chosen.ascending)
   assert(relaunched.shuffleSeed == chosenSeed,"A stored Random seed is reused instead of redrawn")
   assert(relaunched.results(Array(sounds.reversed())).map(\.id) == shown,"The same Random order and the same seed reproduce the list after a relaunch")
   assert(Set(shown) == Set(identifiers),"A restored Random order keeps every sound")
+
+  assert(relaunched.ascending==chosen.ascending,"A reversed Random direction must survive relaunch")
+  let reversedRating=LibraryQuery(storedOrder:"Rating",storedSeed:nil,storedAscending:true)
+  assert(reversedRating.results(sounds).first?.rating==0,"An explicitly reversed Rating order must override its default")
 
   // The seed is what decides the order: a known seed pins the list, and a different
   // seed produces a different one.
