@@ -33,10 +33,11 @@ struct SoundImportView:View {
                 Text("IMPORT FROM").font(StageTheme.font(11,weight:.bold)).tracking(1.2).foregroundStyle(.secondary)
                 LazyVGrid(columns:[GridItem(.flexible(),spacing:12),GridItem(.flexible(),spacing:12)],spacing:12) {
                     ImportSourceCard(icon:"pianokeys",title:"MainStage",detail:"Patch or channel strip · choose the effects that fill StageKeys’ visible slots",accent:StageTheme.selected){choice = .mainStage;choosing=true}
-                    ImportSourceCard(icon:"waveform.badge.plus",title:"Instrument File",detail:"StageKeys Sampler, EXS, AUPRESET, experimental Nord NPNO, audio file or supported sound bank · select several audio files at once",accent:StageTheme.colors[1]){choice = .file;choosing=true}
+                    ImportSourceCard(icon:"waveform.badge.plus",title:"Instrument File",detail:"StageKeys Sampler, EXS, AUPRESET, experimental Nord NPNO/Stage 4 bundle, audio file or supported sound bank · select several audio files at once",accent:StageTheme.colors[1]){choice = .file;choosing=true}
                     ImportSourceCard(icon:"folder.badge.plus",title:"Sampler Folder",detail:"Scan a folder for EXS and AUPRESET instruments with their original samples",accent:StageTheme.colors[2]){choice = .library;choosing=true}
                     ImportSourceCard(icon:"shippingbox.fill",title:"Sound Pack",detail:"Install a personal StageKeys pack or a separately downloaded sound library",accent:StageTheme.colors[3]){choice = .backup;choosing=true}
                 }
+                nordBundleCard
                 nordPreviewCard
                 HStack(spacing:10) {
                     Image(systemName:"arrow.down.doc").foregroundStyle(StageTheme.selected)
@@ -122,10 +123,11 @@ struct SoundImportView:View {
                     // One transaction, so a failure or cancellation leaves the catalog unchanged.
                     // Sampler instruments need their own sample folder, so those stay one at a time.
                     if urls.allSatisfy({!LibraryBulkImport.needsSampleFolder($0)}) {store.importLibrarySounds(urls);status=nil}
-                    else {status="Import Nord pianos, MainStage patches, sound packs, EXS and AUPRESET one at a time. Select audio or sound-bank files together."}
+                    else {status="Import Nord pianos/bundles, MainStage patches, sound packs, EXS and AUPRESET one at a time. Select audio or sound-bank files together."}
                 case .file:
                     if url.pathExtension.lowercased()=="stagekeyspack" {store.importLibraryBackup(url);status=nil}
                     else if url.pathExtension.lowercased()=="npno" {store.inspectNordSound(url);status=nil}
+                    else if url.pathExtension.lowercased()=="ns4pbundle" {store.inspectNordBundle(url);status=nil}
                     else if ["patch","cst"].contains(url.pathExtension.lowercased()) {store.importMainStageAutomatically(url,convertAfterDiscovery:false);status=nil}
                     else if ["exs","aupreset"].contains(url.pathExtension.lowercased()) {
                         pending=url;status="Choose the folder containing this instrument’s samples. Imports preserve sample maps and translated rack effects, macros and MIDI settings. Conversion notes describe remaining approximations."
@@ -151,6 +153,28 @@ struct SoundImportView:View {
             _ = provider.loadObject(ofClass:URL.self){url,_ in guard let url,["patch","cst"].contains(url.pathExtension.lowercased()) else{return};DispatchQueue.main.async{store.importMainStageAutomatically(url,convertAfterDiscovery:false)}}
             return true
         }.onDisappear {store.discardNordImport()}.sheet(item:$effectRequest){request in MainStageEffectSelectionSheet(request:request).environmentObject(store)}
+    }
+
+    @ViewBuilder private var nordBundleCard:some View {
+        if let bundle=store.nordBundlePreview {
+            VStack(alignment:.leading,spacing:10) {
+                Text(bundle.sourceName).font(.headline)
+                Text("\(bundle.programs.count) untranslated programs · \(bundle.pianos.count) piano files · \(bundle.samples.count) sample instruments").font(.subheadline)
+                Text(bundle.limitation).font(.caption).foregroundStyle(.secondary)
+                ForEach(bundle.pianos,id:\.name) {entry in
+                    Button("Inspect "+URL(fileURLWithPath:entry.name).lastPathComponent) {store.inspectNordBundlePiano(entry.name)}.buttonStyle(StageButtonStyle())
+                }
+                DisclosureGroup("Untranslated programs and declared dependencies") {
+                    ForEach(bundle.programs,id:\.name) {program in
+                        VStack(alignment:.leading,spacing:3) {
+                            Text(URL(fileURLWithPath:program.name).deletingPathExtension().lastPathComponent).font(.headline)
+                            Text(program.dependencies.map{URL(fileURLWithPath:$0).lastPathComponent}.joined(separator:", ")).font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                Button("Discard Bundle") {store.discardNordImport()}.buttonStyle(StageButtonStyle())
+            }.padding(18).background(StageTheme.panel,in:RoundedRectangle(cornerRadius:10))
+        }
     }
 
     @ViewBuilder private var nordPreviewCard:some View {

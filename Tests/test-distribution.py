@@ -47,7 +47,7 @@ with tempfile.TemporaryDirectory() as temporary:
     empty.mkdir()
     check(app, False)
     empty.rmdir()
-    for name in ('Personal.stagekeyspack', 'Personal.STAGEKEYSPACK', 'Private.npno', 'Private.NPNO', 'Private.nsmp', 'Private.nsmp3', 'Private.nsmp4'):
+    for name in ('Personal.stagekeyspack', 'Personal.STAGEKEYSPACK', 'Private.npno', 'Private.NPNO', 'Private.nsmp', 'Private.nsmp3', 'Private.nsmp4', 'Private.ns4p', 'Private.NS4PBUNDLE'):
         pack=resources / name
         pack.write_bytes(b'synthetic personal pack')
         check(app, False)
@@ -98,6 +98,9 @@ repo_check({'Tests/Fixture.swift': b'let names = ["Soft Keys", "Warm Pad", "Glas
 repo_check({'Sources/Synth.c': b'void sk_note_on(void) {}'}, True)
 repo_check({'Private.npno': b'synthetic Nord content'}, False)
 repo_check({'Private.NSMP4': b'synthetic Nord content'}, False)
+repo_check({'Private.ns4p': b'synthetic Nord program'}, False)
+repo_check({'Private.NS4PBUNDLE': b'synthetic Nord archive'}, False)
+repo_check({'Private.ns4pbundle/meta.xml': b'synthetic vendor metadata'}, False)
 repo_check({'Personal.stagekeyspack': b'fixture personal pack'}, False)
 repo_check({'Personal.STAGEKEYSPACK': b'fixture personal pack'}, False)
 repo_check({'Personal.stagekeyspack/README.txt': b'fixture nested pack'}, False)
