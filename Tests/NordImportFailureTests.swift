@@ -25,6 +25,9 @@ import AVFoundation
         let document=root.appendingPathComponent("setlist.json"),saved=try Data(contentsOf:document)
         let assets=rack.libraryURL
         func inventory()->[String] {manager.enumerator(atPath:assets.path)!.allObjects.compactMap{$0 as? String}.sorted()}
+        let retainedAsset=assets.appendingPathComponent("retained-user-asset.bin")
+        let retainedBytes=Data([0,17,34,255,128,64])
+        try retainedBytes.write(to:retainedAsset)
         let initialAssets=inventory()
         var expectedCatalog=try Data(contentsOf:library.url)
         func wait() async throws {
@@ -38,6 +41,8 @@ import AVFoundation
             assert(documentBytes==saved,"Import changed persisted session bytes")
             assert(sourceBytes==original,"Import changed source bytes")
             assert(inventory()==initialAssets,"Failed preparation must remove only its newly owned assets")
+            let retained=try Data(contentsOf:retainedAsset)
+            assert(retained==retainedBytes,"Rollback changed an existing managed asset")
             assert(store.audio.running && rack.unit(channel:0) === unit && store.held.contains(60) && store.sustain)
         }
         func attempt(_ fault:@escaping ()throws->Void) async throws {
