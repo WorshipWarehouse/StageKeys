@@ -37,20 +37,7 @@ struct SoundImportView:View {
                     ImportSourceCard(icon:"folder.badge.plus",title:"Sampler Folder",detail:"Scan a folder for EXS and AUPRESET instruments with their original samples",accent:StageTheme.colors[2]){choice = .library;choosing=true}
                     ImportSourceCard(icon:"shippingbox.fill",title:"Sound Pack",detail:"Install a personal StageKeys pack or a separately downloaded sound library",accent:StageTheme.colors[3]){choice = .backup;choosing=true}
                 }
-                if let preview=store.nordImportPreview {
-                    VStack(alignment:.leading,spacing:10) {
-                        Text("Nord Piano · "+preview.name).font(.headline)
-                        Text(preview.sourceVersion).font(.caption).foregroundStyle(.secondary)
-                        Text("Experimental attack-only conversion · \(ByteCountFormatter.string(fromByteCount:Int64(preview.pcmBytes),countStyle:.file)) decoded PCM").font(.subheadline)
-                        Text("Minimum managed audio storage: \(ByteCountFormatter.string(fromByteCount:Int64(preview.minimumAssetBytes),countStyle:.file)); preset/catalog overhead is additional. Personal export needs another copy.").font(.caption).foregroundStyle(.secondary)
-                        Text(preview.targetEligibility).font(.caption).foregroundStyle(.secondary)
-                        ForEach(Array(preview.notes.enumerated()),id:\.offset) {_,note in Text(note).font(.caption).foregroundStyle(.secondary)}
-                        HStack {
-                            Button("Convert Attack Recordings") {store.importNordSound()}.buttonStyle(StageButtonStyle())
-                            Button("Discard") {store.discardNordImport()}.buttonStyle(StageButtonStyle())
-                        }
-                    }.padding(18).background(StageTheme.panel,in:RoundedRectangle(cornerRadius:10))
-                }
+                nordPreviewCard
                 HStack(spacing:10) {
                     Image(systemName:"arrow.down.doc").foregroundStyle(StageTheme.selected)
                     Text("Drop a MainStage .patch or .cst file anywhere in this window").font(StageTheme.font(11,weight:.semibold))
@@ -164,6 +151,23 @@ struct SoundImportView:View {
             _ = provider.loadObject(ofClass:URL.self){url,_ in guard let url,["patch","cst"].contains(url.pathExtension.lowercased()) else{return};DispatchQueue.main.async{store.importMainStageAutomatically(url,convertAfterDiscovery:false)}}
             return true
         }.onDisappear {store.discardNordImport()}.sheet(item:$effectRequest){request in MainStageEffectSelectionSheet(request:request).environmentObject(store)}
+    }
+
+    @ViewBuilder private var nordPreviewCard:some View {
+    if let preview=store.nordImportPreview {
+        VStack(alignment:.leading,spacing:10) {
+            Text("Nord Piano · "+preview.name).font(.headline)
+            Text(preview.sourceVersion).font(.caption).foregroundStyle(.secondary)
+            Text("Experimental attack-only conversion · \(ByteCountFormatter.string(fromByteCount:Int64(preview.pcmBytes),countStyle:.file)) decoded PCM").font(.subheadline)
+            Text("Minimum managed audio storage: \(ByteCountFormatter.string(fromByteCount:Int64(preview.minimumAssetBytes),countStyle:.file)); preset/catalog overhead is additional. Personal export needs another copy.").font(.caption).foregroundStyle(.secondary)
+            Text(preview.targetEligibility).font(.caption).foregroundStyle(.secondary)
+            ForEach(Array(preview.notes.enumerated()),id:\.offset) {_,note in Text(note).font(.caption).foregroundStyle(.secondary)}
+            HStack {
+                Button("Convert Attack Recordings") {store.importNordSound()}.buttonStyle(StageButtonStyle())
+                Button("Discard") {store.discardNordImport()}.buttonStyle(StageButtonStyle())
+            }
+        }.padding(18).background(StageTheme.panel,in:RoundedRectangle(cornerRadius:10))
+    }
     }
 
     private func importFile(_ url:URL,samples:URL?=nil){

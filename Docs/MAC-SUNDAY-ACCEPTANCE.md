@@ -68,3 +68,8 @@ implementation is published. A clean build alone does not make Sunday ready.
   dependencies and two ES2 channels. The two ES2 engines and untranslated
   source routing/effects/MIDI cannot silently disappear. Private metadata and
   complete parser reports are outside the checkout.
+
+The unsigned Mac candidate artifact/content gate passed. The candidate uses an
+isolated data/profile bundle for UI validation, preserving the installed session.
+CUA repeatedly failed to attach with an expired continuation; the visible private
+piano workflow is therefore **unverified**, not passed from Store tests.
